@@ -157,14 +157,14 @@ pub fn prepare_streaming(rate: Option<(u32, u32)>) -> Result<usize, &'static str
     let mut control = open.control().ok_or("no control state")?;
     let mut exchanges = 0;
     if let Some((rx, tx)) = rate {
-        let mut set = SetSampleRate::new(control, rx, tx);
+        let mut set = SetSampleRate::new(&control, rx, tx);
         exchanges += board.drive(&mut set)?;
         if set.refusal().is_some() {
             return Err("rate refused");
         }
         control = *set.control();
     }
-    let mut prepare = PrepareStreaming::new(control);
+    let mut prepare = PrepareStreaming::new(&control);
     exchanges += board.drive(&mut prepare)?;
     match prepare.refusal() {
         Some(_) => Err("streaming up refused"),

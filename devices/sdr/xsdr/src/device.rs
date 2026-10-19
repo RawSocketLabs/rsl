@@ -179,7 +179,7 @@ impl Device {
             rx_port1: phy & PHY_LML2_IS_RX == 0,
         };
         let mut rate = SetSampleRate::new(
-            self.control,
+            &self.control,
             self.rate,
             gateware,
             XSDR_SUPPLIES.pmic,
@@ -318,6 +318,9 @@ fn control_error(error: ControlError) -> Error {
         ControlError::Tune(TuneError::OutOfRange) => Error::TuneOutOfRange(0),
         ControlError::NoRate => Error::NoSampleRate,
         ControlError::InvalidRate => Error::InvalidRate(0),
+        ControlError::InvalidPath => Error::InvalidPath,
+        // The frequency is filled in by the caller.
+        ControlError::NcoOutOfRange => Error::NcoOutOfRange(0),
     }
 }
 

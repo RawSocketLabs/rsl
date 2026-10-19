@@ -34,7 +34,7 @@ pub(crate) struct PrepareStreaming {
 
 impl PrepareStreaming {
     /// Starts preparing `control`'s chip to stream.
-    pub(crate) fn new(control: Control) -> Self {
+    pub(crate) fn new(control: &Control) -> Self {
         let stage = if control.clocks().cgen == 0 {
             Stage::Rate(SetSampleRate::new(control, DEFAULT_RATE, DEFAULT_RATE))
         } else {
@@ -72,7 +72,7 @@ impl PrepareStreaming {
             return;
         };
         if !self.failed && rate.next().is_none() {
-            self.stage = Stage::Up(stream_up(*rate.control()));
+            self.stage = Stage::Up(stream_up(rate.control()));
         }
     }
 }
@@ -81,14 +81,14 @@ impl PrepareStreaming {
 /// run flags are set as `limesdr_prepare_streaming` sets them. A streaming up refused
 /// before any write (no rate, where libusdr divides by zero) keeps the run flags as they
 /// were, so later rates and tunings do not treat the paths as running.
-fn stream_up(control: Control) -> Operation<LimeFrontend> {
+fn stream_up(control: &Control) -> Operation<LimeFrontend> {
     let channel_a = (Mac::A, StreamFlags::default());
-    let mut running = control;
+    let mut running = *control;
     running.set_running([true, false], [true, false]);
     let up = running.streaming_up(LimeFrontend, channel_a, Some(channel_a));
     match up.outcome() {
         // The same refusal, which the run flags do not decide, from the state before.
-        Some(Err(_)) => control.streaming_up(LimeFrontend, channel_a, Some(channel_a)),
+        Some(Err(_)) => (*control).streaming_up(LimeFrontend, channel_a, Some(channel_a)),
         _ => up,
     }
 }

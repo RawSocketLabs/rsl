@@ -76,7 +76,9 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   driver needs them; until then a port of one may sit in its first driver
   (`lms7002m_streaming_down` in `xsdr`'s `Close`). Those both LMS7 drivers call
   (`lms7002m_samplerate`, `_set_gain`, `_bb_set_badwidth`, `_fe_set_freq`,
-  `_streaming_up`) are `lms7002m::ctrl` (2026-10-13): `Control` is
+  `_streaming_up`) are `lms7002m::ctrl` (2026-10-13), and so are the paths and NCOs
+  (`_rfe_set_path`, `_tfe_set_path`, `_fe_set_lna`, `_bb_set_freq`), which only the
+  XSDR offers so far but which live on the same state: `Control` is
   `lms7002_dev_t`, each operation a sans-I/O `Operation`, and what libusdr's callbacks
   ask of the board (antenna switches, `LimeLight` sample order) its `Frontend`. Board
   composition stays in drivers.

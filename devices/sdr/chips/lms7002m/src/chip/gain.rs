@@ -146,6 +146,40 @@ impl RxGainStage {
     }
 }
 
+impl TxGainStage {
+    /// The loss code `lms7002m_trf_gain` computes for `gain_x10`, and the gain it reports
+    /// (the pad's; none for the loopback).
+    fn loss(self, gain_x10: i32) -> (i32, Option<i32>) {
+        let loss = gain_x10.wrapping_neg() / 10;
+        match self {
+            Self::Pad => match loss {
+                53.. => (31, Some(-520)),
+                11.. => {
+                    let loss = (loss + 10) / 2;
+                    (loss, Some(-10 * (loss * 2 - 10)))
+                }
+                _ => (loss, Some(loss.wrapping_mul(-10))),
+            },
+            Self::Loopback => {
+                let loss = match loss {
+                    25.. => i32::from(LB_LOSS_24),
+                    21.. => 21,
+                    14.. => 14,
+                    _ => 0,
+                };
+                (loss, None)
+            }
+        }
+    }
+
+    /// The gain, in tenths of a dB, `lms7002m_trf_gain` reports for `gain_x10`: the pad's;
+    /// none for the loopback.
+    #[must_use]
+    pub fn reached(self, gain_x10: i32) -> Option<i32> {
+        self.loss(gain_x10).1
+    }
+}
+
 impl Lms7002m {
     /// Sets `stage` on the selected channels to the first code whose attenuation is
     /// strictly below the one `gain_x10` tenths of a dB asks for (a gain, so 0 or below:
@@ -211,29 +245,7 @@ impl Lms7002m {
         gain_x10: i32,
     ) -> Result<(Batch, Option<i32>), NoChannel> {
         let selected = self.selected()?;
-        let mut loss = gain_x10.wrapping_neg() / 10;
-        let actual = match stage {
-            TxGainStage::Pad => Some(match loss {
-                53.. => {
-                    loss = 31;
-                    -520
-                }
-                11.. => {
-                    loss = (loss + 10) / 2;
-                    -10 * (loss * 2 - 10)
-                }
-                _ => -10 * loss,
-            }),
-            TxGainStage::Loopback => {
-                loss = match loss {
-                    25.. => i32::from(LB_LOSS_24),
-                    21.. => 21,
-                    14.. => 14,
-                    _ => 0,
-                };
-                None
-            }
-        };
+        let (loss, actual) = stage.loss(gain_x10);
         let [low, ..] = loss.to_le_bytes();
         for (tx, _) in self.tx.iter_mut().zip(selected).filter(|(_, on)| *on) {
             match stage {

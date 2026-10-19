@@ -8,8 +8,8 @@ use hal::{Sequence, SequenceAction, SequenceFailure};
 
 use crate::batch::Batch;
 use crate::chip::{
-    LmlConfig, LmlMap, Lms7002m, LpfParams, NoChannel, RbbMode, RbbPath, RxGainStage, RxMode,
-    Synthesizer, TbbMode, TbbPath, Tsp, TxGainStage, TxMode, TxPath,
+    DcDac, LmlConfig, LmlMap, Lms7002m, LpfParams, NoChannel, RbbMode, RbbPath, RxGainStage,
+    RxMode, Synthesizer, TbbMode, TbbPath, Tsp, TspGenerator, TxGainStage, TxMode, TxPath,
 };
 use crate::regs::{Mac, RxPath};
 
@@ -17,9 +17,10 @@ use crate::regs::{Mac, RxPath};
 /// in both directions.
 const CAPACITY: usize = 32;
 
-/// One chip operation, as the control code calls it.
+/// One chip operation, as libusdr's control and board code call it; run a list of them with
+/// [`ChipCalls`].
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum ChipCall {
+pub enum ChipCall {
     /// [`Lms7002m::mac_set`].
     MacSet(Mac),
     /// [`Lms7002m::afe_enable`].
@@ -46,6 +47,8 @@ pub(crate) enum ChipCall {
     RfeGain(RxGainStage, i32),
     /// [`Lms7002m::trf_gain`].
     TrfGain(TxGainStage, i32),
+    /// [`Lms7002m::rfe_gains`] (`lms7002m_rfe_gain` with `RFE_GAIN_NONE`).
+    RfeGains,
     /// [`Lms7002m::rbb_path`].
     RbbPath(RbbPath, RbbMode),
     /// [`Lms7002m::rbb_lpf`].
@@ -60,6 +63,14 @@ pub(crate) enum ChipCall {
     TbbGain(i8),
     /// [`Lms7002m::sxx_disable`].
     SxxDisable(Synthesizer),
+    /// [`Lms7002m::dc_dac`].
+    DcDac(DcDac, i16),
+    /// [`Lms7002m::tsp_gain_correction`]: I, then Q.
+    TspGainCorrection(Tsp, u16, u16),
+    /// [`Lms7002m::tsp_phase_correction`].
+    TspPhaseCorrection(Tsp, i32),
+    /// [`Lms7002m::tsp_generator`]: the generator, then the I and Q DC levels.
+    TspGenerator(Tsp, TspGenerator, i16, i16),
 }
 
 impl ChipCall {
@@ -79,6 +90,7 @@ impl ChipCall {
             Self::TrfPath(path, mode) => chip.trf_path(path, mode)?,
             Self::RfeGain(stage, gain) => chip.rfe_gain(stage, gain).0,
             Self::TrfGain(stage, gain) => chip.trf_gain(stage, gain)?.0,
+            Self::RfeGains => chip.rfe_gains(),
             Self::RbbPath(path, mode) => chip.rbb_path(path, mode),
             Self::RbbLpf(params) => chip.rbb_lpf(params),
             Self::RbbPga(gain) => chip.rbb_pga(gain),
@@ -86,6 +98,10 @@ impl ChipCall {
             Self::TbbLpf(params) => chip.tbb_lpf(params),
             Self::TbbGain(gain) => chip.tbb_gain(gain),
             Self::SxxDisable(synthesizer) => chip.sxx_disable(synthesizer),
+            Self::DcDac(dac, value) => chip.dc_dac(dac, value),
+            Self::TspGainCorrection(tsp, i, q) => chip.tsp_gain_correction(tsp, i, q)?,
+            Self::TspPhaseCorrection(tsp, correction) => chip.tsp_phase_correction(tsp, correction),
+            Self::TspGenerator(tsp, generator, i, q) => chip.tsp_generator(tsp, generator, i, q),
         })
     }
 }
@@ -181,5 +197,57 @@ impl Calls {
         }
         self.start(chip);
         Ok(())
+    }
+}
+
+/// Chip operations run one after another on a chip's cache, each built only when its turn
+/// comes, chained as libusdr's `res = res ? res : ...` chains them: a failed write ends the
+/// run, and so does a banked call with no bank selected (libusdr's `-EINVAL`,
+/// [`Self::refused`]). Boards compose their handlers from these (`lms7002m_mac_set`, then
+/// the operation).
+#[derive(Clone, Copy, Debug)]
+pub struct ChipCalls {
+    /// The chip's cache.
+    chip: Lms7002m,
+
+    /// The calls.
+    calls: Calls,
+}
+
+impl ChipCalls {
+    /// Starts `calls` on `chip`; `None` for more than 32 calls.
+    #[must_use]
+    pub fn new(mut chip: Lms7002m, calls: &[ChipCall]) -> Option<Self> {
+        if calls.len() > CAPACITY {
+            return None;
+        }
+        let mut queue = Calls::new();
+        for &call in calls {
+            queue.push(call);
+        }
+        queue.start(&mut chip);
+        Some(Self { chip, calls: queue })
+    }
+
+    /// The chip's cache, as the calls have left it.
+    #[must_use]
+    pub const fn chip(&self) -> &Lms7002m {
+        &self.chip
+    }
+
+    /// A call found no bank selected and ended the run before writing.
+    #[must_use]
+    pub const fn refused(&self) -> bool {
+        self.calls.refused()
+    }
+}
+
+impl Sequence for ChipCalls {
+    fn next(&self) -> Option<SequenceAction> {
+        self.calls.next()
+    }
+
+    fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
+        self.calls.complete(&mut self.chip, result)
     }
 }

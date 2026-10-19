@@ -102,6 +102,15 @@ pub enum Error {
     #[error("no sample rate is set")]
     NoSampleRate,
 
+    /// A path the board has no band for, or a TX path given as an RF path's RX selection:
+    /// libusdr's `-EINVAL`.
+    #[error("the board has no band for this path")]
+    InvalidPath,
+
+    /// A baseband NCO frequency beyond half the converter clock: libusdr's `-EINVAL`.
+    #[error("NCO frequency {0} Hz is beyond half the converter clock")]
+    NcoOutOfRange(i32),
+
     /// The front-end probe failed. Probing automatically, as open does, a board that fails
     /// is logged and skipped as libusdr skips it, so open reports none of these yet.
     #[error("front-end probe failed")]

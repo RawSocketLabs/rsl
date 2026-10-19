@@ -9,37 +9,46 @@ use super::fpga::Gpo;
 use super::step::Step;
 
 /// The XSDR's receive bands (`cfg_auto_rx`): the wide-band LNA below 2.2 GHz, the high
-/// band below 4 GHz, and the low band (named "EXT") past the last edge.
+/// band below 4 GHz, and the low band (named "EXT") past the last edge; in RF loopback
+/// the wide band's switch moves to 1 and the others' to 0.
 pub(crate) const RX_BANDS: [RxAntenna; 3] = [
     RxAntenna {
         below_hz: 2_200_000_000,
         path: RxPath::LnaW,
         switch: 0,
+        loopback_switch: 1,
     },
     RxAntenna {
         below_hz: 4_000_000_000,
         path: RxPath::LnaH,
         switch: 1,
+        loopback_switch: 0,
     },
     RxAntenna {
         below_hz: 4_000_000_000,
         path: RxPath::LnaL,
         switch: 1,
+        loopback_switch: 0,
     },
 ];
 
 /// The XSDR's transmit bands (`cfg_auto_tx`, without the `USDR_TX_W`/`USDR_TX_H`
-/// overrides the oracle forbids): band 1 below 2.2 GHz, band 2 above.
+/// overrides the oracle forbids): band 1 ("W", "B1") below 2.2 GHz, band 2 ("H", "B2")
+/// above; their switch positions swap in RF loopback.
 pub(crate) const TX_BANDS: [TxAntenna; 2] = [
     TxAntenna {
         below_hz: 2_200_000_000,
         path: TxPath::Band1,
         switch: 1,
+        loopback_switch: 0,
+        names: ["W", "B1"],
     },
     TxAntenna {
         below_hz: 4_000_000_000,
         path: TxPath::Band2,
         switch: 0,
+        loopback_switch: 1,
+        names: ["H", "B2"],
     },
 ];
 

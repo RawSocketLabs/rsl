@@ -113,7 +113,7 @@ impl Device {
         if let Some(rate) = [rx, tx].into_iter().find(|&rate| !in_range(rate)) {
             return Err(Error::InvalidRate(rate));
         }
-        let mut rate = SetSampleRate::new(self.control, rx, tx);
+        let mut rate = SetSampleRate::new(&self.control, rx, tx);
         let ran = self.run(&mut rate);
         self.control = *rate.control();
         ran?;
@@ -193,7 +193,7 @@ impl Device {
     /// streaming up writes anything (libusdr ignores that rate's failure, then divides by
     /// zero); [`Error::Bus`].
     pub fn prepare_streaming(&mut self) -> Result<(), Error> {
-        let mut prepare = PrepareStreaming::new(self.control);
+        let mut prepare = PrepareStreaming::new(&self.control);
         let ran = self.run(&mut prepare);
         self.control = *prepare.control();
         ran?;

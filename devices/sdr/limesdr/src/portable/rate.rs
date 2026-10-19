@@ -46,7 +46,7 @@ pub(crate) struct SetSampleRate {
 
 impl SetSampleRate {
     /// Starts setting `rx` and `tx` samples per second on `control`.
-    pub(crate) fn new(control: Control, rx: u32, tx: u32) -> Self {
+    pub(crate) fn new(control: &Control, rx: u32, tx: u32) -> Self {
         Self {
             rate: control.sample_rate(request(rx, tx)),
             clocks: [0, 1].map(|clock| Modify::new(DIRECT_CLOCKING, 0, 1 << clock)),

@@ -10,17 +10,20 @@
 //!
 //! Ported: the sample rate (`lms7002m_samplerate`), gains (`lms7002m_set_gain`),
 //! baseband bandwidths (`lms7002m_bb_set_badwidth`), `lms7002m_streaming_up` for RX and
-//! for RX with TX, the `LimeLight` RX mode (`lms7002m_set_lmlrx_mode`) and LO tuning
-//! (`lms7002m_fe_set_freq`, FDD). The RX and TX paths stay in libusdr's automatic band
-//! selection (`XSDR_RX_AUTO`, `XSDR_TX_AUTO`), whose band tables the board gives;
-//! explicit paths, loopbacks, TDD, the baseband NCOs and streaming up TX alone are not
-//! ported.
+//! for RX with TX, the `LimeLight` RX mode (`lms7002m_set_lmlrx_mode`), LO tuning
+//! (`lms7002m_fe_set_freq`, FDD and TDD), the RX and TX paths with their RF loopback
+//! (`lms7002m_rfe_set_path`, `_tfe_set_path`, `_fe_set_lna`) over the board's band
+//! tables, and the baseband NCOs (`lms7002m_bb_set_freq`). Not ported: streaming up TX
+//! alone and the calibration helpers (`_set_corr_param`, `_set_tx_testsig`,
+//! `_update_bandwidth`).
 
 mod calls;
 mod op;
 mod part;
+mod path;
 mod rate;
 
+pub use calls::{ChipCall, ChipCalls};
 pub use op::{ControlError, Operation};
 pub use part::NoBoard;
 pub use rate::{RateFlags, RateRequest};
@@ -34,7 +37,7 @@ use hal::Sequence;
 use crate::chip::{LmlConfig, LmlMap, Lms7002m, LpfParams, RbbPath, TbbPath};
 use crate::regs::{LmlSample, Mac, RxPath};
 use crate::{RxGainStage, TxGainStage, TxPath};
-use calls::{Calls, ChipCall};
+use calls::Calls;
 
 /// A direction: libusdr's `RFIC_LMS7_RX` and `RFIC_LMS7_TX`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,8 +49,9 @@ pub enum Direction {
     Tx,
 }
 
-/// One automatic receive band: below `below_hz`, the LNA `path` with the board's antenna
-/// switch at `switch` (`freq_auto_band_map_t`: `stop_freq`, `band`, `sw`).
+/// One receive band: below `below_hz`, the LNA `path` with the board's antenna switch at
+/// `switch`, or at `loopback_switch` while the RF loopback is on (`freq_auto_band_map_t`:
+/// `stop_freq`, `band`, `sw`, `swlb`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RxAntenna {
     /// The band's upper edge in hertz.
@@ -58,9 +62,13 @@ pub struct RxAntenna {
 
     /// The board's switch position.
     pub switch: u8,
+
+    /// The board's switch position while the RF loopback is on.
+    pub loopback_switch: u8,
 }
 
-/// One automatic transmit band, as [`RxAntenna`] for the TX band outputs.
+/// One transmit band, as [`RxAntenna`] for the TX band outputs; `names` are libusdr's
+/// `name0` and `name1`, which [`TxRoute::W`] and [`TxRoute::H`] look up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxAntenna {
     /// The band's upper edge in hertz.
@@ -71,6 +79,67 @@ pub struct TxAntenna {
 
     /// The board's switch position.
     pub switch: u8,
+
+    /// The board's switch position while the RF loopback is on.
+    pub loopback_switch: u8,
+
+    /// The band's names, compared case-insensitively.
+    pub names: [&'static str; 2],
+}
+
+/// The receive path: libusdr's `rfic_lms7_rf_path_t` RX values. `XSDR_RX_ADC_EXT`, which
+/// libusdr refuses with `-EINVAL` before any state change or access, has no counterpart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RxRoute {
+    /// The band follows the RX LO (`XSDR_RX_AUTO`).
+    Auto,
+
+    /// The low-band LNA (`XSDR_RX_L`).
+    LnaL,
+
+    /// The high-band LNA (`XSDR_RX_H`).
+    LnaH,
+
+    /// The wide-band LNA (`XSDR_RX_W`).
+    LnaW,
+
+    /// The low-band LNA fed back from TX band 2 (`XSDR_RX_L_TX_B2_LB`).
+    LoopbackL,
+
+    /// The wide-band LNA fed back from TX band 1 (`XSDR_RX_W_TX_B1_LB`).
+    LoopbackW,
+
+    /// The high-band LNA fed back from TX band 1 (`XSDR_RX_H_TX_B1_LB`).
+    LoopbackH,
+}
+
+/// The transmit path: libusdr's `rfic_lms7_rf_path_t` TX values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TxRoute {
+    /// The band follows the TX LO (`XSDR_TX_AUTO`).
+    Auto,
+
+    /// The band whose output is band 1 (`XSDR_TX_B1`).
+    Band1,
+
+    /// The band whose output is band 2 (`XSDR_TX_B2`).
+    Band2,
+
+    /// The band named `W` (`XSDR_TX_W`).
+    W,
+
+    /// The band named `H` (`XSDR_TX_H`).
+    H,
+}
+
+/// A path for either direction, as `lms7002m_fe_set_lna` takes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RfPath {
+    /// A receive path.
+    Rx(RxRoute),
+
+    /// A transmit path.
+    Tx(TxRoute),
 }
 
 /// The index of the band for `frequency` (`get_antenna_cfg_by_freq`): the first whose edge
@@ -263,6 +332,31 @@ pub struct Control {
 
     /// The transmit stream is SISO (`tx_siso`).
     tx_siso: bool,
+
+    /// The receive path (`rx_rfic_path`).
+    rx_route: RxRoute,
+
+    /// The transmit path (`tx_rfic_path`).
+    tx_route: TxRoute,
+
+    /// The receive band in use, an index into [`Self::rx_bands`] (`rx_cfg_path`).
+    rx_band: usize,
+
+    /// The transmit band in use (`tx_cfg_path`).
+    tx_band: usize,
+
+    /// The RF loopback is on (`rx_lna_lb_active`).
+    loopback: bool,
+
+    /// Each channel's TX pad loss as `lms7002m_set_gain` stores it: the reported gain over
+    /// −10, truncated to a byte (`tx_loss`).
+    tx_loss: [u8; 2],
+
+    /// Each channel's RX NCO word, once set (`rx_dsp`).
+    rx_nco: [Option<i32>; 2],
+
+    /// Each channel's TX NCO word (`tx_dsp`).
+    tx_nco: [Option<i32>; 2],
 }
 
 impl Control {
@@ -312,6 +406,14 @@ impl Control {
             tx_map: [LmlSample::AI; 4],
             rx_siso: false,
             tx_siso: false,
+            rx_route: RxRoute::Auto,
+            tx_route: TxRoute::Auto,
+            rx_band: 0,
+            tx_band: 0,
+            loopback: false,
+            tx_loss: [0; 2],
+            rx_nco: [None; 2],
+            tx_nco: [None; 2],
         }
     }
 
@@ -360,7 +462,7 @@ impl Control {
     /// selected, then the stage written. Returns the operation and the gain libusdr
     /// reports as reached, in dB.
     #[must_use]
-    pub fn set_gain(self, gain: Gain, value: i32) -> (Operation, i32) {
+    pub fn set_gain(mut self, gain: Gain, value: i32) -> (Operation, i32) {
         let mut calls = Calls::new();
         calls.push(ChipCall::MacSet(Mac::Both));
         let mut receive = |stage: RxGainStage, gain_x10: i32| {
@@ -386,7 +488,13 @@ impl Control {
                     TxGainStage::Loopback
                 };
                 // libusdr passes -10 * gain where the pad expects a gain: reproduced.
-                calls.push(ChipCall::TrfGain(stage, value.wrapping_mul(-10)));
+                let gain_x10 = value.wrapping_mul(-10);
+                calls.push(ChipCall::TrfGain(stage, gain_x10));
+                if let Some(reached) = stage.reached(gain_x10) {
+                    // `tx_loss[i] = aret / -10`, kept in a byte.
+                    let [loss, ..] = (reached / -10).to_le_bytes();
+                    self.tx_loss = [loss; 2];
+                }
                 value
             }
             Gain::TxPga => {
@@ -395,7 +503,7 @@ impl Control {
                 0
             }
         };
-        (Operation::writes(self, &calls), actual)
+        (Operation::writes(&self, &calls), actual)
     }
 
     /// Sets a baseband bandwidth on both channels (`lms7002m_bb_set_badwidth` with
@@ -417,7 +525,7 @@ impl Control {
             calls.push(ChipCall::MacSet(bank));
             push_bandwidth(&mut calls, direction, hertz);
         }
-        Operation::writes(self, &calls)
+        Operation::writes(&self, &calls)
     }
 
     /// Switches the receive FIFO between the processor, the LFSR pattern and the TX
@@ -428,7 +536,7 @@ impl Control {
         self.lml.rx_tx_loopback = loopback;
         let mut calls = Calls::new();
         calls.push(ChipCall::LimelightSwitchRxMode(self.lml));
-        Operation::writes(self, &calls)
+        Operation::writes(&self, &calls)
     }
 }
 

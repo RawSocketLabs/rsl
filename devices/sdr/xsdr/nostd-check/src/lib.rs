@@ -99,7 +99,7 @@ fn control() -> Result<Control, &'static str> {
 /// TX MMCM: the actions issued and the outcome.
 pub fn rate_unlocked(tx_mmcm: bool) -> Result<(usize, &'static str), &'static str> {
     let mut rate = SetSampleRate::new(
-        control()?,
+        &control()?,
         RateState::default(),
         Gateware {
             tx_mmcm,

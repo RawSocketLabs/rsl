@@ -83,6 +83,20 @@ pub enum TxPath {
     Band2,
 }
 
+impl TxPath {
+    /// The band an RF loopback from the receive LNA `path` uses
+    /// (`lms7002m_trf_from_rfe_path`): band 2 for the low-band LNA, band 1 for the wide and
+    /// high ones, none otherwise.
+    #[must_use]
+    pub const fn looped_from(path: RxPath) -> Self {
+        match path {
+            RxPath::LnaL => Self::Band2,
+            RxPath::LnaW | RxPath::LnaH => Self::Band1,
+            RxPath::None => Self::Mute,
+        }
+    }
+}
+
 /// An operation on banked registers found no channel selected (`MAC` = none); libusdr
 /// returns `-EINVAL` and writes nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

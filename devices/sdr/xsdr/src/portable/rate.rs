@@ -272,14 +272,14 @@ pub(crate) struct SetSampleRate {
 impl SetSampleRate {
     /// Starts setting `rx` and `tx` samples per second (either may be 0, not both).
     pub(crate) fn new(
-        control: Control,
+        control: &Control,
         state: RateState,
         gateware: Gateware,
         pmic: I2cAddr,
         (rx, tx): (u32, u32),
     ) -> Self {
         let mut rate = Self {
-            control,
+            control: *control,
             state,
             gateware,
             pmic,

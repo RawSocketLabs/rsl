@@ -10,38 +10,45 @@ use super::fpga::{RF_SWITCHES, RX_SWITCH_SHIFT, TX_SWITCH_SHIFT};
 use super::modify::Modify;
 
 /// The receive bands: the wide-band LNA ("LNAW", switch 2) below 1.7 GHz, the high band
-/// ("LNAH", 1) below 4 GHz, the low band ("LNAL", 0) above. libusdr's band search never
-/// reads the last band's 4.1 GHz edge.
+/// ("LNAH", 1) below 4 GHz, the low band ("LNAL", 0) above; in RF loopback the switches
+/// are 1, 2 and 0. libusdr's band search never reads the last band's 4.1 GHz edge.
 pub(crate) const RX_BANDS: [RxAntenna; 3] = [
     RxAntenna {
         below_hz: 1_700_000_000,
         path: RxPath::LnaW,
         switch: 2,
+        loopback_switch: 1,
     },
     RxAntenna {
         below_hz: 4_000_000_000,
         path: RxPath::LnaH,
         switch: 1,
+        loopback_switch: 2,
     },
     RxAntenna {
         below_hz: 4_100_000_000,
         path: RxPath::LnaL,
         switch: 0,
+        loopback_switch: 0,
     },
 ];
 
 /// The transmit bands: band 2 ("W"/"B2", switch 2) below 2 GHz, band 1 ("H"/"B1", 1)
-/// above.
+/// above; their switch positions swap in RF loopback.
 pub(crate) const TX_BANDS: [TxAntenna; 2] = [
     TxAntenna {
         below_hz: 2_000_000_000,
         path: TxPath::Band2,
         switch: 2,
+        loopback_switch: 1,
+        names: ["W", "B2"],
     },
     TxAntenna {
         below_hz: 4_000_000_000,
         path: TxPath::Band1,
         switch: 1,
+        loopback_switch: 2,
+        names: ["H", "B1"],
     },
 ];
 

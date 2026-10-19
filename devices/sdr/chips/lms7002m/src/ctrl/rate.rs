@@ -244,9 +244,9 @@ impl Control {
     /// The writes after CGEN locked on `candidate`, and the `LimeLight` configuration they
     /// set (cached once written): the processors' dividers where a path runs, the
     /// `LimeLight` configuration, and each running channel's bandwidth (and, for TX, its
-    /// amplifier and pad gains) where none was set.
+    /// amplifier and pad gains, the pad's loss then 0) where none was set.
     pub(super) fn rate_writes(
-        &self,
+        &mut self,
         request: &RateRequest,
         candidate: Candidate,
     ) -> (Calls, LmlConfig) {
@@ -290,6 +290,7 @@ impl Control {
                     .push(ChipCall::TbbGain(13))
                     .push(ChipCall::MacSet(bank))
                     .push(ChipCall::TrfGain(crate::TxGainStage::Pad, 0));
+                self.tx_loss[index] = 0;
             }
         }
         (calls, lml)

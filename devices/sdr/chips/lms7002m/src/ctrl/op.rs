@@ -10,18 +10,21 @@ use super::calls::{Calls, ChipCall};
 use super::part::Part;
 use super::rate::{Candidate, RateRequest};
 use super::{
-    Control, Direction, Frontend, NoFrontend, StreamFlags, band_for, order, push_bandwidth,
+    Control, Direction, Frontend, NoFrontend, RxRoute, StreamFlags, TxRoute, band_for, order,
+    push_bandwidth,
 };
 use crate::chip::{
-    LmlConfig, RbbMode, RbbPath, RxMode, Synthesizer, TbbMode, TbbPath, Tsp, TuneError, TxMode,
-    TxPath,
+    LmlConfig, RbbMode, RbbPath, RxMode, Synthesizer, TbbMode, TbbPath, Tsp, TuneError,
+    TxGainStage, TxMode, TxPath,
 };
-use crate::regs::Mac;
+use crate::regs::{Mac, RxPath};
 
 /// The RX DC corrector's window `lms7002m_streaming_up` sets.
 const DC_WINDOW: u8 = 7;
 /// CGEN tunings per candidate before libusdr tries the next.
 const CGEN_ATTEMPTS: u8 = 4;
+/// The most pieces one path operation runs.
+const PIECES: usize = 12;
 
 /// Why a control operation failed, beyond a bus failure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,14 +43,111 @@ pub enum ControlError {
     /// An LO synthesizer did not tune.
     Tune(TuneError),
 
-    /// Streaming up before any sample rate, where libusdr divides by zero; refused before
-    /// any write.
+    /// Streaming up or an NCO before any sample rate, where libusdr divides by zero;
+    /// refused before any write.
     NoRate,
 
     /// A rate request libusdr would hang or divide by zero on: no rate in either
     /// direction with no converter floor (CGEN 0), a zero board decimation or
     /// interpolation, or one larger than its rate. Refused before any write.
     InvalidRate,
+
+    /// A path the board's band table has no band for, or a TX path where an RX one is
+    /// taken: libusdr's `-EINVAL`.
+    InvalidPath,
+
+    /// An NCO frequency beyond half the converter clock: `lms7002m_bb_translate`'s
+    /// `-EINVAL` ("NCO ... out of range").
+    NcoOutOfRange,
+}
+
+/// Which band a front-end piece selects: libusdr's `_lms7002m_set_lna_rx/_tx` with the
+/// stored band, or reached through `_lms7002m_signal_event`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Band {
+    /// A signal event (`XSDR_*_LNA_CHANGED`, `XSDR_*_LO_CHANGED`): an automatic path's
+    /// band follows the LO; an explicit path is left alone.
+    Signal,
+
+    /// Streaming up: an automatic path's band follows the LO, an explicit one keeps its
+    /// band (`rfic_path == AUTO ? signal : set_lna(cfg_path)`).
+    Current,
+
+    /// The stored band (`_lms7002m_set_lna_*(d, d->*_cfg_path)`).
+    Stored,
+}
+
+/// One step of a path operation, expanded into its part only when reached, from the state
+/// earlier steps left.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Piece {
+    /// `lms7002m_mac_set`.
+    MacSet(Mac),
+
+    /// The receive band's front end (`_lms7002m_set_lna_rx` up to its switch): the LNA,
+    /// and in RF loopback the TX band feeding it.
+    LnaRx(Band),
+
+    /// The transmit band's front end (`_lms7002m_set_lna_tx` up to its switch).
+    LnaTx(Band),
+
+    /// The antenna switch the last front-end piece chose, if any.
+    Switch,
+
+    /// The RF loopback turned on (`_lms7002m_lb_status_changes`): the pad's loopback loss
+    /// at 0 dB.
+    LoopbackOn,
+
+    /// The RF loopback turned off: the pad's stored loss restored.
+    PadRestore,
+
+    /// Both channels' receive gains rewritten (`lms7002m_rfe_gain(.., RFE_GAIN_NONE, ..)`).
+    RfeGains,
+
+    /// `lms7002m_rfe_set_path`: its state changes made when reached, after the pieces
+    /// before it, then its own pieces run. Last in its list.
+    RxPath(RxRoute),
+
+    /// `lms7002m_tfe_set_path`, as [`Self::RxPath`].
+    TxPath(TxRoute),
+
+    /// The operation fails here.
+    Refuse(ControlError),
+}
+
+/// A fixed list of pieces.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Pieces {
+    /// The pieces; the first `len` are used.
+    list: [Piece; PIECES],
+
+    /// How many it holds.
+    len: usize,
+}
+
+impl Pieces {
+    /// No pieces.
+    pub(super) const fn new() -> Self {
+        Self {
+            list: [Piece::Switch; PIECES],
+            len: 0,
+        }
+    }
+
+    /// Appends a piece.
+    ///
+    /// # Panics
+    ///
+    /// Past the capacity: every list the control code builds is bounded.
+    pub(super) fn push(&mut self, piece: Piece) -> &mut Self {
+        assert!(
+            self.len < PIECES,
+            "invariant: piece lists fit their capacity"
+        );
+        self.list[self.len] = piece;
+        self.len += 1;
+        self
+    }
 }
 
 /// Where an operation is.
@@ -84,14 +184,12 @@ enum Stage {
         tx: Option<Up>,
     },
 
-    /// Streaming up RX: the band's LNA selected; its switch follows.
+    /// Streaming up RX: the band's front end selected; its switch follows.
     UpBand {
         /// The receive direction.
         rx: Up,
         /// The transmit direction, when it streams up too.
         tx: Option<Up>,
-        /// The switch position.
-        switch: u8,
     },
 
     /// Streaming up RX: the antenna switch.
@@ -115,15 +213,18 @@ enum Stage {
         tx: Up,
     },
 
-    /// Streaming up TX: the banks reselected and the band's output set; its switch
-    /// follows.
-    UpTxBand {
-        /// The switch position.
-        switch: u8,
-    },
+    /// Streaming up TX: the banks reselected and the band's front end selected; its
+    /// switch follows.
+    UpTxBand,
 
     /// Stopping a synthesizer, whose write failures libusdr ignores.
     TuneOff,
+
+    /// TDD tuning: the RX synthesizer stopped first, its write failures ignored.
+    TddOff {
+        /// The LO asked.
+        hertz: u32,
+    },
 
     /// Locking a synthesizer.
     TuneLock {
@@ -131,15 +232,16 @@ enum Stage {
         synthesizer: Synthesizer,
         /// The LO asked.
         hertz: u32,
+        /// TDD: both LOs follow the TX synthesizer.
+        tdd: bool,
     },
 
-    /// After a lock with the path running: both banks selected and the band's front end
-    /// set; its switch follows.
-    TuneBand {
-        /// The direction.
-        direction: Direction,
-        /// The switch position.
-        switch: u8,
+    /// Running pieces in order.
+    Script {
+        /// The pieces.
+        pieces: Pieces,
+        /// The next piece.
+        at: usize,
     },
 
     /// Finished.
@@ -173,14 +275,17 @@ pub struct Operation<F: Frontend = NoFrontend> {
     /// The part running.
     part: Part<F::Switch>,
 
+    /// The antenna switch the last front-end selection chose, not yet moved.
+    switch: Option<(Direction, u8)>,
+
     /// A bus access failed.
     failed: bool,
 }
 
 impl Operation<NoFrontend> {
     /// Runs `calls` and finishes.
-    pub(super) fn writes(control: Control, calls: &Calls) -> Self {
-        Self::start(control, NoFrontend(()), Stage::Last, calls)
+    pub(super) fn writes(control: &Control, calls: &Calls) -> Self {
+        Self::start(*control, NoFrontend(()), Stage::Last, calls)
     }
 }
 
@@ -193,6 +298,7 @@ impl<F: Frontend> Operation<F> {
             frontend,
             stage,
             part,
+            switch: None,
             failed: false,
         };
         operation.settle();
@@ -200,8 +306,20 @@ impl<F: Frontend> Operation<F> {
     }
 
     /// An operation that finished before any access.
-    fn finished(control: Control, frontend: F, outcome: Result<(), ControlError>) -> Self {
-        Self::start(control, frontend, Stage::Done(outcome), &Calls::new())
+    pub(super) fn finished(
+        control: &Control,
+        frontend: F,
+        outcome: Result<(), ControlError>,
+    ) -> Self {
+        Self::start(*control, frontend, Stage::Done(outcome), &Calls::new())
+    }
+
+    /// An operation running `pieces` in order.
+    pub(super) fn script(control: &Control, frontend: F, pieces: Pieces) -> Self {
+        let mut operation = Self::finished(control, frontend, Ok(()));
+        operation.stage = Stage::Script { pieces, at: 0 };
+        operation.settle();
+        operation
     }
 
     /// The control state, as the operation has left it so far.
@@ -231,6 +349,11 @@ impl<F: Frontend> Operation<F> {
         }
     }
 
+    /// Runs `calls` next.
+    fn calls(&mut self, calls: &Calls) {
+        self.part = Part::calls(*calls, &mut self.control.chip);
+    }
+
     /// The stage after the current part finished.
     fn advance(&mut self) {
         let next = match self.stage {
@@ -248,28 +371,21 @@ impl<F: Frontend> Operation<F> {
             Stage::UpPrepare { rx, tx } => {
                 // libusdr sets the run flags before selecting the band.
                 self.control.rx_running = rx.running;
-                let band = band_for(
-                    self.control.rx_lo,
-                    self.control.rx_bands.iter().map(|band| band.below_hz),
-                );
-                let antenna = self.control.rx_bands[band];
                 let mut calls = Calls::new();
-                calls.push(ChipCall::RfePath(antenna.path, RxMode::Normal));
-                self.part = Part::calls(calls, &mut self.control.chip);
-                Stage::UpBand {
-                    rx,
-                    tx,
-                    switch: antenna.switch,
-                }
+                self.lna_rx(Band::Current, &mut calls);
+                self.calls(&calls);
+                Stage::UpBand { rx, tx }
             }
-            Stage::UpBand { rx, tx, switch } => {
-                self.part = Part::Board(self.frontend.antenna_switch(Direction::Rx, switch));
+            Stage::UpBand { rx, tx } => {
+                if let Some((direction, position)) = self.switch.take() {
+                    self.part = Part::Board(self.frontend.antenna_switch(direction, position));
+                }
                 Stage::UpSwitch { rx, tx }
             }
             Stage::UpSwitch { rx, tx } => {
                 let mut calls = Calls::new();
-                push_restore(&mut calls, Direction::Rx, rx);
-                self.part = Part::calls(calls, &mut self.control.chip);
+                push_restore(&mut calls, Direction::Rx, rx, self.control.rx_nco);
+                self.calls(&calls);
                 tx.map_or(Stage::Last, |tx| Stage::UpRestore { tx })
             }
             Stage::UpRestore { tx } => {
@@ -284,39 +400,146 @@ impl<F: Frontend> Operation<F> {
                     .push(ChipCall::TbbPath(TbbPath::Ladder, TbbMode::Normal))
                     // The band follows below.
                     .push(ChipCall::TrfPath(TxPath::Mute, TxMode::Normal));
-                push_restore(&mut calls, Direction::Tx, tx);
-                self.part = Part::calls(calls, &mut self.control.chip);
+                push_restore(&mut calls, Direction::Tx, tx, self.control.tx_nco);
+                self.calls(&calls);
                 Stage::UpTxPrepare { tx }
             }
             Stage::UpTxPrepare { tx } => {
                 // libusdr sets the run flags before reselecting the banks.
                 self.control.tx_running = tx.running;
-                let band = band_for(
-                    self.control.tx_lo,
-                    self.control.tx_bands.iter().map(|band| band.below_hz),
-                );
-                let antenna = self.control.tx_bands[band];
                 let mut calls = Calls::new();
-                calls
-                    .push(ChipCall::MacSet(tx.channels))
-                    .push(ChipCall::TrfPath(antenna.path, TxMode::Normal));
-                self.part = Part::calls(calls, &mut self.control.chip);
-                Stage::UpTxBand {
-                    switch: antenna.switch,
+                calls.push(ChipCall::MacSet(tx.channels));
+                self.lna_tx(Band::Current, &mut calls);
+                self.calls(&calls);
+                Stage::UpTxBand
+            }
+            Stage::UpTxBand => {
+                if let Some((direction, position)) = self.switch.take() {
+                    self.part = Part::Board(self.frontend.antenna_switch(direction, position));
                 }
-            }
-            Stage::UpTxBand { switch } => {
-                self.part = Part::Board(self.frontend.antenna_switch(Direction::Tx, switch));
                 Stage::Last
             }
-            Stage::TuneLock { synthesizer, hertz } => self.after_lock(synthesizer, hertz),
-            Stage::TuneBand { direction, switch } => {
-                self.part = Part::Board(self.frontend.antenna_switch(direction, switch));
-                Stage::Last
-            }
+            Stage::TddOff { hertz } => self.lock(Synthesizer::Tx, hertz, true),
+            Stage::TuneLock {
+                synthesizer,
+                hertz,
+                tdd,
+            } => self.after_lock(synthesizer, hertz, tdd),
+            Stage::Script { pieces, at } => self.next_piece(pieces, at),
             Stage::Done(outcome) => Stage::Done(outcome),
         };
         self.stage = next;
+    }
+
+    /// Expands the piece at `at` into the part to run, or finishes after the last.
+    fn next_piece(&mut self, pieces: Pieces, at: usize) -> Stage {
+        let Some(&piece) = pieces.list[..pieces.len].get(at) else {
+            return Stage::Done(Ok(()));
+        };
+        let mut calls = Calls::new();
+        match piece {
+            Piece::MacSet(mac) => {
+                calls.push(ChipCall::MacSet(mac));
+            }
+            Piece::LnaRx(band) => self.lna_rx(band, &mut calls),
+            Piece::LnaTx(band) => self.lna_tx(band, &mut calls),
+            Piece::Switch => {
+                if let Some((direction, position)) = self.switch.take() {
+                    self.part = Part::Board(self.frontend.antenna_switch(direction, position));
+                    return Stage::Script { pieces, at: at + 1 };
+                }
+            }
+            Piece::LoopbackOn => {
+                calls.push(ChipCall::TrfGain(TxGainStage::Loopback, 0));
+            }
+            Piece::PadRestore => {
+                // `-10 * tx_loss[]`, channel A's when A is selected (`reg_mac & 1`), else B's.
+                let control = &self.control;
+                let a = matches!(control.chip.mac(), Mac::A | Mac::Both);
+                let loss = control.tx_loss[usize::from(!a)];
+                calls.push(ChipCall::TrfGain(TxGainStage::Pad, -10 * i32::from(loss)));
+            }
+            Piece::RfeGains => {
+                calls.push(ChipCall::RfeGains);
+            }
+            Piece::RxPath(route) => {
+                let mut expanded = Pieces::new();
+                self.control.rx_path_pieces(route, &mut expanded);
+                return self.next_piece(expanded, 0);
+            }
+            Piece::TxPath(route) => {
+                let mut expanded = Pieces::new();
+                self.control.tx_path_pieces(route, &mut expanded);
+                return self.next_piece(expanded, 0);
+            }
+            Piece::Refuse(error) => return Stage::Done(Err(error)),
+        }
+        self.calls(&calls);
+        Stage::Script { pieces, at: at + 1 }
+    }
+
+    /// `_lms7002m_set_lna_rx`'s writes for the band `band` picks, its switch kept for a
+    /// [`Piece::Switch`], pushed onto `calls`; none when a signal leaves an explicit path
+    /// alone.
+    fn lna_rx(&mut self, band: Band, calls: &mut Calls) {
+        let control = &mut self.control;
+        // The stored band is used as it is (`_lms7002m_set_lna_*(d, d->*_cfg_path)`); a
+        // signal or streaming up recomputes an automatic path's.
+        if band != Band::Stored {
+            if control.rx_route == RxRoute::Auto {
+                control.rx_band = band_for(
+                    control.rx_lo,
+                    control.rx_bands.iter().map(|band| band.below_hz),
+                );
+            } else if band == Band::Signal {
+                return;
+            }
+        }
+        let antenna = control.rx_bands[control.rx_band];
+        if control.loopback {
+            calls
+                .push(ChipCall::RfePath(antenna.path, RxMode::LoopbackRf))
+                .push(ChipCall::TrfPath(
+                    TxPath::looped_from(antenna.path),
+                    TxMode::Loopback,
+                ));
+            self.switch = Some((Direction::Rx, antenna.loopback_switch));
+        } else {
+            calls.push(ChipCall::RfePath(antenna.path, RxMode::Normal));
+            self.switch = Some((Direction::Rx, antenna.switch));
+        }
+    }
+
+    /// `_lms7002m_set_lna_tx`'s writes, as [`Self::lna_rx`].
+    fn lna_tx(&mut self, band: Band, calls: &mut Calls) {
+        let control = &mut self.control;
+        // The stored band is used as it is (`_lms7002m_set_lna_*(d, d->*_cfg_path)`); a
+        // signal or streaming up recomputes an automatic path's.
+        if band != Band::Stored {
+            if control.tx_route == TxRoute::Auto {
+                control.tx_band = band_for(
+                    control.tx_lo,
+                    control.tx_bands.iter().map(|band| band.below_hz),
+                );
+            } else if band == Band::Signal {
+                return;
+            }
+        }
+        let antenna = control.tx_bands[control.tx_band];
+        if control.loopback {
+            let lna = if antenna.path == TxPath::Band1 {
+                RxPath::LnaW
+            } else {
+                RxPath::LnaL
+            };
+            calls
+                .push(ChipCall::RfePath(lna, RxMode::LoopbackRf))
+                .push(ChipCall::TrfPath(antenna.path, TxMode::Loopback));
+            self.switch = Some((Direction::Tx, antenna.loopback_switch));
+        } else {
+            calls.push(ChipCall::TrfPath(antenna.path, TxMode::Normal));
+            self.switch = Some((Direction::Tx, antenna.switch));
+        }
     }
 
     /// The stage after a CGEN tuning finished: the rate's writes once it locked, else the
@@ -334,7 +557,7 @@ impl<F: Frontend> Operation<F> {
         if tune.outcome() == Some(Ok(())) {
             self.control.clocks.cgen = candidate.cgen;
             let (calls, lml) = self.control.rate_writes(&request, candidate);
-            self.part = Part::calls(calls, &mut self.control.chip);
+            self.calls(&calls);
             return Stage::RateWrites { lml };
         }
         if attempt + 1 < CGEN_ATTEMPTS {
@@ -371,9 +594,24 @@ impl<F: Frontend> Operation<F> {
         }
     }
 
-    /// The stage after an LO synthesizer's tuning finished: on a lock with the path
-    /// running, the band follows the new LO (libusdr's `XSDR_*_LO_CHANGED` signal).
-    fn after_lock(&mut self, synthesizer: Synthesizer, hertz: u32) -> Stage {
+    /// Locks `synthesizer` on `hertz`; `tdd` for the TX synthesizer serving both.
+    fn lock(&mut self, synthesizer: Synthesizer, hertz: u32, tdd: bool) -> Stage {
+        let tune = self
+            .control
+            .chip
+            .sxx_tune(synthesizer, self.control.reference, hertz, tdd);
+        self.part = Part::Sxx(tune);
+        Stage::TuneLock {
+            synthesizer,
+            hertz,
+            tdd,
+        }
+    }
+
+    /// The stage after an LO synthesizer's tuning finished: on a lock, the LOs stored and,
+    /// for each running path the LO serves, libusdr's `XSDR_*_LO_CHANGED` signal: both
+    /// banks selected and an automatic path's band following the new LO.
+    fn after_lock(&mut self, synthesizer: Synthesizer, hertz: u32, tdd: bool) -> Stage {
         let Part::Sxx(tune) = self.part else {
             return Stage::Done(Err(ControlError::Tune(TuneError::OutOfRange)));
         };
@@ -383,51 +621,50 @@ impl<F: Frontend> Operation<F> {
             None => return Stage::Done(Err(ControlError::Tune(TuneError::OutOfRange))),
         }
         let control = &mut self.control;
-        let mut calls = Calls::new();
-        calls.push(ChipCall::MacSet(Mac::Both));
-        let (direction, switch) = match synthesizer {
-            Synthesizer::Rx => {
-                control.rx_lo = hertz;
-                if !control.rx_running.contains(&true) {
-                    return Stage::Done(Ok(()));
-                }
-                let band = band_for(hertz, control.rx_bands.iter().map(|band| band.below_hz));
-                let antenna = control.rx_bands[band];
-                calls.push(ChipCall::RfePath(antenna.path, RxMode::Normal));
-                (Direction::Rx, antenna.switch)
-            }
-            Synthesizer::Tx => {
-                control.tx_lo = hertz;
-                if !control.tx_running.contains(&true) {
-                    return Stage::Done(Ok(()));
-                }
-                let band = band_for(hertz, control.tx_bands.iter().map(|band| band.below_hz));
-                let antenna = control.tx_bands[band];
-                calls.push(ChipCall::TrfPath(antenna.path, TxMode::Normal));
-                (Direction::Tx, antenna.switch)
-            }
+        let (rx, tx) = match (synthesizer, tdd) {
+            (_, true) => (true, true),
+            (Synthesizer::Rx, false) => (true, false),
+            (Synthesizer::Tx, false) => (false, true),
         };
-        self.part = Part::calls(calls, &mut self.control.chip);
-        Stage::TuneBand { direction, switch }
+        if rx {
+            control.rx_lo = hertz;
+        }
+        if tx {
+            control.tx_lo = hertz;
+        }
+        let mut pieces = Pieces::new();
+        if rx && control.rx_running.contains(&true) {
+            pieces
+                .push(Piece::MacSet(Mac::Both))
+                .push(Piece::LnaRx(Band::Signal))
+                .push(Piece::Switch);
+        }
+        if tx && control.tx_running.contains(&true) {
+            pieces
+                .push(Piece::MacSet(Mac::Both))
+                .push(Piece::LnaTx(Band::Signal))
+                .push(Piece::Switch);
+        }
+        self.next_piece(pieces, 0)
     }
 }
 
 /// `lms7002m_streaming_up`'s restore loop for one direction: per streamed channel, its
-/// bank, its bandwidth (set, or the sample rate's) and the mixer bypassed (no NCO offset is
-/// ported).
-fn push_restore(calls: &mut Calls, direction: Direction, up: Up) {
+/// bank, its bandwidth (set, or the sample rate's) and its mixer at its NCO word
+/// (`rx_dsp`, `tx_dsp`), or bypassed.
+fn push_restore(calls: &mut Calls, direction: Direction, up: Up, nco: [Option<i32>; 2]) {
     let tsp = match direction {
         Direction::Rx => Tsp::Rx,
         Direction::Tx => Tsp::Tx,
     };
-    for (bank, bandwidth) in [Mac::A, Mac::B].into_iter().zip(up.bandwidths) {
+    for ((bank, bandwidth), nco) in [Mac::A, Mac::B].into_iter().zip(up.bandwidths).zip(nco) {
         // Only streamed channels have one.
         let Some(bandwidth) = bandwidth else {
             continue;
         };
         calls.push(ChipCall::MacSet(bank));
         push_bandwidth(calls, direction, bandwidth);
-        calls.push(ChipCall::TspCmix(tsp, 0));
+        calls.push(ChipCall::TspCmix(tsp, nco.unwrap_or(0)));
     }
 }
 
@@ -443,13 +680,13 @@ impl Control {
     pub fn sample_rate(self, request: RateRequest) -> Operation {
         let frontend = NoFrontend(());
         if !request.sound() {
-            return Operation::finished(self, frontend, Err(ControlError::InvalidRate));
+            return Operation::finished(&self, frontend, Err(ControlError::InvalidRate));
         }
         let candidate = match request.candidate(0) {
             Ok(candidate) => candidate,
-            Err(error) => return Operation::finished(self, frontend, Err(error)),
+            Err(error) => return Operation::finished(&self, frontend, Err(error)),
         };
-        let mut operation = Operation::finished(self, frontend, Ok(()));
+        let mut operation = Operation::finished(&self, frontend, Ok(()));
         operation.stage = operation.tune_cgen(request, 0, 0, candidate);
         operation.settle();
         operation
@@ -458,8 +695,9 @@ impl Control {
     /// Streams `channels` up in the receive direction (the RX half of
     /// `lms7002m_streaming_up`, with the stream's `flags`): the `LimeLight` maps, the
     /// AFE, the processor's decimation and enable, the low-band filter path and the DC
-    /// corrector; then the channels run, the band follows the RX LO with the board's
-    /// switch, and each channel's bandwidth and mixer are restored.
+    /// corrector; then the channels run, the path's band is selected with the board's
+    /// switch (an automatic path's following the RX LO), and each channel's bandwidth and
+    /// mixer are restored.
     #[must_use]
     pub fn streaming_up_rx<F: Frontend>(
         self,
@@ -476,8 +714,9 @@ impl Control {
     ///
     /// RX as [`Self::streaming_up_rx`]. Then TX: its processor's interpolation and
     /// enable, the ladder filter path, the front end on with no band, each channel's
-    /// bandwidth and mixer restored; then the channels run and the band follows the TX LO
-    /// with the board's switch. The `LimeLight` maps and the AFE cover both directions.
+    /// bandwidth and mixer restored; then the channels run and the path's band is
+    /// selected with the board's switch (an automatic path's following the TX LO). The
+    /// `LimeLight` maps and the AFE cover both directions.
     ///
     /// No channel in a direction is [`ControlError::NoChannel`], and a streamed channel
     /// with neither a set bandwidth nor a sample rate [`ControlError::NoRate`], both
@@ -502,7 +741,7 @@ impl Control {
             });
         let (rx_up, tx_up) = match planned {
             Ok(planned) => planned,
-            Err(error) => return Operation::finished(self, frontend, Err(error)),
+            Err(error) => return Operation::finished(&self, frontend, Err(error)),
         };
         self.rx_map = frontend.lml_map(true, rx_up.channels, rx_flags);
         if let (Some(up), Some((_, flags))) = (tx_up, tx) {
@@ -606,11 +845,11 @@ impl Control {
 
     /// Tunes an LO synthesizer to `hertz` (`lms7002m_fe_set_freq`, FDD): 0 stops it,
     /// ignoring write failures as libusdr does. After a lock, a running path's band
-    /// follows the new LO: both banks selected, the band's front end set and the board's
-    /// switch moved.
+    /// follows the new LO: both banks selected, an automatic path's band front end set and
+    /// the board's switch moved.
     #[must_use]
     pub fn tune<F: Frontend>(
-        mut self,
+        self,
         frontend: F,
         synthesizer: Synthesizer,
         hertz: u32,
@@ -620,14 +859,26 @@ impl Control {
             calls.push(ChipCall::SxxDisable(synthesizer));
             return Operation::start(self, frontend, Stage::TuneOff, &calls);
         }
-        let tune = self
-            .chip
-            .sxx_tune(synthesizer, self.reference, hertz, false);
-        let mut operation = Operation::finished(self, frontend, Ok(()));
-        operation.part = Part::Sxx(tune);
-        operation.stage = Stage::TuneLock { synthesizer, hertz };
+        let mut operation = Operation::finished(&self, frontend, Ok(()));
+        operation.stage = operation.lock(synthesizer, hertz, false);
         operation.settle();
         operation
+    }
+
+    /// Tunes both directions to `hertz` on the TX synthesizer (`lms7002m_fe_set_freq`,
+    /// `RFIC_LMS7_TX_AND_RX_TDD`): 0 stops the TX synthesizer; otherwise the RX one is
+    /// stopped and the TX one locked with its LO shared, write failures before the lock
+    /// ignored as libusdr does. After a lock both LOs are `hertz` and each running path
+    /// follows, RX first.
+    #[must_use]
+    pub fn tune_tdd<F: Frontend>(self, frontend: F, hertz: u32) -> Operation<F> {
+        let mut calls = Calls::new();
+        if hertz == 0 {
+            calls.push(ChipCall::SxxDisable(Synthesizer::Tx));
+            return Operation::start(self, frontend, Stage::TuneOff, &calls);
+        }
+        calls.push(ChipCall::SxxDisable(Synthesizer::Rx));
+        Operation::start(self, frontend, Stage::TddOff { hertz }, &calls)
     }
 }
 
@@ -650,6 +901,7 @@ impl<F: Frontend> Sequence for Operation<F> {
                 self.stage = Stage::Done(Ok(()));
                 return Ok(());
             }
+            Err(_) if matches!(self.stage, Stage::TddOff { .. }) => self.advance(),
             Err(failure) => {
                 self.failed = true;
                 return Err(failure);
@@ -665,13 +917,12 @@ mod tests {
     use hal::{FpgaAccess, SpiAddr};
 
     use super::*;
-    use crate::TxPath;
     use crate::chip::LmlMap;
     use crate::chip::Lms7002m;
     use crate::ctrl::{Clocks, RateFlags, RxAntenna, TxAntenna};
     use crate::reg::Reg;
     extern crate std;
-    use crate::regs::{LmlControl, LmlSample, RxPath};
+    use crate::regs::{LmlControl, LmlSample};
     use std::vec::Vec;
 
     /// A created chip's control state on a 26 MHz reference.
@@ -680,11 +931,14 @@ mod tests {
             below_hz: u64::MAX,
             path: RxPath::LnaW,
             switch: 0,
+            loopback_switch: 1,
         };
         let tx = TxAntenna {
             below_hz: u64::MAX,
             path: TxPath::Band1,
             switch: 0,
+            loopback_switch: 1,
+            names: ["W", "B1"],
         };
         Control::new(
             Lms7002m::created(SpiAddr(0)),
