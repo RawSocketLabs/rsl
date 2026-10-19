@@ -8,6 +8,7 @@ use std::fmt;
 
 use lms7002m_sim::Lms7002m;
 use sdr_frontend_sim::{FrontEnd, Model};
+use sdr_stream_sim::{RxEngine, SyncUnit};
 
 use crate::chips::{Dac80501, I2cChip, Lp8758};
 use crate::trace::Op;
@@ -154,6 +155,13 @@ pub struct SimBoard {
     rx_phy_script: VecDeque<u32>,
     /// What the RX PHY port returns once the script is spent.
     rx_phy_after: u32,
+    /// The RX stream engine (`sdr-stream-sim`'s, the uSDR sim's model): the same
+    /// `ipblks/streams` cores at the same registers (`m2_lm7_1.c`'s `/ll/srx/0`,
+    /// `/ll/rfe/0` and `/ll/sync/0` match `m2_lm6_1.c`'s), so the same assumptions hold,
+    /// channel B on lanes 2 and 3 as libusdr's `sfe_rx4_configure` puts it.
+    rx: RxEngine,
+    /// The stream sync unit, which releases the RX engine's blocks.
+    sync: SyncUnit,
     /// Virtual time, advanced only by [`SimBoard::sleep_us`].
     now_us: u64,
     /// Every operation performed, in order.
@@ -181,6 +189,8 @@ impl SimBoard {
             front_end: None,
             rx_phy_script: VecDeque::new(),
             rx_phy_after: 0,
+            rx: RxEngine::default(),
+            sync: SyncUnit::default(),
             now_us: 0,
             trace: Vec::new(),
         }
@@ -258,6 +268,8 @@ impl SimBoard {
     /// Writes a 32-bit FPGA register.
     pub fn write_reg(&mut self, addr: u32, value: u32) {
         self.trace.push(Op::RegWrite { addr, value });
+        self.rx.on_write(addr, value);
+        self.sync.on_write(addr, value);
         if addr == REG_GPO {
             let [bank, ..] = value.to_be_bytes();
             self.gpo.insert(bank & 0x7f, value & 0xff);
@@ -274,6 +286,15 @@ impl SimBoard {
         };
         self.trace.push(Op::RegRead { addr, value });
         value
+    }
+
+    /// The next RX block the stream engine delivers, with its two out-of-band words, or
+    /// `None` while the engine is stopped or the sync unit holds it. Below the register
+    /// seam libusdr and `xsdr` share, so not traced. No TX core is modelled, so only the
+    /// RX activity can release it.
+    pub fn rx_next_block(&mut self) -> Option<(Vec<u8>, [u64; 2])> {
+        let released = self.sync.releases(self.rx.running(), false);
+        self.rx.next_block(released)
     }
 
     /// Shifts one 32-bit word through the SPI device on `bus` and returns the word read back.

@@ -14,6 +14,7 @@ lms7002m.workspace = true
 hal = { workspace = true, features = ["std"] }
 lp8758.workspace = true
 sdr-frontend = { workspace = true, features = ["std"] }
+sdr-stream.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

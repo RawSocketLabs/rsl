@@ -5,7 +5,8 @@
 // device, and the PCIe entry returns the simulated LMS7 family (m2_lm7_1) board.
 //
 // Pattern copied from the uSDR oracle's shim (devices/sdr/usdr/oracle/shim/sim_plugin.c),
-// trimmed to the control plane: no streams, no PCIe layout or ABI helpers.
+// trimmed to the control plane and the RX stream: no TX stream, no PCIe layout or ABI
+// helpers.
 
 #include <errno.h>
 #include <stddef.h>
@@ -22,6 +23,9 @@
 int xsdr_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
                           const void* pout);
 void xsdr_oracle_sleep_us(unsigned long long us);
+// Fills `out` (`len` bytes) with the board's next RX block and `oob` with its two words.
+// Returns 0, or -ETIMEDOUT while the board's stream engine is stopped.
+int xsdr_oracle_rx_next(void* out, size_t len, unsigned long long* oob);
 
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
@@ -33,6 +37,8 @@ int usleep(useconds_t us)
 struct sim_dev {
     lowlevel_dev_t ll;  // must be first: libusdr casts lldev_t to it
     device_id_t id;
+    void* rx_block;     // the RX block lent to libusdr between wait and release
+    size_t rx_block_size;
 };
 
 static int sim_generic_get(lldev_t dev, int op, const char** pout)
@@ -59,13 +65,88 @@ static int sim_destroy(lldev_t dev)
     if (dev->pdev) {
         dev->pdev->destroy(dev->pdev);
     }
+    free(((struct sim_dev*)dev)->rx_block);
     free(dev);
+    return 0;
+}
+
+// The PCIe kernel driver's DMA limits, as the uSDR shim states them (dmacap 0x855, the
+// XSDR's `/ll/srx/0/dmacap` too): exactly 32 buffers, each at most 1 MiB.
+enum { SIM_DMA_BUFFERS = 32, SIM_DMA_MAX_BLOCK = 1 << 20 };
+
+// RX stream setup as the PCIe transport reports it (stream 0). The kernel's own register
+// writes sit below the ls_op seam xsdr shares, so they are not traced. The TX stream
+// (stream 1) is not modelled.
+static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_params_t* params,
+                                 stream_t* channel)
+{
+    (void)subdev;
+    struct sim_dev* d = (struct sim_dev*)dev;
+    if (params->streamno != 0) {
+        return -EOPNOTSUPP;
+    }
+    if (params->buffer_count != SIM_DMA_BUFFERS || params->block_size == 0 ||
+        params->block_size > SIM_DMA_MAX_BLOCK) {
+        return -EINVAL;
+    }
+    void* block = realloc(d->rx_block, params->block_size);
+    if (block == NULL) {
+        return -ENOMEM;
+    }
+    d->rx_block = block;
+    d->rx_block_size = params->block_size;
+    params->underlying_fd = -1;
+    params->out_mtu_size = params->block_size;
+    *channel = params->streamno;
+    return 0;
+}
+
+static int sim_stream_deinitialize(lldev_t dev, subdev_t subdev, stream_t channel)
+{
+    (void)dev;
+    (void)subdev;
+    (void)channel;
+    return 0;
+}
+
+// The board's next block, or a timeout at once while its stream engine is stopped. The
+// out-of-band record is always written, so libusdr's timeout log reads defined memory.
+static int sim_recv_dma_wait(lldev_t dev, subdev_t subdev, stream_t channel, void** buffer,
+                             void* oob_ptr, unsigned* oob_size, unsigned timeout)
+{
+    (void)subdev;
+    (void)channel;
+    (void)timeout;
+    struct sim_dev* d = (struct sim_dev*)dev;
+    unsigned long long oob[2] = { 0, 0 };
+    int res = d->rx_block == NULL
+        ? -ETIMEDOUT
+        : xsdr_oracle_rx_next(d->rx_block, d->rx_block_size, oob);
+    *buffer = res == 0 ? d->rx_block : NULL;
+    if (oob_ptr != NULL && oob_size != NULL) {
+        unsigned size = *oob_size < sizeof(oob) ? *oob_size : (unsigned)sizeof(oob);
+        memcpy(oob_ptr, oob, size);
+        *oob_size = size;
+    }
+    return res;
+}
+
+static int sim_recv_dma_release(lldev_t dev, subdev_t subdev, stream_t channel, void* buffer)
+{
+    (void)dev;
+    (void)subdev;
+    (void)channel;
+    (void)buffer;
     return 0;
 }
 
 static lowlevel_ops_t s_sim_ops = {
     .generic_get = sim_generic_get,
     .ls_op = sim_ls_op,
+    .stream_initialize = sim_stream_initialize,
+    .stream_deinitialize = sim_stream_deinitialize,
+    .recv_dma_wait = sim_recv_dma_wait,
+    .recv_dma_release = sim_recv_dma_release,
     .destroy = sim_destroy,
 };
 
