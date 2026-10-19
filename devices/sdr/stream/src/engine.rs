@@ -288,14 +288,31 @@ impl TxControl {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxLanes {
     /// The lanes muted: bit 0 lane A, bit 1 lane B.
-    pub mute: u8,
+    mute: u8,
 
     /// Lanes A and B swapped, so a stream's first channel plays on lane B.
-    pub swap: bool,
+    swap: bool,
 
     /// The stream's channel count as a power of two (`MODE_FMT`): 0 for one, 1 for two;
     /// only starting the core writes it.
-    pub channels_log2: u8,
+    channels_log2: u8,
+}
+
+impl TxLanes {
+    /// The lane use muting `mute` (bit 0 lane A, bit 1 lane B), with lanes A and B
+    /// swapped if `swap`, for a stream of `2^channels_log2` channels; `None` when `mute`
+    /// or `channels_log2` do not fit their two-bit control-word fields.
+    #[must_use]
+    pub const fn new(mute: u8, swap: bool, channels_log2: u8) -> Option<Self> {
+        if mute > 0b11 || channels_log2 > 0b11 {
+            return None;
+        }
+        Some(Self {
+            mute,
+            swap,
+            channels_log2,
+        })
+    }
 }
 
 /// The extended TX core's front-end command register (`CSR_TFE4_BASE`,
@@ -708,8 +725,8 @@ mod tests {
 
     // Expected values: libusdr's shifts worked by hand.
 
-    /// The accesses a sequence made, in order, and how it ended; no allocation, as the
-    /// `no_std` witness compiles these tests too.
+    /// The accesses a sequence made, in order, and how it ended; fixed-size, with no
+    /// allocation.
     struct Run {
         /// The accesses, the first `len` made.
         accesses: [FpgaAccess; MAX_STEPS],
@@ -877,6 +894,16 @@ mod tests {
     fn the_largest_composition_fits() {
         let format = RxFormat::new(1, 1, 1, 0).expect("valid");
         assert_eq!(EngineSequence::rx_configure(&format).len, MAX_STEPS);
+    }
+
+    #[test]
+    fn tx_lanes_refuse_values_wider_than_their_two_bit_fields() {
+        assert!(TxLanes::new(0b11, true, 0b11).is_some());
+        assert!(TxLanes::new(0b100, false, 0).is_none(), "mute is two bits");
+        assert!(
+            TxLanes::new(0, false, 0b100).is_none(),
+            "the channel count is two bits"
+        );
     }
 
     #[test]

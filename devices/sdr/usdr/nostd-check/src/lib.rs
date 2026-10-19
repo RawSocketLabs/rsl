@@ -397,11 +397,7 @@ pub fn stream_controls() -> Result<usize, &'static str> {
         .throttle_rx(None)
         .signal_rx_ready()
         .update_tx_lanes(one_channel(3))
-        .update_tx_lanes(TxLanes {
-            mute: 1,
-            swap: true,
-            channels_log2: 0,
-        })
+        .update_tx_lanes(TxLanes::new(1, true, 0).expect("in range"))
         .extended_tx_mute(3);
     let mut accesses = engine(controls, 0)?;
     for trigger in triggers {
@@ -415,11 +411,7 @@ pub fn stream_controls() -> Result<usize, &'static str> {
 
 /// One unswapped TX channel muting `mute`.
 const fn one_channel(mute: u8) -> TxLanes {
-    TxLanes {
-        mute,
-        swap: false,
-        channels_log2: 0,
-    }
+    TxLanes::new(mute, false, 0).expect("in range")
 }
 
 /// Runs the real DSP corrections: the RX DC correction, both chains' IQ correction terms,

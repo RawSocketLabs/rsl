@@ -119,14 +119,12 @@ impl TxLaneUse {
     /// How starting the core sets its lanes (`_sfetrx4_op` starting TX): the mute and
     /// swap, and the channel count (`fe_chans`).
     pub(crate) const fn lanes(self) -> TxLanes {
-        TxLanes {
-            mute: self.mute.bits(),
-            swap: self.swap,
-            channels_log2: match self.channels {
-                TxChannels::Channel0 | TxChannels::Channel1 => 0,
-                TxChannels::Both => 1,
-            },
-        }
+        let channels_log2 = match self.channels {
+            TxChannels::Channel0 | TxChannels::Channel1 => 0,
+            TxChannels::Both => 1,
+        };
+        TxLanes::new(self.mute.bits(), self.swap, channels_log2)
+            .expect("invariant: a TxMute is two bits and the channel count at most two")
     }
 
     /// Moves the stream to `channels`, of the same count (`_sfetrx4_option_set`'s
