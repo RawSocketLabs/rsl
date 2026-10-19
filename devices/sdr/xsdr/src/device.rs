@@ -1,12 +1,14 @@
 //! The public device: identification, supply bring-up, RFIC power-up, sample rate, LO
 //! tuning, gains, bandwidths and close; the other RF and baseband controls are
-//! `controls`'.
+//! `controls`', the RX stream `stream`'s.
 
 use std::fmt;
 
 mod controls;
+mod stream;
 
 pub use controls::{IqCorrection, LmlRxMode, TxGenerator};
+pub use stream::{RxChannels, RxPacket};
 
 use hal::{Sequence, run_sequence};
 use lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Gain, Operation};
@@ -71,6 +73,13 @@ pub struct Device {
     /// The front end the open's probe brought up, if any, with the state libusdr keeps
     /// for it.
     front_end: Option<FrontEnd>,
+
+    /// The hardware channel counts RX and TX streams last reported (`hwchans_rx`,
+    /// `hwchans_tx`), 2 (MIMO) from `xsdr_init`.
+    hw_channels: [u8; 2],
+
+    /// The RX stream, once created.
+    rx_stream: Option<stream::RxStream>,
 }
 
 impl Device {
@@ -112,6 +121,8 @@ impl Device {
             rate: RateState::default(),
             lo_last: [0; 2],
             front_end,
+            hw_channels: [2; 2],
+            rx_stream: None,
         })
     }
 
@@ -172,17 +183,10 @@ impl Device {
         if let Some(rate) = [rx, tx].into_iter().find(|&rate| !in_range(rate)) {
             return Err(Error::InvalidRate(rate));
         }
-        let [.., phy] = self.hwid.to_be_bytes();
-        if phy & PHY_UNPORTED != 0 {
-            return Err(Error::UnsupportedGateware(phy));
-        }
+        let gateware = self.gateware()?;
         if !self.powered {
             self.power_up()?;
         }
-        let gateware = Gateware {
-            tx_mmcm: phy & PHY_TX_MMCM != 0,
-            rx_port1: phy & PHY_LML2_IS_RX == 0,
-        };
         let mut rate = SetSampleRate::new(
             &self.control,
             self.rate,
@@ -223,6 +227,23 @@ impl Device {
     /// As [`Self::set_rx_frequency`].
     pub fn set_tx_frequency(&mut self, hertz: u32) -> Result<(), Error> {
         self.tune(Synthesizer::Tx, hertz)
+    }
+
+    /// The gateware's link features, from HWID's PHY bits.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedGateware`] for an RX or shared MMCM or a DUC/DDC, whose paths
+    /// are not ported.
+    fn gateware(&self) -> Result<Gateware, Error> {
+        let [.., phy] = self.hwid.to_be_bytes();
+        if phy & PHY_UNPORTED != 0 {
+            return Err(Error::UnsupportedGateware(phy));
+        }
+        Ok(Gateware {
+            tx_mmcm: phy & PHY_TX_MMCM != 0,
+            rx_port1: phy & PHY_LML2_IS_RX == 0,
+        })
     }
 
     /// `xsdr_rfic_fe_set_freq` on an XSDR: skipped when unchanged, otherwise tuned, the
@@ -277,9 +298,11 @@ impl Device {
         }
     }
 
-    /// Closes the board as libusdr's `usdr_dmd_close` does on an XSDR without streams
-    /// (`xsdr_dtor`): the LMS7002M's receive and transmit paths brought down and the chip
-    /// destroyed, its power control, LDOs and the LED off, the TX MMCM powered down.
+    /// Closes the board as libusdr's `usdr_dmd_close` does on an XSDR: an RX stream's DMA
+    /// and front end stopped and its transport buffers released, their failures ignored as
+    /// libusdr ignores them; then `xsdr_dtor`: the LMS7002M's receive and transmit paths
+    /// brought down and the chip destroyed, its power control, LDOs and the LED off, the TX
+    /// MMCM powered down.
     ///
     /// The chip writes follow its cached state, so a board never powered up gets the words
     /// libusdr sends from its zeroed state. A device dropped without `close` leaves the
@@ -291,6 +314,10 @@ impl Device {
     /// that ends streaming-down, a `lms7002m_destroy` write or a board write. Failed writes
     /// earlier in streaming-down are skipped without an error, as libusdr skips them.
     pub fn close(mut self) -> Result<(), Error> {
+        if self.rx_stream.take().is_some() {
+            let _ = self.halt_rx();
+            let _ = self.bus.rx_stream_close();
+        }
         run(&mut *self.bus, &mut Close::new(*self.control.chip()))
     }
 
@@ -309,6 +336,7 @@ impl fmt::Debug for Device {
             .field("pmic", &self.pmic)
             .field("powered", &self.powered)
             .field("front_end", &self.front_end)
+            .field("rx_stream", &self.rx_stream.is_some())
             .finish_non_exhaustive()
     }
 }

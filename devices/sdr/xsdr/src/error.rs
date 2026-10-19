@@ -44,8 +44,8 @@ pub enum Error {
         found: u32,
     },
 
-    /// No chip answered where one must be. Not produced yet: no ported sequence reports
-    /// it; it keeps `hal`'s sequence failures mapped one to one.
+    /// No chip answered where one must be: the RX DMA engine's status reading dead
+    /// (libusdr's `-EIO`, "DMA engine is dead").
     #[error("{0} not found")]
     ChipMissing(&'static str),
 
@@ -116,6 +116,64 @@ pub enum Error {
     /// register: refused before any bus access.
     #[error("correction value out of range")]
     InvalidCorrection,
+
+    /// A stream already exists: libusdr's `-EBUSY`.
+    #[error("a stream already exists")]
+    AlreadyStreaming,
+
+    /// No stream exists to start, read or stop.
+    #[error("no stream exists")]
+    NotStreaming,
+
+    /// Both RX channels asked of a double-pumped link, which carries one: libusdr's
+    /// `-EINVAL` ("In double pump mode only SISO mode is allowed").
+    #[error("a double-pumped link streams one channel")]
+    DoublePumpedMimo,
+
+    /// No burst split carries packets of this many samples: libusdr's `-EINVAL`.
+    #[error("{0} samples per packet cannot be streamed")]
+    UnsupportedPacketSize(u32),
+
+    /// The transport failed to set up, deliver or release stream buffers.
+    #[error("stream transport failed")]
+    Stream(#[source] BusError),
+
+    /// No packet arrived in time: libusdr's `-ETIMEDOUT`.
+    #[error("no packet arrived in time")]
+    Timeout,
+
+    /// The transport delivered a block shorter than a packet.
+    #[error("RX block of {got} bytes, expected {expected}")]
+    #[non_exhaustive]
+    ShortRxBlock {
+        /// The packet's bytes.
+        expected: usize,
+
+        /// The block's.
+        got: usize,
+    },
+
+    /// A receive given other than one buffer per channel of the stream.
+    #[error("{got} buffers for a stream of {expected} channels")]
+    #[non_exhaustive]
+    ChannelBuffers {
+        /// The stream's channels.
+        expected: usize,
+
+        /// The buffers given.
+        got: usize,
+    },
+
+    /// A receive buffer shorter than a packet.
+    #[error("buffer of {got} samples, a packet is {needed}")]
+    #[non_exhaustive]
+    BufferTooSmall {
+        /// The packet's samples.
+        needed: usize,
+
+        /// The buffer's.
+        got: usize,
+    },
 
     /// The front-end probe failed. Probing automatically, as open does, a board that fails
     /// is logged and skipped as libusdr skips it, so open reports none of these yet.

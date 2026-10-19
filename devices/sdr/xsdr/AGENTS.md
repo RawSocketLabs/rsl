@@ -11,16 +11,17 @@ open with every board libusdr brings up there (`sdr-frontend`'s, shared with the
 and LSDr), RFIC power-up, sample rate (on gateware with a TX MMCM), RX/TX LO tuning (FDD
 and TDD), gains, baseband bandwidths, explicit paths with the RF loopback, the baseband
 NCOs, the DC and I/Q corrections, the TX generator and mute, the baseband and digital
-loopbacks, and close; see [PORTING.md](PORTING.md) for done,
+loopbacks, the RX stream (`ci16` on channel A, B or both) and close; see
+[PORTING.md](PORTING.md) for done,
 divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
 reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
 secure EEPROM. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `hal`, `lp8758`, `lms7002m` and `sdr-frontend` (`../frontend`, the front-end board probe and bring-ups) |
-| `sim/` | `xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, the front-end boards on the M.2 connector (`sdr-frontend-sim`, `../frontend/sim`, shared with `usdr-sim`), virtual clock, op trace |
-| `oracle/` | `xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c` |
+| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `hal`, `lp8758`, `lms7002m`, `sdr-frontend` (`../frontend`, the front-end board probe and bring-ups) and `sdr-stream` (`../stream`, the stream engine) |
+| `sim/` | `xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, the front-end boards on the M.2 connector (`sdr-frontend-sim`, `../frontend/sim`, shared with `usdr-sim`), the RX stream engine and sync unit (`sdr-stream-sim`, `../stream/sim`, likewise shared), virtual clock, op trace |
+| `oracle/` | `xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c`, its RX stream's buffers included |
 | `nostd-check/` | `xsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `usdr`'s; `scripts/ci/portable.py xsdr` holds its dependencies to the driver's |
 | `../chips/lms7002m/` | `lms7002m` (unpublished, root workspace member, `no_std`) | The LMS7002M's register values, `lms7002m_create` (`Create`), the `hw/lms7002m` operations on its cached state (`Lms7002m`, CGEN/SXX tuning machines) and `lms7002m_ctrl.c`'s control code (`ctrl`: `Control`, `Operation`, the board's `Frontend` hooks), shared with `limesdr` (`../limesdr`) |
 | `../chips/lms7002m/sim/` | `lms7002m-sim` (unpublished, root workspace member) | The LMS7002M register file `sim` uses, shared with `limesdr-sim` (extracted 2026-10-12 when LimeSDR became its second consumer; the goldens did not change). Its assumptions below hold for every consumer |
@@ -46,6 +47,13 @@ Mirrors `usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
   creates it) and the board's rate and LO state, and runs the portable sequences and
   control operations with `hal`'s blocking `run_sequence`, keeping the state an
   operation leaves even when it fails.
+- `src/device/stream.rs`: the RX stream (`create_rx_stream`, `start_rx_stream`,
+  `receive`, `stop_rx_stream`): `m2_lm7_1.c`'s create and `xsdr_prepare` composed from
+  the control code, `SetSampleRate::calibrate_link` and the stream engine's sequences and
+  burst arithmetic, which are `sdr-stream`'s (`../stream`, shared with the uSDR, whose
+  gateware has the same engine at the same registers); which channel rides which lanes
+  (`RxChannels`) and the RF side stay here. Blocking code over the bus, as the uSDR's
+  `board/stream.rs`.
 - `src/board.rs`: the XSDR's wiring and setpoints (`XSDR_SUPPLIES`, `XSDR_LMS`,
   `REFERENCE_HZ`), each citing the libusdr call it reproduces.
 - `src/portable/`: hand-written sans-I/O `Sequence` machines (`IdentityRead`, `Supplies`,
@@ -125,6 +133,13 @@ Each is stated again, with its evidence, where it is encoded.
   error paths. The TX PHY port (57) is plain storage: no MMCM or DRP behind it.
   `SimBoard::with_lms_comparator_failure` forces the VCO comparators to "fail" at one cap
   code (fault injection, not a model).
+- RX stream engine and sync unit: `sdr-stream-sim`'s models, the uSDR sim's, with their
+  assumptions stated there (a counting pattern, channel B on lanes 2 and 3, blocks ready
+  at once, no losses); the gateware is the same `ipblks/streams` cores at the same
+  registers (`m2_lm7_1.c`'s `/ll/srx/0`, `/ll/rfe/0`, `/ll/sync/0`). No TX core, so only
+  RX activity releases the sync unit. The RX DMA status (register 6) is plain storage,
+  0: alive and idle. The shim reports the stream's buffers as the `PCIe` transport does
+  (32, at most 1 MiB each).
 - HWID PHY bits: 0 by default, which libusdr's rate path treats as gateware without a TX
   MMCM (its calibration then fails); the rate tests use `with_hwid(0x0030_0020)`.
 - FPGA registers: plain storage, unwritten reads 0. GPO writes latch `data & 0xff` per
@@ -200,15 +215,17 @@ LMK05318 never locks (repeated lock polls collapsed: libusdr's count follows its
 clock), compared whole. `oracle/tests/rate_parity.rs` drives libusdr's `/dm/rate`,
 `/dm/sdr/0/{rx,tx}/frequency`, gain and bandwidth paths and compares everything between
 the open and the close; `oracle/tests/controls_parity.rs` does the same for the paths,
-loopbacks, TDD, NCO, correction and generator paths (`Device`'s `controls`).
+loopbacks, TDD, NCO, correction and generator paths (`Device`'s `controls`), and
+`oracle/tests/stream_parity.rs` for the RX stream, from the open to the close inclusive,
+with every packet's bytes.
 
 ## Verify
 
 ```sh
-cargo fmt -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim --check
-cargo clippy -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim --all-targets -- -D warnings
-cargo test -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim
-cargo check -p lms7002m -p sdr-frontend --target thumbv7em-none-eabi
+cargo fmt -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim --check
+cargo clippy -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim --all-targets -- -D warnings
+cargo test -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim
+cargo check -p lms7002m -p sdr-frontend -p sdr-stream --target thumbv7em-none-eabi
 python3 scripts/ci/portable.py xsdr
 cargo fmt --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings
@@ -234,8 +251,9 @@ by a lock: one is open at a time per process.
 - XTRX revision 4 (MCP4725 at 0x62) is not modelled.
 - The MMCM behind DRP (TX port served by `m2_lm7_1` as `REG_CFG_PHY_1` writes with busy
   bit 9 and lock bit 8; RX port via the DRP class) must be modelled before RX/shared-MMCM
-  gateware or TX streaming. libusdr's RX MMCM path indexes the 64-entry `mmcm_rom` with
-  feedback dividers up to 126 at low rates.
+  gateware or TX streaming. libusdr's MMCM path indexes the 64-entry `mmcm_rom` with
+  feedback dividers up to 126 at low rates; refusing those rates is pending owner review
+  (deferred; `PORTING.md`, the TX streams row).
 - CI runs the detached oracle as the `xsdr-oracle` profile and the fixture as
   `xsdr-portable` (host only); a change to `xsdr` or to the shared crates it builds on
   (`sdr-frontend` included) selects both, a change to the vendored C (`devices/vendor`)

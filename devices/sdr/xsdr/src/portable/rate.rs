@@ -72,6 +72,10 @@ pub(crate) struct RateState {
 
     /// The TX rate last set (`s_txrate`).
     pub(crate) tx: u32,
+
+    /// An RX stream was created double-pumped, so SISO (`siso_sdr_active_rx`): the link
+    /// calibration no longer raises the supplies. libusdr never clears it.
+    pub(crate) siso_rx: bool,
 }
 
 /// Why a rate was not set.
@@ -231,6 +235,10 @@ impl Part {
 /// `xsdr_set_samplerate_ex` with libusdr's `/dm/rate` flags (maximum converter rate,
 /// extended CGEN), on a powered XSDR.
 #[derive(Clone, Copy, Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent facts of libusdr's calibration and the machine's own failure"
+)]
 pub(crate) struct SetSampleRate {
     /// The LMS7002M control state.
     control: Control,
@@ -259,6 +267,9 @@ pub(crate) struct SetSampleRate {
     /// The RX processor's self-test had finished at the last check.
     bist_rx_done: bool,
 
+    /// Only the link calibration runs ([`SetSampleRate::calibrate_link`]).
+    link_only: bool,
+
     /// Where the setting is.
     stage: Stage,
 
@@ -278,7 +289,42 @@ impl SetSampleRate {
         pmic: I2cAddr,
         (rx, tx): (u32, u32),
     ) -> Self {
-        let mut rate = Self {
+        let mut rate = Self::idle(control, state, gateware, pmic, (rx, tx));
+        if state.afe_active {
+            rate.start_rate();
+        } else {
+            let afe = rate.control.chip().afe_enable([true; 2], [true; 2]);
+            rate.part = Part::Chip(afe);
+        }
+        rate.settle();
+        rate
+    }
+
+    /// `_xsdr_calibrate_lml` alone, as a stream create runs it after streaming up
+    /// (`xsdr_prepare`): the supply boosts for the rates last set, then the `LimeLight`
+    /// calibration and its verdict; no rate, bank selection or self-test wait.
+    pub(crate) fn calibrate_link(
+        control: &Control,
+        state: RateState,
+        gateware: Gateware,
+        pmic: I2cAddr,
+    ) -> Self {
+        let mut rate = Self::idle(control, state, gateware, pmic, (state.rx, state.tx));
+        rate.link_only = true;
+        rate.start_calibration();
+        rate.settle();
+        rate
+    }
+
+    /// A setting of `rx` and `tx` that has done nothing yet.
+    fn idle(
+        control: &Control,
+        state: RateState,
+        gateware: Gateware,
+        pmic: I2cAddr,
+        (rx, tx): (u32, u32),
+    ) -> Self {
+        Self {
             control: *control,
             state,
             gateware,
@@ -308,20 +354,18 @@ impl SetSampleRate {
                 badness: u64::MAX,
             },
             bist_rx_done: false,
+            link_only: false,
             stage: Stage::Afe,
             part: Part::Step(Step::wait(0)),
             failed: false,
-        };
-        if state.afe_active {
-            rate.start_rate();
-        } else {
-            let afe = rate.control.chip().afe_enable([true; 2], [true; 2]);
-            rate.part = Part::Chip(afe);
         }
-        while rate.outcome().is_none() && rate.part.next().is_none() {
-            rate.advance();
+    }
+
+    /// Advances past parts with nothing to do, up to the next action or the outcome.
+    fn settle(&mut self) {
+        while self.outcome().is_none() && self.part.next().is_none() {
+            self.advance();
         }
-        rate
     }
 
     /// The control state, as the setting has left it.
@@ -450,12 +494,19 @@ impl SetSampleRate {
         }
         self.state.rx = self.request.rx;
         self.state.tx = self.request.tx;
+        self.start_calibration();
+    }
+
+    /// `_xsdr_calibrate_lml` from its start: without a TX MMCM the fixed delay, else the
+    /// supply boost above 70 MS/s unless RX streams SISO, then the calibration.
+    fn start_calibration(&mut self) {
         self.was_running = self.control.rx_running().contains(&true);
         if !self.gateware.tx_mmcm {
             self.step(Stage::TxDelay, Step::fpga(TX_DEFAULT_DELAY));
             return;
         }
-        if self.state.rx > BOOST_RATE || self.state.tx > BOOST_RATE {
+        let fast = self.state.rx > BOOST_RATE || self.state.tx > BOOST_RATE;
+        if fast && !self.state.siso_rx {
             let (buck, voltage) = VIO_BOOST;
             self.pmic_write(Stage::VioBoost, buck, voltage);
             return;
@@ -676,6 +727,10 @@ impl SetSampleRate {
             self.stage = Stage::Done(Err(RateError::Calibration));
             return;
         }
+        if self.link_only {
+            self.stage = Stage::Done(Ok(()));
+            return;
+        }
         let batch = self.control.chip_mut().mac_set(Mac::A);
         self.chip(Stage::SelectA, batch);
     }
@@ -729,9 +784,7 @@ impl Sequence for SetSampleRate {
                 return Err(failure);
             }
         }
-        while self.outcome().is_none() && self.part.next().is_none() {
-            self.advance();
-        }
+        self.settle();
         Ok(())
     }
 }

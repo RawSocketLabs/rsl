@@ -11,6 +11,9 @@ use std::time::Duration;
 use xsdr::lowlevel::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
 use xsdr_sim::{I2cAddress, SimBoard};
 
+/// The `PCIe` driver's largest DMA buffer, as the oracle's shim enforces it.
+const MAX_DMA_BLOCK: u32 = 1 << 20;
+
 /// A shared simulated board; clone it to inspect the board while a `Device` owns the bus.
 #[derive(Clone)]
 pub(crate) struct SimBus(Arc<Mutex<SimBoard>>);
@@ -72,5 +75,33 @@ impl Bus for SimBus {
         let us = u64::try_from(duration.as_micros())
             .expect("invariant: board delays fit in u64 microseconds");
         self.board().sleep_us(us);
+    }
+
+    /// As the oracle's shim: the `PCIe` driver's limit of 1 MiB per buffer, no tracing.
+    fn rx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        if block_bytes > MAX_DMA_BLOCK {
+            return Err(BusError::Unsupported(
+                "RX block over the PCIe driver's 1 MiB",
+            ));
+        }
+        Ok(())
+    }
+
+    /// As the oracle's shim: the board's next block, or a timeout at once while its stream
+    /// engine is stopped.
+    fn rx_stream_recv(
+        &mut self,
+        _timeout: Duration,
+        consume: &mut dyn FnMut(&[u8], [u64; 2]),
+    ) -> Result<(), BusError> {
+        let Some((block, oob)) = self.board().rx_next_block() else {
+            return Err(BusError::Timeout);
+        };
+        consume(&block, oob);
+        Ok(())
+    }
+
+    fn rx_stream_close(&mut self) -> Result<(), BusError> {
+        Ok(())
     }
 }

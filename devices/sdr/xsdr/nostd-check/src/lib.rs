@@ -122,6 +122,29 @@ pub fn rate_unlocked(tx_mmcm: bool) -> Result<(usize, &'static str), &'static st
     Ok((actions, outcome))
 }
 
+/// Runs a stream create's link calibration alone on a chip with no rate, with or without
+/// a TX MMCM: the actions issued and the outcome.
+pub fn calibrate_link(tx_mmcm: bool) -> Result<(usize, &'static str), &'static str> {
+    let mut link = SetSampleRate::calibrate_link(
+        &control()?,
+        RateState::default(),
+        Gateware {
+            tx_mmcm,
+            rx_port1: true,
+        },
+        I2cAddr::new(0, 0x60),
+    );
+    let actions = drive(&mut link, |_, _| Ok(0))?;
+    let outcome = match link.outcome() {
+        Some(Ok(())) => "calibrated",
+        Some(Err(RateError::Control(ControlError::NoRate))) => "no rate",
+        Some(Err(RateError::Calibration)) => "calibration",
+        Some(Err(_)) => "other",
+        None => "unfinished",
+    };
+    Ok((actions, outcome))
+}
+
 /// Tunes the RX LO on the same chips: whether it tuned.
 pub fn tune_unlocked() -> Result<bool, &'static str> {
     let mut tune = control()?.tune(XsdrFrontend, Synthesizer::Rx, 1_000_000_000);
@@ -191,6 +214,14 @@ mod tests {
             (actions, "clock")
         );
         assert_eq!(tune_unlocked(), Ok(false));
+    }
+
+    #[test]
+    fn the_exact_source_witness_runs_the_link_calibration_alone() {
+        // Without a TX MMCM: the fixed delay, then libusdr's unmeasured failure.
+        assert_eq!(calibrate_link(false), Ok((1, "calibration")));
+        // With one: the RX pins and their 1 ms, then streaming up finds no rate.
+        assert_eq!(calibrate_link(true), Ok((2, "no rate")));
     }
 
     #[test]
