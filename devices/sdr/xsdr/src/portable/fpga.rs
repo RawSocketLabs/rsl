@@ -67,6 +67,10 @@ pub(crate) enum RxPhyBank {
 
     /// The I/Q capture (`PHY_REG_RXBANK_CAPTURE`): address 0 starts and stops it, a read
     /// request selects a sample (bit 7 channel B).
+    #[allow(
+        dead_code,
+        reason = "the host-side quality check uses it; the no_std fixture compiles the tree without it"
+    )]
     Capture = 5,
 }
 
