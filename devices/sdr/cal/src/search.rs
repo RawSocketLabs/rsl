@@ -76,6 +76,8 @@ pub fn iterate_min<E>(
 }
 
 /// Where a golden-section search is: which probe's cost it waits for.
+/// Unstable: public only so `usdr`'s calibration can drive it; not part of this crate's API.
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Golden {
     /// The first left probe, `x1`.
@@ -94,6 +96,8 @@ pub enum Golden {
 /// parameter whose cost it needs next, [`Line::report`] takes the cost. [`golden_min`] and
 /// [`iterate_min`] drive it with their closures; the calibration drives it one bus
 /// measurement at a time.
+/// Unstable: public only so `usdr`'s calibration can drive it; not part of this crate's API.
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Line {
     /// [`golden_min`]'s state: the interval `a..=b`, its step `d`, the probes and their
@@ -361,6 +365,8 @@ pub fn best_2d<O: Objective2d>(
 }
 
 /// What a [`Search2d`] needs done next: the [`Objective2d`] calls, as data.
+/// Unstable: public only so `usdr`'s calibration can drive it; not part of this crate's API.
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Probe2d {
     /// [`Objective2d::set`]; report any value.
@@ -399,6 +405,8 @@ enum Step2d {
 /// [`best_2d`] as a resumable machine over stages `S`: [`Search2d::probe`] names the next
 /// objective call, [`Search2d::report`] takes its result. The calibration drives it one bus
 /// measurement at a time.
+/// Unstable: public only so `usdr`'s calibration can drive it; not part of this crate's API.
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug)]
 pub struct Search2d<S> {
     /// The stages.
