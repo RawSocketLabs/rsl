@@ -64,6 +64,10 @@ pub(crate) enum RxPhyBank {
 
     /// The A/B and I/Q alignment checker (`PHY_REG_RXBANK_IQABCHK`).
     IqAbCheck = 4,
+
+    /// The I/Q capture (`PHY_REG_RXBANK_CAPTURE`): address 0 starts and stops it, a read
+    /// request selects a sample (bit 7 channel B).
+    Capture = 5,
 }
 
 impl RxPhyBank {

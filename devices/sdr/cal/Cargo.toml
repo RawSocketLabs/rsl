@@ -1,0 +1,15 @@
+[package]
+name = "sdr-cal"
+version = "0.0.0"
+description = "libusdr's calibration mathematics (integer minimum searches, sinusoid fits), shared by the pure-Rust uSDR and LMS7 family drivers."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+num-complex.workspace = true
+
+[lints]
+workspace = true

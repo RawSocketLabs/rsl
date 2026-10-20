@@ -123,7 +123,8 @@ Each layer calls only the ones below it.
   (LP8758: `lp8758`, re-exported as `src/portable/lp8758.rs`); `src/chips/<chip>/`
   then keeps the docs, address and driver.
 - `src/cal/`: public calibration mathematics (`search`, `fit`), scalar and bit-exact with
-  libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`).
+  libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`), the shared
+  `sdr-cal`'s (`../cal`, 2026-10-19, for the XSDR's TX quality check) re-exported.
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`;
   the port words, GPO words and the decimator FIR tables are portable, `portable/fpga.rs`
   and `portable/fir_tables.rs`), the RX stream engine (`stream`:

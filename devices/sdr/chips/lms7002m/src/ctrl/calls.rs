@@ -39,6 +39,10 @@ pub enum ChipCall {
     LimelightSwitchRxMode(LmlConfig),
     /// [`Lms7002m::limelight_map`].
     LimelightMap([bool; 2], [LmlMap; 2]),
+    /// [`Lms7002m::limelight_tsp_clock`].
+    LimelightTspClock(LmlConfig, bool),
+    /// [`Lms7002m::limelight_delays`].
+    LimelightDelays(LmlConfig),
     /// [`Lms7002m::rfe_path`].
     RfePath(RxPath, RxMode),
     /// [`Lms7002m::trf_path`].
@@ -86,6 +90,8 @@ impl ChipCall {
             Self::LimelightConfigure(config) => chip.limelight_configure(config),
             Self::LimelightSwitchRxMode(config) => chip.limelight_switch_rx_mode(config),
             Self::LimelightMap(siso, maps) => chip.limelight_map(siso, maps),
+            Self::LimelightTspClock(config, inverted) => chip.limelight_tsp_clock(config, inverted),
+            Self::LimelightDelays(config) => chip.limelight_delays(config),
             Self::RfePath(path, mode) => chip.rfe_path(path, mode)?,
             Self::TrfPath(path, mode) => chip.trf_path(path, mode)?,
             Self::RfeGain(stage, gain) => chip.rfe_gain(stage, gain).0,

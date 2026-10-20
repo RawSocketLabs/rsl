@@ -551,6 +551,43 @@ impl Control {
         Operation::writes(&self, &calls)
     }
 
+    /// Refreshes the running channels' baseband filters in `direction` for `rate`
+    /// (`lms7002m_update_bandwidth` forcing the update; libusdr's distance to the farthest
+    /// NCO, never set, adds nothing): channel by channel, its bank selected, then the
+    /// filter for its own bandwidth if one is set, else for `rate`. As in libusdr, a
+    /// channel after one with its own bandwidth takes that bandwidth too. A `rate` of 0
+    /// writes nothing.
+    #[must_use]
+    pub fn update_bandwidth(self, direction: Direction, rate: u32) -> Operation {
+        let mut calls = Calls::new();
+        let (running, set) = match direction {
+            Direction::Rx => (self.rx_running, self.rx_bandwidth),
+            Direction::Tx => (self.tx_running, self.tx_bandwidth),
+        };
+        let mut hertz = NonZeroU32::new(rate);
+        for ((bank, running), set) in [Mac::A, Mac::B].into_iter().zip(running).zip(set) {
+            let Some(rate_hertz) = hertz.filter(|_| running) else {
+                continue;
+            };
+            let chosen = set.and_then(NonZeroU32::new).unwrap_or(rate_hertz);
+            hertz = Some(chosen);
+            calls.push(ChipCall::MacSet(bank));
+            push_bandwidth(&mut calls, direction, chosen);
+        }
+        Operation::writes(&self, &calls)
+    }
+
+    /// Delays the TX processors' clocks by one code more (`lml_mode.txtspdelay++`, then
+    /// `lms7002m_limelight_upd_delay`), as the XSDR's TX quality check does between
+    /// attempts. The code wraps at eight bits; the register takes its low two.
+    #[must_use]
+    pub fn delay_tx_tsp(mut self) -> Operation {
+        self.lml.tx_tsp_delay = self.lml.tx_tsp_delay.wrapping_add(1);
+        let mut calls = Calls::new();
+        calls.push(ChipCall::LimelightDelays(self.lml));
+        Operation::writes(&self, &calls)
+    }
+
     /// Switches the receive FIFO between the processor, the LFSR pattern and the TX
     /// loopback (`lms7002m_set_lmlrx_mode`): `lfsr` wins over `loopback`.
     #[must_use]

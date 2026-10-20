@@ -19,10 +19,15 @@
 //!   around the DRP writes, then `sel | 0`. Whatever the DRP registers hold, the model
 //!   locks; it does not check the configuration. The "no clock" flags (bits 11:10) never
 //!   read set.
-//! - Every other PHY register (port control, delay, I/Q select, the LFSR and A/B-I/Q
-//!   generators and their pattern pushes) is accepted and has no effect the port reports.
+//! - The generator's A/B-I/Q tables (`PHY_REG_IQAB_PSHA`, `_PSHB`): each push shifts a
+//!   24-bit word into its channel's table, which keeps the last 64. libusdr fills both
+//!   with 64 words at a time (`xsdr_phy_load_sincos_64`, and `xsdr_phy_load_iqab_check`'s
+//!   32 rounds of two each), the evidence for the depth. What the RX PHY's capture reads
+//!   of them is the board's (`board.rs`).
+//! - Every other PHY register (port control, delay, I/Q select, the generators' run and
+//!   pattern selection) is accepted and has no effect the port reports.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 /// The TX PHY's configuration port (`REG_CFG_PHY_1`, `generic_regs.h`).
 pub(crate) const REG_CFG_PHY_1: u32 = 57;
@@ -31,6 +36,12 @@ pub(crate) const REG_CFG_PHY_1: u32 = 57;
 const PHY_MMCM_DRP: u32 = 1;
 /// PHY register: the MMCM's reset and power-down (`PHY_REG_MMCM_CTRL`).
 const PHY_MMCM_CTRL: u32 = 2;
+/// PHY register: a push into channel A's A/B-I/Q table (`PHY_REG_IQAB_PSHA`).
+const PHY_IQAB_PUSH_A: u32 = 8;
+/// PHY register: channel B's (`PHY_REG_IQAB_PSHB`).
+const PHY_IQAB_PUSH_B: u32 = 9;
+/// Words each A/B-I/Q table keeps.
+const TABLE_DEPTH: usize = 64;
 
 /// `PHY_REG_MMCM_CTRL`'s reset (bit 0) and power-down (bit 1) bits.
 const MMCM_HELD: u32 = 0b11;
@@ -50,6 +61,9 @@ pub(crate) struct TxPhy {
 
     /// The MMCM control last written has its reset and power-down bits clear.
     locked: bool,
+
+    /// Channel A's and B's A/B-I/Q tables, oldest word first.
+    tables: [VecDeque<u32>; 2],
 }
 
 impl TxPhy {
@@ -67,6 +81,13 @@ impl TxPhy {
                 }
             }
             PHY_MMCM_CTRL => self.locked = data & MMCM_HELD == 0,
+            PHY_IQAB_PUSH_A | PHY_IQAB_PUSH_B => {
+                let table = &mut self.tables[usize::from(register == PHY_IQAB_PUSH_B)];
+                table.push_back(data);
+                if table.len() > TABLE_DEPTH {
+                    table.pop_front();
+                }
+            }
             _ => {}
         }
     }
@@ -74,6 +95,16 @@ impl TxPhy {
     /// The port's status word: the last DRP read in bits 31:16, the lock flag in bit 8.
     pub(crate) fn status(&self) -> u32 {
         u32::from(self.read_data) << 16 | if self.locked { LOCKED } else { 0 }
+    }
+
+    /// Word `index` of channel B's (`channel_b`) or A's table counted from the newest,
+    /// wrapping at its length; 0 for a table never pushed.
+    pub(crate) fn table_word(&self, channel_b: bool, index: usize) -> u32 {
+        let table = &self.tables[usize::from(channel_b)];
+        let Some(last) = table.len().checked_sub(1) else {
+            return 0;
+        };
+        table[last - index % table.len()]
     }
 
     /// An MMCM DRP register.
@@ -100,6 +131,20 @@ mod tests {
         assert_eq!(port.status() & 1 << 9, 0, "never busy");
         port.on_write(phy(PHY_MMCM_DRP, 0x15 << 16));
         assert_eq!(port.status() >> 16, 0, "an unwritten register reads 0");
+    }
+
+    #[test]
+    fn a_table_keeps_its_last_64_pushes_newest_first() {
+        let mut port = TxPhy::default();
+        assert_eq!(port.table_word(false, 0), 0, "never pushed");
+        for word in 0..70 {
+            port.on_write(phy(PHY_IQAB_PUSH_A, word));
+        }
+        port.on_write(phy(PHY_IQAB_PUSH_B, 0x00ab_cdef));
+        assert_eq!(port.table_word(false, 0), 69, "the newest");
+        assert_eq!(port.table_word(false, 63), 6, "the oldest kept");
+        assert_eq!(port.table_word(false, 64), 69, "wrapping");
+        assert_eq!(port.table_word(true, 5), 0x00ab_cdef, "B's own table");
     }
 
     #[test]

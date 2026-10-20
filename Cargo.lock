@@ -3518,6 +3518,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d68f2ec51b097e4c1a75b681a8bec621909b5e91f15bb7b840c4f2f7b01148b2"
 
 [[package]]
+name = "sdr-cal"
+version = "0.0.0"
+dependencies = [
+ "num-complex",
+]
+
+[[package]]
 name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
@@ -4651,6 +4658,7 @@ dependencies = [
  "lp8758",
  "mio",
  "num-complex",
+ "sdr-cal",
  "sdr-frontend",
  "sdr-stream",
  "thiserror 2.0.21",
@@ -5206,6 +5214,8 @@ dependencies = [
  "hal",
  "lms7002m",
  "lp8758",
+ "num-complex",
+ "sdr-cal",
  "sdr-frontend",
  "sdr-stream",
  "thiserror 2.0.21",

@@ -27,9 +27,24 @@ const REG_GPI_USR_ACCESS2: u32 = 16;
 /// bank and address there (`xsdr_phy_rx_reg`) and reads back what it selected: on the
 /// rate path, the `LimeLight` LFSR checkers' error counters (`xsdr_phy_lfsr_mimo_state`).
 /// A sim choice: the link is error-free, so every read of the port returns 0, unless a test
-/// scripts the reads ([`SimBoard::with_rx_phy_reads`]). The capture and DC-estimator banks
-/// behind it are not modelled.
+/// scripts the reads ([`SimBoard::with_rx_phy_reads`]); a read after selecting the capture
+/// bank returns a captured sample instead ([`RX_PHY_CAPTURE`]). The DC-estimator bank is not
+/// modelled.
 const REG_CFG_PHY_0: u32 = 56;
+/// The RX PHY's capture bank (`PHY_REG_RXBANK_CAPTURE`): a read request's address selects
+/// channel B with bit 7, the sample with bits 6:0 (`xsdr_phy_capture_get_item`), and the
+/// next read of the port returns it, bits 11:0 I and 23:12 Q, 31:24 0 (not busy).
+///
+/// A sim choice, with no gateware source: the capture holds the TX PHY generator's
+/// A/B-I/Q table as the digital and baseband loopbacks would bring it back, sample `n`
+/// being the table's word `n` counted from the newest push (libusdr loads the table
+/// "in reverse order", `xsdr_phy_load_sincos_64`). That makes libusdr's own 64-sample
+/// tone fit its model (I a sine, Q a cosine, advancing), so its TX quality check passes
+/// at once. The table is read whatever the loopbacks or generator do, with no noise.
+const RX_PHY_CAPTURE: u32 = 5;
+/// The newest-first index a reversed capture's sample 0 reads: the last of the table's 64
+/// words, the oldest.
+const REVERSED_FROM: usize = 63;
 
 /// GPO bank `IGPO_LMS_PWR`: LMS7002M LDO enable, reset and RX/TX enables.
 const GPO_LMS_PWR: u8 = 0;
@@ -159,6 +174,10 @@ pub struct SimBoard {
     rx_phy_script: VecDeque<u32>,
     /// What the RX PHY port returns once the script is spent.
     rx_phy_after: u32,
+    /// The RX PHY port's last write.
+    rx_phy_request: u32,
+    /// The capture reads the generator's table oldest first ([`SimBoard::with_reversed_capture`]).
+    capture_reversed: bool,
     /// The RX stream engine (`sdr-stream-sim`'s, the uSDR sim's model): the same
     /// `ipblks/streams` cores at the same registers (`m2_lm7_1.c`'s `/ll/srx/0`,
     /// `/ll/rfe/0` and `/ll/sync/0` match `m2_lm6_1.c`'s), so the same assumptions hold,
@@ -201,6 +220,8 @@ impl SimBoard {
             front_end: None,
             rx_phy_script: VecDeque::new(),
             rx_phy_after: 0,
+            rx_phy_request: 0,
+            capture_reversed: false,
             rx: RxEngine::default(),
             tx: TxEngine::default(),
             tx_phy: TxPhy::default(),
@@ -217,6 +238,15 @@ impl SimBoard {
     pub fn with_rx_phy_reads(mut self, script: impl IntoIterator<Item = u32>, after: u32) -> Self {
         self.rx_phy_script = script.into_iter().collect();
         self.rx_phy_after = after;
+        self
+    }
+
+    /// The same board whose RX PHY capture reads the TX generator's table oldest first:
+    /// libusdr's tone comes back running backwards, which its quality check's fit never
+    /// matches (fault injection, not a model).
+    #[must_use]
+    pub fn with_reversed_capture(mut self) -> Self {
+        self.capture_reversed = true;
         self
     }
 
@@ -297,6 +327,9 @@ impl SimBoard {
         if addr == REG_CFG_PHY_1 {
             self.tx_phy.on_write(value);
         }
+        if addr == REG_CFG_PHY_0 {
+            self.rx_phy_request = value;
+        }
         self.play_tx();
         if addr == REG_GPO {
             let [bank, ..] = value.to_be_bytes();
@@ -308,7 +341,7 @@ impl SimBoard {
     /// Reads a 32-bit FPGA register.
     pub fn read_reg(&mut self, addr: u32) -> u32 {
         let value = match addr {
-            REG_CFG_PHY_0 => self.rx_phy_script.pop_front().unwrap_or(self.rx_phy_after),
+            REG_CFG_PHY_0 => self.rx_phy_read(),
             REG_CFG_PHY_1 => self.tx_phy.status(),
             _ => self
                 .tx
@@ -318,6 +351,22 @@ impl SimBoard {
         };
         self.trace.push(Op::RegRead { addr, value });
         value
+    }
+
+    /// A read of the RX PHY port: a captured sample after a capture read request, else the
+    /// script's next value or what follows it.
+    fn rx_phy_read(&mut self) -> u32 {
+        let request = self.rx_phy_request;
+        let capture_read = request >> 31 == 0 && (request >> 24 & 0x7f) == RX_PHY_CAPTURE;
+        if capture_read {
+            let address = request >> 16 & 0xff;
+            let mut index = usize::try_from(address & 0x7f).expect("7 bits");
+            if self.capture_reversed {
+                index = REVERSED_FROM - index % (REVERSED_FROM + 1);
+            }
+            return self.tx_phy.table_word(address & 0x80 != 0, index) & 0x00ff_ffff;
+        }
+        self.rx_phy_script.pop_front().unwrap_or(self.rx_phy_after)
     }
 
     /// The next RX block the stream engine delivers, with its two out-of-band words, or

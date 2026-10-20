@@ -198,6 +198,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdr-cal"
+version = "0.0.0"
+dependencies = [
+ "num-complex",
+]
+
+[[package]]
 name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
@@ -376,6 +383,7 @@ dependencies = [
  "hal",
  "lp8758",
  "num-complex",
+ "sdr-cal",
  "sdr-frontend",
  "sdr-stream",
  "thiserror",

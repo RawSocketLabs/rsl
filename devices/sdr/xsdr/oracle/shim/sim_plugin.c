@@ -8,6 +8,8 @@
 // trimmed to the control plane and the RX and TX streams: no PCIe layout or ABI helpers.
 
 #include <errno.h>
+#include <setjmp.h>
+#include <signal.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +19,7 @@
 #include "device/device.h"
 #include "device/device_ids.h"
 #include "hw/lms7002m/lms7002m.h"
+#include "dm_dev.h"
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
 int xsdr_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
@@ -364,6 +367,39 @@ int xsdr_oracle_lms7002m_run(struct lms7002m_op* ops, unsigned count, int* resul
         }
     }
     return 0;
+}
+
+// Where a trapped libusdr call resumes: the thread that made the call is the one SIGFPE
+// interrupts (the division is synchronous), and oracles are serialised.
+static __thread sigjmp_buf s_trap;
+
+static void on_division_trap(int sig)
+{
+    (void)sig;
+    siglongjmp(s_trap, 1);
+}
+
+// usdr_dme_set_uint(dev, path, value), with an integer division by zero (SIGFPE) caught:
+// then *trapped is 1, and libusdr's call is abandoned where it divided, its frames above
+// unwound without running. libusdr takes no lock on this path, and the frames hold no
+// allocation, so the device stays usable. No Rust frame is on the stack at the division:
+// it is libusdr's own arithmetic, between its bus operations.
+int xsdr_oracle_set_uint_trapping(pdm_dev_t dev, const char* path, uint64_t value, int* trapped)
+{
+    struct sigaction trap, previous;
+    memset(&trap, 0, sizeof(trap));
+    trap.sa_handler = on_division_trap;
+    sigemptyset(&trap.sa_mask);
+    sigaction(SIGFPE, &trap, &previous);
+    int res = 0;
+    if (sigsetjmp(s_trap, 1) == 0) {
+        res = usdr_dme_set_uint(dev, path, value);
+        *trapped = 0;
+    } else {
+        *trapped = 1;
+    }
+    sigaction(SIGFPE, &previous, NULL);
+    return res;
 }
 
 static const struct lowlevel_plugin s_sim_plugin = { sim_info_str, sim_discovery, sim_create };

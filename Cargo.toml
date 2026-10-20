@@ -34,6 +34,8 @@ members = [
     # and its model, shared by their simulators
     "devices/sdr/stream",
     "devices/sdr/stream/sim",
+    # libusdr's calibration mathematics, shared by the SDR drivers
+    "devices/sdr/cal",
     # pure-Rust uSDR driver and its board simulator
     "devices/sdr/usdr",
     "devices/sdr/usdr/sim",
@@ -115,6 +117,7 @@ lms7002m = { path = "devices/sdr/chips/lms7002m", version = "0.0.0", default-fea
 lmk05318 = { path = "devices/chips/lmk05318", version = "0.0.0", default-features = false }
 sdr-frontend = { path = "devices/sdr/frontend", version = "0.0.0", default-features = false }
 sdr-stream = { path = "devices/sdr/stream", version = "0.0.0", default-features = false }
+sdr-cal = { path = "devices/sdr/cal", version = "0.0.0" }
 # unpublished test support, dev-dependency only
 usdr-sim = { path = "devices/sdr/usdr/sim" }
 usdr-pcie = { path = "devices/sdr/usdr/pcie" }

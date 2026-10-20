@@ -280,6 +280,12 @@ unsafe extern "C" {
     fn usdr_dmd_close(dev: DmDev) -> c_int;
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
     fn usdr_dme_set_uint(dev: DmDev, path: *const c_char, val: u64) -> c_int;
+    fn xsdr_oracle_set_uint_trapping(
+        dev: DmDev,
+        path: *const c_char,
+        val: u64,
+        trapped: *mut c_int,
+    ) -> c_int;
     fn usdr_dms_create_ex(
         dev: DmDev,
         sobj: *const c_char,
@@ -463,6 +469,34 @@ impl Oracle {
         let errno = unsafe { usdr_dme_set_uint(dev.as_ptr(), path.as_ptr(), value) };
         resume_callback_panic();
         if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// As [`Self::set_uint`], catching an integer division by zero in libusdr (SIGFPE):
+    /// `Ok(true)` when the call trapped and was abandoned where it divided.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    ///
+    /// # Safety
+    ///
+    /// As [`Self::set_uint`].
+    pub unsafe fn set_uint_trapping(&mut self, path: &CStr, value: u64) -> Result<bool, i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        let mut trapped = 0;
+        // SAFETY: `dev` is open, `path` NUL-terminated and `trapped` a valid out-pointer;
+        // the caller guarantees the handler reads `value` as a number.
+        let errno = unsafe {
+            xsdr_oracle_set_uint_trapping(dev.as_ptr(), path.as_ptr(), value, &raw mut trapped)
+        };
+        resume_callback_panic();
+        if errno == 0 {
+            Ok(trapped != 0)
+        } else {
+            Err(errno)
+        }
     }
 
     /// Sets the RX and TX sample rates, with no converter floors

@@ -966,8 +966,8 @@ impl SetSampleRate {
         };
         // The RX check's result was taken when the TX check replaced it.
         if self.bist_rx_done && done(self.part) {
-            // With TX running or RX A stopped, libusdr checks the TX/RX quality next; on
-            // this path RX has just been streamed up and TX never runs, so it does not.
+            // With TX running or RX A stopped, libusdr checks the TX quality next, which
+            // the device runs (host arithmetic).
             self.stage = Stage::Done(Ok(()));
             return;
         }

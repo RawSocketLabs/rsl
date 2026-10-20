@@ -77,7 +77,7 @@ pub fn iterate_min<E>(
 
 /// Where a golden-section search is: which probe's cost it waits for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Golden {
+pub enum Golden {
     /// The first left probe, `x1`.
     FirstLeft,
     /// The first right probe, `x2`.
@@ -95,7 +95,7 @@ pub(crate) enum Golden {
 /// [`iterate_min`] drive it with their closures; the calibration drives it one bus
 /// measurement at a time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Line {
+pub enum Line {
     /// [`golden_min`]'s state: the interval `a..=b`, its step `d`, the probes and their
     /// costs.
     Golden {
@@ -131,7 +131,8 @@ pub(crate) enum Line {
 
 impl Line {
     /// [`golden_min`] over `start..=stop`, before its first probe.
-    pub(crate) fn golden(start: i32, stop: i32) -> Self {
+    #[must_use]
+    pub fn golden(start: i32, stop: i32) -> Self {
         let d = golden_step(start, stop);
         Self::Golden {
             a: start,
@@ -146,7 +147,8 @@ impl Line {
     }
 
     /// [`iterate_min`] over `start..stop` with `extra_step`, before its first probe.
-    pub(crate) fn iterate(start: i32, stop: i32, extra_step: u16) -> Self {
+    #[must_use]
+    pub fn iterate(start: i32, stop: i32, extra_step: u16) -> Self {
         let extra = i32::from(extra_step);
         Self::Iterate {
             i: start,
@@ -160,7 +162,8 @@ impl Line {
     }
 
     /// The parameter whose cost the search needs next; `None` once it has finished.
-    pub(crate) fn probe(&self) -> Option<i32> {
+    #[must_use]
+    pub fn probe(&self) -> Option<i32> {
         match *self {
             Self::Golden { at, x1, x2, .. } => match at {
                 Golden::FirstLeft | Golden::Left => Some(x1),
@@ -172,7 +175,7 @@ impl Line {
     }
 
     /// Takes the cost at [`Self::probe`]'s parameter; ignored once finished.
-    pub(crate) fn report(&mut self, cost: i32) {
+    pub fn report(&mut self, cost: i32) {
         match self {
             Self::Golden {
                 a,
@@ -241,7 +244,8 @@ impl Line {
     }
 
     /// The minimum found: once finished, the search's answer.
-    pub(crate) const fn minimum(&self) -> Minimum {
+    #[must_use]
+    pub const fn minimum(&self) -> Minimum {
         match *self {
             Self::Golden { x1, f1, .. } => Minimum { x: x1, cost: f1 },
             Self::Iterate { best, .. } => best,
@@ -358,7 +362,7 @@ pub fn best_2d<O: Objective2d>(
 
 /// What a [`Search2d`] needs done next: the [`Objective2d`] calls, as data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Probe2d {
+pub enum Probe2d {
     /// [`Objective2d::set`]; report any value.
     Set {
         /// The stage whose evaluator libusdr would call.
@@ -396,7 +400,7 @@ enum Step2d {
 /// objective call, [`Search2d::report`] takes its result. The calibration drives it one bus
 /// measurement at a time.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Search2d<S> {
+pub struct Search2d<S> {
     /// The stages.
     stages: S,
     /// The cost below which the search stops after a stage.
@@ -416,7 +420,8 @@ pub(crate) struct Search2d<S> {
 impl<S: AsRef<[Stage]>> Search2d<S> {
     /// The search over `stages`, stopping early below `stop_when`, before its first call:
     /// at the midpoint of the first stage's limits.
-    pub(crate) fn new(stages: S, stop_when: i32) -> Self {
+    #[must_use]
+    pub fn new(stages: S, stop_when: i32) -> Self {
         let first = stages.as_ref().first().map(|first| first.limits);
         let (at, step) = match first {
             Some([x, y]) => (((x.min + x.max) / 2, (y.min + y.max) / 2), Step2d::Start),
@@ -438,7 +443,8 @@ impl<S: AsRef<[Stage]>> Search2d<S> {
     }
 
     /// The next objective call; `None` once the search has finished.
-    pub(crate) fn probe(&self) -> Option<Probe2d> {
+    #[must_use]
+    pub fn probe(&self) -> Option<Probe2d> {
         let stage = self.stage;
         Some(match self.step {
             // Set the starting Y, as X is searched first.
@@ -466,7 +472,7 @@ impl<S: AsRef<[Stage]>> Search2d<S> {
 
     /// Takes the result of [`Self::probe`]'s call: the cost of an evaluation, any value
     /// for a set. Ignored once finished.
-    pub(crate) fn report(&mut self, cost: i32) {
+    pub fn report(&mut self, cost: i32) {
         match self.step {
             Step2d::Start => self.search(Axis::X),
             Step2d::Searching(axis, mut line) => {
@@ -491,7 +497,8 @@ impl<S: AsRef<[Stage]>> Search2d<S> {
     }
 
     /// The best point found: once finished, the search's answer.
-    pub(crate) const fn best(&self) -> Best2d {
+    #[must_use]
+    pub const fn best(&self) -> Best2d {
         self.best
     }
 

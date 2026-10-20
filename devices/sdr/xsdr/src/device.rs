@@ -3,8 +3,10 @@
 //! `controls`', the RX stream `stream`'s.
 
 use std::fmt;
+use std::time::Duration;
 
 mod controls;
+mod quality;
 mod stream;
 mod tx_stream;
 
@@ -29,6 +31,9 @@ use crate::portable::power::PowerUp;
 use crate::portable::rate::{Gateware, RateError, RateState, SetSampleRate};
 use crate::portable::supplies::Supplies;
 use crate::portable::txcal::TxCalError;
+
+/// The wait before a rate's TX quality check (`usleep(50000)`).
+const QUALITY_SETTLE: Duration = Duration::from_millis(50);
 
 /// The lowest sample rate libusdr's `/dm/rate` accepts (`RATE_MIN`).
 const RATE_MIN: u32 = 90_000;
@@ -179,7 +184,13 @@ impl Device {
     /// bits). Without a TX MMCM libusdr, and so this, fails the calibration. With a TX
     /// stream, the link calibration reprograms the TX MMCM for every phase it sweeps and
     /// calibrates the TX phase too; between 53 and 60 MS/s of TX the core supply is
-    /// raised.
+    /// raised; and after the self-tests, 50 ms later, the TX quality is checked through
+    /// the baseband loopback and the TX processors' clock adjusted until it holds, then
+    /// the running channels' baseband filters set for the rates.
+    ///
+    /// Divergence, with a TX stream: libusdr's quality check ends dividing the rates by
+    /// factors only DUC/DDC gateware sets, 0 here, and traps (SIGFPE); this divides by the
+    /// board's, 1, and sets the filters.
     ///
     /// Divergence: with a TX stream on gateware with a TX MMCM, a rate whose link the TX
     /// MMCM cannot take (TX below about 6.35 MS/s), where libusdr reads past its MMCM
@@ -222,10 +233,15 @@ impl Device {
         self.control = *rate.control();
         self.rate = rate.state();
         ran?;
-        match rate.outcome() {
-            Some(Err(error)) => Err(rate_error(error)),
-            Some(Ok(())) | None => Ok(()),
+        if let Some(Err(error)) = rate.outcome() {
+            return Err(rate_error(error));
         }
+        // With TX running, or RX's channel A stopped, libusdr checks the TX quality.
+        if self.control.tx_running()[0] || !self.control.rx_running()[0] {
+            self.bus.sleep(QUALITY_SETTLE);
+            self.check_quality()?;
+        }
+        Ok(())
     }
 
     /// Sets how many hardware channels a direction's stream reports (`xsdr_hwchans_cnt`,

@@ -303,7 +303,7 @@ impl Device {
     }
 
     /// Runs chip operations on the control state's chip, keeping the cache they leave.
-    fn run_chip(&mut self, calls: &[ChipCall]) -> Result<(), Error> {
+    pub(super) fn run_chip(&mut self, calls: &[ChipCall]) -> Result<(), Error> {
         let mut chip = ChipCalls::new(*self.control.chip(), calls)
             .expect("invariant: every handler runs at most four chip calls");
         let ran = run(&mut *self.bus, &mut chip);
