@@ -23,34 +23,38 @@ never a guessed number. Vendor documents stay outside the repo; cite them by pag
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rtlsdr` (unpublished, root workspace member) | The driver, on `hal` (`BusError`) and, behind feature `usb`, `usb` |
-| `sim/` | `rtlsdr-sim` (unpublished, root workspace member) | Dongle model at the control seam: a generic register store, an R820T2 register file behind an I2C repeater gate, a bulk RX feed, virtual clock, op trace; and the `Trace` format and `Replay` harness |
+| `sim/` | `rtlsdr-sim` (unpublished, root workspace member) | Dongle model at the control seam: a generic register store, an R820T2 register file behind an optional gate bit (shape assumed, `RTL-GAP-13`), a bulk RX feed, virtual clock, op trace; and the `Trace` format and `Replay` harness |
 
 ## Driver layout
 
 - `src/control.rs`: `ControlPort`, the seam: vendor control IN/OUT, a bulk RX stream
-  (`rx_start`/`rx_read`/`rx_stop`), sleep. Like `limesdr`'s, it is not `hal::Bus`: the
-  RTL2832U's wire is vendor control transfers, and which carry which access is the
-  driver's (a GAP so far).
+  (`rx_start`/`rx_read`/`rx_stop`), sleep; that shape is assumed (`RTL-GAP-12`). Like
+  `limesdr`'s, it is not `hal::Bus`: which transfers carry which access is the driver's
+  (all GAP rows so far).
 - `src/device.rs`: `Device`, whose `open` refuses with `RTL-GAP-07` before touching the
   port.
 - `src/transport/usb.rs` (feature `usb`, Linux): `UsbPort`, the seam over `usb`. The caller
-  passes VID:PID, interface and bulk IN endpoint; none is hard-coded until DESC rows exist.
-- `src/portable/`: core only, no allocation. `pending.rs`: `Pending<T>`/`Gap`.
-  `rtl2832u.rs`: the demodulator's placeholders. `r820t2/`: the tuner, from the register
-  description only — `registers` (I2C framing, `Registers` image, page writes, LSB-first
-  reads), `field` (every field T1-2 and T1-3 name), `setting` (typed enumerated settings,
-  `FieldValue`), `pll` (`Ndiv` from `SI2C`/`NI2C`/`SDM_IN`), `gain` (IF VGA steps). Chip
+  passes VID:PID (or a `usb::DeviceInfo` picked by serial or port path), interface and bulk
+  IN endpoint; none is hard-coded until DESC rows exist.
+- `src/portable/`: no I/O, imports within the tree (no `no_std` witness yet).
+  `pending.rs`: `Pending<T>`/`Gap`. `rtl2832u.rs`: the demodulator's placeholders.
+  `r820t2/`: the tuner, from the register description only — `registers` (I2C framing,
+  `Registers` image, page writes, LSB-first reads; only registers read from the chip may
+  be written, `R820-GAP-08`), `field` (every field T1-2 and T1-3 name), `setting` (typed
+  enumerated settings, `FieldValue`), `pll` (`Ndiv` from `SI2C`/`NI2C`/`SDM_IN`), `gain` (IF VGA steps). Chip
   code stays here while `rtlsdr` is its only consumer (`../../AGENTS.md`). Typed values
   are per field, not `hal::Register` whole-byte types: those need T1-2's fixed bits, whose
   status is `R820-GAP-08`.
 - `tests/common/`: `SimPort` and `ReplayPort` (the seam over the sim and over a `Replay`),
-  and `synthetic.rs`, the SYNTHETIC wiring and session; included by `#[path]`.
+  `wire.rs` (their shared setup conversion) and `synthetic.rs`, the SYNTHETIC wiring and
+  session; included by `#[path]`. `tests/provenance.rs` checks the ledger against the code.
 - `tests/fixtures/synthetic-session.trace`: the only committed trace, SYNTHETIC.
 
 ## Rules
 
 - Tests cite the ledger row their vector comes from. The sim's tuner model is written from
-  the document independently of `src/portable/r820t2`, so the seam tests cross-check them.
+  the document independently of `src/portable/r820t2`, so the seam tests cross-check them
+  (except where both rest on one reading of the document: `R820-DS-04`).
 - Captures and traces derived from them stay out of the repo until the owner approves
   (CAPTURES.md). A GPLOBS capture is never a row's sole source.
 - Hardware tests are `#[ignore]`d and need the env vars in `tests/usb_hardware.rs`; blacklist

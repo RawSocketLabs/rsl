@@ -7,6 +7,8 @@ mod replay_port;
 mod sim_port;
 #[path = "common/synthetic.rs"]
 mod synthetic;
+#[path = "common/wire.rs"]
+mod wire;
 
 use replay_port::ReplayPort;
 use rtlsdr::control::ControlPort;
@@ -23,9 +25,9 @@ fn fixture() -> Trace {
 #[test]
 fn the_fixture_is_labelled_synthetic() {
     let trace = fixture();
-    assert!(trace.synthetic, "a hand-written trace must say so");
-    assert!(trace.capture.starts_with("SYNTHETIC-"));
-    assert_eq!(trace.sha256, None, "no capture file stands behind it");
+    assert!(trace.is_synthetic(), "a hand-written trace must say so");
+    assert!(trace.capture().starts_with("SYNTHETIC-"));
+    assert_eq!(trace.sha256(), None, "no capture file stands behind it");
 }
 
 #[test]
@@ -41,7 +43,11 @@ fn the_simulator_records_the_session_the_fixture_holds() {
             _ => None,
         })
         .collect();
-    let expected: Vec<_> = fixture().transfers.into_iter().map(|(_, t)| t).collect();
+    let expected: Vec<_> = fixture()
+        .transfers()
+        .iter()
+        .map(|(_, t)| t.clone())
+        .collect();
     assert_eq!(recorded, expected);
 }
 
@@ -73,7 +79,7 @@ fn a_session_that_stops_early_is_caught_at_finish() {
     let mut port = ReplayPort::new(fixture());
     port.control_out(setup(STORE_REQUEST, 0x00E3, 0x00E4), &[0x08], TIMEOUT)
         .expect("matches line 11");
-    let divergence = port.finish().expect_err("three transfers unplayed");
+    let divergence = port.finish().expect_err("four transfers unplayed");
     assert_eq!(divergence.line, Some(13));
     assert_eq!(divergence.actual, None);
 }

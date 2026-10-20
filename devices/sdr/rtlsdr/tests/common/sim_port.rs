@@ -7,7 +7,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use rtlsdr::control::{BusError, ControlPort, Setup};
-use rtlsdr_sim::{Control, Refusal, SimDongle};
+use rtlsdr_sim::{Refusal, SimDongle};
+
+use crate::wire::control;
 
 /// A shared simulated dongle; clone it to inspect the dongle while a `Device` owns the port.
 #[derive(Clone)]
@@ -22,21 +24,6 @@ impl SimPort {
     /// Locks the dongle.
     pub(crate) fn dongle(&self) -> MutexGuard<'_, SimDongle> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
-/// The simulator's form of a setup, its direction bit (USB 2.0 Table 9-2, bit 7) set for
-/// IN as the usb port sets it.
-fn control(setup: Setup, direction_in: bool) -> Control {
-    Control {
-        request_type: if direction_in {
-            setup.request_type | 0x80
-        } else {
-            setup.request_type & !0x80
-        },
-        request: setup.request,
-        value: setup.value,
-        index: setup.index,
     }
 }
 

@@ -1,11 +1,13 @@
 //! The RTL2832U USB demodulator side of the dongle.
 //!
-//! No admissible source for any RTL2832U fact is held yet: the identifiers, vendor request
-//! codes, register map, I2C repeater and init order will come from descriptor dumps and
-//! usbmon captures of the owner's RTL-SDR Blog V4 and V5 dongles (`CAPTURES.md`). Each is
-//! a [`Pending`] naming its GAP row in `PROVENANCE.md`; the rows without a typed value
-//! here (request codes, register addressing, the tuner's I2C route, the sample format)
-//! have no code until a capture shows their shape.
+//! No admissible source for any RTL2832U fact is held yet: the identifiers, request codes,
+//! register map, how the host reaches the tuner and the init order will come from
+//! descriptor dumps and usbmon captures of the owner's RTL-SDR Blog V4 and V5 dongles
+//! (`CAPTURES.md`). Even the architecture the seam and simulator assume (vendor control
+//! transfers plus one bulk IN stream, `RTL-GAP-12`; a demodulator-controlled gate in front
+//! of the tuner's I2C port, `RTL-GAP-13`) is a GAP row until a capture shows it. Each value
+//! below is a [`Pending`] naming its row in `PROVENANCE.md`; rows without a typed value
+//! here have no code until a capture shows their shape.
 
 use super::pending::Pending;
 

@@ -27,6 +27,7 @@ impl Field {
             width > 0 && shift + width <= 8,
             "a field lies within one byte"
         );
+        assert!(register < 32, "the chip has registers R0-R31");
         Self {
             register,
             shift,

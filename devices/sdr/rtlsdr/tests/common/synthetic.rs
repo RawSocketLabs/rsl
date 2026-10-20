@@ -23,6 +23,8 @@ pub(crate) const GATE: GateBit = GateBit {
     bit: 3,
 };
 
+const _: () = assert!(GATE.bit < 8, "a bit of one byte");
+
 /// USB 2.0 Table 9-2: a vendor request to the device (direction set by the port).
 const VENDOR_DEVICE: u8 = 0b0100_0000;
 
@@ -34,7 +36,7 @@ pub(crate) fn wiring() -> Wiring {
     Wiring {
         register_request: STORE_REQUEST,
         tuner_request: TUNER_REQUEST,
-        gate: GATE,
+        gate: Some(GATE),
     }
 }
 
@@ -58,19 +60,26 @@ fn gate(port: &mut dyn ControlPort, open: bool) -> Result<(), BusError> {
     )
 }
 
-/// The SYNTHETIC session: opens the repeater, page-writes a gain setting (R5-R7) built by
-/// `rtlsdr`'s R820T2 code, reads R0-R7 back, closes the repeater, and returns what the read
-/// decoded to.
+/// The SYNTHETIC session: opens the gate, reads R0-R7, page-writes a gain setting into
+/// R5-R7 of that image with `rtlsdr`'s R820T2 code, reads R0-R7 again, closes the gate,
+/// and returns what the second read decoded to.
 pub(crate) fn session(port: &mut dyn ControlPort) -> Result<Registers, BusError> {
-    let mut wanted = Registers::default();
-    wanted.set(field::LNA_GAIN, 0xA).expect("fits");
-    wanted.set(field::MIX_GAIN, 0x5).expect("fits");
-    let write = wanted.page_write(0x05, 3).expect("R5-R7 are writable");
-
     gate(port, true)?;
+    let mut image = read_tuner(port)?;
+    image.set(field::LNA_GAIN, 0xA).expect("fits");
+    image.set(field::MIX_GAIN, 0x5).expect("fits");
+    let write = image
+        .page_write(0x05, 3)
+        .expect("R5-R7 are writable and were read");
     port.control_out(setup(TUNER_REQUEST, 0, 0), write.as_bytes(), TIMEOUT)?;
+    let registers = read_tuner(port)?;
+    gate(port, false)?;
+    Ok(registers)
+}
+
+/// Reads R0-R7 from the tuner.
+fn read_tuner(port: &mut dyn ControlPort) -> Result<Registers, BusError> {
     let mut read = [0; 8];
     let len = port.control_in(setup(TUNER_REQUEST, 0, 0), &mut read, TIMEOUT)?;
-    gate(port, false)?;
     Ok(Registers::from_read(&read[..len]).expect("eight registers fit"))
 }

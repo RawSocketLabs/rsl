@@ -6,7 +6,9 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use rtlsdr::control::{BusError, ControlPort, Setup};
-use rtlsdr_sim::{Control, Divergence, Replay, Trace};
+use rtlsdr_sim::{Divergence, Replay, Trace};
+
+use crate::wire::control;
 
 /// A trace being played back.
 pub(crate) struct ReplayPort {
@@ -36,21 +38,6 @@ impl ReplayPort {
         let error = BusError::Other(Box::new(divergence.clone()));
         self.divergence.get_or_insert(divergence);
         error
-    }
-}
-
-/// The trace's form of a setup, its direction bit (USB 2.0 Table 9-2, bit 7) set for IN as
-/// the usb port sets it.
-fn control(setup: Setup, direction_in: bool) -> Control {
-    Control {
-        request_type: if direction_in {
-            setup.request_type | 0x80
-        } else {
-            setup.request_type & !0x80
-        },
-        request: setup.request,
-        value: setup.value,
-        index: setup.index,
     }
 }
 

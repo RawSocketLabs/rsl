@@ -1,9 +1,10 @@
 //! The transport seam: what a USB backend, a simulator or a capture replay must provide.
 //!
-//! **Unstable.** The RTL2832U is driven by vendor control transfers on endpoint 0 and
-//! streams samples on one bulk IN endpoint. A port moves one control transfer at a time and
-//! keeps their order; which requests carry which register accesses is the driver's
-//! business (and, until captures arrive, a GAP in `PROVENANCE.md`), not the port's.
+//! **Unstable.** The seam's shape is an assumption, pending descriptors and captures
+//! (`RTL-GAP-12`): that the dongle is controlled by vendor control transfers on endpoint 0
+//! and streams samples on one bulk IN endpoint. A port moves one control transfer at a
+//! time and keeps their order; which requests carry which accesses is the driver's
+//! business (all GAP rows in `PROVENANCE.md` so far), not the port's.
 
 use std::num::NonZeroUsize;
 use std::time::Duration;

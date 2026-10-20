@@ -7,11 +7,13 @@ capture: SYNTHETIC-0001
 sha256: -
 synthetic: yes
 ---
-# open the repeater: gate entry bit 3
+# open the gate: entry bit 3
 out 40 e1 00e3 00e4 08
+# read R0..R7
+in c0 e2 0000 0000 0008 6900000000000000
 # page write R5..R7 = 0a 00 05
 out 40 e2 0000 0000 050a0005
-# read R0..R7
+# read R0..R7 again
 in c0 e2 0000 0000 0008 69000000005000a0
-# close the repeater
+# close the gate
 out 40 e1 00e3 00e4 00

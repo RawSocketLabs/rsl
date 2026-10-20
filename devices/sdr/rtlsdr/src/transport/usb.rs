@@ -29,17 +29,37 @@ pub struct UsbPort {
 }
 
 impl UsbPort {
-    /// Opens the first attached device with identity `id` and claims `interface.number`,
-    /// detaching any kernel driver bound to it.
+    /// Opens the one attached device with identity `id`; see [`open_device`](Self::open_device).
     ///
     /// # Errors
     ///
-    /// [`usb::Error::NotFound`] if no such device is attached; any open or claim failure.
+    /// [`usb::Error::NotFound`] if no such device is attached;
+    /// [`usb::Error::Unsupported`] if several are (dongles may share an identity: pick one
+    /// by serial or port path from [`usb::devices`] and use `open_device`); any open or
+    /// claim failure.
     pub fn open(id: UsbId, interface: UsbInterface) -> Result<Self, usb::Error> {
-        let info = usb::devices()?
+        let mut matching = usb::devices()?
             .into_iter()
-            .find(|info| (info.vendor_id(), info.product_id()) == (id.vendor, id.product))
-            .ok_or(usb::Error::NotFound)?;
+            .filter(|info| (info.vendor_id(), info.product_id()) == (id.vendor, id.product));
+        let info = matching.next().ok_or(usb::Error::NotFound)?;
+        if matching.next().is_some() {
+            return Err(usb::Error::Unsupported(
+                "several devices share this identity; select one with UsbPort::open_device",
+            ));
+        }
+        Self::open_device(&info, interface)
+    }
+
+    /// Opens the device `info` describes and claims `interface.number`, detaching any
+    /// kernel driver bound to it.
+    ///
+    /// # Errors
+    ///
+    /// Any open or claim failure.
+    pub fn open_device(
+        info: &usb::DeviceInfo,
+        interface: UsbInterface,
+    ) -> Result<Self, usb::Error> {
         let claimed = info.open()?.claim_interface(interface.number)?;
         Ok(Self {
             interface: claimed,
@@ -101,7 +121,11 @@ impl ControlPort for UsbPort {
             .wait(timeout)
             .map_err(bus_error)?
             .ok_or(BusError::Timeout)?;
-        done.status.map_err(usb::Error::from).map_err(bus_error)?;
+        if let Err(error) = done.status {
+            // Keep the stream at its depth; the transfer's failure is what the caller sees.
+            drop(queue.submit(done.buffer));
+            return Err(bus_error(error.into()));
+        }
         let len = done.buffer.len();
         data[..len].copy_from_slice(&done.buffer);
         queue

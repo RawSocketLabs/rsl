@@ -20,11 +20,13 @@ pub const NDIV_FACTOR: u32 = 2;
 /// Fractional bits of `SDM_IN`: `Nfra = SDM_IN / 2^SDM_BITS`. prov: R820-DS-25
 pub const SDM_BITS: u32 = 16;
 
-/// The smallest `Nint`.
+/// The smallest `Nint`: both inputs zero. prov: R820-DS-24
 pub const NINT_MIN: u32 = NINT_OFFSET;
 
-/// The largest `Nint`.
-pub const NINT_MAX: u32 = NI2C_WEIGHT * 0x3F + 0x3 + NINT_OFFSET;
+/// The largest `Nint`: both inputs at their fields' maxima. prov: R820-DS-24
+// `u32::from` is not const; the casts widen u8 losslessly.
+pub const NINT_MAX: u32 =
+    NI2C_WEIGHT * field::NI2C.max() as u32 + field::SI2C.max() as u32 + NINT_OFFSET;
 
 /// The PLL divider inputs `SI2C`, `NI2C` and `SDM_IN`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

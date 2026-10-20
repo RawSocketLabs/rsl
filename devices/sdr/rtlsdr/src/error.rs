@@ -13,6 +13,6 @@ pub enum Error {
     Gap(#[from] Gap),
 
     /// The transport failed.
-    #[error("transport: {0}")]
+    #[error("transport failed")]
     Bus(#[from] BusError),
 }

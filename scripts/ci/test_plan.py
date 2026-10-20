@@ -460,10 +460,15 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(plan["packages"], ["rtlsdr"])
                 self.assertNotIn("no-std", plan["profiles"])
 
-    def test_the_rtlsdr_evidence_ledger_and_capture_policy_are_prose(self):
-        plan = planned([f"{RTLSDR}/PROVENANCE.md", f"{RTLSDR}/CAPTURES.md"])
+    def test_the_rtlsdr_capture_policy_is_prose(self):
+        plan = planned([f"{RTLSDR}/CAPTURES.md"])
         self.assertEqual(plan["profiles"], [])
         self.assertFalse(plan["full"])
+
+    def test_the_rtlsdr_evidence_ledger_reruns_the_driver_that_checks_it(self):
+        plan = planned([f"{RTLSDR}/PROVENANCE.md"])
+        self.assertFalse(plan["full"])
+        self.assertEqual(plan["packages"], ["rtlsdr"])
 
     def test_the_usb_transport_selects_both_of_its_drivers(self):
         plan = planned(["transports/usb/src/queue.rs"])

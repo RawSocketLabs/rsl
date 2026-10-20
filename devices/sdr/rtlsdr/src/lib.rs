@@ -8,10 +8,12 @@
 //! which refuses at runtime with its ledger row ([`Gap`]) instead of guessing.
 //!
 //! What exists: the transport seam ([`control::ControlPort`]: vendor control transfers, a
-//! bulk RX stream and time), its usbfs implementation (feature `usb`), a [`Device`] whose
+//! bulk RX stream and time; that shape is assumed pending `RTL-GAP-12`), its usbfs
+//! implementation (feature `usb`), a [`Device`] whose
 //! open waits on the captures, and the R820T2 register maths the register description
-//! defines ([`r820t2`]). The RTL2832U side (request codes, register map, I2C repeater, init
-//! order, the dongles' VID:PID) awaits USB captures; see `CAPTURES.md`.
+//! defines ([`r820t2`]). Everything about the RTL2832U side (identifiers, request codes,
+//! register map, how the tuner is reached, init order) awaits descriptors and USB
+//! captures; see `CAPTURES.md`.
 #![forbid(unsafe_code)]
 
 pub mod control;

@@ -4,6 +4,8 @@
 mod sim_port;
 #[path = "common/synthetic.rs"]
 mod synthetic;
+#[path = "common/wire.rs"]
+mod wire;
 
 use std::num::NonZeroUsize;
 use std::time::Duration;

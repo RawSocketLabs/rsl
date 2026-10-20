@@ -18,14 +18,17 @@ pub struct VgaGain(u8);
 impl VgaGain {
     /// The code nearest `tenth_db`, clamped to the documented range. (A step is an odd
     /// number of tenths, so no input lies halfway.)
+    ///
+    /// # Panics
+    ///
+    /// Never: the code is clamped to the field.
     #[must_use]
     pub fn nearest(tenth_db: i16) -> Self {
         let steps = (i32::from(tenth_db) - i32::from(VGA_MIN_TENTH_DB)
             + i32::from(VGA_STEP_TENTH_DB) / 2)
             .div_euclid(i32::from(VGA_STEP_TENTH_DB));
-        // Clamped to the field, so the conversion below cannot fail.
         let code = steps.clamp(0, i32::from(field::VGA_CODE.max()));
-        Self(u8::try_from(code).unwrap_or_default())
+        Self(u8::try_from(code).expect("invariant: clamped to the 4-bit field"))
     }
 
     /// The gain, in tenths of a dB.

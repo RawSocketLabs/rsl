@@ -2,19 +2,22 @@
 //! against a driver.
 //!
 //! ```text
+//! # SYNTHETIC example: the layout only, no real dongle's transfers
 //! rtlsdr-trace 1
-//! capture: CAP-0001
-//! sha256: <hex of the capture file, or ->
-//! synthetic: no
+//! capture: SYNTHETIC-EXAMPLE
+//! sha256: -
+//! synthetic: yes
 //! ---
 //! out 40 00 0000 0000 01
 //! in c0 00 0000 0000 0001 96
 //! ```
 //!
-//! The first line names the format. Header lines are `key: value` up to `---`; `capture`
-//! (the ledger's capture id) is required, `sha256` and `synthetic` (`yes`/`no`, default
-//! `no`) are optional. Then one control transfer per line in [`Transfer`]'s format, in
-//! order. Blank lines and lines starting with `#` are ignored anywhere.
+//! The first line names the format. Header lines are `key: value` up to `---`: `capture`
+//! (the ledger's capture id) and `synthetic` (`yes` for a hand-written trace, `no` for one
+//! taken from a capture) are required, and `sha256` (the capture file's, or `-`) is
+//! required to be a hash when `synthetic: no`. Then one control transfer per line in
+//! [`Transfer`]'s format, in order. Blank lines and lines starting with `#` are ignored
+//! anywhere.
 
 use std::fmt;
 
@@ -41,23 +44,48 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// A recorded session.
+/// A recorded session; only [`Trace::parse`] makes one, so every IN transfer's data fits
+/// its `wLength`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Trace {
     /// The capture id the ledger cites.
-    pub capture: String,
+    capture: String,
 
-    /// The capture file's SHA-256, if recorded.
-    pub sha256: Option<String>,
+    /// The capture file's SHA-256; always present for a non-synthetic trace.
+    sha256: Option<String>,
 
     /// Whether the session was written by hand rather than captured.
-    pub synthetic: bool,
+    synthetic: bool,
 
     /// The transfers, each with its 1-based line.
-    pub transfers: Vec<(usize, Transfer)>,
+    transfers: Vec<(usize, Transfer)>,
 }
 
 impl Trace {
+    /// The capture id the ledger cites.
+    #[must_use]
+    pub fn capture(&self) -> &str {
+        &self.capture
+    }
+
+    /// The capture file's SHA-256, if any.
+    #[must_use]
+    pub fn sha256(&self) -> Option<&str> {
+        self.sha256.as_deref()
+    }
+
+    /// Whether the session was written by hand rather than captured.
+    #[must_use]
+    pub fn is_synthetic(&self) -> bool {
+        self.synthetic
+    }
+
+    /// The transfers, each with its 1-based line.
+    #[must_use]
+    pub fn transfers(&self) -> &[(usize, Transfer)] {
+        &self.transfers
+    }
+
     /// Parses a trace file.
     ///
     /// # Errors
@@ -75,7 +103,7 @@ impl Trace {
             Some((line, _)) => return Err(error(line, "not an rtlsdr-trace 1 file")),
             None => return Err(error(1, "empty")),
         }
-        let (mut capture, mut sha256, mut synthetic) = (None, None, false);
+        let (mut capture, mut sha256, mut synthetic) = (None, None, None);
         let mut end = None;
         for (line, text) in lines.by_ref() {
             if text == "---" {
@@ -88,19 +116,27 @@ impl Trace {
             let value = value.trim();
             match key.trim() {
                 "capture" if !value.is_empty() => capture = Some(value.to_owned()),
-                "sha256" => sha256 = (value != "-").then(|| value.to_owned()),
+                "sha256" if value == "-" => {}
+                "sha256" if value.len() == 64 && is_hex(value) => {
+                    sha256 = Some(value.to_ascii_lowercase());
+                }
+                "sha256" => return Err(error(line, "sha256 is 64 hex digits or -")),
                 "synthetic" => {
-                    synthetic = match value {
+                    synthetic = Some(match value {
                         "yes" => true,
                         "no" => false,
                         _ => return Err(error(line, "synthetic is yes or no")),
-                    }
+                    });
                 }
                 _ => return Err(error(line, "unknown or empty header key")),
             }
         }
         let end = end.ok_or(error(text.lines().count(), "header has no --- line"))?;
         let capture = capture.ok_or(error(end, "header has no capture id"))?;
+        let synthetic = synthetic.ok_or(error(end, "header does not say synthetic: yes/no"))?;
+        if !synthetic && sha256.is_none() {
+            return Err(error(end, "a captured trace needs its capture's sha256"));
+        }
         let transfers = lines
             .map(|(line, text)| {
                 parse_transfer(text)
@@ -135,16 +171,21 @@ impl fmt::Display for Trace {
     }
 }
 
+/// Whether `text` is all hex digits (`from_str_radix` alone also takes a leading `+`).
+fn is_hex(text: &str) -> bool {
+    text.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 /// One transfer line.
 fn parse_transfer(text: &str) -> Option<Transfer> {
     let fields: Vec<&str> = text.split_whitespace().collect();
     let hex8 = |s: &str| {
-        (s.len() == 2)
+        (s.len() == 2 && is_hex(s))
             .then(|| u8::from_str_radix(s, 16).ok())
             .flatten()
     };
     let hex16 = |s: &str| {
-        (s.len() == 4)
+        (s.len() == 4 && is_hex(s))
             .then(|| u16::from_str_radix(s, 16).ok())
             .flatten()
     };
@@ -177,7 +218,7 @@ fn parse_data(text: &str) -> Option<Vec<u8>> {
     if text == "-" {
         return Some(Vec::new());
     }
-    if text.len() % 2 != 0 {
+    if text.len() % 2 != 0 || !is_hex(text) {
         return None;
     }
     (0..text.len())
@@ -253,8 +294,10 @@ impl Replay {
         let Transfer::In { data: sent, .. } = recorded else {
             unreachable!("expect matched the direction");
         };
-        data[..sent.len()].copy_from_slice(&sent);
-        Ok(sent.len())
+        // A parsed trace's data fits wLength, which matched data.len(); min keeps it so.
+        let len = sent.len().min(data.len());
+        data[..len].copy_from_slice(&sent[..len]);
+        Ok(len)
     }
 
     /// The driver writes `data`.
@@ -353,6 +396,8 @@ in c0 01 0002 0003 0002 0c
     #[test]
     fn malformed_files_name_their_line() {
         let bad = |text: &str| Trace::parse(text).unwrap_err().line;
+        let body =
+            |line: &str| format!("rtlsdr-trace 1\ncapture: X\nsynthetic: yes\n---\n{line}\n");
         assert_eq!(bad("rtlsdr-trace 2\n"), 1);
         assert_eq!(
             bad("rtlsdr-trace 1\nsynthetic: yes\n---\n"),
@@ -360,18 +405,89 @@ in c0 01 0002 0003 0002 0c
             "no capture id"
         );
         assert_eq!(
-            bad("rtlsdr-trace 1\ncapture: X\n---\nin c0 01 0002 0003 0001 0c0d\n"),
+            bad("rtlsdr-trace 1\ncapture: X\n---\n"),
+            3,
+            "synthetic unstated"
+        );
+        assert_eq!(
+            bad("rtlsdr-trace 1\ncapture: X\nsynthetic: no\n---\n"),
             4,
+            "a captured trace without its hash"
+        );
+        assert_eq!(
+            bad("rtlsdr-trace 1\ncapture: X\nsha256: 12\n"),
+            3,
+            "short hash"
+        );
+        assert_eq!(
+            bad(&body("in c0 01 0002 0003 0001 0c0d")),
+            5,
             "data longer than wLength"
         );
+        assert_eq!(bad(&body("out 40 01 2 3 -")), 5, "fixed-width fields");
+        assert_eq!(bad(&body("out 40 01 0002 0003 abc")), 5, "odd data");
         assert_eq!(
-            bad("rtlsdr-trace 1\ncapture: X\n---\nout 40 01 2 3 -\n"),
-            4,
-            "fixed-width fields"
+            bad(&body("out +4 01 0002 0003 -")),
+            5,
+            "a sign is not a hex digit"
         );
         assert_eq!(
-            bad("rtlsdr-trace 1\ncapture: X\n---\nout 40 01 0002 0003 abc\n"),
-            4
+            bad(&body("out 40 01 +002 0003 -")),
+            5,
+            "a sign is not a hex digit"
         );
+        assert_eq!(
+            bad(&body("out 40 01 0002 0003 +a")),
+            5,
+            "a sign is not a hex digit"
+        );
+    }
+
+    #[test]
+    fn a_captured_trace_keeps_its_hash() {
+        let hash = "AB".repeat(32);
+        let text = format!("rtlsdr-trace 1\ncapture: CAP-X\nsha256: {hash}\nsynthetic: no\n---\n");
+        let trace = Trace::parse(&text).unwrap();
+        assert_eq!(trace.sha256(), Some("ab".repeat(32).as_str()));
+        assert!(!trace.is_synthetic());
+    }
+
+    #[test]
+    fn generated_traces_print_and_parse_back_unchanged() {
+        // A seeded linear congruential generator: deterministic, no dependency.
+        let mut state: u64 = 0x5EED;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            u16::try_from(state >> 48).unwrap()
+        };
+        for _ in 0..200 {
+            let mut transfers = Vec::new();
+            for line in 0..usize::from(next() % 8) {
+                let [request_type, request] = next().to_be_bytes();
+                let control = Control {
+                    request_type,
+                    request,
+                    value: next(),
+                    index: next(),
+                };
+                let data: Vec<u8> = (0..next() % 5).map(|_| next().to_be_bytes()[0]).collect();
+                let transfer = if next() % 2 == 0 {
+                    let len = u16::try_from(data.len()).unwrap() + next() % 3;
+                    Transfer::In { control, len, data }
+                } else {
+                    Transfer::Out { control, data }
+                };
+                transfers.push((line + 6, transfer));
+            }
+            let trace = Trace {
+                capture: "SYNTHETIC-GEN".to_owned(),
+                sha256: None,
+                synthetic: true,
+                transfers,
+            };
+            assert_eq!(Trace::parse(&trace.to_string()), Ok(trace));
+        }
     }
 }

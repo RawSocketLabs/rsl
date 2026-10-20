@@ -45,6 +45,11 @@ pub enum RegisterError {
 
     /// A read longer than the register file.
     TooLong(usize),
+
+    /// A page write covering a register whose contents were never read from the chip:
+    /// writing it would send guessed bits, and the power-on defaults and Table 1-2's fixed
+    /// bits are `R820-GAP-08`.
+    NotRead(u8),
 }
 
 impl fmt::Display for RegisterError {
@@ -55,16 +60,29 @@ impl fmt::Display for RegisterError {
                 write!(f, "registers {first:#04x}+{count} are not a writable range")
             }
             Self::TooLong(len) => write!(f, "a {len}-byte read exceeds the register file"),
+            Self::NotRead(register) => write!(
+                f,
+                "register {register:#04x} was never read; its other bits are R820-GAP-08"
+            ),
         }
     }
 }
 
 impl core::error::Error for RegisterError {}
 
-/// The host's image of the register file. Starts all zero: the chip's power-on defaults
-/// are not documented (`R820-GAP-08`).
+/// The host's image of the register file, and which registers in it were read from the
+/// chip. Only those may be page-written: the chip's power-on defaults, and whether Table
+/// 1-2's fixed bits are required values, are not documented (`R820-GAP-08`), so a register
+/// the image has not read would go out with guessed bits. [`Registers::default`] knows no
+/// register: it serves the field maths, not writes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Registers([u8; REGISTER_COUNT]);
+pub struct Registers {
+    /// The bytes, by address.
+    bytes: [u8; REGISTER_COUNT],
+
+    /// Bit `n` set: register `n` holds what the chip returned (then edited by `set`).
+    read: u32,
+}
 
 impl Registers {
     /// The registers a read returned, `wire` being the bytes an MSB-first I2C master
@@ -78,28 +96,30 @@ impl Registers {
             return Err(RegisterError::TooLong(wire.len()));
         }
         let mut registers = Self::default();
-        for (register, byte) in registers.0.iter_mut().zip(wire) {
+        for (register, byte) in registers.bytes.iter_mut().zip(wire) {
             *register = byte.reverse_bits();
         }
+        // The first `wire.len()` (at most 32) registers were read.
+        registers.read = u32::try_from((1_u64 << wire.len()) - 1).unwrap_or(u32::MAX);
         Ok(registers)
     }
 
     /// Register `address`'s byte.
     #[must_use]
     pub fn byte(&self, address: u8) -> Option<u8> {
-        self.0.get(usize::from(address)).copied()
+        self.bytes.get(usize::from(address)).copied()
     }
 
     /// Whether R0 holds the R820T2's reference value.
     #[must_use]
     pub fn has_chip_id(&self) -> bool {
-        self.0[0] == CHIP_ID
+        self.bytes[0] == CHIP_ID
     }
 
     /// `field`'s value.
     #[must_use]
     pub fn get(&self, field: Field) -> u8 {
-        field.extract(self.0[usize::from(field.register())])
+        field.extract(self.bytes[usize::from(field.register())])
     }
 
     /// Sets `field` to `value`, leaving the register's other bits alone.
@@ -108,7 +128,7 @@ impl Registers {
     ///
     /// [`RegisterError::TooWide`] if `value` does not fit the field.
     pub fn set(&mut self, field: Field, value: u8) -> Result<(), RegisterError> {
-        let register = &mut self.0[usize::from(field.register())];
+        let register = &mut self.bytes[usize::from(field.register())];
         *register = field.insert(*register, value)?;
         Ok(())
     }
@@ -134,16 +154,20 @@ impl Registers {
     /// # Errors
     ///
     /// [`RegisterError::NotWritable`] for an empty range, one starting below
-    /// [`FIRST_WRITABLE`] or one running past the last register.
+    /// [`FIRST_WRITABLE`] or one running past the last register;
+    /// [`RegisterError::NotRead`] for a register in it the image has not read.
     pub fn page_write(&self, first: u8, count: usize) -> Result<PageWrite, RegisterError> {
         let start = usize::from(first);
         let refused = RegisterError::NotWritable { first, count };
         if first < FIRST_WRITABLE || count == 0 || start + count > REGISTER_COUNT {
             return Err(refused);
         }
+        if let Some(unread) = (first..).take(count).find(|&r| self.read >> r & 1 == 0) {
+            return Err(RegisterError::NotRead(unread));
+        }
         let mut bytes = [0; REGISTER_COUNT + 1];
         bytes[0] = first;
-        bytes[1..=count].copy_from_slice(&self.0[start..start + count]);
+        bytes[1..=count].copy_from_slice(&self.bytes[start..start + count]);
         Ok(PageWrite {
             bytes,
             len: count + 1,
@@ -203,10 +227,17 @@ mod tests {
         );
     }
 
+    /// An image of all 32 registers read back as `fill` (R0 as the chip ID).
+    fn read_all(fill: u8) -> Registers {
+        let mut wire = [fill.reverse_bits(); REGISTER_COUNT];
+        wire[0] = CHIP_ID.reverse_bits();
+        Registers::from_read(&wire).unwrap()
+    }
+
     #[test]
     fn a_page_write_starts_with_the_first_register_and_follows_in_order() {
         // R820-DS-03: Figure 1-1.
-        let mut registers = Registers::default();
+        let mut registers = read_all(0);
         registers.set(field::LNA_GAIN, 0xA).unwrap();
         registers.set(field::MIX_GAIN, 0x5).unwrap();
         let write = registers.page_write(0x05, 3).unwrap();
@@ -215,11 +246,27 @@ mod tests {
 
     #[test]
     fn page_writes_refuse_the_read_only_registers_and_the_end_of_the_file() {
-        let registers = Registers::default();
+        let registers = read_all(0);
         assert!(registers.page_write(0x04, 1).is_err(), "R4 is read-only");
         assert!(registers.page_write(0x05, 0).is_err(), "nothing to write");
         assert!(registers.page_write(0x1F, 2).is_err(), "R32 does not exist");
         assert_eq!(registers.page_write(0x05, 27).unwrap().as_bytes().len(), 28);
+    }
+
+    #[test]
+    fn page_writes_refuse_registers_never_read_rather_than_guess_their_bits() {
+        assert_eq!(
+            Registers::default().page_write(0x05, 1),
+            Err(RegisterError::NotRead(0x05))
+        );
+        let partial = Registers::from_read(&[0; 8]).unwrap();
+        assert!(partial.page_write(0x05, 3).is_ok(), "R5-R7 were read");
+        assert_eq!(
+            partial.page_write(0x06, 3),
+            Err(RegisterError::NotRead(0x08))
+        );
+        let all = read_all(0xA5);
+        assert_eq!(all.page_write(0x1F, 1).unwrap().as_bytes(), &[0x1F, 0xA5]);
     }
 
     #[test]

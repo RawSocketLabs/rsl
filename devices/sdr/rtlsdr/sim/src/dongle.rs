@@ -6,8 +6,10 @@ use std::fmt;
 use crate::trace::{Control, Direction, Op, Transfer};
 use crate::tuner::{R820t2, TunerRefusal};
 
-/// Which control transfers reach what. The RTL2832U's real wiring is not evidenced yet
-/// (`RTL-GAP-04` to `RTL-GAP-06`, `RTL-GAP-08`); tests supply a synthetic one.
+/// Which control transfers reach what. The model's whole shape (a register store keyed by
+/// `wValue`/`wIndex`, a tuner reached through one request's data stage, an optional gate
+/// bit) is an assumption pending captures (`RTL-GAP-04` to `RTL-GAP-06`, `RTL-GAP-08`,
+/// `RTL-GAP-13`), as are its numbers; tests supply a synthetic wiring.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Wiring {
     /// The `bRequest` that writes or reads the register store; `wValue` and `wIndex` key
@@ -17,8 +19,8 @@ pub struct Wiring {
     /// The `bRequest` whose data stage is an I2C transaction with the tuner.
     pub tuner_request: u8,
 
-    /// The register-store bit that opens the I2C repeater to the tuner.
-    pub gate: GateBit,
+    /// The register-store bit that must be set for the tuner to answer, if any.
+    pub gate: Option<GateBit>,
 }
 
 /// One bit of one register-store entry.
@@ -30,7 +32,7 @@ pub struct GateBit {
     /// The entry's `wIndex`.
     pub index: u16,
 
-    /// The bit of the entry's first byte.
+    /// The bit of the entry's first byte; 8 or more never opens.
     pub bit: u8,
 }
 
@@ -243,13 +245,16 @@ impl SimDongle {
         &self.tuner
     }
 
-    /// Whether the repeater passes I2C to the tuner.
+    /// Whether the tuner answers: no gate, or its bit set.
     fn gate_open(&self) -> bool {
-        let GateBit { value, index, bit } = self.wiring.gate;
+        let Some(GateBit { value, index, bit }) = self.wiring.gate else {
+            return true;
+        };
         self.store
             .get(&(value, index))
             .and_then(|entry| entry.first())
-            .is_some_and(|byte| byte >> bit & 1 == 1)
+            .and_then(|byte| byte.checked_shr(u32::from(bit)))
+            .is_some_and(|byte| byte & 1 == 1)
     }
 
     /// Records a completed transfer.

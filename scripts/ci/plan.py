@@ -71,8 +71,8 @@ LSDR_PORTABLE = f"{LSDR}/nostd-check"
 LIMESDR = "devices/sdr/limesdr"
 LIMESDR_ORACLE = f"{LIMESDR}/oracle"
 LIMESDR_PORTABLE = f"{LIMESDR}/nostd-check"
-# The clean-room RTL-SDR driver; no oracle or portable fixture: its evidence ledger and capture
-# policy are prose.
+# The clean-room RTL-SDR driver; no oracle or portable fixture. Its capture policy is prose; its
+# evidence ledger is not (tests/provenance.rs checks it against the code).
 RTLSDR = "devices/sdr/rtlsdr"
 # The PE_SYNC clock-board driver; its oracle runs libusdr's PE_SYNC against pe-sync-sim,
 # compiling the same vendored C.
@@ -222,7 +222,7 @@ def is_prose(path):
     return (PurePosixPath(path).name in PROSE_NAMES
             or path in {f"{USDR}/PORTING.md", f"{XSDR}/PORTING.md", f"{LSDR}/PORTING.md",
                         f"{LIMESDR}/PORTING.md", f"{PE_SYNC}/PORTING.md",
-                        f"{RTLSDR}/PROVENANCE.md", f"{RTLSDR}/CAPTURES.md"}
+                        f"{RTLSDR}/CAPTURES.md"}
             or (path.endswith(".md") and (path.startswith("docs/")
                 or path.startswith("codecs/bitsandbytes/docs/")
                 or path in {".github/CONTRIBUTING.md", ".github/SECURITY.md"}))

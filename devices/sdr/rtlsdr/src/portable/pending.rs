@@ -4,7 +4,7 @@
 //! will go once a capture or descriptor dump supplies it. It holds no value, so nothing can
 //! use a guess: [`Pending::get`] always refuses with the [`Gap`] naming the ledger row
 //! (`PROVENANCE.md`) that records what is missing. When the evidence arrives the constant
-//! becomes a plain value of the same type, and every caller compiles unchanged around `?`.
+//! becomes a plain value of type `T`, and each `.get()?` at its callers becomes that value.
 
 use core::fmt;
 use core::marker::PhantomData;
