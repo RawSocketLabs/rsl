@@ -14,7 +14,7 @@ from plan import (BNB, MACROS, SOCKS, NOSTD, USDR, USDR_ORACLE, USDR_PORTABLE, X
                   VENDOR_LIBUSDR, XSDR_PORTABLE, LSDR, LSDR_ORACLE, LSDR_PORTABLE, PE_SYNC,
                   PE_SYNC_ORACLE,
                   PE_SYNC_PORTABLE, LMK05318, LIMESDR,
-                  LIMESDR_ORACLE, LIMESDR_PORTABLE, HAL, LP8758, LMS7002M, FRONTEND, STREAM,
+                  LIMESDR_ORACLE, LIMESDR_PORTABLE, RTLSDR, HAL, LP8758, LMS7002M, FRONTEND, STREAM,
                   RELEASE_PROFILES, DETAIL, Package,
                   affected_packages, bare_metal_devices, changed_paths, handed_on,
                   released_members, select)
@@ -47,8 +47,9 @@ def fixture():
         FRONTEND: Package("sdr-frontend", {BNB, LMK05318, HAL}),
         STREAM: Package("sdr-stream", {BNB, HAL}),
         f"{STREAM}/sim": Package("sdr-stream-sim", set()),
+        "transports/usb": Package("usb", set()),
         "devices/sdr/usdr": Package("usdr", {BNB, FRONTEND, LMK05318, HAL, LP8758, STREAM,
-                                                 "devices/sdr/usdr/sim"}),
+                                                 "transports/usb", "devices/sdr/usdr/sim"}),
         "devices/sdr/usdr/sim": Package("usdr-sim", {f"{STREAM}/sim"}),
         USDR_ORACLE: Package("usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
         USDR_PORTABLE: Package("usdr-nostd-check", {BNB, USDR, HAL, LP8758, STREAM}, False),
@@ -78,6 +79,8 @@ def fixture():
         "devices/sdr/limesdr/sim": Package("limesdr-sim", {"devices/sdr/chips/lms7002m/sim"}),
         LIMESDR_ORACLE: Package("limesdr-oracle",
                                 {LIMESDR, "devices/sdr/limesdr/sim", USDR_ORACLE}, False),
+        RTLSDR: Package("rtlsdr", {HAL, "transports/usb", f"{RTLSDR}/sim"}),
+        f"{RTLSDR}/sim": Package("rtlsdr-sim", set()),
         "tools/rust-skills/crates/xtask": Package("xtask", set(), False),
     }
 
@@ -199,7 +202,7 @@ class SelectionTests(unittest.TestCase):
         cases = [
             (f"{HAL}/src/bus.rs",
              {"hal", "lp8758", "lms7002m", "lsdr", "usdr", "xsdr",
-              "limesdr", "pe-sync", "sdr-frontend", "sdr-stream"}),
+              "limesdr", "pe-sync", "rtlsdr", "sdr-frontend", "sdr-stream"}),
             (f"{LP8758}/src/buck.rs", {"lp8758", "usdr", "xsdr"}),
         ]
         for path, packages in cases:
@@ -441,6 +444,32 @@ class SelectionTests(unittest.TestCase):
         plan = planned([f"{LIMESDR}/PORTING.md"])
         self.assertEqual(plan["profiles"], [])
         self.assertFalse(plan["full"])
+
+    def test_rtlsdr_simulator_selects_its_driver_and_no_oracle_or_portable_profile(self):
+        plan = planned([f"{RTLSDR}/sim/src/dongle.rs"])
+        self.assertFalse(plan["full"])
+        self.assertEqual(plan["packages"], ["rtlsdr", "rtlsdr-sim"])
+        self.assertFalse({p for p in plan["profiles"] if p.endswith(("-oracle", "-portable"))})
+
+    def test_rtlsdr_driver_changes_select_only_the_driver(self):
+        for path in (f"{RTLSDR}/src/portable/r820t2/pll.rs", f"{RTLSDR}/AGENTS.md",
+                     f"{RTLSDR}/tests/fixtures/synthetic-session.trace"):
+            with self.subTest(path=path):
+                plan = planned([path])
+                self.assertFalse(plan["full"])
+                self.assertEqual(plan["packages"], ["rtlsdr"])
+                self.assertNotIn("no-std", plan["profiles"])
+
+    def test_the_rtlsdr_evidence_ledger_and_capture_policy_are_prose(self):
+        plan = planned([f"{RTLSDR}/PROVENANCE.md", f"{RTLSDR}/CAPTURES.md"])
+        self.assertEqual(plan["profiles"], [])
+        self.assertFalse(plan["full"])
+
+    def test_the_usb_transport_selects_both_of_its_drivers(self):
+        plan = planned(["transports/usb/src/queue.rs"])
+        self.assertFalse(plan["full"])
+        self.assertTrue({"usb", "usdr", "rtlsdr"} <= set(plan["packages"]))
+        self.assertNotIn("rtlsdr-sim", plan["packages"], "the sim does not use usb")
 
     def test_an_explicit_limesdr_release_qualifies_its_core_and_its_bare_metal_crates(self):
         member = {"product": "limesdr", "root": LIMESDR, "name": "limesdr",
