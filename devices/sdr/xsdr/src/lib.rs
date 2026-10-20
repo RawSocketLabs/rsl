@@ -10,12 +10,14 @@
 //! gateware with a TX MMCM ([`Device::set_sample_rate`]), RX/TX LO tuning, gains and
 //! baseband bandwidths, explicit RX/TX paths with the RF loopback, TDD tuning, the
 //! baseband NCOs, the DC and I/Q corrections, the TX test generator and mute, the
-//! baseband and digital loopbacks, the RX stream in `ci16` ([`Device::create_rx_stream`],
-//! [`Device::receive`]; the stream engine's registers are `sdr-stream`'s, shared with the
-//! uSDR), and the close ([`Device::close`]); the probe brings up every board the
-//! connector admits, as libusdr does. Not yet ported: the front ends' controls, the XTRX
-//! and sSDR variants (identified, then refused), gateware with an RX or shared MMCM or a
-//! DUC/DDC, TX streams and calibration. The LMS7002M's register values,
+//! baseband and digital loopbacks, the RX and TX streams in `ci16`
+//! ([`Device::create_rx_stream`], [`Device::receive`], [`Device::create_tx_stream`],
+//! [`Device::send`]; the stream engine's registers are `sdr-stream`'s, shared with the
+//! uSDR) with the TX MMCM, the TX phase calibration and the TX quality check, and the
+//! close ([`Device::close`]); the probe brings up every board the connector admits, as
+//! libusdr does. Not yet ported: the front ends' controls, the XTRX and sSDR variants
+//! (identified, then refused), gateware with an RX or shared MMCM, a DUC/DDC or the
+//! extended TX front end, and the RF calibrations. The LMS7002M's register values,
 //! chip operations and control code are `lms7002m`'s. See `PORTING.md` beside this crate.
 //!
 //! # The XSDR board
