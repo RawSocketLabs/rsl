@@ -1,7 +1,7 @@
 //! Values the admissible evidence does not give yet.
 //!
-//! A [`Pending`] stands where a register address, request code, identifier or sequence
-//! will go once a capture or descriptor dump supplies it. It holds no value, so nothing can
+//! A [`Pending`] stands where a typed value (a register address, request code or
+//! identifier) will go once a capture or descriptor dump supplies it. It holds no value, so nothing can
 //! use a guess: [`Pending::get`] always refuses with the [`Gap`] naming the ledger row
 //! (`PROVENANCE.md`) that records what is missing. When the evidence arrives the constant
 //! becomes a plain value of type `T`, and each `.get()?` at its callers becomes that value.
@@ -24,7 +24,7 @@ impl<T> Pending<T> {
     #[must_use]
     pub const fn gap(id: &'static str) -> Self {
         Self {
-            gap: Gap(id),
+            gap: Gap::new(id),
             value: PhantomData,
         }
     }
@@ -50,6 +50,11 @@ impl<T> Pending<T> {
 pub struct Gap(&'static str);
 
 impl Gap {
+    /// A refusal naming ledger row `id` (class GAP).
+    pub(crate) const fn new(id: &'static str) -> Self {
+        Self(id)
+    }
+
     /// The ledger row, such as `RTL-GAP-07`.
     #[must_use]
     pub const fn ledger_id(self) -> &'static str {

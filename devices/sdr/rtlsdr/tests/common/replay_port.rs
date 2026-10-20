@@ -1,12 +1,14 @@
 //! `control::ControlPort` over `rtlsdr_sim::Replay`: the driver's control transfers must
-//! follow the recorded trace. Traces hold control transfers only, so the RX stream is
-//! refused and sleeps are ignored.
+//! follow the recorded trace, and a recorded stall fails the transfer as the sim's port
+//! fails a stalled one. Traces hold control transfers only, so the RX stream is refused and
+//! sleeps are ignored.
 
+use std::io;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use rtlsdr::control::{BusError, ControlPort, Setup};
-use rtlsdr_sim::{Divergence, Replay, Trace};
+use rtlsdr_sim::{Divergence, Replay, ReplayError, Trace};
 
 use crate::wire::control;
 
@@ -33,11 +35,16 @@ impl ReplayPort {
         self.divergence.map_or_else(|| self.replay.finish(), Err)
     }
 
-    /// Keeps a divergence and reports it to the driver as a transport failure.
-    fn diverged(&mut self, divergence: Divergence) -> BusError {
-        let error = BusError::Other(Box::new(divergence.clone()));
-        self.divergence.get_or_insert(divergence);
-        error
+    /// A recorded stall as the seam reports it; a divergence is also kept for the test.
+    fn failed(&mut self, error: ReplayError) -> BusError {
+        match error {
+            ReplayError::Stall { .. } => BusError::Io(io::Error::other(error)),
+            ReplayError::Diverged(divergence) => {
+                let error = BusError::Other(Box::new(divergence.clone()));
+                self.divergence.get_or_insert(divergence);
+                error
+            }
+        }
     }
 }
 
@@ -50,7 +57,7 @@ impl ControlPort for ReplayPort {
     ) -> Result<usize, BusError> {
         self.replay
             .control_in(control(setup, true), data)
-            .map_err(|divergence| self.diverged(divergence))
+            .map_err(|error| self.failed(error))
     }
 
     fn control_out(
@@ -61,7 +68,7 @@ impl ControlPort for ReplayPort {
     ) -> Result<(), BusError> {
         self.replay
             .control_out(control(setup, false), data)
-            .map_err(|divergence| self.diverged(divergence))
+            .map_err(|error| self.failed(error))
     }
 
     fn rx_start(&mut self, _transfer_len: usize, _depth: NonZeroUsize) -> Result<(), BusError> {

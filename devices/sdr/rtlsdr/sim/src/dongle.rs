@@ -7,20 +7,35 @@ use crate::trace::{Control, Direction, Op, Transfer};
 use crate::tuner::{R820t2, TunerRefusal};
 
 /// Which control transfers reach what. The model's whole shape (a register store keyed by
-/// `wValue`/`wIndex`, a tuner reached through one request's data stage, an optional gate
-/// bit) is an assumption pending captures (`RTL-GAP-04` to `RTL-GAP-06`, `RTL-GAP-08`,
-/// `RTL-GAP-13`), as are its numbers; tests supply a synthetic wiring.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// `wValue`/`wIndex`, a tuner reached through a control transfer's data stage, an optional
+/// gate bit, and a target chosen by the setup alone) is an assumption pending captures
+/// (`RTL-GAP-04` to `RTL-GAP-06`, `RTL-GAP-08`, `RTL-GAP-13`, `RTL-GAP-14`), as are its
+/// numbers; tests supply a synthetic wiring.
+#[derive(Clone, Copy, Debug)]
 pub struct Wiring {
-    /// The `bRequest` that writes or reads the register store; `wValue` and `wIndex` key
-    /// the entry.
-    pub register_request: u8,
-
-    /// The `bRequest` whose data stage is an I2C transaction with the tuner.
-    pub tuner_request: u8,
+    /// Where each control transfer goes, from its setup alone.
+    pub route: fn(Control) -> Route,
 
     /// The register-store bit that must be set for the tuner to answer, if any.
     pub gate: Option<GateBit>,
+}
+
+/// Where [`Wiring::route`] sends a control transfer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Route {
+    /// The register store; `wValue` and `wIndex` key the entry.
+    Store,
+
+    /// The tuner's I2C port, if the gate is open: a write's data stage is a page write, a
+    /// read's is read from R0 on.
+    Tuner {
+        /// The first register of a write, when the setup carries it; `None` when it is the
+        /// data stage's first byte. Reads ignore it.
+        register: Option<u8>,
+    },
+
+    /// Nothing: the transfer stalls.
+    Stall,
 }
 
 /// One bit of one register-store entry.
@@ -115,27 +130,29 @@ impl SimDongle {
     ///
     /// # Errors
     ///
-    /// [`Refusal::Stall`] for an unrouted request or a gated tuner; [`Refusal::Tuner`] if
-    /// the tuner does not acknowledge.
+    /// [`Refusal::Stall`] for a transfer routed nowhere or to a gated tuner;
+    /// [`Refusal::Tuner`] if the tuner does not acknowledge.
     pub fn control_in(&mut self, control: Control, data: &mut [u8]) -> Result<usize, Refusal> {
-        let sent = if control.request == self.wiring.register_request {
-            let entry = self.store.get(&(control.value, control.index));
-            let mut sent = vec![0; data.len()];
-            for (byte, stored) in sent.iter_mut().zip(entry.into_iter().flatten()) {
-                *byte = *stored;
+        let sent = match (self.wiring.route)(control) {
+            Route::Store => {
+                let entry = self.store.get(&(control.value, control.index));
+                let mut sent = vec![0; data.len()];
+                for (byte, stored) in sent.iter_mut().zip(entry.into_iter().flatten()) {
+                    *byte = *stored;
+                }
+                self.record(Direction::In, control, &sent);
+                sent
             }
-            self.record(Direction::In, control, &sent);
-            sent
-        } else if control.request == self.wiring.tuner_request && self.gate_open() {
-            let sent = match self.tuner.read(data.len()) {
-                Ok(sent) => sent,
-                Err(refusal) => return Err(self.nak(Direction::In, control, refusal)),
-            };
-            self.record(Direction::In, control, &sent);
-            self.trace.push(Op::TunerRead { len: sent.len() });
-            sent
-        } else {
-            return Err(self.stall(Direction::In, control));
+            Route::Tuner { .. } if self.gate_open() => {
+                let sent = match self.tuner.read(data.len()) {
+                    Ok(sent) => sent,
+                    Err(refusal) => return Err(self.nak(Direction::In, control, refusal)),
+                };
+                self.record(Direction::In, control, &sent);
+                self.trace.push(Op::TunerRead { len: sent.len() });
+                sent
+            }
+            Route::Tuner { .. } | Route::Stall => return Err(self.stall(Direction::In, control)),
         };
         data[..sent.len()].copy_from_slice(&sent);
         Ok(sent.len())
@@ -147,21 +164,26 @@ impl SimDongle {
     ///
     /// As [`control_in`](Self::control_in).
     pub fn control_out(&mut self, control: Control, data: &[u8]) -> Result<(), Refusal> {
-        if control.request == self.wiring.register_request {
-            self.store
-                .insert((control.value, control.index), data.to_vec());
-            self.record(Direction::Out, control, data);
-        } else if control.request == self.wiring.tuner_request && self.gate_open() {
-            if let Err(refusal) = self.tuner.write(data) {
-                return Err(self.nak(Direction::Out, control, refusal));
+        match (self.wiring.route)(control) {
+            Route::Store => {
+                self.store
+                    .insert((control.value, control.index), data.to_vec());
+                self.record(Direction::Out, control, data);
             }
-            self.record(Direction::Out, control, data);
-            self.trace.push(Op::TunerWrite {
-                register: data[0],
-                data: data[1..].to_vec(),
-            });
-        } else {
-            return Err(self.stall(Direction::Out, control));
+            Route::Tuner { register } if self.gate_open() => {
+                let page: Vec<u8> = register.into_iter().chain(data.iter().copied()).collect();
+                if let Err(refusal) = self.tuner.write(&page) {
+                    return Err(self.nak(Direction::Out, control, refusal));
+                }
+                self.record(Direction::Out, control, data);
+                self.trace.push(Op::TunerWrite {
+                    register: page[0],
+                    data: page[1..].to_vec(),
+                });
+            }
+            Route::Tuner { .. } | Route::Stall => {
+                return Err(self.stall(Direction::Out, control));
+            }
         }
         Ok(())
     }
@@ -278,7 +300,63 @@ impl SimDongle {
 
     /// Records and returns a stall.
     fn stall(&mut self, direction: Direction, control: Control) -> Refusal {
-        self.trace.push(Op::Stall { direction, control });
+        self.trace
+            .push(Op::Control(Transfer::Stall { direction, control }));
         Refusal::Stall
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// SYNTHETIC wiring, not RTL2832U values: one request whose `wIndex` picks the target,
+    /// with the tuner's first register in `wValue`.
+    fn by_index(control: Control) -> Route {
+        match (control.request, control.index) {
+            (0x01, 0x0000) => Route::Store,
+            (0x01, 0x0010) => Route::Tuner {
+                register: Some(control.value.to_le_bytes()[0]),
+            },
+            _ => Route::Stall,
+        }
+    }
+
+    fn setup(index: u16, value: u16) -> Control {
+        Control {
+            request_type: 0x40,
+            request: 0x01,
+            value,
+            index,
+        }
+    }
+
+    #[test]
+    fn a_wiring_can_route_on_windex() {
+        let mut dongle = SimDongle::new(Wiring {
+            route: by_index,
+            gate: None,
+        });
+        dongle
+            .control_out(setup(0x0010, 0x0005), &[0x0A, 0x0B])
+            .unwrap();
+        assert_eq!(dongle.tuner().registers()[5..7], [0x0A, 0x0B]);
+        assert_eq!(
+            dongle.trace()[1],
+            Op::TunerWrite {
+                register: 0x05,
+                data: vec![0x0A, 0x0B],
+            }
+        );
+        dongle.control_out(setup(0x0000, 0x0005), &[0x0C]).unwrap();
+        assert_eq!(
+            dongle.tuner().registers()[5],
+            0x0A,
+            "the store, not the tuner"
+        );
+        assert_eq!(
+            dongle.control_out(setup(0x0011, 0x0005), &[0x0C]),
+            Err(Refusal::Stall)
+        );
     }
 }

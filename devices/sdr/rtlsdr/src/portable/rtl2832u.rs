@@ -7,7 +7,8 @@
 //! transfers plus one bulk IN stream, `RTL-GAP-12`; a demodulator-controlled gate in front
 //! of the tuner's I2C port, `RTL-GAP-13`) is a GAP row until a capture shows it. Each value
 //! below is a [`Pending`] naming its row in `PROVENANCE.md`; rows without a typed value
-//! here have no code until a capture shows their shape.
+//! here have no code until a capture shows their shape, except the open (`RTL-GAP-07`),
+//! which `Device::open` refuses with directly.
 
 use super::pending::Pending;
 
@@ -39,7 +40,3 @@ pub const V5_ID: Pending<UsbId> = Pending::gap("RTL-GAP-02");
 
 /// The interface and bulk IN endpoint the sample stream uses. prov: RTL-GAP-03
 pub const STREAM_INTERFACE: Pending<UsbInterface> = Pending::gap("RTL-GAP-03");
-
-/// The open: the control transfers that bring the demodulator and tuner up. Its shape (a
-/// fixed list, or reads whose answers steer it) is part of the gap. prov: RTL-GAP-07
-pub const OPEN: Pending<()> = Pending::gap("RTL-GAP-07");

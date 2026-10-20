@@ -18,7 +18,7 @@ mod replay;
 mod trace;
 mod tuner;
 
-pub use dongle::{GateBit, Refusal, SimDongle, Wiring};
-pub use replay::{Divergence, ParseError, Replay, Trace};
+pub use dongle::{GateBit, Refusal, Route, SimDongle, Wiring};
+pub use replay::{Divergence, ParseError, Replay, ReplayError, Trace};
 pub use trace::{Control, Direction, Op, Transfer};
 pub use tuner::{R820t2, TunerRefusal};

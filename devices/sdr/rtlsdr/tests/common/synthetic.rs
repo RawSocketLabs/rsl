@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use rtlsdr::control::{BusError, ControlPort, Setup};
 use rtlsdr::r820t2::{Registers, field};
-use rtlsdr_sim::{GateBit, Wiring};
+use rtlsdr_sim::{Control, GateBit, Route, Wiring};
 
 /// SYNTHETIC: the request the simulator routes to its register store.
 pub(crate) const STORE_REQUEST: u8 = 0xE1;
@@ -31,11 +31,18 @@ const VENDOR_DEVICE: u8 = 0b0100_0000;
 /// A control timeout; nothing simulated waits on it.
 pub(crate) const TIMEOUT: Duration = Duration::from_millis(100);
 
-/// The SYNTHETIC wiring.
+/// The SYNTHETIC wiring: the target by `bRequest` alone, the tuner's first register in its
+/// data stage.
 pub(crate) fn wiring() -> Wiring {
+    fn route(control: Control) -> Route {
+        match control.request {
+            STORE_REQUEST => Route::Store,
+            TUNER_REQUEST => Route::Tuner { register: None },
+            _ => Route::Stall,
+        }
+    }
     Wiring {
-        register_request: STORE_REQUEST,
-        tuner_request: TUNER_REQUEST,
+        route,
         gate: Some(GATE),
     }
 }

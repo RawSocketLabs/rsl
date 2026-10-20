@@ -13,7 +13,7 @@ use std::time::Duration;
 use rtlsdr::control::{BusError, ControlPort};
 use rtlsdr::r820t2::{Registers, field};
 use rtlsdr::{Device, Error};
-use rtlsdr_sim::{Op, SimDongle};
+use rtlsdr_sim::{Op, SimDongle, Transfer};
 use sim_port::SimPort;
 use synthetic::{TIMEOUT, TUNER_REQUEST, setup, wiring};
 
@@ -45,7 +45,10 @@ fn the_tuner_answers_only_while_the_repeater_is_open() {
         port.control_in(tuner, &mut [0; 1], TIMEOUT).is_err(),
         "the session closed the gate again"
     );
-    assert!(matches!(port.dongle().trace()[0], Op::Stall { .. }));
+    assert!(matches!(
+        port.dongle().trace()[0],
+        Op::Control(Transfer::Stall { .. })
+    ));
 
     // The driver's page write landed where the independent tuner model puts it, and the
     // driver's decoding of the model's LSB-first read gets the same registers back.

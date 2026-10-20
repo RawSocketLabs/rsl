@@ -50,7 +50,7 @@ impl fmt::Display for Direction {
     }
 }
 
-/// One completed control transfer.
+/// One control transfer, as the device answered it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Transfer {
     /// A read: the setup, `wLength`, and the bytes the device returned.
@@ -73,15 +73,26 @@ pub enum Transfer {
         /// What the host sent.
         data: Vec<u8>,
     },
+
+    /// A transfer the device refused (stalled); its data stage is not recorded.
+    Stall {
+        /// Its direction.
+        direction: Direction,
+
+        /// Its setup.
+        control: Control,
+    },
 }
 
-/// One line per transfer: `in TT RR VVVV IIII LLLL DATA` or `out TT RR VVVV IIII DATA`, in
-/// fixed-width lowercase hex, `DATA` the bytes run together or `-` when empty.
+/// One line per transfer: `in TT RR VVVV IIII LLLL DATA`, `out TT RR VVVV IIII DATA` or
+/// `stall in|out TT RR VVVV IIII`, in fixed-width lowercase hex, `DATA` the bytes run
+/// together or `-` when empty.
 impl fmt::Display for Transfer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::In { control, len, data } => write!(f, "in {control} {len:04x} {}", Hex(data)),
             Self::Out { control, data } => write!(f, "out {control} {}", Hex(data)),
+            Self::Stall { direction, control } => write!(f, "stall {direction} {control}"),
         }
     }
 }
@@ -100,18 +111,10 @@ impl fmt::Display for Hex<'_> {
 
 /// One operation, as the dongle saw it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Op {
-    /// A control transfer the dongle completed.
+    /// A control transfer, completed or stalled.
     Control(Transfer),
-
-    /// A control transfer the dongle refused (stalled).
-    Stall {
-        /// Its direction.
-        direction: Direction,
-
-        /// Its setup.
-        control: Control,
-    },
 
     /// The page write a completed control transfer carried to the tuner.
     TunerWrite {
@@ -153,14 +156,12 @@ pub enum Op {
     },
 }
 
-/// One line per operation: a [`Transfer`]'s own line, `stall DIR TT RR VVVV IIII`,
-/// `tuner-wr RR DATA`, `tuner-rd LEN`, `rx-start LEN DEPTH`, `rx-read LEN`, `rx-stop`
+/// One line per operation: a [`Transfer`]'s own line, `tuner-wr RR DATA`, `tuner-rd LEN`, `rx-start LEN DEPTH`, `rx-read LEN`, `rx-stop`
 /// and `sleep US`.
 impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Control(transfer) => write!(f, "{transfer}"),
-            Self::Stall { direction, control } => write!(f, "stall {direction} {control}"),
             Self::TunerWrite { register, data } => {
                 write!(f, "tuner-wr {register:02x} {}", Hex(data))
             }

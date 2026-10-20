@@ -45,9 +45,9 @@ R828D, and the "V5") and cited in `PROVENANCE.md`. The licensing rule there appl
 
 ## Traces for the replay harness
 
-`rtlsdr-sim`'s `Trace` format (`sim/src/replay.rs`) holds one control transfer per line
-under a header naming the capture id and its SHA-256. A trace extracted from a capture is
+`rtlsdr-sim`'s `Trace` format (`sim/src/replay.rs`) holds one control transfer per line,
+completed or stalled, under a header naming the capture id and its SHA-256. A trace extracted from a capture is
 a derived file: it too stays outside the repository until the owner approves, and then
-lands under `tests/fixtures/` with `synthetic: no`. The only trace committed now,
-`tests/fixtures/synthetic-session.trace`, is SYNTHETIC: written by hand to test the
-harness, and never evidence.
+lands under `tests/fixtures/` with `synthetic: no`. The only traces committed now,
+`tests/fixtures/synthetic-{session,stall}.trace`, are SYNTHETIC: written by hand to test
+the harness, and never evidence.

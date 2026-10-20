@@ -99,17 +99,19 @@ and "V5" dongles: descriptor dumps (DESC) and captures (CAP), per `CAPTURES.md`.
 | RTL-GAP-04 | none (sim takes it as `Wiring`) | ? | vendor `bmRequestType`/`bRequest` codes for register access | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-05 | none (sim takes it as `Wiring`) | ? | how a register's address and block map onto `wValue`/`wIndex` | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-06 | none (sim takes it as `Wiring::gate`) | ? | the I2C repeater gate's register and bit | GAP | needs CAP | agent, 2026-10-19 | — |
-| RTL-GAP-07 | `rtl2832u::OPEN: Pending<()>`, `Device::open` | ? | the open: init order and values | GAP | needs CAP | agent, 2026-10-19 | — |
-| RTL-GAP-08 | none (sim takes it as `Wiring::tuner_request`) | ? | how a tuner I2C transaction rides the vendor requests | GAP | needs CAP | agent, 2026-10-19 | — |
+| RTL-GAP-07 | `Device::open` (refuses with this row) | ? | the open: init order and values | GAP | needs CAP | agent, 2026-10-19 | — |
+| RTL-GAP-08 | none (sim takes it as `Wiring::route`, `Route::Tuner`) | ? | how a tuner I2C transaction rides the vendor requests | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-09 | none | ? | the bulk stream's sample format | GAP | needs CAP + EXP | agent, 2026-10-19 | — |
 | RTL-GAP-10 | none | ? | sample-rate and IF/resampler programming | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-11 | none | ? | each board's tuner and demodulator crystal frequency | GAP | needs EXP (board inspection) or DESC/CAP | agent, 2026-10-19 | — |
 | RTL-GAP-12 | `control::ControlPort` (its shape) | assumed | that the dongle is controlled by vendor control transfers on endpoint 0 and streams samples on one bulk IN endpoint | GAP | needs DESC + CAP | agent, 2026-10-20 | — |
 | RTL-GAP-13 | rtlsdr-sim `Wiring` (its shape: `gate` is optional) | assumed | that the host reaches the tuner's I2C port through the demodulator, behind a gate the demodulator controls | GAP | needs CAP | agent, 2026-10-20 | — |
+| RTL-GAP-14 | rtlsdr-sim `Wiring::route` (its shape) | assumed | that a control transfer's setup alone (`bmRequestType`, `bRequest`, `wValue`, `wIndex`) picks the register store, the tuner or a stall, and the tuner's first register is in the setup or the data stage's first byte | GAP | needs CAP | agent, 2026-10-20 | — |
 
 ## Not ledgered
 
-Synthetic test values (`tests/common/synthetic.rs`, `tests/fixtures/synthetic-session.trace`,
-`rtlsdr-sim`'s format tests) are invented for the harness, labelled SYNTHETIC, and never
-cited here. `bmRequestType`'s direction and type bits in the tests' adapters are from USB 2.0
-§9.3.1, Table 9-2; the usb port's own bit handling is `usb`'s.
+Synthetic test values (`tests/common/synthetic.rs`, `tests/fixtures/synthetic-*.trace`,
+`rtlsdr-sim`'s format and wiring tests) are invented for the harness, labelled SYNTHETIC,
+and never cited here. `bmRequestType`'s direction and type bits in the tests' adapters are
+from USB 2.0 §9.3.1, Table 9-2; the usb port's own bit handling is `usb`'s. A constant that
+is no device fact (the trace format's own first line) is tagged `prov: none`.

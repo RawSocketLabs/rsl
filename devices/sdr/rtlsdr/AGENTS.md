@@ -23,7 +23,7 @@ never a guessed number. Vendor documents stay outside the repo; cite them by pag
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rtlsdr` (unpublished, root workspace member) | The driver, on `hal` (`BusError`) and, behind feature `usb`, `usb` |
-| `sim/` | `rtlsdr-sim` (unpublished, root workspace member) | Dongle model at the control seam: a generic register store, an R820T2 register file behind an optional gate bit (shape assumed, `RTL-GAP-13`), a bulk RX feed, virtual clock, op trace; and the `Trace` format and `Replay` harness |
+| `sim/` | `rtlsdr-sim` (unpublished, root workspace member) | Dongle model at the control seam: a generic register store, an R820T2 register file behind an optional gate bit (shape assumed, `RTL-GAP-13`), routed by a caller-supplied function of the setup (`RTL-GAP-14`), a bulk RX feed, virtual clock, op trace; and the `Trace` format and `Replay` harness |
 
 ## Driver layout
 
@@ -48,7 +48,7 @@ never a guessed number. Vendor documents stay outside the repo; cite them by pag
 - `tests/common/`: `SimPort` and `ReplayPort` (the seam over the sim and over a `Replay`),
   `wire.rs` (their shared setup conversion) and `synthetic.rs`, the SYNTHETIC wiring and
   session; included by `#[path]`. `tests/provenance.rs` checks the ledger against the code.
-- `tests/fixtures/synthetic-session.trace`: the only committed trace, SYNTHETIC.
+- `tests/fixtures/synthetic-{session,stall}.trace`: the only committed traces, SYNTHETIC.
 
 ## Rules
 

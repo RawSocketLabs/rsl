@@ -10,20 +10,22 @@
 //! ---
 //! out 40 00 0000 0000 01
 //! in c0 00 0000 0000 0001 96
+//! stall out 40 00 0000 0000
 //! ```
 //!
 //! The first line names the format. Header lines are `key: value` up to `---`: `capture`
 //! (the ledger's capture id) and `synthetic` (`yes` for a hand-written trace, `no` for one
 //! taken from a capture) are required, and `sha256` (the capture file's, or `-`) is
 //! required to be a hash when `synthetic: no`. Then one control transfer per line in
-//! [`Transfer`]'s format, in order. Blank lines and lines starting with `#` are ignored
+//! [`Transfer`]'s format, in order: a completed IN or OUT, or a `stall` line for a transfer
+//! the device refused. Blank lines and lines starting with `#` are ignored
 //! anywhere.
 
 use std::fmt;
 
 use crate::trace::{Control, Direction, Transfer};
 
-/// The format's first line.
+/// The format's first line. prov: none (this crate's own format)
 const MAGIC: &str = "rtlsdr-trace 1";
 
 /// A trace file that does not parse.
@@ -189,8 +191,19 @@ fn parse_transfer(text: &str) -> Option<Transfer> {
             .then(|| u16::from_str_radix(s, 16).ok())
             .flatten()
     };
-    let (direction, rest) = fields.split_first()?;
-    let [request_type, request, value, index, ..] = rest else {
+    let (kind, mut rest) = fields.split_first()?;
+    let stall = if *kind == "stall" {
+        let (direction, after) = rest.split_first()?;
+        rest = after;
+        Some(match *direction {
+            "in" => Direction::In,
+            "out" => Direction::Out,
+            _ => return None,
+        })
+    } else {
+        None
+    };
+    let [request_type, request, value, index, tail @ ..] = rest else {
         return None;
     };
     let control = Control {
@@ -199,13 +212,14 @@ fn parse_transfer(text: &str) -> Option<Transfer> {
         value: hex16(value)?,
         index: hex16(index)?,
     };
-    match (*direction, &rest[4..]) {
-        ("in", [len, data]) => {
+    match (stall, *kind, tail) {
+        (Some(direction), _, []) => Some(Transfer::Stall { direction, control }),
+        (None, "in", [len, data]) => {
             let len = hex16(len)?;
             let data = parse_data(data)?;
             (data.len() <= usize::from(len)).then_some(Transfer::In { control, len, data })
         }
-        ("out", [data]) => Some(Transfer::Out {
+        (None, "out", [data]) => Some(Transfer::Out {
             control,
             data: parse_data(data)?,
         }),
@@ -260,8 +274,33 @@ impl fmt::Display for Divergence {
 
 impl std::error::Error for Divergence {}
 
-/// A trace being played back: each driver transfer must be the next recorded one, and IN
-/// transfers are answered with the recorded data.
+/// Why a replayed transfer failed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReplayError {
+    /// The trace records the device stalling this transfer.
+    Stall {
+        /// The trace line.
+        line: usize,
+    },
+
+    /// The driver left the recorded session.
+    Diverged(Divergence),
+}
+
+impl fmt::Display for ReplayError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Stall { line } => write!(f, "trace line {line}: the device stalled"),
+            Self::Diverged(divergence) => divergence.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for ReplayError {}
+
+/// A trace being played back: each driver transfer must be the next recorded one; IN
+/// transfers are answered with the recorded data, and a recorded stall refuses the
+/// transfer.
 #[derive(Debug)]
 pub struct Replay {
     /// The session.
@@ -282,17 +321,18 @@ impl Replay {
     ///
     /// # Errors
     ///
-    /// [`Divergence`] unless the next recorded transfer is an IN with this setup and a
+    /// [`ReplayError::Stall`] if the next recorded transfer is an IN stall with this setup;
+    /// otherwise [`ReplayError::Diverged`] unless it is an IN with this setup and a
     /// `wLength` of `data.len()`.
-    pub fn control_in(&mut self, control: Control, data: &mut [u8]) -> Result<usize, Divergence> {
+    pub fn control_in(&mut self, control: Control, data: &mut [u8]) -> Result<usize, ReplayError> {
         let actual = Transfer::In {
             control,
             len: u16::try_from(data.len()).unwrap_or(u16::MAX),
             data: Vec::new(),
         };
-        let recorded = self.expect(actual, Direction::In)?;
+        let recorded = self.expect(actual)?;
         let Transfer::In { data: sent, .. } = recorded else {
-            unreachable!("expect matched the direction");
+            unreachable!("expect matched the direction and answered stalls");
         };
         // A parsed trace's data fits wLength, which matched data.len(); min keeps it so.
         let len = sent.len().min(data.len());
@@ -304,13 +344,14 @@ impl Replay {
     ///
     /// # Errors
     ///
-    /// [`Divergence`] unless the next recorded transfer is this OUT, data included.
-    pub fn control_out(&mut self, control: Control, data: &[u8]) -> Result<(), Divergence> {
+    /// [`ReplayError::Stall`] if the next recorded transfer is an OUT stall with this
+    /// setup; otherwise [`ReplayError::Diverged`] unless it is this OUT, data included.
+    pub fn control_out(&mut self, control: Control, data: &[u8]) -> Result<(), ReplayError> {
         let actual = Transfer::Out {
             control,
             data: data.to_vec(),
         };
-        self.expect(actual, Direction::Out).map(drop)
+        self.expect(actual).map(drop)
     }
 
     /// Ends the session.
@@ -329,35 +370,44 @@ impl Replay {
         }
     }
 
-    /// Consumes the next recorded transfer if `actual` matches it.
-    fn expect(&mut self, actual: Transfer, direction: Direction) -> Result<Transfer, Divergence> {
+    /// Consumes the next recorded transfer if `actual` (an IN or OUT) matches it; a
+    /// matching stall is consumed and answered with [`ReplayError::Stall`].
+    fn expect(&mut self, actual: Transfer) -> Result<Transfer, ReplayError> {
         let Some((line, expected)) = self.trace.transfers.get(self.next) else {
-            return Err(Divergence {
+            return Err(ReplayError::Diverged(Divergence {
                 line: None,
                 expected: None,
                 actual: Some(actual),
-            });
+            }));
         };
-        let matches = match (direction, expected, &actual) {
+        let line = *line;
+        let matches = match (expected, &actual) {
             (
-                Direction::In,
                 Transfer::In { control, len, .. },
                 Transfer::In {
                     control: c, len: l, ..
                 },
             ) => control == c && len == l,
-            (Direction::Out, expected, actual) => expected == actual,
-            _ => false,
+            (Transfer::Stall { direction, control }, Transfer::In { control: c, .. }) => {
+                *direction == Direction::In && control == c
+            }
+            (Transfer::Stall { direction, control }, Transfer::Out { control: c, .. }) => {
+                *direction == Direction::Out && control == c
+            }
+            (expected, actual) => expected == actual,
         };
         if !matches {
-            return Err(Divergence {
-                line: Some(*line),
+            return Err(ReplayError::Diverged(Divergence {
+                line: Some(line),
                 expected: Some(expected.clone()),
                 actual: Some(actual),
-            });
+            }));
         }
         self.next += 1;
-        Ok(expected.clone())
+        match expected {
+            Transfer::Stall { .. } => Err(ReplayError::Stall { line }),
+            recorded => Ok(recorded.clone()),
+        }
     }
 }
 
@@ -374,6 +424,7 @@ synthetic: yes
 ---
 out 40 01 0002 0003 0a0b
 in c0 01 0002 0003 0002 0c
+stall out 40 01 0002 0004
 ";
 
     #[test]
@@ -382,7 +433,19 @@ in c0 01 0002 0003 0002 0c
         assert_eq!(trace.capture, "SYNTHETIC-TEST");
         assert!(trace.synthetic);
         assert_eq!(trace.sha256, None);
-        assert_eq!(trace.transfers.len(), 2);
+        assert_eq!(trace.transfers.len(), 3);
+        assert_eq!(
+            trace.transfers[2].1,
+            Transfer::Stall {
+                direction: Direction::Out,
+                control: Control {
+                    request_type: 0x40,
+                    request: 0x01,
+                    value: 0x0002,
+                    index: 0x0004,
+                },
+            }
+        );
         assert_eq!(
             trace.transfers[0].0, 6,
             "lines are counted from the file's start"
@@ -425,6 +488,18 @@ in c0 01 0002 0003 0002 0c
             "data longer than wLength"
         );
         assert_eq!(bad(&body("out 40 01 2 3 -")), 5, "fixed-width fields");
+        assert_eq!(
+            bad(&body("stall out 40 01 2 0003")),
+            5,
+            "fixed-width fields"
+        );
+        assert_eq!(
+            bad(&body("stall out 40 01 0002 0003 -")),
+            5,
+            "a stall has no data"
+        );
+        assert_eq!(bad(&body("stall up 40 01 0002 0003")), 5, "in or out");
+        assert_eq!(bad(&body("stall in 40 01 0002")), 5, "a stall has a setup");
         assert_eq!(bad(&body("out 40 01 0002 0003 abc")), 5, "odd data");
         assert_eq!(
             bad(&body("out +4 01 0002 0003 -")),
@@ -473,11 +548,20 @@ in c0 01 0002 0003 0002 0c
                     index: next(),
                 };
                 let data: Vec<u8> = (0..next() % 5).map(|_| next().to_be_bytes()[0]).collect();
-                let transfer = if next() % 2 == 0 {
-                    let len = u16::try_from(data.len()).unwrap() + next() % 3;
-                    Transfer::In { control, len, data }
-                } else {
-                    Transfer::Out { control, data }
+                let transfer = match next() % 3 {
+                    0 => {
+                        let len = u16::try_from(data.len()).unwrap() + next() % 3;
+                        Transfer::In { control, len, data }
+                    }
+                    1 => Transfer::Out { control, data },
+                    _ => Transfer::Stall {
+                        direction: if next() % 2 == 0 {
+                            Direction::In
+                        } else {
+                            Direction::Out
+                        },
+                        control,
+                    },
                 };
                 transfers.push((line + 6, transfer));
             }

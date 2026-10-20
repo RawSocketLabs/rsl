@@ -1,5 +1,5 @@
-//! The replay harness: a driver session against a recorded trace. Only the SYNTHETIC
-//! fixture exists until the owner approves captures (`CAPTURES.md`).
+//! The replay harness: a driver session against a recorded trace. Only SYNTHETIC fixtures
+//! exist until the owner approves captures (`CAPTURES.md`).
 
 #[path = "common/replay_port.rs"]
 mod replay_port;
@@ -11,23 +11,61 @@ mod synthetic;
 mod wire;
 
 use replay_port::ReplayPort;
-use rtlsdr::control::ControlPort;
+use rtlsdr::control::{BusError, ControlPort};
 use rtlsdr::r820t2::field;
 use rtlsdr_sim::{Op, SimDongle, Trace};
 use sim_port::SimPort;
-use synthetic::{STORE_REQUEST, TIMEOUT, setup};
+use synthetic::{STORE_REQUEST, TIMEOUT, TUNER_REQUEST, setup};
 
-/// The SYNTHETIC fixture.
+/// The SYNTHETIC session fixture.
 fn fixture() -> Trace {
     Trace::parse(include_str!("fixtures/synthetic-session.trace")).expect("the fixture parses")
 }
 
+/// The SYNTHETIC stall fixture.
+fn stall_fixture() -> Trace {
+    Trace::parse(include_str!("fixtures/synthetic-stall.trace")).expect("the fixture parses")
+}
+
 #[test]
-fn the_fixture_is_labelled_synthetic() {
-    let trace = fixture();
-    assert!(trace.is_synthetic(), "a hand-written trace must say so");
-    assert!(trace.capture().starts_with("SYNTHETIC-"));
-    assert_eq!(trace.sha256(), None, "no capture file stands behind it");
+fn the_fixtures_are_labelled_synthetic() {
+    for trace in [fixture(), stall_fixture()] {
+        assert!(trace.is_synthetic(), "a hand-written trace must say so");
+        assert!(trace.capture().starts_with("SYNTHETIC-"));
+        assert_eq!(trace.sha256(), None, "no capture file stands behind it");
+    }
+}
+
+#[test]
+fn a_recorded_stall_fails_the_transfer_as_the_simulator_does() {
+    let tuner = setup(TUNER_REQUEST, 0, 0);
+    let mut sim = SimPort::new(SimDongle::new(synthetic::wiring()));
+    let mut replay = ReplayPort::new(stall_fixture());
+    for port in [&mut sim as &mut dyn ControlPort, &mut replay] {
+        assert!(
+            matches!(
+                port.control_out(tuner, &[0x05, 0x00], TIMEOUT),
+                Err(BusError::Io(_))
+            ),
+            "the gate is closed"
+        );
+    }
+    replay.finish().expect("the stall was the whole trace");
+    let recorded: Vec<_> = sim
+        .dongle()
+        .trace()
+        .iter()
+        .filter_map(|op| match op {
+            Op::Control(transfer) => Some(transfer.clone()),
+            _ => None,
+        })
+        .collect();
+    let expected: Vec<_> = stall_fixture()
+        .transfers()
+        .iter()
+        .map(|(_, t)| t.clone())
+        .collect();
+    assert_eq!(recorded, expected);
 }
 
 #[test]

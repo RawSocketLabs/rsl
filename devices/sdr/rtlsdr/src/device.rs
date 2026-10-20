@@ -2,7 +2,7 @@
 
 use crate::control::ControlPort;
 use crate::error::Error;
-use crate::portable::rtl2832u;
+use crate::portable::pending::Gap;
 
 /// One RTL-SDR dongle behind a [`ControlPort`].
 pub struct Device {
@@ -20,9 +20,9 @@ impl Device {
     /// # Errors
     ///
     /// [`Error::Gap`] until the open sequence is evidenced (`RTL-GAP-07`); nothing reaches
-    /// the port before then.
-    pub fn open(port: Box<dyn ControlPort>) -> Result<Self, Error> {
-        rtl2832u::OPEN.get()?;
-        Ok(Self { port })
+    /// the port before then. The sequence has no typed placeholder: its shape (a fixed
+    /// list, or reads whose answers steer it) is part of the gap.
+    pub fn open(_port: Box<dyn ControlPort>) -> Result<Self, Error> {
+        Err(Error::Gap(Gap::new("RTL-GAP-07")))
     }
 }

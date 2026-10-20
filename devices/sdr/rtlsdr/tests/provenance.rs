@@ -1,6 +1,7 @@
 //! The ledger and the code agree: every `prov:` tag in `rtlsdr` and `rtlsdr-sim` names a
 //! `PROVENANCE.md` row, every DS row is tagged somewhere, every GAP row that names code is
-//! referenced by it, and every identifier a row's Rust-item column names exists.
+//! referenced by it, every identifier a row's Rust-item column names exists, and every
+//! module-level `const` and `static` outside the tests carries a `prov:` tag.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -18,15 +19,26 @@ fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The non-test code of both crates, concatenated.
-fn code() -> String {
+/// Every source file of both crates, with its path.
+fn files() -> Vec<(PathBuf, String)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     sources(&root.join("src"), &mut files);
     sources(&root.join("sim/src"), &mut files);
     files
-        .iter()
-        .map(|path| fs::read_to_string(path).expect("readable source"))
+        .into_iter()
+        .map(|path| {
+            let text = fs::read_to_string(&path).expect("readable source");
+            (path, text)
+        })
+        .collect()
+}
+
+/// The code of both crates, concatenated.
+fn code() -> String {
+    files()
+        .into_iter()
+        .map(|(_, text)| text)
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -45,8 +57,8 @@ fn tags(code: &str) -> BTreeSet<String> {
                 .take_while(|&c| word_char(c))
                 .collect::<String>()
         })
-        // Prose that describes the tag (`prov: <ID>`) is not one.
-        .filter(|tag| !tag.is_empty())
+        // Prose that describes the tag (`prov: <ID>`) is not one, nor is `prov: none`.
+        .filter(|tag| !tag.is_empty() && tag != "none")
         .collect()
 }
 
@@ -119,6 +131,42 @@ fn every_ds_row_is_tagged_and_every_gap_naming_code_is_referenced() {
             other => panic!("{}: class {other} has no admissible source yet", row.id),
         }
     }
+}
+
+#[test]
+fn every_const_and_static_has_a_prov_tag() {
+    let mut untagged = Vec::new();
+    for (path, text) in files() {
+        // shortcut: assumes each file's tests are one trailing `#[cfg(test)]` module, and
+        // checks module-level items only (associated consts alias tagged ones).
+        let code = text.split("#[cfg(test)]").next().unwrap_or_default();
+        let lines: Vec<&str> = code.lines().collect();
+        for (at, line) in lines.iter().enumerate() {
+            let item = ["pub ", "pub(crate) ", "pub(super) "]
+                .iter()
+                .fold(*line, |rest, vis| rest.strip_prefix(vis).unwrap_or(rest));
+            let is_item = (item.starts_with("const ") || item.starts_with("static "))
+                && !item.starts_with("const fn")
+                && !item.starts_with("const _");
+            if !is_item {
+                continue;
+            }
+            // Its doc comment: the `///` lines above it, past attributes and `//` notes.
+            let tagged = lines[..at]
+                .iter()
+                .rev()
+                .map(|line| line.trim_start())
+                .take_while(|line| line.starts_with("//") || line.starts_with("#["))
+                .any(|line| line.starts_with("///") && line.contains("prov: "));
+            if !tagged {
+                untagged.push(format!("{}:{}", path.display(), at + 1));
+            }
+        }
+    }
+    assert!(
+        untagged.is_empty(),
+        "consts without a prov tag: {untagged:?}"
+    );
 }
 
 #[test]
