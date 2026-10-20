@@ -8,10 +8,11 @@ use std::fmt;
 
 use lms7002m_sim::Lms7002m;
 use sdr_frontend_sim::{FrontEnd, Model};
-use sdr_stream_sim::{RxEngine, SyncUnit};
+use sdr_stream_sim::{RxEngine, SyncUnit, TxEngine, TxGrant, TxPacket};
 
 use crate::chips::{Dac80501, I2cChip, Lp8758};
 use crate::trace::Op;
+use crate::tx_phy::{REG_CFG_PHY_1, TxPhy};
 
 /// FPGA register holding the general-purpose outputs: `dev_gpo_set` writes
 /// `(bank & 0x7f) << 24 | (data & 0xff)` (`M2PCI_REG_STAT_CTRL`, an 8-bit GPO core).
@@ -19,6 +20,9 @@ const REG_GPO: u32 = 0;
 /// General-purpose input word 3, the hardware ID: `dev_gpi_get32` reads `16 + bank / 4`
 /// with `IGPI_HWID` = 12.
 const REG_GPI_HWID: u32 = 16 + 12 / 4;
+/// General-purpose input word 0, the gateware's build stamp (`IGPI_USR_ACCESS2` = 0),
+/// which libusdr's `/dm/revision` reads and its TX stream create checks.
+const REG_GPI_USR_ACCESS2: u32 = 16;
 /// The RX PHY's configuration port (`REG_CFG_PHY_0`, `generic_regs.h`). libusdr writes a
 /// bank and address there (`xsdr_phy_rx_reg`) and reads back what it selected: on the
 /// rate path, the `LimeLight` LFSR checkers' error counters (`xsdr_phy_lfsr_mimo_state`).
@@ -160,7 +164,15 @@ pub struct SimBoard {
     /// `/ll/rfe/0` and `/ll/sync/0` match `m2_lm6_1.c`'s), so the same assumptions hold,
     /// channel B on lanes 2 and 3 as libusdr's `sfe_rx4_configure` puts it.
     rx: RxEngine,
-    /// The stream sync unit, which releases the RX engine's blocks.
+    /// The TX stream core and its transport buffers (`sdr-stream-sim`'s, the uSDR sim's
+    /// model): the original core at the same registers (`m2_lm7_1.c` passes
+    /// `M2PCI_REG_WR_TXDMA_CNF_L`, `M2PCI_REG_WR_SYNC_CTRL` and `M2PCI_REG_RD_TXDMA_STAT`,
+    /// as `m2_lm6_1.c` does). The extended core (HWID PHY bit 0x08) is not modelled.
+    tx: TxEngine,
+    /// The TX PHY port and its MMCM (`tx_phy.rs`).
+    tx_phy: TxPhy,
+    /// The stream sync unit, which releases the RX engine's blocks and the TX core's
+    /// packets.
     sync: SyncUnit,
     /// Virtual time, advanced only by [`SimBoard::sleep_us`].
     now_us: u64,
@@ -190,6 +202,8 @@ impl SimBoard {
             rx_phy_script: VecDeque::new(),
             rx_phy_after: 0,
             rx: RxEngine::default(),
+            tx: TxEngine::default(),
+            tx_phy: TxPhy::default(),
             sync: SyncUnit::default(),
             now_us: 0,
             trace: Vec::new(),
@@ -220,6 +234,15 @@ impl SimBoard {
     #[must_use]
     pub fn with_hwid(mut self, hwid: u32) -> Self {
         self.regs.insert(REG_GPI_HWID, hwid);
+        self
+    }
+
+    /// The same board whose gateware is stamped `build` (`USR_ACCESS2`, read 0 by
+    /// default). libusdr's TX stream create refuses gateware built before
+    /// `MINIM_FWID_COMPAT` (0xD2B10C09), which 0 is.
+    #[must_use]
+    pub fn with_gateware_build(mut self, build: u32) -> Self {
+        self.regs.insert(REG_GPI_USR_ACCESS2, build);
         self
     }
 
@@ -269,7 +292,12 @@ impl SimBoard {
     pub fn write_reg(&mut self, addr: u32, value: u32) {
         self.trace.push(Op::RegWrite { addr, value });
         self.rx.on_write(addr, value);
+        self.tx.on_write(addr, value);
         self.sync.on_write(addr, value);
+        if addr == REG_CFG_PHY_1 {
+            self.tx_phy.on_write(value);
+        }
+        self.play_tx();
         if addr == REG_GPO {
             let [bank, ..] = value.to_be_bytes();
             self.gpo.insert(bank & 0x7f, value & 0xff);
@@ -279,10 +307,14 @@ impl SimBoard {
 
     /// Reads a 32-bit FPGA register.
     pub fn read_reg(&mut self, addr: u32) -> u32 {
-        let value = if addr == REG_CFG_PHY_0 {
-            self.rx_phy_script.pop_front().unwrap_or(self.rx_phy_after)
-        } else {
-            self.regs.get(&addr).copied().unwrap_or(0)
+        let value = match addr {
+            REG_CFG_PHY_0 => self.rx_phy_script.pop_front().unwrap_or(self.rx_phy_after),
+            REG_CFG_PHY_1 => self.tx_phy.status(),
+            _ => self
+                .tx
+                .status_word(addr)
+                .or_else(|| self.regs.get(&addr).copied())
+                .unwrap_or(0),
         };
         self.trace.push(Op::RegRead { addr, value });
         value
@@ -290,11 +322,67 @@ impl SimBoard {
 
     /// The next RX block the stream engine delivers, with its two out-of-band words, or
     /// `None` while the engine is stopped or the sync unit holds it. Below the register
-    /// seam libusdr and `xsdr` share, so not traced. No TX core is modelled, so only the
-    /// RX activity can release it.
+    /// seam libusdr and `xsdr` share, so not traced.
     pub fn rx_next_block(&mut self) -> Option<(Vec<u8>, [u64; 2])> {
-        let released = self.sync.releases(self.rx.running(), false);
+        let released = self.sync.releases(self.rx.running(), self.tx.running());
         self.rx.next_block(released)
+    }
+
+    /// Sets the TX buffers up as the `PCIe` driver does: 32 of `block_bytes`, free, none
+    /// with a completion record. Below the register seam, so not traced.
+    pub fn tx_open(&mut self, block_bytes: usize) {
+        self.tx.open(block_bytes);
+    }
+
+    /// Bytes in each TX buffer.
+    #[must_use]
+    pub fn tx_block_bytes(&self) -> usize {
+        self.tx.block_bytes()
+    }
+
+    /// Hands out the next free TX buffer, with its completion record (the TX core's first
+    /// three status words and the kernel time) if a played packet freed it; `None` while
+    /// every buffer holds a packet not yet played. Not traced.
+    pub fn tx_grant(&mut self) -> Option<TxGrant> {
+        self.tx.grant()
+    }
+
+    /// The host's bytes for the buffer it was last granted, which the next announcement
+    /// at registers 12 and 13 hands to the core. Not traced.
+    pub fn tx_load(&mut self, bytes: &[u8]) {
+        self.tx.load(bytes);
+    }
+
+    /// Releases the TX buffers. Not traced.
+    pub fn tx_close(&mut self) {
+        self.tx.close();
+    }
+
+    /// The packets the TX core has played, in order.
+    #[must_use]
+    pub fn tx_packets(&self) -> &[TxPacket] {
+        self.tx.played()
+    }
+
+    /// Sets the TX core's four status words (registers 28 to 31), which later completion
+    /// records also carry.
+    pub fn set_tx_status(&mut self, words: [u32; 4]) {
+        self.tx.set_status(words);
+    }
+
+    /// An MMCM register behind the TX PHY port's DRP.
+    #[must_use]
+    pub fn tx_mmcm_reg(&self, addr: u8) -> u16 {
+        self.tx_phy.mmcm_reg(addr)
+    }
+
+    /// Plays the TX core's announced packets if it runs and the sync unit lets it.
+    fn play_tx(&mut self) {
+        let released = self.sync.releases(self.rx.running(), self.tx.running());
+        // The kernel's nanosecond clock, low 32 bits, as the `PCIe` driver records it.
+        let kernel_time =
+            u32::try_from(self.now_us.wrapping_mul(1000) & 0xffff_ffff).expect("32 bits");
+        self.tx.play(released, kernel_time);
     }
 
     /// Shifts one 32-bit word through the SPI device on `bus` and returns the word read back.
@@ -462,6 +550,23 @@ mod tests {
         let mut board = SimBoard::new(Variant::Xsdr).with_rx_phy_reads([3, 0], 7);
         let reads: Vec<u32> = (0..4).map(|_| board.read_reg(REG_CFG_PHY_0)).collect();
         assert_eq!(reads, [3, 0, 7, 7]);
+    }
+
+    #[test]
+    fn a_started_tx_core_plays_an_announced_packet_and_the_tx_port_reports_lock() {
+        let mut board = SimBoard::new(Variant::Xsdr).with_gateware_build(0xd2b1_0c09);
+        assert_eq!(board.read_reg(REG_GPI_USR_ACCESS2), 0xd2b1_0c09);
+        board.tx_open(64);
+        // `sfe_tx4_ctl`'s start, then free-running sync, then one sample "now".
+        board.write_reg(14, 3);
+        board.write_reg(14, 1 << 31 | 7 << 16);
+        assert!(board.tx_grant().is_some());
+        board.tx_load(&[1, 0, 2, 0]);
+        board.write_reg(12, 1 << 30);
+        board.write_reg(13, u32::MAX);
+        assert_eq!(board.tx_packets().len(), 1, "played at once");
+        board.write_reg(REG_CFG_PHY_1, 2 << 24 | 4);
+        assert_eq!(board.read_reg(REG_CFG_PHY_1) & 1 << 8, 1 << 8, "locked");
     }
 
     #[test]
