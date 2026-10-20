@@ -1,0 +1,12 @@
+[package]
+name = "rtlsdr-sim"
+version = "0.0.0"
+description = "Simulated RTL-SDR dongle at rtlsdr's control seam, with an I2C-repeater-gated R820T2 register file, and the capture replay harness."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

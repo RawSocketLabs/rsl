@@ -18,6 +18,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 | `sdr/xsdr/` | `xsdr`, `xsdr-sim`, `xsdr-oracle`, `xsdr-nostd-check` | the LMS7 family driver: XSDR open with its front-end probe and bring-up, RFIC power-up, sample rate, LO tuning, gains, bandwidths, paths and loopbacks, NCOs, corrections, the RX stream and close; oracle and witness as above |
 | `sdr/lsdr/` | `lsdr`, `lsdr-sim`, `lsdr-oracle`, `lsdr-nostd-check` | the LSDr (receive-only ADC board) driver: open with its front-end probe and fe1005000's bring-up, ADC power, PGA gain and close |
 | `sdr/limesdr/` | `limesdr`, `limesdr-sim`, `limesdr-oracle`, `limesdr-nostd-check` | the LimeSDR-mini driver: open over its LMS64C control channel, power-up, sample rate, LO tuning, gains, bandwidths, stream preparation and close; no FT601 transport yet |
+| `sdr/rtlsdr/` | `rtlsdr`, `rtlsdr-sim` | the clean-room RTL2832U RTL-SDR driver (no oracle: every value from `PROVENANCE.md`): its control seam with a usbfs port, R820T2 register maths from the register description, and the dongle simulator with the capture replay harness; the RTL2832U side awaits captures |
 | `sdr/chips/lms7002m/` | `lms7002m`, `lms7002m-sim` (`sim/`) | the LMS7002M register values and chip sequences (`no_std`), and the LMS7002M model the XSDR and LimeSDR sims share |
 | `sdr/chips/lp8758/` | `lp8758` | the LP8758 PMIC register values (`no_std`) |
 | `sdr/frontend/` | `sdr-frontend`, `sdr-frontend-sim` (`sim/`) | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and every bring-up it runs on the uSDR, XSDR and LSDr (`pciefe`, `xmass`, `supersync`, `simplesync`, `exm2pe`, `fe1005000`) with the boards' controls, shared by those drivers (`no_std` core, blocking probe behind `std`); and the M.2 boards' register models the uSDR and XSDR sims share |
@@ -30,7 +31,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 - A new driver goes under the kind it is (`sdr/`, …); add a kind when the first device of it
   arrives. A crate is named for its device (`usdr`, `usdr-sim`), independent of the path,
   with no `rsl-` prefix.
-- Kinds now: `sdr/` (uSDR, LMS7 family, LSDr, LimeSDR) and `sync/` (PE_SYNC clock distribution).
+- Kinds now: `sdr/` (uSDR, LMS7 family, LSDr, LimeSDR, RTL-SDR) and `sync/` (PE_SYNC clock distribution).
 - Code shared by several drivers of one kind (an SDR tune/rate/stream abstraction, say)
   lives in `devices/<kind>/` once a second driver needs it, not before. The first is
   `sdr/frontend` (`sdr-frontend`, 2026-10-13): libusdr's front-end probe

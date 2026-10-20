@@ -3368,6 +3368,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtlsdr"
+version = "0.0.0"
+dependencies = [
+ "hal",
+ "rtlsdr-sim",
+ "thiserror 2.0.21",
+ "usb",
+]
+
+[[package]]
+name = "rtlsdr-sim"
+version = "0.0.0"
+
+[[package]]
 name = "rust-dsdcc"
 version = "0.1.0"
 dependencies = [

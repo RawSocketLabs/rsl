@@ -56,6 +56,9 @@ members = [
     # pure-Rust LimeSDR-mini (u3_limesdr) driver, first slice, and its board simulator
     "devices/sdr/limesdr",
     "devices/sdr/limesdr/sim",
+    # clean-room RTL-SDR (RTL2832U + R820T2/R828D) driver, first slice, and its dongle simulator
+    "devices/sdr/rtlsdr",
+    "devices/sdr/rtlsdr/sim",
     # protocol implementations (by OSI layer)
     "protocols/link/ethertype",
     "protocols/link/ethernet",
@@ -127,6 +130,7 @@ sdr-stream-sim = { path = "devices/sdr/stream/sim" }
 xsdr-sim = { path = "devices/sdr/xsdr/sim" }
 lsdr-sim = { path = "devices/sdr/lsdr/sim" }
 limesdr-sim = { path = "devices/sdr/limesdr/sim" }
+rtlsdr-sim = { path = "devices/sdr/rtlsdr/sim" }
 pe-sync-sim = { path = "devices/sync/pe_sync/sim" }
 usb = { path = "transports/usb", version = "0.0.0" }
 error-correction = { path = "codecs/error-correction", version = "0.1.0", default-features = false }

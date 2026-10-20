@@ -1,0 +1,17 @@
+# SYNTHETIC FIXTURE: written by hand for the replay harness, NOT a capture of any dongle.
+# Request codes and the gate entry are tests/common/synthetic.rs's invented wiring; the
+# tuner bytes follow the R820T2 register description (page write from R5; read from R0,
+# LSB first, so R0's 0x96 arrives as 0x69). Do not cite it in PROVENANCE.md.
+rtlsdr-trace 1
+capture: SYNTHETIC-0001
+sha256: -
+synthetic: yes
+---
+# open the repeater: gate entry bit 3
+out 40 e1 00e3 00e4 08
+# page write R5..R7 = 0a 00 05
+out 40 e2 0000 0000 050a0005
+# read R0..R7
+in c0 e2 0000 0000 0008 69000000005000a0
+# close the repeater
+out 40 e1 00e3 00e4 00

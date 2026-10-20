@@ -1,0 +1,24 @@
+[package]
+name = "rtlsdr"
+version = "0.0.0"
+description = "Clean-room pure-Rust driver for RTL2832U RTL-SDR dongles with Rafael R820T2/R828D tuners; every value traced in PROVENANCE.md."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+## The control seam over the owned Linux usbfs backend (`transport::usb::UsbPort`).
+usb = ["dep:usb"]
+
+[dependencies]
+hal = { workspace = true, features = ["std"] }
+thiserror.workspace = true
+usb = { workspace = true, optional = true }
+
+[dev-dependencies]
+rtlsdr-sim.workspace = true
+
+[lints]
+workspace = true
