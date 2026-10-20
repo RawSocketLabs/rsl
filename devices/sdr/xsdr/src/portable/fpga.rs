@@ -79,15 +79,8 @@ impl RxPhyBank {
     }
 }
 
-/// The TX PHY register holding the TX clock delay used without a TX MMCM
-/// (`PHY_REG_DLY_VALUE`).
-const PHY_DELAY: u8 = 4;
-
 /// The delay `_xsdr_calibrate_lml` writes without a TX MMCM and no override: 3.
-pub(crate) const TX_DEFAULT_DELAY: FpgaAccess = FpgaAccess::Write {
-    reg: REG_CFG_PHY_1,
-    value: (PHY_DELAY as u32) << 24 | 3,
-};
+pub(crate) const TX_DEFAULT_DELAY: FpgaAccess = TxPhy::Delay.write(3);
 
 /// [`Gpo::LmsPower`] bit 1: the LMS7002M's RX enable pin (`IGPO_LMS_PWR_RXEN`).
 pub(crate) const LMS_RX_ENABLE: u8 = 1 << 1;
@@ -96,21 +89,60 @@ pub(crate) const LMS_RX_ENABLE: u8 = 1 << 1;
 pub(crate) const LMS_TX_ENABLE: u8 = 1 << 2;
 
 /// The TX PHY's configuration port (`REG_CFG_PHY_1`, `generic_regs.h`): `xsdr_phy_tx_reg`
-/// writes `register << 24 | value & 0xFFFFFF` here.
-const REG_CFG_PHY_1: u32 = 57;
+/// writes `register << 24 | value & 0xFFFFFF` here; a read returns the port's status (the
+/// TX MMCM's DRP data in bits 31:16, its lock in bit 8, a busy DRP in bit 9).
+pub(crate) const REG_CFG_PHY_1: u32 = 57;
 
-/// The TX PHY register controlling its MMCM (`PHY_REG_MMCM_CTRL`, `xsdr_ctrl.c`).
-const PHY_MMCM_CTRL: u8 = 2;
+/// A TX PHY register (`PHY_REG_*`, `xsdr_ctrl.c`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TxPhy {
+    /// The TX serializer's control (`PHY_REG_PORT_CTRL`): bit 0 runs it, bit 4 SISO DDR.
+    PortControl = 0,
 
-/// What `_xsdr_mmcm_pd` writes to [`PHY_MMCM_CTRL`], commented nowhere; the function name
-/// says it powers the TX MMCM down.
-const MMCM_POWER_DOWN: u32 = 2;
+    /// The TX MMCM's dynamic reconfiguration port (`PHY_REG_MMCM_DRP`).
+    MmcmDrp = 1,
 
-/// `_xsdr_mmcm_pd`: the TX MMCM powered down through the TX PHY's port.
-pub(crate) const TX_MMCM_POWER_DOWN: FpgaAccess = FpgaAccess::Write {
-    reg: REG_CFG_PHY_1,
-    value: (PHY_MMCM_CTRL as u32) << 24 | MMCM_POWER_DOWN,
-};
+    /// The TX MMCM's control (`PHY_REG_MMCM_CTRL`): bit 0 reset, bit 2 TX master; 2
+    /// powers it down.
+    MmcmControl = 2,
+
+    /// The TX clock delay without a TX MMCM (`PHY_REG_DLY_VALUE`).
+    Delay = 4,
+
+    /// Which lanes carry I and Q (`PHY_REG_PORT_IQSEL`).
+    IqSelect = 5,
+
+    /// The LFSR generator (`PHY_REG_LFSR_GEN`): 1 runs it.
+    LfsrGenerator = 6,
+
+    /// The generator's pattern: 0 the LFSR, 1 the A/B-I/Q table (`PHY_REG_IQAB_GEN`).
+    IqAbGenerator = 7,
+
+    /// Pushes a word into channel A's A/B-I/Q table (`PHY_REG_IQAB_PSHA`).
+    IqAbPushA = 8,
+
+    /// Channel B's (`PHY_REG_IQAB_PSHB`).
+    IqAbPushB = 9,
+}
+
+impl TxPhy {
+    /// `xsdr_phy_tx_reg(d, self, value)`'s port word.
+    pub(crate) const fn word(self, value: u32) -> u32 {
+        (self as u32) << 24 | value & 0x00ff_ffff
+    }
+
+    /// `xsdr_phy_tx_reg(d, self, value)`.
+    pub(crate) const fn write(self, value: u32) -> FpgaAccess {
+        FpgaAccess::Write {
+            reg: REG_CFG_PHY_1,
+            value: self.word(value),
+        }
+    }
+}
+
+/// `_xsdr_mmcm_pd`: the TX MMCM powered down (control 2, commented nowhere; the function
+/// name says it powers the TX MMCM down).
+pub(crate) const TX_MMCM_POWER_DOWN: FpgaAccess = TxPhy::MmcmControl.write(2);
 
 /// [`Gpo::LmsPower`] bit 0: the LMS7002M's LDOs on (`IGPO_LMS_PWR_LDOEN`).
 pub(crate) const LMS_LDO_ENABLE: u8 = 1 << 0;

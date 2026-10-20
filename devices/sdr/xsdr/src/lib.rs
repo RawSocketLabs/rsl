@@ -40,7 +40,9 @@ mod fe_probe;
 pub mod lowlevel;
 mod portable;
 
-pub use device::{Device, IqCorrection, LmlRxMode, RxChannels, RxPacket, TxGenerator};
+pub use device::{
+    Device, IqCorrection, LmlRxMode, RxChannels, RxPacket, TxChannels, TxGenerator, TxTelemetry,
+};
 pub use error::{Access, Error};
 pub use lms7002m::Mac;
 pub use lms7002m::ctrl::{Direction, Gain, RfPath, RxRoute, TxRoute};

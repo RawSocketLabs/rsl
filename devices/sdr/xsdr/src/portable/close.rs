@@ -33,48 +33,45 @@ pub(crate) enum Down {
     /// RX alone (`RFIC_LMS7_RX`), as an RX stream's destroy does.
     Rx,
 
+    /// TX alone (`RFIC_LMS7_TX`), as a TX stream's destroy does.
+    Tx,
+
     /// Both (`RFIC_LMS7_RX | RFIC_LMS7_TX`), as `xsdr_dtor` does.
     Both,
 }
 
 /// `lms7002m_streaming_down`'s chip writes for `down`, from the chip's cached state: both
-/// banks selected, the RX processor and front ends off, with [`Down::Both`] the TX
-/// processor and front ends off too (`None` otherwise), then the AFE on for the TX
-/// channels still running (`tx_running`; none with [`Down::Both`]).
+/// banks selected, the RX processor and front ends off unless [`Down::Tx`], the TX
+/// processor and front ends off unless [`Down::Rx`] (`None` where skipped), then the AFE
+/// on for the channels still running (`running`, RX then TX, as the run flags stand
+/// before the streaming down; the directions brought down count as stopped).
 pub(crate) fn streaming_down(
     chip: &mut Lms7002m,
     down: Down,
-    tx_running: [bool; 2],
+    running: ([bool; 2], [bool; 2]),
 ) -> [Option<Batch>; 6] {
     let select = chip.mac_set(Mac::Both);
-    let rx_tsp = chip.tsp_enable(Tsp::Rx, false);
-    let rfe = chip
-        .rfe_path(RxPath::None, RxMode::Disable)
-        .expect("invariant: both banks are selected just before");
-    let (tx_tsp, trf) = match down {
-        Down::Rx => (None, None),
-        Down::Both => (
-            Some(chip.tsp_enable(Tsp::Tx, false)),
-            Some(
-                chip.trf_path(TxPath::Mute, TxMode::Disable)
-                    .expect("invariant: both banks are selected just before"),
-            ),
-        ),
-    };
-    let tx_running = if down == Down::Both {
-        [false; 2]
-    } else {
-        tx_running
-    };
-    let afe = chip.afe_enable([false; 2], tx_running);
-    [
-        Some(select),
-        Some(rx_tsp),
-        Some(rfe),
-        tx_tsp,
-        trf,
-        Some(afe),
-    ]
+    let both_banks = "invariant: both banks are selected just before";
+    let (mut rx_running, mut tx_running) = running;
+    let (mut rx_tsp, mut rfe, mut tx_tsp, mut trf) = (None, None, None, None);
+    if down != Down::Tx {
+        rx_tsp = Some(chip.tsp_enable(Tsp::Rx, false));
+        rfe = Some(
+            chip.rfe_path(RxPath::None, RxMode::Disable)
+                .expect(both_banks),
+        );
+        rx_running = [false; 2];
+    }
+    if down != Down::Rx {
+        tx_tsp = Some(chip.tsp_enable(Tsp::Tx, false));
+        trf = Some(
+            chip.trf_path(TxPath::Mute, TxMode::Disable)
+                .expect(both_banks),
+        );
+        tx_running = [false; 2];
+    }
+    let afe = chip.afe_enable(rx_running, tx_running);
+    [Some(select), rx_tsp, rfe, tx_tsp, trf, Some(afe)]
 }
 
 /// `xsdr_dtor` on an XSDR, from the chip's cached state.
@@ -99,7 +96,7 @@ pub(crate) struct Close {
 impl Close {
     /// Plans the close of the chip in state `chip`.
     pub(crate) fn new(mut chip: Lms7002m) -> Self {
-        let down = streaming_down(&mut chip, Down::Both, [false; 2])
+        let down = streaming_down(&mut chip, Down::Both, ([false; 2], [false; 2]))
             .map(|batch| batch.expect("invariant: both directions come down"));
         let [select, rx_tsp, rfe, tx_tsp, trf, afe] = down;
         let destroy = chip.destroy();

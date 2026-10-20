@@ -9,6 +9,10 @@
 //!
 //! Without a TX MMCM libusdr's calibration writes a fixed TX delay and then fails the
 //! rate with `-ERANGE`, its RX badness never having been measured; that is reproduced.
+//!
+//! With TX running, the TX MMCM clocks the link and is reprogrammed for every RX phase
+//! swept (`mmcm`), the core supply is raised for TX rates from 53 to 60 MS/s, and the TX
+//! phase is calibrated after the RX one (`txcal`).
 
 use hal::{
     FpgaAccess, I2cAddr, IndexedRegister, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
@@ -23,7 +27,9 @@ use super::fpga::{
     TX_DEFAULT_DELAY,
 };
 use super::frontend::XsdrFrontend;
+use super::mmcm::{ConfigureMmcm, MmcmCall, MmcmLink, MmcmPlan, MmcmUnlocked};
 use super::step::Step;
+use super::txcal::{TxCalError, TxCalibration, TxVerdict};
 
 /// Above this rate libusdr switches to double-pumped SISO DDR (`XSDR_SISO_RATE`).
 const SISO_RATE: u32 = 72_000_000;
@@ -35,6 +41,13 @@ const VIO_BOOST: (Buck, BuckVoltage) = (Buck::B1, BuckVoltage::from_millivolts(1
 /// (`xsdr_set_lms125vdd(d, 1320)`) and writes code 0x8E, 1.325 V (SNVSAC6B; libusdr's
 /// `s_get_vout` sits one code high there, as for the 1.28 V rail at open).
 const VDD_BOOST: (Buck, BuckVoltage) = (Buck::B2, BuckVoltage::from_millivolts(1325));
+/// The core supply's fix-up for TX rates from 53 to 60 MS/s with TX running: 1.36 V asked
+/// (`xsdr_set_lms125vdd(d, 1360)`), code 0x96, 1.365 V, likewise one code high.
+const VDD_FIXUP: (Buck, BuckVoltage) = (Buck::B2, BuckVoltage::from_millivolts(1365));
+/// The TX rates the fix-up applies to, inclusive.
+const VDD_FIXUP_RATES: core::ops::RangeInclusive<u32> = 53_000_000..=60_000_000;
+/// The most VCO divider steps the RX retries add (`g_clk_reduce`).
+const CLOCK_REDUCE_MAX: u8 = 2;
 /// Phase-calibration retries (`MAX_RTY`).
 const RETRIES: u8 = 5;
 /// The phases swept: 1 to 4 * 63 (`ph`).
@@ -45,6 +58,8 @@ const CHECKS: u8 = 10;
 const DESER_RESET: u16 = 0x0007;
 /// The badness above which a failed calibration fails the rate.
 const SEVERE: u64 = 100;
+/// The TX I/Q swaps above which it fails it.
+const TX_IQ_SEVERE: u32 = 10;
 /// The LFSR counters' read selector: `LFSR_CNTR_BER` in bits 3:2.
 const BER: u8 = 2 << 2;
 
@@ -56,6 +71,9 @@ pub(crate) struct Gateware {
 
     /// RX samples on `LimeLight` port 1 (`PHY_CFG_LML2_IS_RX` clear).
     pub(crate) rx_port1: bool,
+
+    /// The TX MMCM has a separate `CLKDIV` output (`PHY_CFG_SEP_CLKDIV_MSK`).
+    pub(crate) separate_clkdiv: bool,
 }
 
 /// The board's sample-rate state that outlives one call (`xsdr_dev_t`).
@@ -87,6 +105,9 @@ pub(crate) enum RateError {
     /// The `LimeLight` calibration found no clean phase, or (without a TX MMCM) measured
     /// none: libusdr's `-ERANGE` ("LML Calibration failed").
     Calibration,
+
+    /// The TX MMCM did not lock (libusdr's `-EIO`), or cannot be configured for the link.
+    Mmcm(TxCalError),
 }
 
 /// Where a phase probe is: one setting of the RX link tested against the LFSR checkers.
@@ -94,6 +115,8 @@ pub(crate) enum RateError {
 enum Probe {
     /// The 10 µs before a swept phase.
     Lead,
+    /// With TX running, the TX MMCM at the phase.
+    Mmcm,
     /// The FIFO reset pulse.
     FifoReset,
     /// The deserializer held in reset.
@@ -143,6 +166,9 @@ struct Sweep {
     /// The checkers' counters as last read (`errs`).
     errors: [u32; 4],
 
+    /// The VCO divider steps the retries added, 0 to 2 (`g_clk_reduce`).
+    clock_reduce: u8,
+
     /// Where the probe is.
     probe: Probe,
 
@@ -163,6 +189,12 @@ enum Stage {
     VioBoost,
     /// The core supply boost.
     VddBoost,
+    /// The core supply's fix-up for 53 to 60 MS/s TX.
+    VddFixup,
+    /// With TX running, the TX MMCM at the default phases.
+    Mmcm,
+    /// With TX running, the TX phase calibration.
+    TxCalibration,
     /// Without a TX MMCM: the fixed delay.
     TxDelay,
     /// The LMS7002M's RX and TX pins on, before streaming RX up.
@@ -195,6 +227,10 @@ enum Stage {
 
 /// The part running.
 #[derive(Clone, Copy, Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the portable tree allocates nothing; one part runs at a time"
+)]
 enum Part {
     /// Chip writes.
     Chip(Batch),
@@ -206,6 +242,10 @@ enum Part {
     Step(Step),
     /// A self-test check.
     Bist(BistCheck),
+    /// The TX MMCM's configuration.
+    Mmcm(ConfigureMmcm),
+    /// The TX phase calibration.
+    TxCalibration(TxCalibration),
 }
 
 impl Part {
@@ -217,6 +257,8 @@ impl Part {
             Self::StreamUp(op) => op.next(),
             Self::Step(step) => step.next(),
             Self::Bist(check) => check.next(),
+            Self::Mmcm(configure) => configure.next(),
+            Self::TxCalibration(calibration) => calibration.next(),
         }
     }
 
@@ -228,6 +270,8 @@ impl Part {
             Self::StreamUp(op) => op.complete(result),
             Self::Step(step) => step.complete(result),
             Self::Bist(check) => check.complete(result),
+            Self::Mmcm(configure) => configure.complete(result),
+            Self::TxCalibration(calibration) => calibration.complete(result),
         }
     }
 }
@@ -257,6 +301,12 @@ pub(crate) struct SetSampleRate {
 
     /// RX was running before (`old_rx_run`).
     was_running: bool,
+
+    /// TX runs, so the TX MMCM clocks the link (`!mmcm_rx_only_path`).
+    tx: bool,
+
+    /// The TX calibration's verdict (`tx_badness`, `tx_iqerrs`), once made.
+    tx_verdict: Option<TxVerdict>,
 
     /// The RX calibration's measured badness (`rx_badness`).
     rx_badness: u64,
@@ -316,6 +366,45 @@ impl SetSampleRate {
         rate
     }
 
+    /// Whether setting `rx` and `tx` with TX running leaves a link the TX MMCM can be
+    /// configured for on every CGEN pass libusdr may lock ([`MmcmPlan::fits`]), before any
+    /// bus access: the link calibration reprograms it for every phase it sweeps. A pass
+    /// the LMS7002M refuses fails the rate before any calibration, so it fits.
+    pub(crate) fn tx_clock_fits(
+        control: &Control,
+        state: RateState,
+        gateware: Gateware,
+        (rx, tx): (u32, u32),
+    ) -> bool {
+        let pumped = state.double_pump || (!state.afe_active && (rx > SISO_RATE || tx > SISO_RATE));
+        let mut request =
+            Self::idle(control, state, gateware, I2cAddr::new(0, 0), (rx, tx)).request;
+        request.flags = Self::rate_flags(pumped);
+        (0..).map_while(|pass| request.plan(pass)).all(|plan| {
+            plan.map_or(true, |(clocks, lml)| {
+                MmcmPlan::fits(&MmcmLink {
+                    clocks,
+                    lml,
+                    double_pump: pumped,
+                    separate_clkdiv: gateware.separate_clkdiv,
+                })
+            })
+        })
+    }
+
+    /// libusdr's `/dm/rate` flags (maximum converter rate, extended CGEN), with SISO DDR
+    /// both ways on a double-pumped link.
+    const fn rate_flags(pumped: bool) -> RateFlags {
+        RateFlags {
+            max_conversion: true,
+            extended_cgen: true,
+            rx_siso_ddr: pumped,
+            tx_siso_ddr: pumped,
+            rx_external_fifo_clock: false,
+            tx_external_fifo_clock: false,
+        }
+    }
+
     /// A setting of `rx` and `tx` that has done nothing yet.
     fn idle(
         control: &Control,
@@ -340,6 +429,8 @@ impl SetSampleRate {
                 tx_interpolation: 1,
             },
             was_running: false,
+            tx: false,
+            tx_verdict: None,
             rx_badness: u64::MAX,
             sweep: Sweep {
                 retry: 0,
@@ -350,6 +441,7 @@ impl SetSampleRate {
                 least: u64::MAX,
                 last_clean: false,
                 errors: [u32::MAX; 4],
+                clock_reduce: 0,
                 probe: Probe::Lead,
                 badness: u64::MAX,
             },
@@ -388,14 +480,7 @@ impl SetSampleRate {
 
     /// Requests the LMS7002M's rate, with the double pump's SISO DDR flags.
     fn start_rate(&mut self) {
-        let siso = self.state.double_pump;
-        self.request.flags = RateFlags {
-            max_conversion: true,
-            extended_cgen: true,
-            rx_siso_ddr: siso,
-            tx_siso_ddr: siso,
-            ..RateFlags::default()
-        };
+        self.request.flags = Self::rate_flags(self.state.double_pump);
         self.part = Part::Control(self.control.sample_rate(self.request));
         self.stage = Stage::Rate;
     }
@@ -439,7 +524,16 @@ impl SetSampleRate {
                 let (buck, voltage) = VDD_BOOST;
                 self.pmic_write(Stage::VddBoost, buck, voltage);
             }
-            Stage::VddBoost => self.calibrate(),
+            Stage::VddBoost => self.after_boost(),
+            Stage::VddFixup => self.calibrate(),
+            Stage::Mmcm => {
+                if let Some(error) = self.mmcm_failure() {
+                    self.stage = Stage::Done(Err(error));
+                    return;
+                }
+                self.limelight_reset();
+            }
+            Stage::TxCalibration => self.after_tx_calibration(),
             Stage::TxDelay => self.after_calibration(),
             Stage::RxPower => self.step(Stage::RxPowerSettle, Step::wait(1000)),
             Stage::RxPowerSettle => {
@@ -457,7 +551,7 @@ impl SetSampleRate {
                         return;
                     }
                 }
-                self.limelight_reset();
+                self.link_clock();
             }
             Stage::LimelightReset => self.deser(0),
             Stage::Deser(step) if step < 2 => self.deser(step + 1),
@@ -501,6 +595,7 @@ impl SetSampleRate {
     /// supply boost above 70 MS/s unless RX streams SISO, then the calibration.
     fn start_calibration(&mut self) {
         self.was_running = self.control.rx_running().contains(&true);
+        self.tx = self.control.tx_running().contains(&true);
         if !self.gateware.tx_mmcm {
             self.step(Stage::TxDelay, Step::fpga(TX_DEFAULT_DELAY));
             return;
@@ -511,7 +606,66 @@ impl SetSampleRate {
             self.pmic_write(Stage::VioBoost, buck, voltage);
             return;
         }
+        self.after_boost();
+    }
+
+    /// After any supply boost: the core supply's fix-up with TX running at 53 to 60 MS/s,
+    /// then the calibration.
+    fn after_boost(&mut self) {
+        if self.tx && VDD_FIXUP_RATES.contains(&self.state.tx) {
+            let (buck, voltage) = VDD_FIXUP;
+            self.pmic_write(Stage::VddFixup, buck, voltage);
+            return;
+        }
         self.calibrate();
+    }
+
+    /// What the TX MMCM's configuration depends on.
+    fn mmcm_link(&self) -> MmcmLink {
+        MmcmLink {
+            clocks: self.control.clocks(),
+            lml: self.control.lml(),
+            double_pump: self.state.double_pump,
+            separate_clkdiv: self.gateware.separate_clkdiv,
+        }
+    }
+
+    /// The TX MMCM's configuration for `rx_phase` at `stage`, or the calibration's end if
+    /// the link cannot take it.
+    fn configure_mmcm(&mut self, stage: Stage, rx_phase: u16) {
+        let call = MmcmCall {
+            rx_phase,
+            clock_reduce: self.sweep.clock_reduce,
+            ..MmcmCall::default()
+        };
+        match MmcmPlan::new(&self.mmcm_link(), call) {
+            Ok(plan) => {
+                self.stage = stage;
+                self.part = Part::Mmcm(ConfigureMmcm::new(&plan));
+            }
+            Err(_) => self.stage = Stage::Done(Err(RateError::Mmcm(TxCalError::Refused))),
+        }
+    }
+
+    /// The failure the TX MMCM's configuration just ended with, if any.
+    fn mmcm_failure(&self) -> Option<RateError> {
+        match self.part {
+            Part::Mmcm(configure) if configure.outcome() == Some(Err(MmcmUnlocked)) => {
+                Some(RateError::Mmcm(TxCalError::Unlocked))
+            }
+            _ => None,
+        }
+    }
+
+    /// The link's clock before the sweep: with TX running the TX MMCM at its default
+    /// phases (libusdr's RX-master call returns at once without an RX MMCM), then the
+    /// `LimeLight` reset.
+    fn link_clock(&mut self) {
+        if self.tx {
+            self.configure_mmcm(Stage::Mmcm, 0);
+            return;
+        }
+        self.limelight_reset();
     }
 
     /// Writes a PMIC rail (`lp8758_vout_set`).
@@ -524,7 +678,7 @@ impl SetSampleRate {
     /// this gateware lacks, would be configured next), then the `LimeLight` reset.
     fn calibrate(&mut self) {
         if self.control.rx_running().contains(&true) {
-            self.limelight_reset();
+            self.link_clock();
             return;
         }
         let pins = LMS_LDO_ENABLE | LMS_RESET_RELEASE | LMS_RX_ENABLE | LMS_TX_ENABLE;
@@ -564,6 +718,16 @@ impl SetSampleRate {
     fn probe_step(&mut self) {
         let flag = self.deser_flag();
         let step = match self.sweep.probe {
+            Probe::Mmcm => {
+                let phase = if self.sweep.phase == 0 {
+                    // The best-effort probe of the phase kept.
+                    u16::try_from(self.sweep.kept).unwrap_or(0)
+                } else {
+                    self.sweep.phase
+                };
+                self.configure_mmcm(Stage::Probe, phase);
+                return;
+            }
             Probe::FifoReset => {
                 let batch = self.control.chip().limelight_fifo_reset(true, true);
                 self.chip(Stage::Probe, batch);
@@ -588,7 +752,14 @@ impl SetSampleRate {
     /// The probe's next step, or its verdict.
     fn probe_advance(&mut self) {
         let next = match self.sweep.probe {
-            Probe::Lead => Probe::FifoReset,
+            Probe::Lead if self.tx => Probe::Mmcm,
+            Probe::Lead | Probe::Mmcm => {
+                if let Some(error) = self.mmcm_failure() {
+                    self.stage = Stage::Done(Err(error));
+                    return;
+                }
+                Probe::FifoReset
+            }
             Probe::FifoReset => Probe::DeserReset,
             Probe::DeserReset => Probe::DeserWait,
             Probe::DeserWait => Probe::DeserRun,
@@ -692,23 +863,67 @@ impl SetSampleRate {
         }
         if sweep.last == sweep.kept && sweep.last_clean {
             self.rx_badness = 0;
-            self.after_calibration();
+            self.after_rx_calibration();
             return;
         }
-        // The best-effort probe: no lead wait (the RX MMCM it would set is absent).
+        // The best-effort probe: no lead wait; the TX MMCM first with TX running.
         sweep.phase = 0;
-        sweep.probe = Probe::FifoReset;
+        sweep.probe = if self.tx {
+            Probe::Mmcm
+        } else {
+            Probe::FifoReset
+        };
         self.probe_step();
     }
 
     /// After the best-effort probe: done when clean, else the next retry.
     fn after_best_effort(&mut self) {
-        if self.rx_badness == 0 || self.sweep.retry + 1 >= RETRIES {
-            self.after_calibration();
+        if self.rx_badness == 0 {
+            self.after_rx_calibration();
+            return;
+        }
+        if self.sweep.clock_reduce < CLOCK_REDUCE_MAX {
+            self.sweep.clock_reduce += 1;
+        }
+        if self.sweep.retry + 1 >= RETRIES {
+            self.after_rx_calibration();
             return;
         }
         self.sweep.retry += 1;
         self.start_retry();
+    }
+
+    /// After the RX phase: with TX running, the TX phase calibration from the RX phase
+    /// kept.
+    fn after_rx_calibration(&mut self) {
+        if !self.tx {
+            self.after_calibration();
+            return;
+        }
+        let rx_phase = u16::try_from(self.sweep.kept).unwrap_or(0);
+        self.stage = Stage::TxCalibration;
+        self.part = Part::TxCalibration(TxCalibration::new(
+            &self.control,
+            self.mmcm_link(),
+            rx_phase,
+            self.sweep.clock_reduce,
+            self.state.tx,
+        ));
+    }
+
+    /// After the TX phase calibration: its verdict kept, or its failure.
+    fn after_tx_calibration(&mut self) {
+        let Part::TxCalibration(calibration) = self.part else {
+            return;
+        };
+        match calibration.outcome() {
+            Some(Ok(verdict)) => {
+                self.tx_verdict = Some(verdict);
+                self.after_calibration();
+            }
+            Some(Err(error)) => self.stage = Stage::Done(Err(RateError::Mmcm(error))),
+            None => {}
+        }
     }
 
     /// `no_tx`: the RX FIFO back to the processor when RX ran before the call.
@@ -723,7 +938,10 @@ impl SetSampleRate {
 
     /// The calibration's verdict, then bank A selected.
     fn finish_calibration(&mut self) {
-        if self.rx_badness > SEVERE {
+        let tx_severe = self
+            .tx_verdict
+            .is_some_and(|tx| tx.badness > SEVERE || tx.iq_errors > TX_IQ_SEVERE);
+        if self.rx_badness > SEVERE || tx_severe {
             self.stage = Stage::Done(Err(RateError::Calibration));
             return;
         }
@@ -770,10 +988,11 @@ impl Sequence for SetSampleRate {
             return Ok(());
         }
         let completed = self.part.complete(result);
-        match self.part {
+        match &self.part {
             Part::Control(op) => self.control = *op.control(),
             Part::StreamUp(op) => self.control = *op.control(),
-            Part::Chip(_) | Part::Step(_) | Part::Bist(_) => {}
+            Part::TxCalibration(calibration) => self.control = *calibration.control(),
+            Part::Chip(_) | Part::Step(_) | Part::Bist(_) | Part::Mmcm(_) => {}
         }
         match completed {
             Ok(()) => {}

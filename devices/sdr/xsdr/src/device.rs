@@ -6,9 +6,11 @@ use std::fmt;
 
 mod controls;
 mod stream;
+mod tx_stream;
 
 pub use controls::{IqCorrection, LmlRxMode, TxGenerator};
 pub use stream::{RxChannels, RxPacket};
+pub use tx_stream::{TxChannels, TxTelemetry};
 
 use hal::{Sequence, run_sequence};
 use lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Gain, Operation};
@@ -26,6 +28,7 @@ use crate::portable::hwid::{IdentityRead, Variant};
 use crate::portable::power::PowerUp;
 use crate::portable::rate::{Gateware, RateError, RateState, SetSampleRate};
 use crate::portable::supplies::Supplies;
+use crate::portable::txcal::TxCalError;
 
 /// The lowest sample rate libusdr's `/dm/rate` accepts (`RATE_MIN`).
 const RATE_MIN: u32 = 90_000;
@@ -40,6 +43,8 @@ const PHY_RX_MMCM: u8 = 0x10;
 const PHY_SINGLE_MMCM: u8 = 0x01;
 /// HWID PHY bit: an FPGA DUC/DDC (`PHY_CFG_HAS_DUC_DDC`).
 const PHY_DUC_DDC: u8 = 0x04;
+/// HWID PHY bit: the TX MMCM has a separate `CLKDIV` output (`PHY_CFG_SEP_CLKDIV_MSK`).
+const PHY_SEPARATE_CLKDIV: u8 = 0x80;
 /// HWID PHY bit: `LimeLight` port 2 carries RX (`PHY_CFG_LML2_IS_RX`).
 const PHY_LML2_IS_RX: u8 = 0x40;
 /// The PHY bits whose rate paths are not ported (see [`Error::UnsupportedGateware`]).
@@ -80,6 +85,9 @@ pub struct Device {
 
     /// The RX stream, once created.
     rx_stream: Option<stream::RxStream>,
+
+    /// The TX stream, once created.
+    tx_stream: Option<tx_stream::TxStream>,
 }
 
 impl Device {
@@ -123,6 +131,7 @@ impl Device {
             front_end,
             hw_channels: [2; 2],
             rx_stream: None,
+            tx_stream: None,
         })
     }
 
@@ -167,14 +176,22 @@ impl Device {
     /// 70 MS/s the I/O and core supplies are raised.
     ///
     /// Supported gateware has a TX MMCM and no RX MMCM, shared MMCM or DUC/DDC (HWID PHY
-    /// bits). Without a TX MMCM libusdr, and so this, fails the calibration.
+    /// bits). Without a TX MMCM libusdr, and so this, fails the calibration. With a TX
+    /// stream, the link calibration reprograms the TX MMCM for every phase it sweeps and
+    /// calibrates the TX phase too; between 53 and 60 MS/s of TX the core supply is
+    /// raised.
+    ///
+    /// Divergence: with a TX stream on gateware with a TX MMCM, a rate whose link the TX
+    /// MMCM cannot take (TX below about 6.35 MS/s), where libusdr reads past its MMCM
+    /// table, is refused before any bus access.
     ///
     /// # Errors
     ///
     /// Before any bus access: [`Error::InvalidRate`] for a rate outside 90 kS/s to
-    /// 195 MS/s or none in either direction; [`Error::UnsupportedGateware`]. Then
-    /// [`Error::UndeliverableRate`], [`Error::ClockUnlocked`],
-    /// [`Error::LinkCalibration`], a power-up's errors, or [`Error::Bus`].
+    /// 195 MS/s or none in either direction; [`Error::UnsupportedGateware`];
+    /// [`Error::TxClockOutOfRange`]. Then [`Error::UndeliverableRate`],
+    /// [`Error::ClockUnlocked`], [`Error::LinkCalibration`], [`Error::TxClockUnlocked`], a
+    /// power-up's errors, or [`Error::Bus`].
     pub fn set_sample_rate(&mut self, rx: u32, tx: u32) -> Result<(), Error> {
         let in_range = |rate: u32| rate == 0 || (RATE_MIN..=RATE_MAX).contains(&rate);
         if rx == 0 && tx == 0 {
@@ -184,6 +201,13 @@ impl Device {
             return Err(Error::InvalidRate(rate));
         }
         let gateware = self.gateware()?;
+        let tx_running = self.control.tx_running().contains(&true);
+        if tx_running
+            && gateware.tx_mmcm
+            && !SetSampleRate::tx_clock_fits(&self.control, self.rate, gateware, (rx, tx))
+        {
+            return Err(Error::TxClockOutOfRange);
+        }
         if !self.powered {
             self.power_up()?;
         }
@@ -199,10 +223,23 @@ impl Device {
         self.rate = rate.state();
         ran?;
         match rate.outcome() {
-            Some(Err(RateError::Control(error))) => Err(control_error(error)),
-            Some(Err(RateError::Calibration)) => Err(Error::LinkCalibration),
+            Some(Err(error)) => Err(rate_error(error)),
             Some(Ok(())) | None => Ok(()),
         }
+    }
+
+    /// Sets how many hardware channels a direction's stream reports (`xsdr_hwchans_cnt`,
+    /// `direction` 0 for RX, 1 for TX): when that changes, each direction's SISO choice
+    /// and both `LimeLight` maps are rewritten (`xsdr_rfic_streaming_xflags`).
+    fn set_hw_channels(&mut self, direction: usize, count: u8) -> Result<(), Error> {
+        if self.hw_channels[direction] == count {
+            return Ok(());
+        }
+        self.hw_channels[direction] = count;
+        let pumped = self.rate.double_pump;
+        let [rx, tx] = self.hw_channels.map(|channels| channels == 1 || pumped);
+        let op = self.control.set_siso(XsdrFrontend, rx, tx);
+        self.run_control(op)
     }
 
     /// Tunes the RX LO to `hertz` (libusdr's `/dm/sdr/0/rx/frequency`); 0 stops the
@@ -243,6 +280,7 @@ impl Device {
         Ok(Gateware {
             tx_mmcm: phy & PHY_TX_MMCM != 0,
             rx_port1: phy & PHY_LML2_IS_RX == 0,
+            separate_clkdiv: phy & PHY_SEPARATE_CLKDIV != 0,
         })
     }
 
@@ -319,6 +357,10 @@ impl Device {
             let _ = self.halt_rx();
             let _ = self.bus.rx_stream_close();
         }
+        if self.tx_stream.take().is_some() {
+            let _ = self.halt_tx();
+            let _ = self.bus.tx_stream_close();
+        }
         run(&mut *self.bus, &mut Close::new(*self.control.chip()))
     }
 
@@ -338,6 +380,7 @@ impl fmt::Debug for Device {
             .field("powered", &self.powered)
             .field("front_end", &self.front_end)
             .field("rx_stream", &self.rx_stream.is_some())
+            .field("tx_stream", &self.tx_stream.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -356,6 +399,16 @@ fn control_error(error: ControlError) -> Error {
         ControlError::InvalidPath => Error::InvalidPath,
         // The frequency is filled in by the caller.
         ControlError::NcoOutOfRange => Error::NcoOutOfRange(0),
+    }
+}
+
+/// A sample rate's or link calibration's failure in the driver's terms.
+fn rate_error(error: RateError) -> Error {
+    match error {
+        RateError::Control(error) => control_error(error),
+        RateError::Calibration => Error::LinkCalibration,
+        RateError::Mmcm(TxCalError::Unlocked) => Error::TxClockUnlocked,
+        RateError::Mmcm(TxCalError::Refused) => Error::TxClockOutOfRange,
     }
 }
 

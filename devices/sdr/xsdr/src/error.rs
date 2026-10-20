@@ -175,6 +175,48 @@ pub enum Error {
         got: usize,
     },
 
+    /// The TX MMCM, which clocks the `LimeLight` link's FPGA side, did not lock: libusdr's
+    /// `-EIO` ("MMCM NO CLOCK", "MMCM Ready flag timed out").
+    #[error("the TX MMCM did not lock")]
+    TxClockUnlocked,
+
+    /// A link the TX MMCM cannot be configured for, refused before any bus access: with TX
+    /// running, TX sample rates below about 6.35 MS/s, for which libusdr reads past its
+    /// 64-entry lock and filter table (`mmcm_rom`).
+    #[error("the TX MMCM cannot be configured for this link")]
+    TxClockOutOfRange,
+
+    /// Gateware built before the oldest libusdr streams TX from (`MINIM_FWID_COMPAT`):
+    /// libusdr's `-ECONNRESET`. The build stamp (`USR_ACCESS2`) is given.
+    #[error("gateware {0:#010x} is too old for TX streaming")]
+    OutdatedGateware(u32),
+
+    /// A send of channel buffers of different lengths.
+    #[error("channel buffers of {first} and {other} samples")]
+    #[non_exhaustive]
+    UnequalChannelBuffers {
+        /// The first buffer's samples.
+        first: usize,
+
+        /// Another's.
+        other: usize,
+    },
+
+    /// A send of no samples or more than a packet.
+    #[error("a send of {got} samples, a packet is at most {max}")]
+    #[non_exhaustive]
+    SendSize {
+        /// The packet's samples.
+        max: usize,
+
+        /// The send's.
+        got: usize,
+    },
+
+    /// A TX time past the TX core's 47 bits.
+    #[error("TX time {0} is past the TX core's 47 bits")]
+    UnsupportedTimestamp(u64),
+
     /// The front-end probe failed. Probing automatically, as open does, a board that fails
     /// is logged and skipped as libusdr skips it, so open reports none of these yet.
     #[error("front-end probe failed")]

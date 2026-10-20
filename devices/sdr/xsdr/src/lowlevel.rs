@@ -3,6 +3,6 @@
 //! **Unstable.** The shared `hal` crate's seam, re-exported unchanged, so custom
 //! buses, including the board simulator, can drive a [`Device`](crate::Device). The XSDR
 //! uses I2C core 0 (bus 0 for its PMIC, bus 1 for the front-end connector) and SPI bus 0
-//! for the LMS7002M; it streams nothing yet.
+//! for the LMS7002M, and streams RX and TX through the bus's stream buffers.
 
-pub use hal::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr};
+pub use hal::{Bus, BusError, I2C_MAX_READ, I2C_MAX_WRITE, I2cAddr, SpiAddr, TxCommit, TxFill};

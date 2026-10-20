@@ -95,7 +95,7 @@ pub fn streaming_down_words(rx_only: bool) -> Result<([u32; 32], usize), &'stati
     let mut words = [0; 32];
     let mut len = 0;
     let down = if rx_only { Down::Rx } else { Down::Both };
-    for mut batch in streaming_down(&mut chip, down, [false; 2])
+    for mut batch in streaming_down(&mut chip, down, ([false; 2], [false; 2]))
         .into_iter()
         .flatten()
     {
@@ -128,6 +128,7 @@ pub fn rate_unlocked(tx_mmcm: bool) -> Result<(usize, &'static str), &'static st
         Gateware {
             tx_mmcm,
             rx_port1: true,
+            separate_clkdiv: false,
         },
         I2cAddr::new(0, 0x60),
         (1_000_000, 1_000_000),
@@ -155,6 +156,7 @@ pub fn calibrate_link(tx_mmcm: bool) -> Result<(usize, &'static str), &'static s
         Gateware {
             tx_mmcm,
             rx_port1: true,
+            separate_clkdiv: false,
         },
         I2cAddr::new(0, 0x60),
     );
@@ -164,6 +166,47 @@ pub fn calibrate_link(tx_mmcm: bool) -> Result<(usize, &'static str), &'static s
         Some(Err(RateError::Control(ControlError::NoRate))) => "no rate",
         Some(Err(RateError::Calibration)) => "calibration",
         Some(Err(_)) => "other",
+        None => "unfinished",
+    };
+    Ok((actions, outcome))
+}
+
+/// Whether setting `rate` both ways with both directions running leaves a link the TX
+/// MMCM can be configured for: the refusal a TX stream's rate checks before any access.
+pub fn tx_clock_fits(rate: u32) -> Result<bool, &'static str> {
+    let mut control = control()?;
+    control.set_running([true; 2], [true; 2]);
+    Ok(SetSampleRate::tx_clock_fits(
+        &control,
+        RateState::default(),
+        Gateware {
+            tx_mmcm: true,
+            rx_port1: true,
+            separate_clkdiv: false,
+        },
+        (rate, rate),
+    ))
+}
+
+/// Runs a link calibration with both directions running on a chip with no rate: the
+/// actions issued and the outcome.
+pub fn calibrate_tx_link() -> Result<(usize, &'static str), &'static str> {
+    let mut control = control()?;
+    control.set_running([true; 2], [true; 2]);
+    let mut link = SetSampleRate::calibrate_link(
+        &control,
+        RateState::default(),
+        Gateware {
+            tx_mmcm: true,
+            rx_port1: true,
+            separate_clkdiv: false,
+        },
+        I2cAddr::new(0, 0x60),
+    );
+    let actions = drive(&mut link, |_, _| Ok(0))?;
+    let outcome = match link.outcome() {
+        Some(Err(RateError::Mmcm(_))) => "mmcm",
+        Some(_) => "other",
         None => "unfinished",
     };
     Ok((actions, outcome))
@@ -246,6 +289,15 @@ mod tests {
         assert_eq!(calibrate_link(false), Ok((1, "calibration")));
         // With one: the RX pins and their 1 ms, then streaming up finds no rate.
         assert_eq!(calibrate_link(true), Ok((2, "no rate")));
+    }
+
+    #[test]
+    fn the_exact_source_witness_runs_the_tx_mmcm_checks() {
+        // 10 MS/s: a 20 MHz link clock; 5 MS/s: 10 MHz, below the VCO's reach at 63.
+        assert_eq!(tx_clock_fits(10_000_000), Ok(true));
+        assert_eq!(tx_clock_fits(5_000_000), Ok(false));
+        // With no rate the link clock is 0: the TX MMCM refuses before any access.
+        assert_eq!(calibrate_tx_link(), Ok((0, "mmcm")));
     }
 
     #[test]

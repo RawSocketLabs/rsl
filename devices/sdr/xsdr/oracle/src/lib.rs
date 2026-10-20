@@ -20,6 +20,10 @@ use std::thread;
 
 use xsdr_sim::{I2cAddress, SimBoard};
 
+mod tx;
+
+pub use tx::SendStat;
+
 /// `EINVAL`: an operation shape the board's transports reject.
 const EINVAL: c_int = 22;
 /// `EIO`: the Rust side panicked; the panic is resumed once libusdr returns.
@@ -27,7 +31,7 @@ const EIO: c_int = 5;
 /// `EOPNOTSUPP`: an operation class the sim does not model (`USDR_LSOP_DRP`, `URAM`, ...).
 /// None is used by open, power-up or close; seeing one fails the oracle loudly.
 const EOPNOTSUPP: c_int = 95;
-/// `ETIMEDOUT`: no RX block, the sim's stream engine being stopped.
+/// `ETIMEDOUT`: no RX block, the sim's stream engine being stopped, or no TX buffer free.
 const ETIMEDOUT: c_int = 110;
 
 /// libusdr `ls_op` class `USDR_LSOP_HWREG`: FPGA registers (write, then read).
@@ -351,6 +355,8 @@ pub struct Oracle {
     dev: Option<NonNull<c_void>>,
     /// The RX stream, while one exists; libusdr's close destroys it with the device.
     stream: Option<NonNull<c_void>>,
+    /// The TX stream, likewise.
+    tx: Option<NonNull<c_void>>,
     /// Held for the oracle's lifetime; see [`SESSION`].
     _session: MutexGuard<'static, ()>,
 }
@@ -405,6 +411,7 @@ impl Oracle {
         let mut oracle = Self {
             dev: Some(dev),
             stream: None,
+            tx: None,
             _session: session,
         };
         resume_callback_panic();
@@ -680,8 +687,9 @@ impl Oracle {
 
     /// Closes the libusdr device if it is still open.
     fn close_device(&mut self) {
-        // libusdr's close destroys the stream with the device.
+        // libusdr's close destroys the streams with the device.
         self.stream = None;
+        self.tx = None;
         if let Some(dev) = self.dev.take() {
             // SAFETY: `dev` came from a successful `usdr_dmd_create_string` and is closed once.
             unsafe { usdr_dmd_close(dev.as_ptr()) };

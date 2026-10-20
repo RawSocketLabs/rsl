@@ -12,18 +12,15 @@
 use std::time::Duration;
 
 use hal::run_sequence;
-use lms7002m::Mac;
-use lms7002m::ctrl::StreamFlags;
 use sdr_stream::{BurstPlan, EngineSequence, RxLanes, RxSampleFormat, SyncTrigger};
 
-use super::{Device, control_error, run};
+use super::{Device, rate_error, run};
 use crate::board::XSDR_SUPPLIES;
 use crate::error::Error;
 use crate::lowlevel::BusError;
 use crate::portable::close::{Down, streaming_down};
-use crate::portable::fpga::{Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE, LMS_RX_ENABLE};
-use crate::portable::frontend::XsdrFrontend;
-use crate::portable::rate::{Gateware, RateError, SetSampleRate};
+use crate::portable::fpga::{Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE, LMS_RX_ENABLE, LMS_TX_ENABLE};
+use crate::portable::rate::{Gateware, SetSampleRate};
 use crate::portable::step::Step;
 
 /// Bytes of one `ci16` sample on one channel: I then Q, each a little-endian `i16`.
@@ -124,7 +121,8 @@ impl Device {
     /// # Errors
     ///
     /// Before any bus access: [`Error::AlreadyStreaming`] with a stream;
-    /// [`Error::UnsupportedGateware`] as for [`Self::set_sample_rate`]. After the map:
+    /// [`Error::UnsupportedGateware`] as for [`Self::set_sample_rate`]; with a TX stream,
+    /// [`Error::TxClockOutOfRange`] as for [`Self::create_tx_stream`]. After the map:
     /// [`Error::DoublePumpedMimo`] for both channels on a double-pumped link. Then a
     /// sample rate's or streaming up's errors, [`Error::LinkCalibration`],
     /// [`Error::ChipMissing`] for an RX DMA engine that reads dead,
@@ -139,22 +137,20 @@ impl Device {
             return Err(Error::AlreadyStreaming);
         }
         let gateware = self.gateware()?;
+        let tx = self.tx_stream.is_some();
+        if tx && gateware.tx_mmcm && !self.tx_clock_fits() {
+            return Err(Error::TxClockOutOfRange);
+        }
         // `xsdr_hwchans_cnt(d, true, logicchs)`: a stream format without `&` reports 0
         // logical channels.
-        if self.hw_channels[0] != 0 {
-            self.hw_channels[0] = 0;
-            let pumped = self.rate.double_pump;
-            let tx_siso = self.hw_channels[1] == 1 || pumped;
-            let op = self.control.set_siso(XsdrFrontend, pumped, tx_siso);
-            self.run_control(op)?;
-        }
+        self.set_hw_channels(0, 0)?;
         if self.rate.double_pump {
             if channels == RxChannels::Both {
                 return Err(Error::DoublePumpedMimo);
             }
             self.rate.siso_rx = true;
         }
-        self.prepare_rx(gateware)?;
+        self.prepare(true, tx, gateware)?;
 
         let bus = self.bus.as_mut();
         run_sequence(bus, &mut EngineSequence::rx_reset())?;
@@ -178,20 +174,24 @@ impl Device {
         Ok(())
     }
 
-    /// `xsdr_prepare` for RX alone: a default rate if none was set, the RFIC's RX pins and
-    /// the LED on, its receiver streamed up on both channels, then the link calibration.
-    fn prepare_rx(&mut self, gateware: Gateware) -> Result<(), Error> {
+    /// `xsdr_prepare(d, rx, tx)`: a default RX rate if none was set (a TX stream's create
+    /// refuses that first), the RFIC's pins for the directions and the LED on, the run
+    /// flags set, the directions streamed up on both channels, then the link calibration.
+    pub(super) fn prepare(&mut self, rx: bool, tx: bool, gateware: Gateware) -> Result<(), Error> {
         if self.control.clocks().cgen == 0 {
             self.set_sample_rate(DEFAULT_RATE, 0)?;
         }
-        let pins = LMS_LDO_ENABLE | LMS_RESET_RELEASE | LMS_RX_ENABLE;
+        let mut pins = LMS_LDO_ENABLE | LMS_RESET_RELEASE;
+        if rx {
+            pins |= LMS_RX_ENABLE;
+        }
+        if tx {
+            pins |= LMS_TX_ENABLE;
+        }
         run(&mut *self.bus, &mut Step::fpga(Gpo::LmsPower.write(pins)))?;
         run(&mut *self.bus, &mut Step::fpga(Gpo::Led.write(1)))?;
-        self.control.set_running([true; 2], [false; 2]);
-        let up = self
-            .control
-            .streaming_up_rx(XsdrFrontend, Mac::Both, StreamFlags::default());
-        self.run_control(up)?;
+        self.control.set_running([rx; 2], [tx; 2]);
+        self.stream_up(rx, tx)?;
         self.rate.afe_active = true;
         let mut link =
             SetSampleRate::calibrate_link(&self.control, self.rate, gateware, XSDR_SUPPLIES.pmic);
@@ -200,8 +200,7 @@ impl Device {
         self.rate = link.state();
         ran?;
         match link.outcome() {
-            Some(Err(RateError::Control(error))) => Err(control_error(error)),
-            Some(Err(RateError::Calibration)) => Err(Error::LinkCalibration),
+            Some(Err(error)) => Err(rate_error(error)),
             Some(Ok(())) | None => Ok(()),
         }
     }
@@ -347,9 +346,9 @@ impl Device {
     /// write is attempted and its result ignored, as `unregister_stream` ignores it.
     fn rx_streaming_down(&mut self) {
         self.rate.afe_active = false;
-        let tx_running = self.control.tx_running();
-        self.control.set_running([false; 2], tx_running);
-        let batches = streaming_down(self.control.chip_mut(), Down::Rx, tx_running);
+        let running = (self.control.rx_running(), self.control.tx_running());
+        self.control.set_running([false; 2], running.1);
+        let batches = streaming_down(self.control.chip_mut(), Down::Rx, running);
         for mut batch in batches.into_iter().flatten() {
             let _ = run(&mut *self.bus, &mut batch);
         }
