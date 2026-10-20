@@ -1,7 +1,7 @@
 [package]
 name = "sdr-stream-sim"
 version = "0.0.0"
-description = "Model of libusdr's FPGA RX stream engine and sync unit, shared by the simulated SDR boards (usdr-sim, xsdr-sim)."
+description = "Model of libusdr's FPGA RX and TX stream engines and sync unit, shared by the simulated SDR boards (usdr-sim, xsdr-sim)."
 publish = false
 edition.workspace = true
 license.workspace = true

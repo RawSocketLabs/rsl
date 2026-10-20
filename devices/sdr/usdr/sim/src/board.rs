@@ -4,13 +4,12 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use sdr_frontend_sim::{FrontEnd, Model};
-use sdr_stream_sim::{RxEngine, SyncUnit};
+use sdr_stream_sim::{RxEngine, SyncUnit, TxEngine, TxGrant, TxPacket};
 
 use crate::chips::{DcCalibration, I2cChip, Lms6002d, PllLock, Reg8File, Si5332, Tmp114};
 use crate::flash::{FlashController, SimFlash};
 use crate::loopback::{Chains, Loopback};
 use crate::trace::Op;
-use crate::tx_stream::{TxEngine, TxGrant, TxPacket};
 
 /// FPGA register holding the general-purpose outputs: `bank << 24 | data`. Writes with
 /// bit 31 set load the I2C address LUT instead and leave the outputs alone.
@@ -255,13 +254,13 @@ impl SimBoard {
     }
 
     /// A board whose gateware has the extended TX stream core (HWID bit 26), announced
-    /// through registers 28 to 31; see the TX stream module.
+    /// through registers 28 to 31; see `sdr-stream-sim`'s TX core model.
     #[must_use]
     pub fn with_extended_tx_core(mut self) -> Self {
         if let Some(hwid) = self.regs.get_mut(&REG_GPI_HWID) {
             *hwid |= HWID_EXTENDED_TX;
         }
-        self.tx.extended = true;
+        self.tx = TxEngine::extended();
         self
     }
 
@@ -455,7 +454,7 @@ impl SimBoard {
     /// Sets the TX core's four status words (registers 28 to 31), which later completion
     /// records also carry.
     pub fn set_tx_status(&mut self, words: [u32; 4]) {
-        self.tx.status = words;
+        self.tx.set_status(words);
     }
 
     /// Plays the TX core's announced packets if it runs and the sync unit lets it.

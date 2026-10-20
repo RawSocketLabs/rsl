@@ -1,6 +1,8 @@
-//! The FPGA's TX stream core, original (`CORE_SFETX_DMA32_R0`) or, on a board with
-//! hardware ID bit 26, extended (`CORE_EXFETX_DMA32_R0_2`), and the 32 DMA buffers the
-//! `PCIe` driver keeps for it, as far as a driver can observe them.
+//! The FPGA's TX stream core, original (`CORE_SFETX_DMA32_R0`) or extended
+//! (`CORE_EXFETX_DMA32_R0_2`, which the board selects: the uSDR's hardware ID bit 26),
+//! and the 32 DMA buffers the `PCIe` driver keeps for it, as far as a driver can observe
+//! them. The uSDR and the LMS7 family pass the core the same registers
+//! (`device/generic_usdr/generic_regs.h`).
 //!
 //! The host writes a packet into a free buffer, then announces it. The original core
 //! takes two words at registers 12 and 13: samples less one in bits 29:15 of the first, no
@@ -31,18 +33,16 @@
 //! - The extended core's front end (`CSR_TFE4_BASE`: lane expansion, sample width, mute,
 //!   lane shuffle). Its commands are not interpreted; a packet's bytes are recorded as
 //!   the host wrote them. A packet of more than one burst is not modelled and panics.
-//! - The status words. They read as the test sets them ([`SimBoard::set_tx_status`]),
+//! - The status words. They read as the test sets them ([`TxEngine::set_status`]),
 //!   zero by default; the completion record carries the same three words, an assumption
 //!   (the driver copies its interrupt event registers, whose source is in the gateware).
 //! - Resetting the buffer pointers (bit 7 of a command) and the start-12-bit command.
 //!   libusdr sends the reset with its stop before each start; the sim keeps announced
 //!   packets across it, and panics on the 12-bit start, which libusdr never sends this core.
-//!
-//! [`SimBoard::set_tx_status`]: crate::SimBoard::set_tx_status
 
 use std::collections::VecDeque;
 
-use sdr_stream_sim::{REG_SYNC, SYNC_SELECT};
+use crate::sync::{REG_SYNC, SYNC_SELECT};
 
 /// The first word announcing a packet to the original core.
 const REG_TX_PUSH: u32 = 12;
@@ -53,7 +53,7 @@ const REG_EXTENDED_ANNOUNCE: u32 = 31;
 /// The second: the timestamp's low 32 bits.
 const REG_TX_PUSH_TIME: u32 = 13;
 /// The first of the core's four status words.
-pub(crate) const REG_TX_STATUS: u32 = 28;
+pub const REG_TX_STATUS: u32 = 28;
 /// The `PCIe` driver's TX buffers.
 const BUFFERS: usize = 32;
 /// Wire bytes per `ci16` sample.
@@ -93,7 +93,7 @@ pub struct TxPacket {
 
 /// The TX core's and its buffers' observable state.
 #[derive(Debug, Default)]
-pub(crate) struct TxEngine {
+pub struct TxEngine {
     /// Bytes in each buffer.
     block_bytes: usize,
 
@@ -121,19 +121,34 @@ pub(crate) struct TxEngine {
     channels_log2: u32,
 
     /// The core is the extended one, announced through registers 28 to 31.
-    pub(crate) extended: bool,
+    extended: bool,
 
     /// The extended core's first three announcing registers as last written.
     extended_words: [u32; 3],
 
     /// The four status words.
-    pub(crate) status: [u32; 4],
+    status: [u32; 4],
 }
 
 impl TxEngine {
+    /// The extended core (`CORE_EXFETX_DMA32_R0_2`), stopped and with no buffers.
+    #[must_use]
+    pub fn extended() -> Self {
+        Self {
+            extended: true,
+            ..Self::default()
+        }
+    }
+
+    /// Sets the four status words the core reads, which played buffers' completion
+    /// records also carry; zero by default.
+    pub const fn set_status(&mut self, words: [u32; 4]) {
+        self.status = words;
+    }
+
     /// Sets the buffers up, `block_bytes` each: all free, none with a record (the
     /// driver's `DMA_CONF`).
-    pub(crate) fn open(&mut self, block_bytes: usize) {
+    pub fn open(&mut self, block_bytes: usize) {
         self.block_bytes = block_bytes;
         self.free = std::iter::repeat_n(TxGrant::Fresh, BUFFERS).collect();
         self.filled.clear();
@@ -142,35 +157,38 @@ impl TxEngine {
     }
 
     /// Bytes in each buffer.
-    pub(crate) const fn block_bytes(&self) -> usize {
+    #[must_use]
+    pub const fn block_bytes(&self) -> usize {
         self.block_bytes
     }
 
     /// Releases the buffers (`DMA_UNCONF`).
-    pub(crate) fn close(&mut self) {
+    pub fn close(&mut self) {
         self.free.clear();
         self.filled.clear();
     }
 
     /// Hands out the next free buffer, or `None` while every buffer waits to be played (or
     /// none are set up).
-    pub(crate) fn grant(&mut self) -> Option<TxGrant> {
+    pub fn grant(&mut self) -> Option<TxGrant> {
         self.free.pop_front()
     }
 
     /// The status word a read of `addr` returns, if it is one of the four.
-    pub(crate) fn status_word(&self, addr: u32) -> Option<u32> {
+    #[must_use]
+    pub fn status_word(&self, addr: u32) -> Option<u32> {
         let index = usize::try_from(addr.checked_sub(REG_TX_STATUS)?).ok()?;
         self.status.get(index).copied()
     }
 
     /// Takes the bytes the host wrote into the buffer it was last granted.
-    pub(crate) fn load(&mut self, bytes: &[u8]) {
+    pub fn load(&mut self, bytes: &[u8]) {
         self.filled.push_back(bytes.to_vec());
     }
 
     /// Whether the core runs: the TX activity the sync unit can wait for.
-    pub(crate) const fn running(&self) -> bool {
+    #[must_use]
+    pub const fn running(&self) -> bool {
         self.running
     }
 
@@ -180,7 +198,7 @@ impl TxEngine {
     ///
     /// On an announcement with no filled buffer, or one shorter than it says, and on the
     /// unmodelled 12-bit start: harness failures.
-    pub(crate) fn on_write(&mut self, addr: u32, value: u32) {
+    pub fn on_write(&mut self, addr: u32, value: u32) {
         match addr {
             REG_EXTENDED_PUSH..REG_EXTENDED_ANNOUNCE if self.extended => {
                 let index = usize::try_from(addr - REG_EXTENDED_PUSH).expect("0 to 2");
@@ -246,7 +264,7 @@ impl TxEngine {
 
     /// Plays every queued packet if the core runs and `released`, freeing its buffer with
     /// a completion record taken at `kernel_time`.
-    pub(crate) fn play(&mut self, released: bool, kernel_time: u32) {
+    pub fn play(&mut self, released: bool, kernel_time: u32) {
         if !(self.running && released) {
             return;
         }
@@ -259,7 +277,8 @@ impl TxEngine {
     }
 
     /// Packets played so far.
-    pub(crate) fn played(&self) -> &[TxPacket] {
+    #[must_use]
+    pub fn played(&self) -> &[TxPacket] {
         &self.played
     }
 }
@@ -325,7 +344,7 @@ mod tests {
     #[test]
     fn played_buffers_return_with_the_status_and_kernel_time() {
         let mut engine = started_with(&[0; 4]);
-        engine.status = [1, 2, 3, 4];
+        engine.set_status([1, 2, 3, 4]);
         engine.on_write(REG_TX_PUSH, 1 << 30);
         engine.on_write(REG_TX_PUSH_TIME, 0);
         engine.play(true, 77);
@@ -352,10 +371,7 @@ mod tests {
 
     #[test]
     fn the_extended_core_plays_the_bytes_announced_with_its_last_registers() {
-        let mut engine = TxEngine {
-            extended: true,
-            ..TxEngine::default()
-        };
+        let mut engine = TxEngine::extended();
         engine.open(64);
         engine.on_write(REG_SYNC, 3);
         for _ in 0..2 {
@@ -388,10 +404,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "several bursts")]
     fn an_extended_packet_of_several_bursts_is_not_modelled() {
-        let mut engine = TxEngine {
-            extended: true,
-            ..TxEngine::default()
-        };
+        let mut engine = TxEngine::extended();
         engine.on_write(29, 1 << 24);
         engine.on_write(31, 0);
     }
