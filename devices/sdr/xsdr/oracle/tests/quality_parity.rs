@@ -7,7 +7,9 @@
 //! (SIGFPE). The oracle catches the trap and abandons libusdr's call there
 //! (`Oracle::set_uint_trapping`); xsdr divides by the board's factors, 1, and sets the
 //! running channels' baseband filters. That tail of LMS7002M writes is the whitelisted
-//! divergence: everything before it, every call after it and the close are compared whole.
+//! divergence. Everything before the trapped call is compared whole, the trapped call up
+//! to the trap; nothing after it is (libusdr's process dies there on hardware), but xsdr's
+//! later calls and close must succeed. A session without a trap is compared whole.
 //!
 //! The sim's capture brings the generator's tone back as libusdr's fit expects
 //! (`xsdr-sim`'s `RX_PHY_CAPTURE`), so the check passes at once, unless the scenario reads

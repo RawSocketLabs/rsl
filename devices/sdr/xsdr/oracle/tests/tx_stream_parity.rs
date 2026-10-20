@@ -25,7 +25,7 @@ use std::time::Duration;
 use sim_bus::SimBus;
 use xsdr::{Device, Error, RxChannels, TxChannels, TxTelemetry};
 use xsdr_oracle::{Oracle, SendStat};
-use xsdr_sim::{Op, SimBoard, TxPacket, Variant};
+use xsdr_sim::{MmcmFault, Op, SimBoard, TxPacket, Variant};
 
 /// `EINVAL`.
 const EINVAL: i32 = 22;
@@ -35,6 +35,8 @@ const ERANGE: i32 = 34;
 const EBUSY: i32 = 16;
 /// `ETIMEDOUT`.
 const ETIMEDOUT: i32 = 110;
+/// `EIO`: the TX MMCM did not lock.
+const EIO: i32 = 5;
 /// `ECONNRESET`: gateware too old for TX.
 const ECONNRESET: i32 = 104;
 /// An XSDR with a TX MMCM.
@@ -65,6 +67,8 @@ enum Call {
     Send(u32, Option<u64>),
     /// Stop and destroy TX.
     StopTx,
+    /// Inject a TX MMCM fault into the board from now on (no libusdr or xsdr call).
+    Fault(MmcmFault),
 }
 
 /// What a step returned: 0 or a negative errno, and a send's statistics or a receive's
@@ -174,6 +178,10 @@ fn libusdr(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, Vec<Op>, Vec<TxPac
                     let stopped = oracle.stop_tx_stream();
                     status(oracle.destroy_tx_stream().and(stopped))
                 }
+                Call::Fault(fault) => {
+                    oracle.board(|board| board.set_tx_mmcm_fault(fault));
+                    (0, None)
+                }
             }
         })
         .collect();
@@ -251,6 +259,10 @@ fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, Vec<Op>, Vec<TxPacket>
                     }
                 }
                 Call::StopTx => status(device.stop_tx_stream()),
+                Call::Fault(fault) => {
+                    sim.board().set_tx_mmcm_fault(fault);
+                    (0, None)
+                }
             }
         })
         .collect();
@@ -269,6 +281,7 @@ fn errno(result: Result<(), Error>) -> i32 {
         Err(Error::AlreadyStreaming) => -EBUSY,
         Err(Error::Timeout) => -ETIMEDOUT,
         Err(Error::OutdatedGateware(_)) => -ECONNRESET,
+        Err(Error::TxClockUnlocked) => -EIO,
         Err(other) => panic!("no libusdr errno for {other:?}"),
     }
 }
@@ -546,4 +559,233 @@ fn a_tx_link_no_sweep_finds_restores_its_first_phase_and_fails_like_libusdr() {
     assert_eq!(outcomes[1].0, -ERANGE, "TX badness over 100");
     // The RX sweep's ten, eight sweeps of 252 phases, the restore.
     assert_eq!(writes(&trace, 57, MMCM_HELD), 1 + 10 + 8 * PHASES + 1);
+}
+
+/// A TX sweep phase whose RX recheck reads 3 errors on each counter: badness 36, enough
+/// to retry the phase.
+const FAILED_RECHECK: [u32; 4] = [3; 4];
+
+/// The script to the second sweep's first phase: clean RX sweeps, then a first sweep
+/// that finds nothing.
+fn to_second_sweep() -> impl Iterator<Item = u32> {
+    std::iter::repeat_n(0, RX_SWEEP_READS).chain((0..PHASES).flat_map(|_| DIRTY_PHASE))
+}
+
+/// A TX stream created after a 10 MS/s rate, sent to and stopped.
+const CREATE: [Call; 5] = [
+    Call::Rate(10_000_000),
+    Call::CreateTx(TxChannels::A, 1024),
+    Call::StartTx,
+    Call::Send(1024, None),
+    Call::StopTx,
+];
+
+#[test]
+fn failed_rx_rechecks_retry_their_phase_up_to_six_times_like_libusdr() {
+    // Three failures, then a clean recheck: the phase's MMCM set four times.
+    let three: Vec<u32> = to_second_sweep()
+        .chain((0..3).flat_map(|_| FAILED_RECHECK))
+        .collect();
+    let (_, trace) = compare(|| xsdr().with_rx_phy_reads(three.clone(), 0), &CREATE);
+    assert_eq!(writes(&trace, 57, MMCM_HELD), 1 + 10 + PHASES + 4);
+    // Six: the sixth falls through to the TX check without another MMCM.
+    let six: Vec<u32> = to_second_sweep()
+        .chain((0..6).flat_map(|_| FAILED_RECHECK))
+        .collect();
+    let (_, trace) = compare(|| xsdr().with_rx_phy_reads(six.clone(), 0), &CREATE);
+    assert_eq!(writes(&trace, 57, MMCM_HELD), 1 + 10 + PHASES + 6);
+}
+
+#[test]
+fn a_third_sweep_accepts_a_phase_with_little_badness_like_libusdr() {
+    // Two sweeps find nothing; the third's first phase reads 1 error on each counter
+    // (badness 4, under 20) after its RX recheck, which libusdr accepts from the third.
+    let script: Vec<u32> = to_second_sweep()
+        .chain((0..PHASES).flat_map(|_| RECHECKED_DIRTY_PHASE))
+        .chain([1, 1, 1, 1, 1, 1, 1, 1, 0])
+        .collect();
+    let (_, trace) = compare(|| xsdr().with_rx_phy_reads(script.clone(), 0), &CREATE);
+    assert_eq!(writes(&trace, 57, MMCM_HELD), 1 + 10 + 2 * PHASES + 1);
+}
+
+/// The RX PHY's A/B-I/Q checker enabled: one per alignment attempt.
+const IQAB_CHECK_ON: u32 = 1 << 31 | 4 << 24 | 1;
+
+#[test]
+fn a_lost_lfsr_behind_a_clean_alignment_count_is_rechecked_like_libusdr() {
+    // The first phase's checks are clean; attempt 1's LFSR recheck reads errors, so its
+    // count is taken as 500 and attempt 2 runs, clean.
+    let script: Vec<u32> = std::iter::repeat_n(0, RX_SWEEP_READS + 35 * 4 + 1)
+        .chain([0, 0, 1, 1, 1, 1])
+        .collect();
+    let (_, trace) = compare(|| xsdr().with_rx_phy_reads(script.clone(), 0), &CREATE);
+    assert_eq!(
+        writes(&trace, 56, IQAB_CHECK_ON),
+        3,
+        "three alignment attempts"
+    );
+    assert_eq!(
+        writes(&trace, 57, MMCM_HELD),
+        1 + 10 + 1,
+        "the first phase kept"
+    );
+}
+
+#[test]
+fn a_fast_tx_link_gives_its_alignment_up_late_like_libusdr() {
+    // 90 MS/s (double-pumped, one channel): attempts 1 to 19 each recheck the LFSR with
+    // little badness; past attempt 18 above 80 MS/s libusdr gives up and moves on
+    // misaligned, so the second phase is calibrated.
+    let script: Vec<u32> = std::iter::repeat_n(0, RX_SWEEP_READS + 35 * 4 + 1 + 1)
+        .chain((0..19).flat_map(|_| [0, 1, 1, 0, 0]))
+        .collect();
+    let calls = [
+        Call::Rate(90_000_000),
+        Call::CreateTx(TxChannels::B, 1024),
+        Call::StartTx,
+        Call::Send(1024, None),
+        Call::StopTx,
+    ];
+    let (_, trace) = compare(|| xsdr().with_rx_phy_reads(script.clone(), 0), &calls);
+    assert_eq!(
+        writes(&trace, 56, IQAB_CHECK_ON),
+        20 + 2,
+        "20 attempts, then 2"
+    );
+    assert_eq!(
+        writes(&trace, 57, MMCM_HELD),
+        1 + 10 + 2,
+        "the second phase kept"
+    );
+}
+
+#[test]
+fn a_phase_still_misaligned_after_every_attempt_is_left_like_libusdr() {
+    // At 10 MS/s every attempt's LFSR recheck reads errors: all 24 attempts, then the
+    // next phase, clean.
+    let script: Vec<u32> = std::iter::repeat_n(0, RX_SWEEP_READS + 35 * 4 + 1 + 1)
+        .chain((0..23).flat_map(|_| [0, 1, 1, 1, 1]))
+        .collect();
+    let (_, trace) = compare(|| xsdr().with_rx_phy_reads(script.clone(), 0), &CREATE);
+    assert_eq!(
+        writes(&trace, 56, IQAB_CHECK_ON),
+        24 + 2,
+        "24 attempts, then 2"
+    );
+    assert_eq!(
+        writes(&trace, 57, MMCM_HELD),
+        1 + 10 + 2,
+        "the second phase kept"
+    );
+}
+
+/// TX PHY port reads in `trace`.
+fn status_reads(trace: &[Op]) -> usize {
+    trace
+        .iter()
+        .filter(|op| matches!(op, Op::RegRead { addr: 57, .. }))
+        .count()
+}
+
+/// The TX MMCM released from reset, TX master: the write after its DRP program.
+const MMCM_RELEASED: u32 = 2 << 24 | 4;
+
+/// TX PHY port reads after the last release: the lock polls.
+fn lock_polls(trace: &[Op]) -> usize {
+    let released = trace
+        .iter()
+        .rposition(|op| {
+            *op == Op::RegWrite {
+                addr: 57,
+                value: MMCM_RELEASED,
+            }
+        })
+        .expect("the MMCM released");
+    status_reads(&trace[released..])
+}
+
+#[test]
+fn busy_drp_transactions_are_polled_then_carried_on_like_libusdr() {
+    let calls = [Call::Rate(10_000_000), Call::CreateTx(TxChannels::A, 1024)];
+    let (_, clean) = compare(xsdr, &calls);
+    for polls in [3, 1000, 1500] {
+        let fault = MmcmFault::Busy { commands: 2, polls };
+        let (outcomes, trace) = compare(|| xsdr().with_tx_mmcm_fault(fault), &calls);
+        assert_eq!(outcomes[1].0, 0, "busy {polls}: created");
+        // Each busy command's polls (libusdr stops at 1000 and carries on) beside the one
+        // a free command takes.
+        let extra = 2 * usize::try_from(if polls < 1000 { polls } else { 999 }).expect("small");
+        assert_eq!(
+            status_reads(&trace),
+            status_reads(&clean) + extra,
+            "busy {polls}: the polls"
+        );
+    }
+}
+
+#[test]
+fn an_mmcm_that_does_not_lock_fails_the_create_and_the_rate_like_libusdr() {
+    // From the create's first configuration: 100 lock polls, then -EIO.
+    let never = MmcmFault::LocksOnly { releases: 0 };
+    let (outcomes, trace) = compare(
+        || xsdr().with_tx_mmcm_fault(never),
+        &[Call::Rate(10_000_000), Call::CreateTx(TxChannels::A, 1024)],
+    );
+    assert_eq!(outcomes[1].0, -EIO);
+    assert_eq!(lock_polls(&trace), 100);
+    // In the TX sweep: the RX sweep's eleven configurations lock, the first TX phase's
+    // does not.
+    let late = MmcmFault::LocksOnly { releases: 11 };
+    let (outcomes, trace) = compare(
+        || xsdr().with_tx_mmcm_fault(late),
+        &[Call::Rate(10_000_000), Call::CreateTx(TxChannels::A, 1024)],
+    );
+    assert_eq!(outcomes[1].0, -EIO);
+    assert_eq!(writes(&trace, 57, MMCM_HELD), 12);
+    assert_eq!(lock_polls(&trace), 100);
+    // From a rate while TX streams.
+    let (outcomes, trace) = compare(
+        xsdr,
+        &[
+            Call::Rate(10_000_000),
+            Call::CreateTx(TxChannels::A, 1024),
+            Call::Fault(never),
+            Call::Rate(20_000_000),
+        ],
+    );
+    assert_eq!(outcomes[3].0, -EIO);
+    assert_eq!(lock_polls(&trace), 100);
+}
+
+#[test]
+fn an_mmcm_without_a_clock_fails_at_its_first_lock_poll_like_libusdr() {
+    let (outcomes, trace) = compare(
+        || xsdr().with_tx_mmcm_fault(MmcmFault::NoClock),
+        &[Call::Rate(10_000_000), Call::CreateTx(TxChannels::A, 1024)],
+    );
+    assert_eq!(outcomes[1].0, -EIO);
+    assert_eq!(lock_polls(&trace), 1);
+    let (outcomes, trace) = compare(
+        xsdr,
+        &[
+            Call::Rate(10_000_000),
+            Call::CreateTx(TxChannels::A, 1024),
+            Call::Fault(MmcmFault::NoClock),
+            Call::Rate(20_000_000),
+        ],
+    );
+    assert_eq!(outcomes[3].0, -EIO);
+    assert_eq!(lock_polls(&trace), 1);
+}
+
+#[test]
+fn a_stream_before_any_rate_without_a_tx_mmcm_fails_the_default_rate_like_libusdr() {
+    let (outcomes, _) = compare(
+        || SimBoard::new(Variant::Xsdr).with_gateware_build(TX_GATEWARE),
+        &[Call::CreateTx(TxChannels::A, 1024)],
+    );
+    assert_eq!(
+        outcomes[0].0, -ERANGE,
+        "libusdr's 1 MS/s default fails its calibration"
+    );
 }

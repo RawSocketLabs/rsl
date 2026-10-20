@@ -12,7 +12,7 @@ use sdr_stream_sim::{RxEngine, SyncUnit, TxEngine, TxGrant, TxPacket};
 
 use crate::chips::{Dac80501, I2cChip, Lp8758};
 use crate::trace::Op;
-use crate::tx_phy::{REG_CFG_PHY_1, TxPhy};
+use crate::tx_phy::{MmcmFault, REG_CFG_PHY_1, TxPhy};
 
 /// FPGA register holding the general-purpose outputs: `dev_gpo_set` writes
 /// `(bank & 0x7f) << 24 | (data & 0xff)` (`M2PCI_REG_STAT_CTRL`, an 8-bit GPO core).
@@ -417,6 +417,19 @@ impl SimBoard {
     /// records also carry.
     pub fn set_tx_status(&mut self, words: [u32; 4]) {
         self.tx.set_status(words);
+    }
+
+    /// Injects `fault` into the TX MMCM's model from now on (fault injection, not a
+    /// model; see [`MmcmFault`]).
+    pub fn set_tx_mmcm_fault(&mut self, fault: MmcmFault) {
+        self.tx_phy.set_fault(fault);
+    }
+
+    /// The same board with `fault` injected into its TX MMCM.
+    #[must_use]
+    pub fn with_tx_mmcm_fault(mut self, fault: MmcmFault) -> Self {
+        self.set_tx_mmcm_fault(fault);
+        self
     }
 
     /// An MMCM register behind the TX PHY port's DRP.

@@ -24,6 +24,9 @@
 //!   with 64 words at a time (`xsdr_phy_load_sincos_64`, and `xsdr_phy_load_iqab_check`'s
 //!   32 rounds of two each), the evidence for the depth. What the RX PHY's capture reads
 //!   of them is the board's (`board.rs`).
+//! - Faults, injected, not modelled ([`MmcmFault`]): the first DRP commands staying busy
+//!   for some reads, an MMCM that stops locking after some releases, or one reporting no
+//!   clock.
 //! - Every other PHY register (port control, delay, I/Q select, the generators' run and
 //!   pattern selection) is accepted and has no effect the port reports.
 
@@ -49,6 +52,35 @@ const MMCM_HELD: u32 = 0b11;
 const DRP_WRITE: u32 = 1 << 23;
 /// The status's lock flag.
 const LOCKED: u32 = 1 << 8;
+/// The status's busy flag (a DRP transaction in progress).
+const BUSY: u32 = 1 << 9;
+/// One of the status's "no clock" flags (`rb & 0xc00`).
+const NO_CLOCK: u32 = 1 << 10;
+
+/// A fault the TX MMCM's model can be given, to drive libusdr's error and wait paths.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MmcmFault {
+    /// None: every DRP transaction completes at once and the MMCM locks when released.
+    #[default]
+    None,
+
+    /// The first `commands` DRP commands each read busy for `polls` status reads.
+    Busy {
+        /// DRP commands that stay busy, from the first.
+        commands: u32,
+        /// Status reads each stays busy for.
+        polls: u32,
+    },
+
+    /// The MMCM locks on its first `releases` releases from reset only, never after.
+    LocksOnly {
+        /// Releases that still lock.
+        releases: u32,
+    },
+
+    /// The status reports no clock (bit 10) on every read.
+    NoClock,
+}
 
 /// The TX PHY port's observable state.
 #[derive(Debug, Default)]
@@ -64,6 +96,15 @@ pub(crate) struct TxPhy {
 
     /// Channel A's and B's A/B-I/Q tables, oldest word first.
     tables: [VecDeque<u32>; 2],
+
+    /// The fault injected.
+    fault: MmcmFault,
+
+    /// Status reads the current DRP command still reads busy for.
+    busy_reads: u32,
+
+    /// Releases of the MMCM from reset so far.
+    releases: u32,
 }
 
 impl TxPhy {
@@ -72,6 +113,14 @@ impl TxPhy {
         let (register, data) = (value >> 24, value & 0x00ff_ffff);
         match register {
             PHY_MMCM_DRP => {
+                // A new command ends any busy reads the last one left.
+                self.busy_reads = 0;
+                if let MmcmFault::Busy { commands, polls } = &mut self.fault {
+                    if *commands > 0 {
+                        *commands -= 1;
+                        self.busy_reads = *polls;
+                    }
+                }
                 let addr = u8::try_from(data >> 16 & 0x7f).expect("7 bits");
                 if data & DRP_WRITE != 0 {
                     let word = u16::try_from(data & 0xffff).expect("16 bits");
@@ -80,7 +129,10 @@ impl TxPhy {
                     self.read_data = self.mmcm.get(&addr).copied().unwrap_or(0);
                 }
             }
-            PHY_MMCM_CTRL => self.locked = data & MMCM_HELD == 0,
+            PHY_MMCM_CTRL => {
+                self.locked = data & MMCM_HELD == 0;
+                self.releases += u32::from(self.locked);
+            }
             PHY_IQAB_PUSH_A | PHY_IQAB_PUSH_B => {
                 let table = &mut self.tables[usize::from(register == PHY_IQAB_PUSH_B)];
                 table.push_back(data);
@@ -92,9 +144,32 @@ impl TxPhy {
         }
     }
 
-    /// The port's status word: the last DRP read in bits 31:16, the lock flag in bit 8.
-    pub(crate) fn status(&self) -> u32 {
-        u32::from(self.read_data) << 16 | if self.locked { LOCKED } else { 0 }
+    /// Injects `fault` from now on.
+    pub(crate) const fn set_fault(&mut self, fault: MmcmFault) {
+        self.fault = fault;
+    }
+
+    /// The port's status word on a read: the last DRP read in bits 31:16, busy in bit 9
+    /// while an injected busy command lasts, the lock flag in bit 8, and with
+    /// [`MmcmFault::NoClock`] bit 10.
+    pub(crate) fn status(&mut self) -> u32 {
+        let busy = if self.busy_reads > 0 {
+            self.busy_reads -= 1;
+            BUSY
+        } else {
+            0
+        };
+        let locked = self.locked
+            && match self.fault {
+                MmcmFault::LocksOnly { releases } => self.releases <= releases,
+                _ => true,
+            };
+        let no_clock = if self.fault == MmcmFault::NoClock {
+            NO_CLOCK
+        } else {
+            0
+        };
+        u32::from(self.read_data) << 16 | busy | no_clock | if locked { LOCKED } else { 0 }
     }
 
     /// Word `index` of channel B's (`channel_b`) or A's table counted from the newest,
@@ -131,6 +206,27 @@ mod tests {
         assert_eq!(port.status() & 1 << 9, 0, "never busy");
         port.on_write(phy(PHY_MMCM_DRP, 0x15 << 16));
         assert_eq!(port.status() >> 16, 0, "an unwritten register reads 0");
+    }
+
+    #[test]
+    fn injected_faults_hold_the_drp_busy_or_the_lock_off() {
+        let mut port = TxPhy::default();
+        port.set_fault(MmcmFault::Busy {
+            commands: 1,
+            polls: 2,
+        });
+        port.on_write(phy(PHY_MMCM_DRP, 0x14 << 16));
+        let busy: Vec<bool> = (0..3).map(|_| port.status() & BUSY != 0).collect();
+        assert_eq!(busy, [true, true, false], "two busy reads");
+        port.on_write(phy(PHY_MMCM_DRP, 0x14 << 16));
+        assert_eq!(port.status() & BUSY, 0, "only the first command");
+        port.set_fault(MmcmFault::LocksOnly { releases: 1 });
+        port.on_write(phy(PHY_MMCM_CTRL, 4));
+        assert_eq!(port.status() & LOCKED, LOCKED, "the first release locks");
+        port.on_write(phy(PHY_MMCM_CTRL, 4));
+        assert_eq!(port.status() & LOCKED, 0, "the second never does");
+        port.set_fault(MmcmFault::NoClock);
+        assert_ne!(port.status() & 0xc00, 0, "no clock");
     }
 
     #[test]

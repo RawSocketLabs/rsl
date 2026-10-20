@@ -12,6 +12,7 @@
 use std::time::Duration;
 
 use hal::run_sequence;
+use lms7002m::ctrl::Direction;
 use sdr_stream::{BurstPlan, EngineSequence, RxLanes, RxSampleFormat, SyncTrigger};
 
 use super::{Device, rate_error, run};
@@ -143,7 +144,7 @@ impl Device {
         }
         // `xsdr_hwchans_cnt(d, true, logicchs)`: a stream format without `&` reports 0
         // logical channels.
-        self.set_hw_channels(0, 0)?;
+        self.set_hw_channels(Direction::Rx, 0)?;
         if self.rate.double_pump {
             if channels == RxChannels::Both {
                 return Err(Error::DoublePumpedMimo);
@@ -174,12 +175,13 @@ impl Device {
         Ok(())
     }
 
-    /// `xsdr_prepare(d, rx, tx)`: a default RX rate if none was set (a TX stream's create
-    /// refuses that first), the RFIC's pins for the directions and the LED on, the run
+    /// `xsdr_prepare(d, rx, tx)`: 1 MS/s in each direction asked if no rate was set (a TX
+    /// stream's create refuses that first on gateware with a TX MMCM), the RFIC's pins for the directions and the LED on, the run
     /// flags set, the directions streamed up on both channels, then the link calibration.
     pub(super) fn prepare(&mut self, rx: bool, tx: bool, gateware: Gateware) -> Result<(), Error> {
         if self.control.clocks().cgen == 0 {
-            self.set_sample_rate(DEFAULT_RATE, 0)?;
+            let rate = |on: bool| if on { DEFAULT_RATE } else { 0 };
+            self.set_sample_rate(rate(rx), rate(tx))?;
         }
         let mut pins = LMS_LDO_ENABLE | LMS_RESET_RELEASE;
         if rx {

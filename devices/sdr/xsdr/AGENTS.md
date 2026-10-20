@@ -145,7 +145,8 @@ Each is stated again, with its evidence, where it is encoded.
   busy (bit 9), locked (bit 8) whenever the MMCM control last released reset and power
   down; unwritten MMCM registers read 0 (a sim choice: the bitstream's values are not in
   the source). Pushes fill each channel's 64-word A/B-I/Q table. Everything else is
-  accepted with no effect.
+  accepted with no effect. `SimBoard::with_tx_mmcm_fault` injects busy DRP commands, an
+  MMCM that stops locking or one without a clock (fault injection, not a model).
 - `SimBoard::with_lms_comparator_failure` forces the VCO comparators to "fail" at one cap
   code (fault injection, not a model).
 - RX stream engine, TX core and sync unit: `sdr-stream-sim`'s models, the uSDR sim's,

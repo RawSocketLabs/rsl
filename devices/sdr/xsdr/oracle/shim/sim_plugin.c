@@ -383,7 +383,10 @@ static void on_division_trap(int sig)
 // then *trapped is 1, and libusdr's call is abandoned where it divided, its frames above
 // unwound without running. libusdr takes no lock on this path, and the frames hold no
 // allocation, so the device stays usable. No Rust frame is on the stack at the division:
-// it is libusdr's own arithmetic, between its bus operations.
+// it is libusdr's own arithmetic, between its bus operations. The SIGFPE handler is
+// process-wide while the call runs: that is safe only because oracle sessions are
+// serialised by the oracle's lock, so no other thread runs libusdr (or expects SIGFPE's
+// default action) meanwhile.
 int xsdr_oracle_set_uint_trapping(pdm_dev_t dev, const char* path, uint64_t value, int* trapped)
 {
     struct sigaction trap, previous;

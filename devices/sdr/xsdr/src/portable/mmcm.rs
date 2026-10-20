@@ -17,6 +17,8 @@
 //! On the XSDR, whose gateware has no RX or shared MMCM, libusdr's RX-master calls return
 //! before any access, so only TX-master configurations exist here.
 
+use core::time::Duration;
+
 use hal::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 use lms7002m::LmlConfig;
 use lms7002m::ctrl::Clocks;
@@ -590,7 +592,7 @@ impl Sequence for ConfigureMmcm {
                 value,
             })
         };
-        let wait = SequenceAction::Sleep(core::time::Duration::from_micros(10));
+        let wait = SequenceAction::Sleep(Duration::from_micros(10));
         let status = SequenceAction::Fpga(FpgaAccess::Read { reg: REG_CFG_PHY_1 });
         Some(match self.stage {
             Stage::Reset => write(TxPhy::MmcmControl.word(TX_MASTER | MMCM_RESET)),

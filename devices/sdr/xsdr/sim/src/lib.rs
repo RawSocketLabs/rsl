@@ -26,3 +26,4 @@ pub use board::{I2cAddress, SimBoard, SimError, Variant};
 pub use sdr_frontend_sim::FrontEnd;
 pub use sdr_stream_sim::{TxGrant, TxPacket};
 pub use trace::Op;
+pub use tx_phy::MmcmFault;

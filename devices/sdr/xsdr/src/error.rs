@@ -213,6 +213,11 @@ pub enum Error {
         got: usize,
     },
 
+    /// A word of the RX PHY's capture read busy (bits 31:24) on every one of the quality
+    /// check's 1000 reads; libusdr reads on forever.
+    #[error("the RX PHY capture stayed busy")]
+    CaptureBusy,
+
     /// A TX time past the TX core's 47 bits.
     #[error("TX time {0} is past the TX core's 47 bits")]
     UnsupportedTimestamp(u64),

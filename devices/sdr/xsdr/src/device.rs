@@ -244,14 +244,15 @@ impl Device {
         Ok(())
     }
 
-    /// Sets how many hardware channels a direction's stream reports (`xsdr_hwchans_cnt`,
-    /// `direction` 0 for RX, 1 for TX): when that changes, each direction's SISO choice
-    /// and both `LimeLight` maps are rewritten (`xsdr_rfic_streaming_xflags`).
-    fn set_hw_channels(&mut self, direction: usize, count: u8) -> Result<(), Error> {
-        if self.hw_channels[direction] == count {
+    /// Sets how many hardware channels `direction`'s stream reports (`xsdr_hwchans_cnt`):
+    /// when that changes, each direction's SISO choice and both `LimeLight` maps are
+    /// rewritten (`xsdr_rfic_streaming_xflags`).
+    fn set_hw_channels(&mut self, direction: Direction, count: u8) -> Result<(), Error> {
+        let index = usize::from(direction == Direction::Tx);
+        if self.hw_channels[index] == count {
             return Ok(());
         }
-        self.hw_channels[direction] = count;
+        self.hw_channels[index] = count;
         let pumped = self.rate.double_pump;
         let [rx, tx] = self.hw_channels.map(|channels| channels == 1 || pumped);
         let op = self.control.set_siso(XsdrFrontend, rx, tx);

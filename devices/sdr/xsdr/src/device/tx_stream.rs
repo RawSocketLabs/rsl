@@ -15,7 +15,7 @@
 use std::time::Duration;
 
 use lms7002m::Mac;
-use lms7002m::ctrl::StreamFlags;
+use lms7002m::ctrl::{Direction, StreamFlags};
 use sdr_stream::{
     EngineSequence, MAX_TX_TIMESTAMP, REG_TX_PUSH, REG_TX_STATUS, SyncTrigger, TxCoreStatus,
     TxLanes, extend_drop_count, tx_block_bytes, tx_gateware_supported, tx_push_words,
@@ -134,9 +134,10 @@ impl Device {
     /// the stream's channels, both banks selected, the TX processor's self-test started
     /// and the DC correctors enabled for the running channels.
     ///
-    /// Divergences, before any bus access: without a sample rate, where libusdr sets
-    /// 1 MS/s and its TX MMCM configuration then reads past its table, the create is
-    /// refused; so are other links that would (TX rates below about 6.35 MS/s), packets of
+    /// Divergences, before any bus access: without a sample rate on gateware with a TX
+    /// MMCM, where libusdr sets 1 MS/s and its TX MMCM configuration then reads past its
+    /// table, the create is refused (without a TX MMCM the default rate is set, as in
+    /// libusdr, and fails its calibration); so are other links that would (TX rates below about 6.35 MS/s), packets of
     /// no samples (libusdr's "the transport's largest") and gateware with the extended TX
     /// core (HWID PHY bit 0x08), whose create is not ported.
     ///
@@ -144,7 +145,8 @@ impl Device {
     ///
     /// Before any bus access: [`Error::AlreadyStreaming`] with a TX stream;
     /// [`Error::UnsupportedGateware`] as for [`Self::set_sample_rate`], and for the
-    /// extended TX core; [`Error::NoSampleRate`]; [`Error::TxClockOutOfRange`];
+    /// extended TX core; [`Error::NoSampleRate`] with a TX MMCM;
+    /// [`Error::TxClockOutOfRange`];
     /// [`Error::UnsupportedPacketSize`] for 0. After the map: [`Error::DoublePumpedMimo`]
     /// for both channels on a double-pumped link. Then streaming up's errors,
     /// [`Error::LinkCalibration`], [`Error::TxClockUnlocked`],
@@ -168,7 +170,9 @@ impl Device {
         if phy & PHY_EXTENDED_TX != 0 {
             return Err(Error::UnsupportedGateware(phy));
         }
-        if self.control.clocks().cgen == 0 {
+        // libusdr's 1 MS/s default reads past its MMCM table with a TX MMCM; without one,
+        // its calibration fails the default rate, as here.
+        if gateware.tx_mmcm && self.control.clocks().cgen == 0 {
             return Err(Error::NoSampleRate);
         }
         if samples_per_packet == 0 {
@@ -178,7 +182,7 @@ impl Device {
             return Err(Error::TxClockOutOfRange);
         }
         // `xsdr_hwchans_cnt(d, false, logicchs)`: a format without `&` reports 0.
-        self.set_hw_channels(1, 0)?;
+        self.set_hw_channels(Direction::Tx, 0)?;
         // libusdr also marks TX as SISO (`siso_sdr_active_tx`), which only ever matters
         // with the double pump, which already selects SISO DDR.
         if self.rate.double_pump && channels == TxChannels::Both {
@@ -217,7 +221,7 @@ impl Device {
             dma_drops: 0,
         });
         // `xsdr_hwchans_cnt(d, false, hwchs)`, then the processor and DC corrector.
-        self.set_hw_channels(1, u8::try_from(count).expect("1 or 2"))?;
+        self.set_hw_channels(Direction::Tx, u8::try_from(count).expect("1 or 2"))?;
         let chip = self.control.chip_mut();
         let mut select = chip.mac_set(Mac::Both);
         run(&mut *self.bus, &mut select)?;
@@ -407,7 +411,8 @@ impl Device {
                 Some((Mac::Both, flags)),
             ),
             (true, false) => self.control.streaming_up_rx(XsdrFrontend, Mac::Both, flags),
-            _ => self.control.streaming_up_tx(XsdrFrontend, Mac::Both, flags),
+            (false, true) => self.control.streaming_up_tx(XsdrFrontend, Mac::Both, flags),
+            (false, false) => unreachable!("invariant: a stream create streams its direction up"),
         };
         self.run_control(up)
     }

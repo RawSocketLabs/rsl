@@ -18,7 +18,7 @@
 //! division traps (SIGFPE) after the generator stops; this takes the board's factors, 1.
 //! A capture read that fails ends the check with its error, where libusdr ignores it and
 //! fits what the buffer held; a capture word reporting busy forever ends it with
-//! [`Error::Timeout`] after [`CAPTURE_POLLS`] reads, where libusdr reads on.
+//! [`Error::CaptureBusy`] after [`CAPTURE_POLLS`] reads, where libusdr reads on.
 
 use core::f64::consts::PI;
 use std::time::Duration;
@@ -158,7 +158,7 @@ impl Device {
                 return Ok(word);
             }
         }
-        Err(Error::Timeout)
+        Err(Error::CaptureBusy)
     }
 }
 
