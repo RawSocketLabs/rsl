@@ -87,6 +87,34 @@ impl LmlConfig {
             .with_rx_read_clock(u2::new(rx_read))
             .with_rx_write_clock(u2::new(2))
     }
+
+    /// The clock inversions (`CDS_0x00AD`) `lms7002m_limelight_configure` writes, with the
+    /// TX processors' clocks inverted if `tx_tsp_inverted`: every inversion set but the
+    /// channel-A FIFOs' in SISO DDR undivided.
+    fn clock_inversions(&self, tx_tsp_inverted: bool) -> CdsInvert {
+        CdsInvert::new()
+            .with_tx_b_tsp_inverted(tx_tsp_inverted)
+            .with_tx_a_tsp_inverted(tx_tsp_inverted)
+            .with_rx_b_tsp_inverted(true)
+            .with_rx_a_tsp_inverted(true)
+            .with_tx_b_lml_inverted(true)
+            .with_tx_a_lml_inverted(!(self.tx_siso_ddr && self.tx_div == 1))
+            .with_rx_b_lml_inverted(true)
+            .with_rx_a_lml_inverted(!(self.rx_siso_ddr && self.rx_div == 1))
+            .with_mclk2_inverted(true)
+            .with_mclk1_inverted(true)
+    }
+
+    /// The clock delays (`CDS_0x00AE`): the TX processors' and the TX FIFOs' codes, RX
+    /// undelayed. A code past two bits is masked, as libusdr's macro masks it.
+    fn clock_delays(&self) -> CdsDelay {
+        let delay = |code: u8| u2::from_raw(code);
+        CdsDelay::new()
+            .with_tx_b_tsp(delay(self.tx_tsp_delay))
+            .with_tx_a_tsp(delay(self.tx_tsp_delay))
+            .with_tx_b_lml(delay(self.tx_lml_delay))
+            .with_tx_a_lml(delay(self.tx_lml_delay))
+    }
 }
 
 /// The order of a port's four sample slots: libusdr's `lms7002m_lml_map_t`, slot 0 first.
@@ -133,7 +161,6 @@ impl Lms7002m {
         };
         // `div / 2 - 1` in unsigned arithmetic, masked to the 8-bit field: 1 gives 0xFF.
         let half_less_one = |div: u8| (div / 2).wrapping_sub(1);
-        let delay = |code: u8| u2::from_raw(code);
 
         let mut batch = Batch::new(self.target);
         batch.push(
@@ -171,28 +198,8 @@ impl Lms7002m {
                 .with_rx(half_less_one(rx_div))
                 .entry(),
         );
-        batch.push(
-            CdsInvert::new()
-                .with_tx_b_tsp_inverted(true)
-                .with_tx_a_tsp_inverted(true)
-                .with_rx_b_tsp_inverted(true)
-                .with_rx_a_tsp_inverted(true)
-                .with_tx_b_lml_inverted(true)
-                .with_tx_a_lml_inverted(!(tx_siso_ddr && tx_div == 1))
-                .with_rx_b_lml_inverted(true)
-                .with_rx_a_lml_inverted(!(rx_siso_ddr && rx_div == 1))
-                .with_mclk2_inverted(true)
-                .with_mclk1_inverted(true)
-                .entry(),
-        );
-        batch.push(
-            CdsDelay::new()
-                .with_tx_b_tsp(delay(config.tx_tsp_delay))
-                .with_tx_a_tsp(delay(config.tx_tsp_delay))
-                .with_tx_b_lml(delay(config.tx_lml_delay))
-                .with_tx_a_lml(delay(config.tx_lml_delay))
-                .entry(),
-        );
+        batch.push(config.clock_inversions(true).entry());
+        batch.push(config.clock_delays().entry());
         batch.push(
             self.mac
                 .with_srst_rx_fifo(true)
@@ -244,6 +251,41 @@ impl Lms7002m {
         let mut batch = Batch::new(self.target);
         batch.push(pulse.entry());
         batch.push(self.mac.entry());
+        batch
+    }
+
+    /// Inverts the TX FIFOs' clocks back on after a moment without, the TX processors'
+    /// clocks left uninverted and every other inverted (`lms7002m_limelight_toggle_ntx`):
+    /// the TX phase calibration's retry after a sweep finds no clean phase.
+    pub fn limelight_toggle_tx_clocks(&self) -> Batch {
+        let toggled = CdsInvert::new()
+            .with_rx_b_tsp_inverted(true)
+            .with_rx_a_tsp_inverted(true)
+            .with_rx_b_lml_inverted(true)
+            .with_rx_a_lml_inverted(true)
+            .with_mclk2_inverted(true)
+            .with_mclk1_inverted(true);
+        let restored = toggled
+            .with_tx_b_lml_inverted(true)
+            .with_tx_a_lml_inverted(true);
+        let mut batch = Batch::new(self.target);
+        batch.push(toggled.entry());
+        batch.push(restored.entry());
+        batch
+    }
+
+    /// The clock inversions `config` sets, with the TX processors' clocks inverted if
+    /// `tx_tsp_inverted` (`lms7002m_limelight_toggle_tsp_clk`).
+    pub fn limelight_tsp_clock(&self, config: LmlConfig, tx_tsp_inverted: bool) -> Batch {
+        let mut batch = Batch::new(self.target);
+        batch.push(config.clock_inversions(tx_tsp_inverted).entry());
+        batch
+    }
+
+    /// The clock delays `config` sets (`lms7002m_limelight_upd_delay`).
+    pub fn limelight_delays(&self, config: LmlConfig) -> Batch {
+        let mut batch = Batch::new(self.target);
+        batch.push(config.clock_delays().entry());
         batch
     }
 

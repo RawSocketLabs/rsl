@@ -200,7 +200,8 @@ enum Stage {
         tx: Option<Up>,
     },
 
-    /// Streaming up RX: each channel's bandwidth and mixer restored; TX follows.
+    /// Streaming up: RX's channels restored (or, TX alone, the maps and AFE written);
+    /// TX follows.
     UpRestore {
         /// The transmit direction.
         tx: Up,
@@ -777,6 +778,36 @@ impl Control {
         )
     }
 
+    /// Streams the transmit direction alone up on `channels` with its stream `flags`
+    /// (`lms7002m_streaming_up` with `RFIC_LMS7_TX`): the `LimeLight` maps and the AFE,
+    /// the receive channels as they run, then TX as [`Self::streaming_up`] streams it.
+    ///
+    /// No channel is [`ControlError::NoChannel`], and a streamed channel with neither a
+    /// set bandwidth nor a sample rate [`ControlError::NoRate`], both before any write or
+    /// state change.
+    #[must_use]
+    pub fn streaming_up_tx<F: Frontend>(
+        mut self,
+        frontend: F,
+        channels: Mac,
+        flags: StreamFlags,
+    ) -> Operation<F> {
+        let tx = match self.up(Direction::Tx, channels, flags) {
+            Ok(tx) => tx,
+            Err(error) => return Operation::finished(&self, frontend, Err(error)),
+        };
+        self.tx_stream = (tx.channels, flags);
+        self.tx_map = frontend.lml_map(false, tx.channels, flags);
+        let ([rx_a, rx_b], [tx_a, tx_b]) = (self.rx_running, tx.running);
+        let mut calls = Calls::new();
+        calls.push(self.limelight_map()).push(ChipCall::AfeEnable(
+            [rx_a || rx_b, rx_b],
+            [tx_a || tx_b, tx_b],
+        ));
+        // The TX writes follow the map and AFE, as after RX's restore.
+        Operation::start(self, frontend, Stage::UpRestore { tx }, &calls)
+    }
+
     /// Sets whether each direction streams SISO and rewrites both `LimeLight` maps from
     /// the channels and flags each direction last streamed up with, none before the first
     /// (`xsdr_rfic_streaming_xflags` toggling no flags, which board code runs when a
@@ -1151,6 +1182,24 @@ mod tests {
         };
         rated.tx_siso = tx_siso;
         rated
+    }
+
+    #[test]
+    fn streaming_tx_up_alone_leaves_the_receive_side_untouched() {
+        let mut control = rated(false);
+        control.set_running([true, false], [false; 2]);
+        let op = control.streaming_up_tx(Switches, Mac::Both, StreamFlags::default());
+        let (done, op) = run(op);
+        assert_eq!(op.outcome(), Some(Ok(())));
+        let wrote = |reg: Reg| done.iter().any(|&(addr, _)| addr == reg as u16);
+        assert!(!wrote(Reg::RxTspBypass), "no RX processor write");
+        assert!(wrote(Reg::TxTspBypass) && wrote(Reg::TxBand));
+        assert!(
+            done.iter().all(|&(addr, _)| addr != u16::MAX),
+            "no RX switch, only TX's"
+        );
+        assert_eq!(op.control().rx_running(), [true, false], "RX as it ran");
+        assert_eq!(op.control().tx_running(), [true; 2]);
     }
 
     #[test]

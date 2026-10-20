@@ -76,6 +76,14 @@ fn apply(chip: &mut Lms7002m, executor: &mut SimBus, call: Call) -> (i32, [i32; 
             written(executor, chip.limelight_configure(config(flags, bytes)))
         }
         Call::LimelightReset => written(executor, chip.limelight_reset()),
+        Call::LimelightToggleNtx => written(executor, chip.limelight_toggle_tx_clocks()),
+        Call::LimelightToggleTspClk(flags, bytes, set) => written(
+            executor,
+            chip.limelight_tsp_clock(config(flags, bytes), set),
+        ),
+        Call::LimelightUpdDelay(flags, bytes) => {
+            written(executor, chip.limelight_delays(config(flags, bytes)))
+        }
         Call::LimelightFifoReset(rx, tx) => written(executor, chip.limelight_fifo_reset(rx, tx)),
         Call::LimelightMap(siso, map1, map2) => written(
             executor,
@@ -416,6 +424,21 @@ fn every_limelight_configuration_flag_and_divider_matches_libusdr() {
         Call::LimelightFifoReset(true, true),
     ]);
     assert_same(&calls, "LimeLight configuration");
+}
+
+#[test]
+fn the_limelight_clock_inversions_and_delays_match_libusdr() {
+    // Every SISO flag pair, dividers of 1 and more, and delay codes past two bits.
+    let mut calls = vec![Call::Create(0, true), Call::LimelightToggleNtx];
+    for flags in 0..4 {
+        for bytes in [0x0000_0101, 0x0102_0402, 0x0302_2001, 0xff07_0101] {
+            calls.push(Call::LimelightToggleTspClk(flags, bytes, false));
+            calls.push(Call::LimelightToggleTspClk(flags, bytes, true));
+            calls.push(Call::LimelightUpdDelay(flags, bytes));
+        }
+    }
+    calls.extend([Call::MacSet(2), Call::LimelightToggleNtx]);
+    assert_same(&calls, "LimeLight clock inversions and delays");
 }
 
 #[test]

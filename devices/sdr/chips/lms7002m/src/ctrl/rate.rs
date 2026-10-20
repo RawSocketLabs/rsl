@@ -95,6 +95,31 @@ const fn valid(divider: u32) -> bool {
 }
 
 impl RateRequest {
+    /// The clocks and `LimeLight` configuration the rate leaves if CGEN locks on CGEN pass
+    /// `pass` (0, then 1 with [`RateFlags::extended_cgen`]), as `lms7002m_samplerate`
+    /// computes them before any write: for board code that checks what a rate implies
+    /// before running it. `None` past the passes libusdr tries; the error is the one
+    /// [`Control::sample_rate`] finishes with for that pass.
+    ///
+    /// # Errors
+    ///
+    /// [`ControlError::InvalidRate`] for a request [`Control::sample_rate`] refuses before
+    /// any write; [`ControlError::Decimation`] for a pass whose dividers the processors
+    /// cannot take.
+    #[must_use]
+    pub fn plan(&self, pass: u8) -> Option<Result<(Clocks, LmlConfig), ControlError>> {
+        if pass >= self.passes() {
+            return None;
+        }
+        if !self.sound() {
+            return Some(Err(ControlError::InvalidRate));
+        }
+        Some(
+            self.candidate(pass)
+                .map(|candidate| (self.clocks(candidate, candidate.cgen), self.lml(candidate))),
+        )
+    }
+
     /// How many CGEN ceilings libusdr tries: 370 then 320 MHz when extended.
     pub(super) const fn passes(&self) -> u8 {
         if self.flags.extended_cgen { 2 } else { 1 }
@@ -325,6 +350,30 @@ mod tests {
         assert_eq!(candidate.cgen, 128_000_000);
         assert_eq!((candidate.rx_div, candidate.tx_div), (32, 32));
         assert_eq!(candidate.dac_divider, 4, "TX divides 32, not 8 or less");
+    }
+
+    #[test]
+    fn a_plan_carries_the_candidates_clocks_and_halved_lml_dividers() {
+        // 1 MS/s: CGEN 128 MHz, both processors dividing by 32, so the `LimeLight`
+        // clocks divide by 16 (`rxdiv / 2`, `txdiv / 2`), as `lms7002m_samplerate` stores.
+        let (clocks, lml) = master(1_000_000)
+            .plan(0)
+            .expect("a pass")
+            .expect("plannable");
+        assert_eq!(clocks.cgen, 128_000_000);
+        assert_eq!((clocks.rx_converter_div, clocks.tx_converter_div), (4, 4));
+        assert_eq!((clocks.rx_tsp_div, clocks.tx_tsp_div), (32, 32));
+        assert_eq!((lml.rx_div, lml.tx_div), (16, 16));
+        assert!(
+            master(1_000_000).plan(1).is_some(),
+            "extended: a second pass"
+        );
+        assert_eq!(master(1_000_000).plan(2), None, "no third");
+        let unsound = RateRequest {
+            rx_decimation: 0,
+            ..master(1_000_000)
+        };
+        assert_eq!(unsound.plan(0), Some(Err(ControlError::InvalidRate)));
     }
 
     #[test]

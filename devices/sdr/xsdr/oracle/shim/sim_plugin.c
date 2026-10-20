@@ -293,6 +293,9 @@ int xsdr_oracle_lms7002m_run(struct lms7002m_op* ops, unsigned count, int* resul
         case 34: results[i] = lms7002m_xxtsp_iq_gcorr(&m, (lms7002m_xxtsp_t)op->a, op->b, op->c); break;
         case 35: results[i] = lms7002m_xxtsp_iq_phcorr(&m, (lms7002m_xxtsp_t)op->a, (int)op->b); break;
         case 36: results[i] = lms7002m_xxtsp_gen(&m, (lms7002m_xxtsp_t)op->a, (lms7002m_xxtsp_gen_t)op->b, (int16_t)op->c, (int16_t)op->d); break;
+        case 37: results[i] = lms7002m_limelight_toggle_ntx(&m); break;
+        case 38: results[i] = lms7002m_limelight_toggle_tsp_clk(&m, unpack_conf(op->a, op->b), op->c); break;
+        case 39: results[i] = lms7002m_limelight_upd_delay(&m, unpack_conf(op->a, op->b)); break;
         default: return -EINVAL;
         }
     }

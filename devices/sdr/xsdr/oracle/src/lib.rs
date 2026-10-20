@@ -147,6 +147,13 @@ pub enum Lms7002mCall {
     TspPhaseCorrection(u32, i32),
     /// `lms7002m_xxtsp_gen(tsp, gen, dci, dcq)`: `XXTSP_NORMAL` 0, `_DC` 1, `_TONE` 2.
     TspGenerator(u32, u32, i16, i16),
+    /// `lms7002m_limelight_toggle_ntx`.
+    LimelightToggleNtx,
+    /// `lms7002m_limelight_toggle_tsp_clk(conf, set)`, packed as for
+    /// [`Self::LimelightConfigure`].
+    LimelightToggleTspClk(u32, u32, bool),
+    /// `lms7002m_limelight_upd_delay(conf)`, likewise.
+    LimelightUpdDelay(u32, u32),
 }
 
 /// The shim's `struct lms7002m_op`.
@@ -213,6 +220,11 @@ impl From<Lms7002mCall> for LmsOp {
             Lms7002mCall::TspGenerator(tsp, kind, i, q) => {
                 op(36, tsp, kind, bits(i.into()), bits(q.into()))
             }
+            Lms7002mCall::LimelightToggleNtx => op(37, 0, 0, 0, 0),
+            Lms7002mCall::LimelightToggleTspClk(flags, bytes, set) => {
+                op(38, flags, bytes, set.into(), 0)
+            }
+            Lms7002mCall::LimelightUpdDelay(flags, bytes) => op(39, flags, bytes, 0, 0),
         }
     }
 }
