@@ -1,8 +1,8 @@
 //! xsdr's link debug controls and board readings against libusdr's, operation for
 //! operation and value for value, on simulated XSDRs and XTRXs after a sample rate:
 //! `/dm/sdr/0/phy_rx_lfsr`, `.../phy_tx_lfsr`, `.../phy_tx_iqsel`, `.../phy_rx_dly`,
-//! `.../dumprx`, `/debug/clk_info`, `/dm/sensor/freqpps`, `/dm/sdr/0/usbclk`,
-//! `/dm/sdr/0/vio` and `/dm/sdr/0/rfe/pwrdc`.
+//! `.../dumprx`, `/debug/clk_info`, `/dm/sensor/temp` (the idle bus's sensor),
+//! `/dm/sensor/freqpps`, `/dm/sdr/0/usbclk`, `/dm/sdr/0/vio` and `/dm/sdr/0/rfe/pwrdc`.
 //!
 //! No divergence is whitelisted. libusdr packs the LFSR counters into one number, each
 //! saturated to 16 bits; the test packs xsdr's whole counters the same way.
@@ -132,6 +132,15 @@ fn steps() -> Vec<Step> {
         set("clock readings", c"/debug/clk_info", 1, |device| {
             device.clock_readings().map(drop)
         }),
+        Step {
+            name: "temperature",
+            libusdr: Box::new(|oracle| oracle.get_uint(c"/dm/sensor/temp").map(Some)),
+            xsdr: Box::new(|device, _| {
+                device
+                    .temperature()
+                    .map(|temp| Some(u64::from_ne_bytes(i64::from(temp).to_ne_bytes())))
+            }),
+        },
         Step {
             name: "1PPS ticks",
             libusdr: Box::new(|oracle| oracle.get_uint(c"/dm/sensor/freqpps").map(Some)),

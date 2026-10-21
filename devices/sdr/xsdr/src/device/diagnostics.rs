@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use hal::{FpgaAccess, IndexedRegister, RegisterAccess};
+use hal::{FpgaAccess, I2cAddr, IndexedRegister, RegisterAccess};
 use lp8758::{Buck, BuckVoltage};
 
 use super::quality::CAPTURE_SIZE;
@@ -30,6 +30,15 @@ const REG_MEAS_PPS: u32 = 16 + 24 / 4;
 const REG_RX_DC: u32 = 7;
 /// The RX PHY's first delay bank (`PHY_REG_RXBANK_CLKDLY`).
 const DELAY_BANK: u32 = 14;
+/// The XSDR's temperature sensor, a TMP114NB (`I2C_BUS_TMP_114`: bus 0,
+/// `I2C_DEV_TMP114NB`).
+const TMP114: I2cAddr = I2cAddr::new(0, 0x4e);
+/// The XTRX's, a TMP108 (`I2C_BUS_TMP_108`: bus 0, `I2C_DEV_TMP108A_A0_SDA`).
+const TMP108: I2cAddr = I2cAddr::new(0, 0x4a);
+/// The sensors' temperature result register (`TMP114_Temp_Result`; the TMP108's 0).
+const TEMPERATURE: u8 = 0x00;
+/// The TMP114's device ID register (`TMP114_Device_ID`).
+const TMP114_DEVICE_ID: u8 = 0x0b;
 /// The I/O supply's range on the `new_rev` boards (`xsdr_set_vio`).
 const VIO_XSDR_MV: (u32, u32) = (1600, 2100);
 /// On the XTRX.
@@ -256,6 +265,43 @@ impl Device {
         )]
         let millidb = (1000.0 * 10.0 * (i * i + q * q).log10()) as i64;
         Ok(Some(millidb))
+    }
+
+    /// The board's temperature in 256ths of a degree Celsius (`/dm/sensor/temp`,
+    /// `xsdr_gettemp`): the XSDR's TMP114 result doubled (`tmp114_temp_get`), the XTRX's
+    /// TMP108 result as read (`tmp108_temp_get`), each register read MSB first.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Bus`].
+    pub fn temperature(&mut self) -> Result<i32, Error> {
+        if self.variant == Variant::Xtrx {
+            let raw = self.sensor_register(TMP108, "TMP108", TEMPERATURE)?;
+            return Ok(i32::from(i16::from_ne_bytes(raw.to_ne_bytes())));
+        }
+        let raw = self.sensor_register(TMP114, "TMP114", TEMPERATURE)?;
+        Ok(i32::from(i16::from_ne_bytes(raw.to_ne_bytes())) << 1)
+    }
+
+    /// The temperature sensor's ID as `xsdr_gettemp_id` reads it for the log of a refused
+    /// power-up: the TMP114's device ID (an XTRX, whose power-up libusdr never refuses,
+    /// would read its TMP108's temperature).
+    pub(super) fn temperature_sensor_id(&mut self) -> Result<u16, Error> {
+        self.sensor_register(TMP114, "TMP114", TMP114_DEVICE_ID)
+    }
+
+    /// A temperature sensor's 16-bit register, MSB first.
+    fn sensor_register(&mut self, dev: I2cAddr, chip: &'static str, reg: u8) -> Result<u16, Error> {
+        let mut raw = [0; 2];
+        self.bus
+            .i2c(dev, &[reg], &mut raw)
+            .map_err(|source| Error::Bus {
+                chip,
+                access: hal::Access::Read,
+                reg: reg.into(),
+                source,
+            })?;
+        Ok(u16::from_be_bytes(raw))
     }
 
     /// `xsdr_phy_rx_reg`.

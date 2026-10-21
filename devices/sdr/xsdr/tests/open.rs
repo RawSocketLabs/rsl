@@ -222,7 +222,7 @@ fn members_not_yet_ported_are_identified_and_refused_before_anything_is_driven()
 }
 
 #[test]
-fn a_pmic_revision_libusdr_rejects_opens_but_refuses_power_up_untouched() {
+fn a_pmic_revision_libusdr_rejects_opens_but_refuses_power_up_unpowered() {
     let board = SimBoard::new(SimVariant::Xsdr).with_fpga_pmic_revision(0xe101);
     let (device, sim) = open_xsdr(board);
     let mut device = device.expect("libusdr opens it too, logging the revision");
@@ -238,7 +238,19 @@ fn a_pmic_revision_libusdr_rejects_opens_but_refuses_power_up_untouched() {
             ..
         })
     ));
-    assert_eq!(sim.board().trace().len(), opened, "power-up drove nothing");
+    let board = sim.board();
+    let refusal = &board.trace()[opened..];
+    assert!(
+        matches!(
+            refusal,
+            [
+                Op::RegWrite { addr: 0, value: 0 },
+                Op::Sleep { us: 5000 },
+                Op::I2c { .. }
+            ]
+        ),
+        "held in reset, then the sensor's ID read for libusdr's log: {refusal:?}"
+    );
 }
 
 #[test]

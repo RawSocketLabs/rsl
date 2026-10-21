@@ -31,14 +31,19 @@ use crate::error::Error;
 use crate::fe_probe;
 use crate::lowlevel::Bus;
 use crate::portable::close::Close;
+use crate::portable::fpga::Gpo;
 use crate::portable::frontend::{RX_BANDS, TX_BANDS, XTRX_RX_BANDS, XTRX_TX_BANDS, XsdrFrontend};
 use crate::portable::hwid::{IdentityRead, Variant};
 use crate::portable::power::PowerUp;
 use crate::portable::rate::{Gateware, RateError, RateState, SetSampleRate};
+use crate::portable::step::Step;
 use crate::portable::supplies::Supplies;
 use crate::portable::txcal::TxCalError;
 use crate::portable::xtrx::XtrxSupplies;
 use crate::trim_dac::TrimDac;
+
+/// `xsdr_pwren`'s wait after holding the LMS7002M in reset (`usleep(5000)`).
+const POWER_RESET_SETTLE: Duration = Duration::from_millis(5);
 
 /// The wait before a rate's TX quality check (`usleep(50000)`).
 const QUALITY_SETTLE: Duration = Duration::from_millis(50);
@@ -215,10 +220,16 @@ impl Device {
     /// # Errors
     ///
     /// [`Error::ChipId`] for an XSDR's LP8758 whose revision is not 0xE001, the one libusdr
-    /// accepts, before any bus access; [`Error::ChipId`] for an LMS7002M other than version 7,
-    /// revision 1; [`Error::Bus`] when an access fails.
+    /// accepts, as libusdr refuses it: the LMS7002M held in reset, 5 ms, the temperature
+    /// sensor's ID read for its log; [`Error::ChipId`] for an LMS7002M other than version
+    /// 7, revision 1; [`Error::Bus`] when an access fails.
     pub fn power_up(&mut self) -> Result<(), Error> {
         if self.pmic != lp8758::REVISION {
+            // `xsdr_pwren`'s reset, then `_xsdr_pwren_revx`'s log of the sensor's ID, whose
+            // failure libusdr ignores.
+            run(&mut *self.bus, &mut Step::fpga(Gpo::LmsPower.write(0)))?;
+            self.bus.sleep(POWER_RESET_SETTLE);
+            let _ = self.temperature_sensor_id();
             return Err(Error::ChipId {
                 chip: lp8758::NAME,
                 expected: lp8758::REVISION.to_raw().into(),
