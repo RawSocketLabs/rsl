@@ -436,9 +436,9 @@ impl Oracle {
             max_parts: 0,
             extra: 0,
         };
-        // SAFETY: the stream is live: libusdr's unregister frees nothing, and a destroyed
-        // stream is taken out of the oracle; its one host buffer holds a packet of 4-byte
-        // `ci16` samples; `nfo` is valid for the fields it writes.
+        // SAFETY: the stream is live: a destroyed stream is taken out of the oracle; its one
+        // host buffer holds a packet of 4-byte `ci16` samples; `nfo` is valid for the fields
+        // it writes.
         let errno = unsafe {
             usdr_dms_recv(
                 stream.handle.as_ptr(),
