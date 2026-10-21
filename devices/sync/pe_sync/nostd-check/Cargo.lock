@@ -50,6 +50,7 @@ name = "lmk05318"
 version = "0.0.0"
 dependencies = [
  "bitsandbytes",
+ "hal",
 ]
 
 [[package]]

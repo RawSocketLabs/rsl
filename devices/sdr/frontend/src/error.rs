@@ -2,6 +2,7 @@
 //! error.
 
 use hal::{Access, BusError, SequenceFailure};
+use lmk05318::driver::Error as Lmk05318Error;
 use lmk05318::plan::ClockPlanError;
 
 use crate::board::Board;
@@ -99,6 +100,26 @@ impl Error {
             access,
             reg: reg.into(),
             source,
+        }
+    }
+}
+
+/// A failed LMK05318 operation, named as the boards' other chips are.
+impl From<Lmk05318Error> for Error {
+    fn from(error: Lmk05318Error) -> Self {
+        match error {
+            Lmk05318Error::Bus {
+                access,
+                reg,
+                source,
+            } => Self::bus(lmk05318::NAME, access, reg, source),
+            Lmk05318Error::ChipId { expected, found } => Self::ChipId {
+                chip: lmk05318::NAME,
+                expected,
+                found,
+            },
+            Lmk05318Error::ClockPlan(error) => Self::ClockPlan(error),
+            Lmk05318Error::Unlocked(pll) => Self::ClockUnlocked(pll),
         }
     }
 }

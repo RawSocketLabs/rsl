@@ -26,7 +26,6 @@
 
 mod device;
 mod error;
-mod lmk05318;
 pub mod lowlevel;
 mod portable;
 

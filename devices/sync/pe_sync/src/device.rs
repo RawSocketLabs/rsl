@@ -5,9 +5,9 @@ use std::fmt;
 use std::time::Duration;
 
 use hal::{Sequence, run_sequence};
+use lmk05318::driver::Lmk05318;
 
 use crate::error::Error;
-use crate::lmk05318::Lmk05318;
 use crate::lowlevel::{Bus, SpiAddr};
 use crate::portable::board::{
     LMK1D1208I_LCK, LMK1D1208I_LRF, LMK1D1208I_SETUP, LMK05318, LMK05318_OUTPUTS, LMK05318_XO,
@@ -87,7 +87,8 @@ fn bring_up(bus: &mut dyn Bus) -> Result<(), Error> {
 
 /// `pe_sync_configure`: the clock tree, from the LMK05318B down.
 fn configure(bus: &mut dyn Bus) -> Result<(), Error> {
-    let lmk05318 = Lmk05318::create(bus, LMK05318, LMK05318_XO, &LMK05318_OUTPUTS)?;
+    let mut lmk05318 = Lmk05318::at(LMK05318);
+    lmk05318.create(bus, LMK05318_XO, &LMK05318_OUTPUTS)?;
     // The DPLL is off, so libusdr's reference validation wait returns at once.
     let locked = lmk05318
         .wait_apll1_lock(bus, APLL_LOCK_TIMEOUT)

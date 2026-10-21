@@ -1,9 +1,9 @@
 //! Platform-independent board and chip sequences: the gateware registers, the clock chips'
 //! registers and solvers, and the hand-written sans-I/O sequences the blocking
-//! [`Device`](crate::Device) runs with `hal`'s executor. The LMK05318's plan and
-//! registers come from `lmk05318`; its bus traffic does not fit the `Sequence` seam and
-//! stays in the blocking driver. Core only: no std, no allocation; keep imports within this
-//! tree and the shared `no_std` crates.
+//! [`Device`](crate::Device) runs with `hal`'s executor. The LMK05318's plan, registers
+//! and bus traffic come from `lmk05318`, whose blocking driver runs outside this tree (its
+//! traffic does not fit the `Sequence` seam). Core only: no std, no allocation; keep
+//! imports within this tree and the shared `no_std` crates.
 
 pub(crate) mod board;
 pub(crate) mod chain;
