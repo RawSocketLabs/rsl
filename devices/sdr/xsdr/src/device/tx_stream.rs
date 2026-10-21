@@ -1,4 +1,4 @@
-//! The TX stream: libusdr's `/ll/stx/0` in `ci16` on channel A, B or both, created,
+//! The TX stream: libusdr's `/ll/stx/0` on channel A, B or both, created,
 //! started, fed and stopped as `usdr_device_m2_lm7_1_create_stream`, `usdr_dms_op`,
 //! `usdr_dms_sync`, `usdr_dms_send_stat` and `unregister_stream` do it
 //! (`device/m2_lm7_1/m2_lm7_1.c`, `xsdr_ctrl.c`'s `xsdr_hwchans_cnt`, `xsdr_prepare` and
@@ -12,20 +12,23 @@
 //! buffers; on gateware with the extended TX front end (HWID PHY bit 0x08) it first
 //! pulses that front end's reset and, after the gateware check, sets it up for the
 //! stream's lanes. Starting it starts the TX core on the stream's lanes and lets the sync
-//! unit free-run. Each send interleaves the channels' samples into a transport buffer and
-//! announces it to the core with its time; a send longer than a packet goes as several,
-//! on the original core, as libusdr splits it.
+//! unit free-run. Each send converts the channels' host samples into a transport buffer in
+//! the wire format, interleaved (libusdr's converters, `sdr-formats`), and announces it to
+//! the core with its time; a send longer than a packet goes as several, on the original
+//! core, as libusdr splits it.
 
 use std::time::Duration;
 
 use lms7002m::Mac;
 use lms7002m::ctrl::{Direction, StreamFlags};
+use sdr_formats::{Converter, SampleFormat};
 use sdr_stream::{
     EngineSequence, ExtendedTxPush, MAX_EXTENDED_TX_TIMESTAMP, MAX_TX_TIMESTAMP, REG_TX_PUSH,
     REG_TX_STATUS, SyncTrigger, TxCoreStatus, TxLanes, extend_drop_count, tx_block_bytes,
     tx_gateware_supported, tx_push_words,
 };
 
+use super::format::{HostSample, WireFormat, to_wire};
 use super::{Device, run};
 use crate::error::{Access, Error};
 use crate::lowlevel::{BusError, TxCommit};
@@ -34,9 +37,6 @@ use crate::portable::fpga::{Gpo, NAME as FPGA, REG_HWID};
 use crate::portable::frontend::XsdrFrontend;
 use crate::portable::mmcm::{MmcmLink, MmcmPlan};
 use crate::portable::step::Step;
-
-/// Bytes of one `ci16` sample on one channel: I then Q, each a little-endian `i16`.
-const SAMPLE_BYTES: usize = 4;
 
 /// General-purpose input word 0, the gateware's build stamp (`IGPI_USR_ACCESS2`), which
 /// `/dm/revision` reads before the hardware ID.
@@ -120,6 +120,15 @@ pub(super) struct TxStream {
     /// The channels, one host buffer each.
     pub(super) channels: TxChannels,
 
+    /// The host format the buffers hold.
+    host: SampleFormat,
+
+    /// Host to wire conversion (libusdr's `tf_data`).
+    converter: Converter,
+
+    /// Wire bytes of one sample of every channel.
+    sample_bytes: usize,
+
     /// The original core's lanes muted (`fe_old_tx_mute`, bit 0 lane A); the extended
     /// core's start mutes nothing.
     pub(super) mute: u8,
@@ -164,7 +173,29 @@ impl TxStream {
 impl Device {
     /// Creates the TX stream on `channels` with `samples_per_packet` samples per packet,
     /// in `ci16` (libusdr's `usdr_dms_create` of `/ll/stx/0`), leaving it stopped until
-    /// [`Self::start_tx_stream`].
+    /// [`Self::start_tx_stream`]: [`Self::create_tx_stream_as`] with a `ci16` wire and
+    /// host.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::create_tx_stream_as`].
+    pub fn create_tx_stream(
+        &mut self,
+        channels: TxChannels,
+        samples_per_packet: u32,
+    ) -> Result<(), Error> {
+        self.create_tx_stream_as(
+            channels,
+            samples_per_packet,
+            WireFormat::Ci16,
+            SampleFormat::Ci16,
+        )
+    }
+
+    /// Creates the TX stream on `channels` with `samples_per_packet` samples per packet,
+    /// sent from `host` buffers and packed as `wire` (libusdr's `usdr_dms_create` of
+    /// `/ll/stx/0` in `host@wire`), leaving it stopped until [`Self::start_tx_stream`]. The
+    /// original TX core takes a `ci16` wire, the extended one `ci16` or `ci12`.
     ///
     /// As libusdr: the `LimeLight` maps are rewritten for the stream's channel count; the
     /// RFIC's TX pins (and RX's, with an RX stream) and the LED come on, its transmitter
@@ -190,7 +221,10 @@ impl Device {
     /// # Errors
     ///
     /// Before any bus access: [`Error::AlreadyStreaming`] with a TX stream;
-    /// [`Error::NoSampleRate`] with a TX MMCM; [`Error::TxClockOutOfRange`];
+    /// [`Error::UnsupportedFormat`] for a wire the core does not take (libusdr refuses the
+    /// original core's `ci12` after streaming up), a real wire or host (libusdr
+    /// byte-copies a real host onto the complex wire) or a host with no converter to the
+    /// wire; [`Error::NoSampleRate`] with a TX MMCM; [`Error::TxClockOutOfRange`];
     /// [`Error::UnsupportedPacketSize`] for 0, or on the extended core past one burst. After the map: [`Error::DoublePumpedMimo`]
     /// for both channels on a double-pumped link. Then streaming up's errors,
     /// [`Error::LinkCalibration`], [`Error::TxClockUnlocked`],
@@ -201,10 +235,12 @@ impl Device {
     /// # Panics
     ///
     /// Never: the channel count is 1 or 2 and a packet's sample count a `u32`.
-    pub fn create_tx_stream(
+    pub fn create_tx_stream_as(
         &mut self,
         channels: TxChannels,
         samples_per_packet: u32,
+        wire: WireFormat,
+        host: SampleFormat,
     ) -> Result<(), Error> {
         if self.tx_stream.is_some() {
             return Err(Error::AlreadyStreaming);
@@ -212,8 +248,9 @@ impl Device {
         let gateware = self.gateware();
         let [.., phy] = self.hwid.to_be_bytes();
         let extended = phy & PHY_EXTENDED_TX != 0;
+        let converter = tx_converter(channels, wire, host, extended)?;
         let count = u32::try_from(channels.count()).expect("1 or 2");
-        let sample_bytes = 4 * count;
+        let sample_bytes = wire.sample_bits() / 8 * count;
         if extended && tx_block_bytes(samples_per_packet, sample_bytes).is_none() {
             return Err(Error::UnsupportedPacketSize(samples_per_packet));
         }
@@ -259,7 +296,8 @@ impl Device {
             return Err(Error::OutdatedGateware(build[0]));
         }
         if extended {
-            let mut setup = EngineSequence::extended_tx_configure(channels.lane_map(), false);
+            let twelve_bit = wire == WireFormat::Ci12;
+            let mut setup = EngineSequence::extended_tx_configure(channels.lane_map(), twelve_bit);
             run(&mut *self.bus, &mut setup)?;
         }
         run(
@@ -280,6 +318,9 @@ impl Device {
             samples_per_packet: usize::try_from(samples_per_packet)
                 .expect("invariant: a 32-bit count fits in usize"),
             channels,
+            host,
+            converter,
+            sample_bytes: usize::try_from(sample_bytes).expect("invariant: a few bytes"),
             mute,
             swap,
             extended: extended.then(ExtendedTxPush::new),
@@ -324,10 +365,10 @@ impl Device {
     }
 
     /// Sends one packet: each channel's buffer whole (channel A's first for
-    /// [`TxChannels::Both`]), each sample `[I, Q]`, waiting up to `timeout` for a
-    /// transport buffer, to play at `time` in samples or, with `None`, as soon as it
-    /// reaches the TX core (`_sfetrx4_stream_send` from `ci16`). Returns the core's
-    /// telemetry when the transport had status words for the buffer.
+    /// [`TxChannels::Both`]), each element one sample in the stream's host format, waiting
+    /// up to `timeout` for a transport buffer, to play at `time` in samples or, with
+    /// `None`, as soon as it reaches the TX core (`_sfetrx4_stream_send`). Returns the
+    /// core's telemetry when the transport had status words for the buffer.
     ///
     /// On a timeout libusdr reads the core's four status words for its log; so does this.
     ///
@@ -344,7 +385,8 @@ impl Device {
     ///
     /// # Errors
     ///
-    /// Before any bus access: [`Error::NotStreaming`]; [`Error::ChannelBuffers`];
+    /// Before any bus access: [`Error::NotStreaming`]; [`Error::HostFormat`] for buffers
+    /// of another host format than the stream's; [`Error::ChannelBuffers`];
     /// [`Error::UnequalChannelBuffers`]; [`Error::SendSize`];
     /// [`Error::UnsupportedTimestamp`]. Then [`Error::Timeout`] when no buffer frees in
     /// time, [`Error::Stream`] for another transport failure or a buffer shorter than the
@@ -353,15 +395,21 @@ impl Device {
     /// # Panics
     ///
     /// Never: a send's sample count is at most a packet's, a `u32`.
-    pub fn send(
+    pub fn send<S: HostSample>(
         &mut self,
-        buffers: &[&[[i16; 2]]],
+        buffers: &[&[S]],
         time: Option<u64>,
         timeout: Duration,
     ) -> Result<Option<TxTelemetry>, Error> {
         let Some(stream) = self.tx_stream.as_mut() else {
             return Err(Error::NotStreaming);
         };
+        if S::FORMAT != stream.host {
+            return Err(Error::HostFormat {
+                stream: stream.host,
+                buffers: S::FORMAT,
+            });
+        }
         let expected = stream.channels.count();
         if buffers.len() != expected {
             return Err(Error::ChannelBuffers {
@@ -397,7 +445,7 @@ impl Device {
         let mut at = time;
         for start in (0..samples).step_by(packet) {
             let end = samples.min(start + packet);
-            let mut chunks = [&[][..]; 2];
+            let mut chunks: [&[S]; 2] = [&[], &[]];
             for (chunk, buffer) in chunks.iter_mut().zip(buffers) {
                 *chunk = &buffer[start..end];
             }
@@ -410,9 +458,9 @@ impl Device {
     }
 
     /// Sends one packet of at most a packet's samples, checked by [`Self::send`].
-    fn send_packet(
+    fn send_packet<S: HostSample>(
         &mut self,
-        buffers: &[&[[i16; 2]]],
+        buffers: &[&[S]],
         time: Option<u64>,
         timeout: Duration,
     ) -> Result<Option<TxTelemetry>, Error> {
@@ -420,9 +468,9 @@ impl Device {
             .tx_stream
             .as_mut()
             .expect("invariant: send checked the stream");
-        let expected = buffers.len();
         let samples = buffers.first().map_or(0, |buffer| buffer.len());
-        let wire_bytes = samples * SAMPLE_BYTES * expected;
+        let wire_bytes = samples * stream.sample_bytes;
+        let converter = stream.converter;
         let mut status = None;
         let mut written = 0;
         let sent = self
@@ -432,7 +480,7 @@ impl Device {
                 let Some(wire) = buffer.get_mut(..wire_bytes) else {
                     return 0;
                 };
-                interleave(buffers, wire);
+                to_wire(&converter, buffers, wire);
                 written = wire_bytes;
                 wire_bytes
             });
@@ -552,17 +600,28 @@ fn fpga_error(access: Access, reg: u32, source: BusError) -> Error {
     }
 }
 
-/// Interleaves the channels' samples into `wire`, each sample time's channels in order,
-/// each sample I then Q as little-endian `i16`s: libusdr's `ci16` host to `ci16` wire.
-fn interleave(buffers: &[&[[i16; 2]]], wire: &mut [u8]) {
-    let channels = buffers.len();
-    for (time, chunk) in wire.chunks_exact_mut(SAMPLE_BYTES * channels).enumerate() {
-        for (buffer, sample) in buffers.iter().zip(chunk.chunks_exact_mut(SAMPLE_BYTES)) {
-            let [i, q] = buffer[time];
-            sample[..2].copy_from_slice(&i.to_le_bytes());
-            sample[2..].copy_from_slice(&q.to_le_bytes());
-        }
+/// The converter from the channels' `host` buffers to `wire`, once the core takes them;
+/// checked before any bus access.
+fn tx_converter(
+    channels: TxChannels,
+    wire: WireFormat,
+    host: SampleFormat,
+    extended: bool,
+) -> Result<Converter, Error> {
+    let unsupported = Error::UnsupportedFormat { wire, host };
+    let wire_ok = match wire {
+        WireFormat::Ci16 => true,
+        WireFormat::Ci12 => extended,
+        WireFormat::I16 | WireFormat::I12 => false,
+    };
+    let complex_host = matches!(
+        host,
+        SampleFormat::Ci16 | SampleFormat::Cf32 | SampleFormat::Ci12
+    );
+    if !wire_ok || !complex_host {
+        return Err(unsupported);
     }
+    Converter::new(host, wire.sample_format(), channels.count(), 1).map_err(|_| unsupported)
 }
 
 #[cfg(test)]
@@ -571,9 +630,10 @@ mod tests {
 
     #[test]
     fn two_channels_interleave_sample_by_sample() {
-        let (a, b) = ([[1, 2], [5, 6]], [[3, 4], [7, 8]]);
+        let (a, b): ([[i16; 2]; 2], _) = ([[1, 2], [5, 6]], [[3, 4], [7, 8]]);
         let mut wire = [0; 16];
-        interleave(&[&a, &b], &mut wire);
+        let merge = Converter::new(SampleFormat::Ci16, SampleFormat::Ci16, 2, 1).expect("ported");
+        to_wire(&merge, &[&a, &b], &mut wire);
         assert_eq!(wire, [1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0]);
     }
 

@@ -2,7 +2,9 @@
 
 pub use hal::Access;
 use hal::SequenceFailure;
+use sdr_formats::SampleFormat;
 
+use crate::device::WireFormat;
 use crate::lowlevel::BusError;
 use crate::portable::hwid::Variant;
 
@@ -129,6 +131,30 @@ pub enum Error {
     /// No burst split carries packets of this many samples: libusdr's `-EINVAL`.
     #[error("{0} samples per packet cannot be streamed")]
     UnsupportedPacketSize(u32),
+
+    /// A stream format the stream's core, channels or converters cannot carry, refused
+    /// before any bus access: libusdr's `-EINVAL` after streaming up, or a byte copy where
+    /// it has no converter.
+    #[error("no {host:?} host stream over a {wire:?} wire on these channels")]
+    #[non_exhaustive]
+    UnsupportedFormat {
+        /// The wire format asked for.
+        wire: WireFormat,
+
+        /// The host format asked for.
+        host: SampleFormat,
+    },
+
+    /// A receive or send whose buffers hold another host format than the stream's.
+    #[error("{buffers:?} buffers for a {stream:?} stream")]
+    #[non_exhaustive]
+    HostFormat {
+        /// The stream's host format.
+        stream: SampleFormat,
+
+        /// The buffers'.
+        buffers: SampleFormat,
+    },
 
     /// The transport failed to set up, deliver or release stream buffers.
     #[error("stream transport failed")]

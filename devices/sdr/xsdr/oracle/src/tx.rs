@@ -69,6 +69,21 @@ impl Oracle {
     ///
     /// The negative errno libusdr returned: `-EBUSY` if a TX stream exists.
     pub fn create_tx_stream(&mut self, channels: u64, samples_per_packet: u32) -> Result<(), i32> {
+        self.create_tx_stream_as(c"ci16", channels, samples_per_packet)
+    }
+
+    /// As [`Self::create_tx_stream`], in libusdr's data format `format` (`host@wire`, such
+    /// as `c"cf32@ci12"`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned: `-EBUSY` if a TX stream exists.
+    pub fn create_tx_stream_as(
+        &mut self,
+        format: &CStr,
+        channels: u64,
+        samples_per_packet: u32,
+    ) -> Result<(), i32> {
         let Some(dev) = self.dev else {
             return Err(-EINVAL);
         };
@@ -82,7 +97,7 @@ impl Oracle {
             usdr_dms_create_ex(
                 dev.as_ptr(),
                 c"/ll/stx/0".as_ptr(),
-                c"ci16".as_ptr(),
+                format.as_ptr(),
                 channels,
                 samples_per_packet,
                 0,
@@ -150,7 +165,7 @@ impl Oracle {
     }
 
     /// Sends `samples` samples from one host buffer per channel of the stream, each its
-    /// `ci16` bytes, at `timestamp` (`u64::MAX` for "now"), waiting up to `timeout_ms`
+    /// host-format bytes, at `timestamp` (`u64::MAX` for "now"), waiting up to `timeout_ms`
     /// (`usdr_dms_send_stat`), and returns the statistics libusdr wrote, or `None` when it
     /// wrote none.
     ///
@@ -174,8 +189,8 @@ impl Oracle {
             .collect();
         let mut stat = SendStat::UNWRITTEN;
         // SAFETY: `stream` is live, `buffers` holds one channel buffer per channel of the
-        // stream, each the caller sized for `samples` in `ci16` (libusdr reads no more),
-        // and `stat` is a valid out-pointer.
+        // stream, each the caller sized for `samples` in the stream's host format (libusdr
+        // reads no more), and `stat` is a valid out-pointer.
         let errno = unsafe {
             usdr_dms_send_stat(
                 stream.as_ptr(),

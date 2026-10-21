@@ -7,6 +7,7 @@ use std::time::Duration;
 
 mod controls;
 mod diagnostics;
+mod format;
 mod frontend;
 mod link;
 mod quality;
@@ -16,6 +17,7 @@ mod tx_stream;
 
 pub use controls::{IqCorrection, LmlRxMode, TxGenerator};
 pub use diagnostics::{ClockReadings, RxCapture, RxPhyDelay};
+pub use format::{HostSample, WireFormat};
 pub use stream::{RxChannels, RxPacket};
 pub use stream_options::{StreamSync, TxMute};
 pub use tx_stream::{TxChannels, TxTelemetry};
