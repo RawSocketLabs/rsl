@@ -219,6 +219,11 @@ pub enum Error {
     #[error("the RX PHY capture stayed busy")]
     CaptureBusy,
 
+    /// A `LimeLight` clock-phase override above 512, whose delay no MMCM output holds,
+    /// refused before any state change.
+    #[error("phase override {0} is past 512")]
+    InvalidPhase(u16),
+
     /// A TX time past the TX core's 47 bits.
     #[error("TX time {0} is past the TX core's 47 bits")]
     UnsupportedTimestamp(u64),

@@ -51,15 +51,15 @@ const GOOD_SCORE: f64 = 0.025;
 const ATTEMPTS: u8 = 8;
 
 impl Device {
-    /// `xsdr_check_rxtx_quality(d, 1)`: the tone loaded and played through the baseband
-    /// loopback, scored and, until good, the TX processors' clock adjusted; then the
-    /// generator stopped and the running channels' baseband filters set for the rates.
-    pub(super) fn check_quality(&mut self) -> Result<(), Error> {
+    /// `xsdr_check_rxtx_quality(d, fix)`: the tone loaded and played through the baseband
+    /// loopback, scored and, with `fix` until good, the TX processors' clock adjusted; then
+    /// the generator stopped and the running channels' baseband filters set for the rates.
+    pub(super) fn check_quality(&mut self, fix: bool) -> Result<(), Error> {
         self.load_tone()?;
         self.tx_generator(true, false)?;
         self.loop_baseband()?;
         for attempt in 0..ATTEMPTS {
-            if f64::from(tx_score(&self.capture()?)) < GOOD_SCORE {
+            if f64::from(tx_score(&self.capture()?)) < GOOD_SCORE || !fix {
                 break;
             }
             let lml = self.control.lml();

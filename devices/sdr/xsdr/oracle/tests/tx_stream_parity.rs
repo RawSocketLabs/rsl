@@ -69,6 +69,33 @@ enum Call {
     StopTx,
     /// Inject a TX MMCM fault into the board from now on (no libusdr or xsdr call).
     Fault(MmcmFault),
+    /// A `LimeLight` phase override.
+    Override(Phase, u16),
+}
+
+/// Which phase override (`/dm/sdr/0/{tx,rx}/phase_ovr*`).
+#[derive(Clone, Copy, Debug)]
+enum Phase {
+    /// `tx/phase_ovr`.
+    Tx,
+    /// `tx/phase_ovr_iq`.
+    TxIq,
+    /// `rx/phase_ovr`.
+    Rx,
+    /// `tx/phase_ovr_rc`: both TX phases, applied at once.
+    ApplyTx,
+}
+
+impl Phase {
+    /// libusdr's path.
+    fn path(self) -> &'static core::ffi::CStr {
+        match self {
+            Self::Tx => c"/dm/sdr/0/tx/phase_ovr",
+            Self::TxIq => c"/dm/sdr/0/tx/phase_ovr_iq",
+            Self::Rx => c"/dm/sdr/0/rx/phase_ovr",
+            Self::ApplyTx => c"/dm/sdr/0/tx/phase_ovr_rc",
+        }
+    }
 }
 
 /// What a step returned: 0 or a negative errno, and a send's statistics or a receive's
@@ -182,6 +209,10 @@ fn libusdr(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, Vec<Op>, Vec<TxPac
                     oracle.board(|board| board.set_tx_mmcm_fault(fault));
                     (0, None)
                 }
+                Call::Override(phase, value) => {
+                    // SAFETY: the phase overrides take their value as a number.
+                    status(unsafe { oracle.set_uint(phase.path(), value.into()) })
+                }
             }
         })
         .collect();
@@ -263,6 +294,12 @@ fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, Vec<Op>, Vec<TxPacket>
                     sim.board().set_tx_mmcm_fault(fault);
                     (0, None)
                 }
+                Call::Override(phase, value) => status(match phase {
+                    Phase::Tx => device.set_tx_phase_override(value),
+                    Phase::TxIq => device.set_tx_iq_phase_override(value),
+                    Phase::Rx => device.set_rx_phase_override(value),
+                    Phase::ApplyTx => device.apply_tx_phase_override(value),
+                }),
             }
         })
         .collect();
@@ -788,4 +825,140 @@ fn a_stream_before_any_rate_without_a_tx_mmcm_fails_the_default_rate_like_libusd
         outcomes[0].0, -ERANGE,
         "libusdr's 1 MS/s default fails its calibration"
     );
+}
+
+/// The TX MMCM's TX fabric clock (output 6, DRP registers 0x12 and 0x13) as the board
+/// last holds it: phase and delay.
+fn tx_fabric_phase(trace: &[Op]) -> Option<(u32, u32)> {
+    let written = |reg: u32| {
+        trace.iter().rev().find_map(|op| match op {
+            Op::RegWrite { addr: 57, value }
+                if value >> 24 == 1 && value >> 23 & 1 == 1 && value >> 16 & 0x7f == reg =>
+            {
+                Some(value & 0xffff)
+            }
+            _ => None,
+        })
+    };
+    Some((written(0x12)? >> 13 & 7, written(0x13)? & 0x3f))
+}
+
+#[test]
+fn tx_phase_overrides_steer_the_link_calibration_like_libusdr() {
+    // A TX override stands in for the TX phase wherever a configuration names none: the
+    // default and RX-sweep configurations, while TX streams.
+    let (outcomes, trace) = compare(
+        xsdr,
+        &[
+            Call::Override(Phase::Tx, 77),
+            Call::Rate(10_000_000),
+            Call::CreateTx(TxChannels::A, 1024),
+            Call::StartTx,
+            Call::Send(1024, None),
+            Call::StopTx,
+        ],
+    );
+    assert!(outcomes.iter().all(|(status, _)| *status == 0));
+    assert!(tx_fabric_phase(&trace).is_some());
+    // With a separate CLKDIV output, its override too.
+    compare(
+        || {
+            SimBoard::new(Variant::Xsdr)
+                .with_hwid(TX_MMCM | 0x80)
+                .with_gateware_build(TX_GATEWARE)
+        },
+        &[
+            Call::Override(Phase::TxIq, 33),
+            Call::Override(Phase::Tx, 5),
+            Call::Rate(10_000_000),
+            Call::CreateTx(TxChannels::Both, 512),
+            Call::StopTx,
+        ],
+    );
+}
+
+#[test]
+fn an_rx_phase_override_skips_the_sweeps_and_fails_the_calibration_like_libusdr() {
+    let (outcomes, _) = compare(
+        xsdr,
+        &[
+            Call::Override(Phase::Rx, 40),
+            Call::Rate(10_000_000),
+            Call::Override(Phase::Rx, 0),
+            Call::Rate(10_000_000),
+            Call::CreateTx(TxChannels::A, 256),
+            Call::Override(Phase::Rx, 12),
+            Call::Rate(20_000_000),
+        ],
+    );
+    let statuses: Vec<i32> = outcomes.iter().map(|(status, _)| *status).collect();
+    assert_eq!(statuses, [0, -ERANGE, 0, 0, 0, 0, -ERANGE]);
+}
+
+#[test]
+fn without_a_tx_mmcm_the_tx_override_is_the_delay_like_libusdr() {
+    let (outcomes, trace) = compare(
+        || SimBoard::new(Variant::Xsdr).with_gateware_build(TX_GATEWARE),
+        &[Call::Override(Phase::Tx, 9), Call::Rate(10_000_000)],
+    );
+    assert_eq!(outcomes[1].0, -ERANGE, "no TX MMCM: the calibration fails");
+    assert_eq!(writes(&trace, 57, 4 << 24 | 8), 1, "the delay, 9 - 1");
+}
+
+#[test]
+fn applying_a_tx_phase_override_reconfigures_the_tx_mmcm_like_libusdr() {
+    let (outcomes, trace) = compare(
+        xsdr,
+        &[
+            Call::Rate(10_000_000),
+            Call::CreateTx(TxChannels::A, 1024),
+            Call::Override(Phase::ApplyTx, 100),
+            Call::StartTx,
+            Call::Send(1024, None),
+            Call::Override(Phase::ApplyTx, 0),
+            Call::StopTx,
+            Call::Override(Phase::ApplyTx, 3),
+        ],
+    );
+    assert!(
+        outcomes.iter().all(|(status, _)| *status == 0),
+        "{outcomes:?}"
+    );
+    assert_eq!(tx_fabric_phase(&trace), Some((2, 0)), "phase 3: raw 2");
+    // An MMCM that stops locking: libusdr's -EIO, the serializer not reset.
+    let (outcomes, _) = compare(
+        xsdr,
+        &[
+            Call::Rate(10_000_000),
+            Call::Fault(MmcmFault::LocksOnly { releases: 0 }),
+            Call::Override(Phase::ApplyTx, 50),
+        ],
+    );
+    assert_eq!(outcomes[2].0, -EIO);
+}
+
+#[test]
+fn applying_a_tx_phase_override_before_any_rate_drives_nothing_like_libusdr() {
+    // libusdr divides by the zero converter divider before any access and traps; xsdr
+    // refuses, the overrides kept as libusdr keeps them.
+    let mut oracle = Oracle::open(xsdr()).expect("libusdr opens the board");
+    let before = oracle.trace_len();
+    // SAFETY: the handler takes its value as a number.
+    let trapped = unsafe { oracle.set_uint_trapping(c"/dm/sdr/0/tx/phase_ovr_rc", 7) };
+    assert_eq!(trapped, Ok(true), "libusdr divides by zero");
+    assert_eq!(oracle.trace_len(), before, "before any access");
+    let _ = oracle.close();
+
+    let sim = SimBus::new(xsdr());
+    let mut device = Device::open(sim.clone()).expect("xsdr opens the XSDR");
+    let before = sim.board().trace().len();
+    assert!(matches!(
+        device.apply_tx_phase_override(7),
+        Err(Error::NoSampleRate)
+    ));
+    assert!(matches!(
+        device.apply_tx_phase_override(513),
+        Err(Error::InvalidPhase(513))
+    ));
+    assert_eq!(sim.board().trace().len(), before, "nothing driven");
 }

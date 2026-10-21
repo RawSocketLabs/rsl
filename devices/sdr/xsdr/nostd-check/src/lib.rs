@@ -16,6 +16,9 @@ use lp8758::{Buck, BuckControl, BuckVoltage};
 use portable::close::{Close, Down, streaming_down};
 use portable::frontend::{RX_BANDS, TX_BANDS, XTRX_RX_BANDS, XTRX_TX_BANDS, XsdrFrontend};
 use portable::hwid::{IdentityRead, Variant};
+use portable::mmcm::{
+    MmcmCall, MmcmLink, MmcmPlan, OverrideTxPhase, PHASE_OVERRIDE_MAX, PhaseOverrides,
+};
 use portable::power::PowerUp;
 use portable::rate::{Gateware, RateError, RateState, SetSampleRate};
 use portable::supplies::{Supplies, SupplyPlan};
@@ -79,6 +82,34 @@ pub fn xtrx_bands() -> Result<(u8, u8), &'static str> {
     let reference = NonZeroU32::new(26_000_000).ok_or("zero reference")?;
     let _ = Control::new(chip, reference, XTRX_RX_BANDS, XTRX_TX_BANDS);
     Ok((XTRX_RX_BANDS[0].switch, XTRX_TX_BANDS[0].switch))
+}
+
+/// Applies the largest TX phase override on a 20 MHz link clock, the MMCM's status reading
+/// `status`: the actions issued and whether it locked.
+pub fn override_tx_phase(status: u32) -> Result<(usize, bool), &'static str> {
+    let link = MmcmLink {
+        clocks: lms7002m::ctrl::Clocks {
+            cgen: 320_000_000,
+            tx_converter_div: 4,
+            tx_tsp_div: 8,
+            ..lms7002m::ctrl::Clocks::default()
+        },
+        lml: lms7002m::LmlConfig {
+            tx_div: 4,
+            ..lms7002m::LmlConfig::default()
+        },
+        double_pump: false,
+        separate_clkdiv: true,
+        overrides: PhaseOverrides {
+            tx: PHASE_OVERRIDE_MAX,
+            tx_iq: PHASE_OVERRIDE_MAX,
+            rx: 0,
+        },
+    };
+    let plan = MmcmPlan::new(&link, MmcmCall::default()).map_err(|_| "refused")?;
+    let mut sequence = OverrideTxPhase::new(&plan, 0);
+    let actions = drive(&mut sequence, |_, _| Ok(status))?;
+    Ok((actions, sequence.outcome() == Some(Ok(()))))
 }
 
 /// The family member a hardware ID names, as its device ID, through the real identity
@@ -313,6 +344,18 @@ mod tests {
         // writes. A never-created chip also selects both banks first.
         assert_eq!(close(true, None), Ok(35));
         assert_eq!(close(false, None), Ok(36));
+    }
+
+    #[test]
+    fn the_exact_source_witness_applies_a_tx_phase_override() {
+        // Locked (bit 8): the MMCM's 48 writes and its lock read, then the serializer's
+        // reset, wait and run.
+        let (locked, ok) = override_tx_phase(1 << 8).expect("no bus failure");
+        assert!(ok);
+        // Never locked: 100 lock reads and waits, no serializer reset.
+        let (unlocked, ok) = override_tx_phase(0).expect("no bus failure");
+        assert!(!ok);
+        assert!(unlocked > locked);
     }
 
     #[test]
