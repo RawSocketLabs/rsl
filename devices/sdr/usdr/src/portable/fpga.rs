@@ -11,8 +11,8 @@
 use core::time::Duration;
 
 use bnb::{BitEnum, bitfield, u7, u12, u24};
+use sdr_gearbox::{Factor, UCODE_BYTES};
 
-use super::fir_tables;
 use super::script::Script;
 use super::sequence::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 
@@ -368,29 +368,27 @@ impl Decimation {
         }
     }
 
-    /// The RX FIR microcode libusdr loads for this factor on the uSDR's 7-series FPGA.
-    const fn rx_fir(self) -> &'static [u8; 1280] {
+    /// The gearbox factor (`sdr-gearbox`'s), whose tables the uSDR's 7-series FPGA loads.
+    const fn gearbox(self) -> Factor {
         match self {
-            Self::X1 => &fir_tables::BYPASS,
-            Self::X2 => &fir_tables::DECIMATE_2,
-            Self::X4 => &fir_tables::DECIMATE_4,
-            Self::X8 => &fir_tables::DECIMATE_8,
-            Self::X16 => &fir_tables::DECIMATE_16,
-            Self::X32 => &fir_tables::DECIMATE_32,
+            Self::X1 => Factor::X1,
+            Self::X2 => Factor::X2,
+            Self::X4 => Factor::X4,
+            Self::X8 => Factor::X8,
+            Self::X16 => Factor::X16,
+            Self::X32 => Factor::X32,
         }
+    }
+
+    /// The RX FIR microcode libusdr loads for this factor on the uSDR's 7-series FPGA.
+    const fn rx_fir(self) -> &'static [u8; UCODE_BYTES] {
+        self.gearbox().decimation_ucode()
     }
 
     /// The TX FIR microcode libusdr loads for this interpolation factor on the uSDR's
     /// 7-series FPGA (`fgearbox_load_fir_i_ex` with `DSP_7SERIES`).
-    const fn tx_fir(self) -> &'static [u8; 1280] {
-        match self {
-            Self::X1 => &fir_tables::BYPASS,
-            Self::X2 => &fir_tables::INTERPOLATE_2,
-            Self::X4 => &fir_tables::INTERPOLATE_4,
-            Self::X8 => &fir_tables::INTERPOLATE_8,
-            Self::X16 => &fir_tables::INTERPOLATE_16,
-            Self::X32 => &fir_tables::INTERPOLATE_32,
-        }
+    const fn tx_fir(self) -> &'static [u8; UCODE_BYTES] {
+        self.gearbox().interpolation_ucode()
     }
 }
 
@@ -401,7 +399,7 @@ pub(crate) struct FirLoad {
     /// The chain's port.
     phy: Phy,
     /// The microcode.
-    table: &'static [u8; 1280],
+    table: &'static [u8; UCODE_BYTES],
     /// The wait after each write.
     gap: Duration,
     /// Actions done: a write and a wait per byte.
@@ -422,7 +420,7 @@ impl FirLoad {
     }
 
     /// The load of `table` into `phy`'s FIR, `gap` apart.
-    const fn new(phy: Phy, table: &'static [u8; 1280], gap: Duration) -> Self {
+    const fn new(phy: Phy, table: &'static [u8; UCODE_BYTES], gap: Duration) -> Self {
         Self {
             phy,
             table,

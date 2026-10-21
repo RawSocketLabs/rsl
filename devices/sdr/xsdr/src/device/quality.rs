@@ -14,8 +14,9 @@
 //! the bus, as the streams'.
 //!
 //! Divergences: libusdr divides the rates by interpolation and decimation factors it sets
-//! only on gateware with a DUC/DDC (`s_tx_int`, `s_rx_dec`), 0 here, so its integer
-//! division traps (SIGFPE) after the generator stops; this takes the board's factors, 1.
+//! only on gateware with a DUC/DDC (`s_tx_int`, `s_rx_dec`), 0 elsewhere (and on a DSP
+//! chain without a rate), so its integer division then traps (SIGFPE) after the generator
+//! stops; this divides by 1 there.
 //! A capture read that fails ends the check with its error, where libusdr ignores it and
 //! fits what the buffer held; a capture word reporting busy forever ends it with
 //! [`Error::CaptureBusy`] after [`CAPTURE_POLLS`] reads, where libusdr reads on.
@@ -31,6 +32,7 @@ use sdr_cal::fit;
 use super::{Device, run};
 use crate::error::Error;
 use crate::portable::fpga::{REG_CFG_PHY_0, RxPhyBank, TxPhy};
+use crate::portable::rate::RateState;
 use crate::portable::step::Step;
 
 /// Samples a capture holds per channel (`CAPTURE_SIZE`).
@@ -75,9 +77,10 @@ impl Device {
         }
         self.tx_generator(false, false)?;
         // libusdr's `s_txrate / s_tx_int` and `s_rxrate / s_rx_dec`: see the module docs.
-        let tx = self.control.update_bandwidth(Direction::Tx, self.rate.tx);
+        let (rx_rate, tx_rate) = host_rates(self.rate);
+        let tx = self.control.update_bandwidth(Direction::Tx, tx_rate);
         self.run_control(tx)?;
-        let rx = self.control.update_bandwidth(Direction::Rx, self.rate.rx);
+        let rx = self.control.update_bandwidth(Direction::Rx, rx_rate);
         self.run_control(rx)
     }
 
@@ -160,6 +163,17 @@ impl Device {
         }
         Err(Error::CaptureBusy)
     }
+}
+
+/// The RX and TX rates before the FPGA's DSP chains: the LMS7002M's rates (`s_rxrate`,
+/// `s_txrate`) divided by the chains' factors as last loaded, or (no DUC/DDC, where libusdr
+/// divides by 0 and traps) by 1.
+fn host_rates(state: RateState) -> (u32, u32) {
+    let divide = |rate: u32, factor: u32| rate.checked_div(factor).unwrap_or(rate);
+    (
+        divide(state.rx, state.rx_decimation),
+        divide(state.tx, state.tx_interpolation),
+    )
 }
 
 /// Table word `step` of the tone: `amp * sin` and `amp * cos` of `2 * M_PI * step / 64`

@@ -14,8 +14,6 @@ use xsdr_sim::{SimBoard, Variant};
 const TX_MMCM: u32 = 0x0030_0020;
 /// An XSDR whose gateware has an RX MMCM too.
 const RX_MMCM: u32 = 0x0030_0030;
-/// An XSDR with a TX MMCM and a DUC/DDC.
-const DUC_DDC: u32 = 0x0030_0024;
 /// A receive's wait; the sim answers at once.
 const TIMEOUT: Duration = Duration::from_millis(10);
 
@@ -107,15 +105,7 @@ fn receive_buffers_unlike_the_stream_are_refused_before_any_access() {
 }
 
 #[test]
-fn unported_gateware_and_a_second_stream_are_refused_before_any_access() {
-    let (mut device, sim) = xsdr(DUC_DDC);
-    let before = traced(&sim);
-    assert!(matches!(
-        device.create_rx_stream(RxChannels::A, 4),
-        Err(Error::UnsupportedGateware(0x24))
-    ));
-    assert_eq!(traced(&sim), before, "no bus access");
-
+fn an_unfitting_default_link_and_a_second_stream_are_refused_before_any_access() {
     // With an RX MMCM and no rate, libusdr's 1 MS/s default leaves a link its RX-master
     // MMCM configuration reads past its table for.
     let (mut device, sim) = xsdr(RX_MMCM);

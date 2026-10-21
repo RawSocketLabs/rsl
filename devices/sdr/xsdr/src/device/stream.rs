@@ -137,7 +137,7 @@ impl Device {
         if self.rx_stream.is_some() {
             return Err(Error::AlreadyStreaming);
         }
-        let gateware = self.gateware()?;
+        let gateware = self.gateware();
         let tx = self.tx_stream.is_some();
         // The calibration clocks the MMCM as TX's with TX running, else as RX's on
         // gateware with an RX or shared MMCM; without a rate, at the default rate.

@@ -48,12 +48,17 @@ pub(crate) enum Gpo {
     /// The board LED (`IGPO_LED`): `xsdr_dtor` writes 0.
     Led = 18,
 
+    /// The RX DSP chain's FIR microcode, a byte per write (`IGPO_DSPCHAIN_RX_PRG`).
+    RxChainProgram = 20,
+
+    /// The RX DSP chain's resets (`IGPO_DSPCHAIN_RX_RST`).
+    RxChainReset = 21,
+
+    /// The TX DSP chain's FIR microcode (`IGPO_DSPCHAIN_TX_PRG`).
+    TxChainProgram = 22,
+
     /// The TX DSP chain's resets (`IGPO_DSPCHAIN_TX_RST`): bit 2 the extended front end's
     /// (`xsdr_reset_extfe`).
-    #[allow(
-        dead_code,
-        reason = "the TX stream uses it; the no_std fixture compiles the tree without it"
-    )]
     TxChainReset = 23,
 }
 

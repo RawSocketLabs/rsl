@@ -303,3 +303,29 @@ fn the_quality_check_on_its_own_matches_libusdr_up_to_its_division_trap() {
         );
     }
 }
+
+#[test]
+fn duc_ddc_gateware_runs_the_quality_check_whole_like_libusdr() {
+    // There libusdr's factors are set, so its check divides by them and does not trap:
+    // the session compares whole.
+    let session = compare(
+        || {
+            SimBoard::new(Variant::Xsdr)
+                .with_hwid(TX_MMCM | 0x04)
+                .with_gateware_build(TX_GATEWARE)
+        },
+        &[
+            Call::Rate(10_000_000),
+            Call::CreateTx,
+            Call::StartTx,
+            Call::Send,
+            Call::Rate(5_000_000),
+            Call::Check(true),
+            Call::StopTx,
+        ],
+    );
+    assert!(
+        session.trapped.iter().all(|&trapped| !trapped),
+        "no trap on DUC/DDC gateware"
+    );
+}

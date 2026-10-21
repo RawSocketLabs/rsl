@@ -87,6 +87,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdr-gearbox"
+version = "0.0.0"
+
+[[package]]
 name = "sdr-stream"
 version = "0.0.0"
 dependencies = [
@@ -168,6 +172,7 @@ dependencies = [
  "bitsandbytes",
  "hal",
  "lp8758",
+ "sdr-gearbox",
  "sdr-stream",
 ]
 

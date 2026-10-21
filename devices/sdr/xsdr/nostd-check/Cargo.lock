@@ -95,6 +95,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdr-gearbox"
+version = "0.0.0"
+
+[[package]]
 name = "serde_core"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -177,4 +181,5 @@ dependencies = [
  "hal",
  "lms7002m",
  "lp8758",
+ "sdr-gearbox",
 ]

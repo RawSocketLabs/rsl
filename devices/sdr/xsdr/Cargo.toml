@@ -16,6 +16,7 @@ lp8758.workspace = true
 sdr-frontend = { workspace = true, features = ["std"] }
 sdr-stream.workspace = true
 sdr-cal.workspace = true
+sdr-gearbox.workspace = true
 num-complex.workspace = true
 thiserror.workspace = true
 

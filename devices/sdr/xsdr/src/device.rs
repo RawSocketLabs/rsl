@@ -60,8 +60,6 @@ const PHY_DUC_DDC: u8 = 0x04;
 const PHY_SEPARATE_CLKDIV: u8 = 0x80;
 /// HWID PHY bit: `LimeLight` port 2 carries RX (`PHY_CFG_LML2_IS_RX`).
 const PHY_LML2_IS_RX: u8 = 0x40;
-/// The PHY bits whose rate paths are not ported (see [`Error::UnsupportedGateware`]).
-const PHY_UNPORTED: u8 = PHY_DUC_DDC;
 
 /// An open LMS7 family board: an XSDR or an XTRX.
 pub struct Device {
@@ -266,7 +264,7 @@ impl Device {
     /// # Errors
     ///
     /// Before any bus access: [`Error::InvalidRate`] for a rate outside 90 kS/s to
-    /// 195 MS/s or none in either direction; [`Error::UnsupportedGateware`];
+    /// 195 MS/s or none in either direction;
     /// [`Error::TxClockOutOfRange`]. Then [`Error::UndeliverableRate`],
     /// [`Error::ClockUnlocked`], [`Error::LinkCalibration`], [`Error::TxClockUnlocked`], a
     /// power-up's errors, or [`Error::Bus`].
@@ -278,7 +276,7 @@ impl Device {
         if let Some(rate) = [rx, tx].into_iter().find(|&rate| !in_range(rate)) {
             return Err(Error::InvalidRate(rate));
         }
-        let gateware = self.gateware()?;
+        let gateware = self.gateware();
         let tx_running = self.control.tx_running().contains(&true);
         if gateware.tx_mmcm
             && (tx_running || gateware.rx_mmcm)
@@ -345,22 +343,16 @@ impl Device {
     }
 
     /// The gateware's link features, from HWID's PHY bits.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::UnsupportedGateware`] for a DUC/DDC, whose path is not ported.
-    fn gateware(&self) -> Result<Gateware, Error> {
+    fn gateware(&self) -> Gateware {
         let [.., phy] = self.hwid.to_be_bytes();
-        if phy & PHY_UNPORTED != 0 {
-            return Err(Error::UnsupportedGateware(phy));
-        }
-        Ok(Gateware {
+        Gateware {
             tx_mmcm: phy & PHY_TX_MMCM != 0,
             rx_port1: phy & PHY_LML2_IS_RX == 0,
             separate_clkdiv: phy & PHY_SEPARATE_CLKDIV != 0,
             rx_mmcm: phy & (PHY_RX_MMCM | PHY_SINGLE_MMCM) != 0,
+            duc_ddc: phy & PHY_DUC_DDC != 0,
             xtrx: self.variant == Variant::Xtrx,
-        })
+        }
     }
 
     /// `xsdr_rfic_fe_set_freq` on an XSDR: skipped when unchanged, otherwise tuned, the
