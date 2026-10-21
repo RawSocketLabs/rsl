@@ -11,6 +11,7 @@ rust-version.workspace = true
 [dependencies]
 lms7002m.workspace = true
 hal = { workspace = true, features = ["std"] }
+sdr-formats.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

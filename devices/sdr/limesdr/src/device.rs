@@ -6,6 +6,7 @@ use std::fmt;
 use hal::{Sequence, SequenceAction};
 use lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Operation};
 use lms7002m::{Synthesizer, TuneError};
+use sdr_formats::SampleFormat;
 
 use crate::control::ControlPort;
 use crate::error::{Error, ExchangeError};
@@ -16,6 +17,7 @@ use crate::portable::lsop::{BadReply, LsOp};
 use crate::portable::open::{Action, Open};
 use crate::portable::rate::SetSampleRate;
 use crate::portable::stream::PrepareStreaming;
+use crate::stream::{StreamSetup, WireFormat};
 
 /// What libusdr reports at `/dm/revision` for this family: an emulated constant, the same
 /// for every board (`dev_limesdr_sdr_revision_get`, which documents none of its fields).
@@ -200,6 +202,27 @@ impl Device {
         prepare
             .refusal()
             .map_or(Ok(()), |refusal| Err(rate_refusal(refusal)))
+    }
+
+    /// Sets a `direction` stream up in `host@wire` with `samples_per_packet` samples per
+    /// packet as libusdr's stream create does (`create_limesdr_stream`): the format's
+    /// converter and burst geometry ([`StreamSetup::new`]), then the stream's
+    /// initialisation, [`Self::prepare_streaming`]. Returns the setup the transport would
+    /// open the stream with; the FT601 transport is not ported, so no stream runs.
+    ///
+    /// # Errors
+    ///
+    /// Before any exchange, [`StreamSetup::new`]'s; then [`Self::prepare_streaming`]'s.
+    pub fn setup_stream(
+        &mut self,
+        direction: Direction,
+        wire: WireFormat,
+        host: SampleFormat,
+        samples_per_packet: u32,
+    ) -> Result<StreamSetup, Error> {
+        let setup = StreamSetup::new(direction, wire, host, samples_per_packet)?;
+        self.prepare_streaming()?;
+        Ok(setup)
     }
 
     /// Closes the board as libusdr's `usdr_dmd_close` does on this family: without a bus

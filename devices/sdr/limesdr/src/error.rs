@@ -2,9 +2,11 @@
 
 pub use hal::Access;
 use hal::SequenceFailure;
+use sdr_formats::SampleFormat;
 
 use crate::control::BusError;
 use crate::portable::open::Failure;
+use crate::stream::WireFormat;
 
 /// A failed LMS64C exchange.
 #[derive(Debug, thiserror::Error)]
@@ -118,6 +120,22 @@ pub enum Error {
     /// Streaming was prepared with no sample rate: the default one did not lock.
     #[error("no sample rate is set")]
     NoSampleRate,
+
+    /// A stream format with no converter between the host and the wire, refused before
+    /// any exchange: libusdr byte-copies a pair it does not know.
+    #[error("no {host:?} host stream over a {wire:?} wire")]
+    #[non_exhaustive]
+    UnsupportedFormat {
+        /// The wire format asked for.
+        wire: WireFormat,
+
+        /// The host format asked for.
+        host: SampleFormat,
+    },
+
+    /// A stream packet of this many samples cannot be set up: libusdr's `-EINVAL`.
+    #[error("{0} samples per packet cannot be streamed")]
+    UnsupportedPacketSize(u32),
 }
 
 /// A failed open, with the register or chip it names.

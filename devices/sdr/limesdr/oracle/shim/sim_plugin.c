@@ -186,14 +186,34 @@ static int sim_ls_op(lldev_t dev, subdev_t subdev, unsigned op, lsopaddr_t addr,
     return -EOPNOTSUPP;
 }
 
+// The last stream setup the transport was asked for (streamno, block_size, buffer_count,
+// flags), and how many it was asked for since the oracle last read them.
+static unsigned s_stream_params[4];
+static unsigned s_stream_requests;
+
 // The transport's stream setup, which u3_limesdr's own stream_initialize calls after
 // limesdr_prepare_streaming. The FT601 stream pipes are not vendored, so a stream ends
-// here: the LMS7002M's streaming-up is traced, the stream itself is refused.
+// here: the LMS7002M's streaming-up is traced and the parameters create_limesdr_stream
+// computed are recorded, the stream itself is refused.
 static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_params_t* params,
                                  stream_t* channel)
 {
-    (void)dev; (void)subdev; (void)params; (void)channel;
+    (void)dev; (void)subdev; (void)channel;
+    s_stream_params[0] = params->streamno;
+    s_stream_params[1] = params->block_size;
+    s_stream_params[2] = params->buffer_count;
+    s_stream_params[3] = params->flags;
+    s_stream_requests++;
     return -EOPNOTSUPP;
+}
+
+// The stream setups requested since the last call, the last one's parameters in `out`.
+unsigned limesdr_shim_stream_params(unsigned out[4])
+{
+    memcpy(out, s_stream_params, sizeof(s_stream_params));
+    unsigned requests = s_stream_requests;
+    s_stream_requests = 0;
+    return requests;
 }
 
 static int sim_destroy(lldev_t dev)
