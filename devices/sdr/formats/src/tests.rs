@@ -1,4 +1,8 @@
-//! Invariants of the conversions; byte-for-byte libusdr parity is `oracle/tests/conv_parity.rs`.
+//! Invariants of the conversions; byte-for-byte libusdr parity is the uSDR oracle's
+//! `conv_parity.rs`.
+
+use std::vec;
+use std::vec::Vec;
 
 use super::{ConversionError, Converter, SampleFormat};
 

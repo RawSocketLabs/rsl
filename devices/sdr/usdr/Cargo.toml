@@ -13,6 +13,7 @@ bnb.workspace = true
 num-complex.workspace = true
 sdr-cal.workspace = true
 sdr-gearbox.workspace = true
+sdr-formats.workspace = true
 hal = { workspace = true, features = ["std"] }
 lp8758.workspace = true
 sdr-frontend = { workspace = true, features = ["std"] }

@@ -55,9 +55,10 @@ LMK05318 = "devices/chips/lmk05318"
 FRONTEND = "devices/sdr/frontend"
 STREAM = "devices/sdr/stream"
 GEARBOX = "devices/sdr/gearbox"
+FORMATS = "devices/sdr/formats"
 BARE_METAL_DEVICES = {HAL: "hal", LP8758: "lp8758", LMS7002M: "lms7002m",
                       LMK05318: "lmk05318", FRONTEND: "sdr-frontend", STREAM: "sdr-stream",
-                      GEARBOX: "sdr-gearbox"}
+                      GEARBOX: "sdr-gearbox", FORMATS: "sdr-formats"}
 # The LMS7 family driver; its oracle runs libusdr's LMS7 family against xsdr-sim,
 # compiling the vendored C.
 XSDR = "devices/sdr/xsdr"
