@@ -17,6 +17,7 @@ sdr-frontend = { workspace = true, features = ["std"] }
 sdr-stream.workspace = true
 sdr-cal.workspace = true
 sdr-gearbox.workspace = true
+sdr-formats.workspace = true
 num-complex.workspace = true
 thiserror.workspace = true
 

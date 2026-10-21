@@ -5323,6 +5323,7 @@ dependencies = [
  "lp8758",
  "num-complex",
  "sdr-cal",
+ "sdr-formats",
  "sdr-frontend",
  "sdr-gearbox",
  "sdr-stream",

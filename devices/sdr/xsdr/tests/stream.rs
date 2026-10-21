@@ -7,7 +7,7 @@ mod common;
 use std::time::Duration;
 
 use common::sim_bus::SimBus;
-use xsdr::{Device, Error, RxChannels};
+use xsdr::{Device, Error, RxChannels, SampleFormat, WireFormat};
 use xsdr_sim::{SimBoard, Variant};
 
 /// An XSDR with a TX MMCM in its gateware.
@@ -124,4 +124,62 @@ fn an_unfitting_default_link_and_a_second_stream_are_refused_before_any_access()
         Err(Error::AlreadyStreaming)
     ));
     assert_eq!(traced(&sim), before, "no bus access");
+}
+
+#[test]
+fn formats_the_stream_cannot_carry_are_refused_before_any_access() {
+    let (mut device, sim) = xsdr(TX_MMCM);
+    let before = traced(&sim);
+    for (channels, wire, host) in [
+        // Two real lanes have no converter; a real `i12` host no element.
+        (RxChannels::Both, WireFormat::I16, SampleFormat::I16),
+        (RxChannels::A, WireFormat::I12, SampleFormat::I12),
+        // A real host on a complex wire, which libusdr byte-copies.
+        (RxChannels::A, WireFormat::Ci16, SampleFormat::F32),
+    ] {
+        assert!(
+            matches!(
+                device.create_rx_stream_as(channels, 1024, wire, host),
+                Err(Error::UnsupportedFormat { .. })
+            ),
+            "{host:?}@{wire:?} on {channels:?}"
+        );
+    }
+    // Three real 12-bit samples a burst end mid-byte.
+    assert!(matches!(
+        device.create_rx_stream_as(RxChannels::A, 3, WireFormat::I12, SampleFormat::I16),
+        Err(Error::UnsupportedPacketSize(3))
+    ));
+    assert_eq!(traced(&sim), before, "no access");
+}
+
+#[test]
+fn buffers_of_another_host_format_are_refused_before_any_access() {
+    let (mut device, sim) = xsdr(TX_MMCM);
+    device
+        .create_rx_stream_as(RxChannels::A, 4, WireFormat::Ci12, SampleFormat::Cf32)
+        .expect("created");
+    device.start_rx_stream().expect("started");
+    let before = traced(&sim);
+    let mut wrong = [[0_i16; 2]; 4];
+    assert!(matches!(
+        device.receive(&mut [&mut wrong], TIMEOUT),
+        Err(Error::HostFormat {
+            stream: SampleFormat::Cf32,
+            buffers: SampleFormat::Ci16,
+            ..
+        })
+    ));
+    assert_eq!(traced(&sim), before, "no access");
+    let mut floats = [[0.0_f32; 2]; 4];
+    device
+        .receive(&mut [&mut floats], TIMEOUT)
+        .expect("a packet");
+    // The sim's pattern, sample n as (n, -n) in 12 bits, unpacked to the top of 16 bits
+    // and scaled to full scale 1.0.
+    let lsb = 16.0 / 32_767.0;
+    assert!(
+        (floats[1][0] - lsb).abs() < 1e-6 && (floats[1][1] + lsb).abs() < 1e-6,
+        "{floats:?}"
+    );
 }

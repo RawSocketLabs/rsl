@@ -7,7 +7,7 @@ mod common;
 use std::time::Duration;
 
 use common::sim_bus::SimBus;
-use xsdr::{Device, Error, RxChannels, TxChannels};
+use xsdr::{Device, Error, RxChannels, SampleFormat, TxChannels, WireFormat};
 use xsdr_sim::{SimBoard, Variant};
 
 /// An XSDR with a TX MMCM in its gateware.
@@ -183,4 +183,44 @@ fn sends_unlike_the_stream_are_refused_before_any_access() {
             .is_ok(),
         "47 bits fit"
     );
+}
+
+#[test]
+fn tx_formats_the_core_cannot_take_are_refused_before_any_access() {
+    let (mut device, sim) = xsdr(TX_MMCM);
+    device
+        .set_sample_rate(10_000_000, 10_000_000)
+        .expect("rate");
+    let before = traced(&sim);
+    for (wire, host) in [
+        // A real wire; a real host, which libusdr byte-copies onto the complex wire.
+        (WireFormat::I16, SampleFormat::I16),
+        (WireFormat::Ci16, SampleFormat::F32),
+        // `ci12` on the original core.
+        (WireFormat::Ci12, SampleFormat::Cf32),
+    ] {
+        assert!(
+            matches!(
+                device.create_tx_stream_as(TxChannels::A, 1024, wire, host),
+                Err(Error::UnsupportedFormat { .. })
+            ),
+            "{host:?}@{wire:?}"
+        );
+    }
+    assert_eq!(traced(&sim), before, "no access");
+
+    device
+        .create_tx_stream_as(TxChannels::A, 4, WireFormat::Ci16, SampleFormat::Cf32)
+        .expect("created");
+    let before = traced(&sim);
+    let ci16 = [[0_i16; 2]; 4];
+    assert!(matches!(
+        device.send(&[&ci16], None, TIMEOUT),
+        Err(Error::HostFormat {
+            stream: SampleFormat::Cf32,
+            buffers: SampleFormat::Ci16,
+            ..
+        })
+    ));
+    assert_eq!(traced(&sim), before, "no access");
 }

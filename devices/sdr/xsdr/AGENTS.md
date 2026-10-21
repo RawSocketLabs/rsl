@@ -13,8 +13,8 @@ libusdr brings up there, with or without an `fe=` hint, and those boards' contro
 with a TX MMCM, an RX or shared MMCM too, and a DUC/DDC), RX/TX LO tuning (FDD and TDD),
 gains, baseband bandwidths, explicit paths with the RF loopback, the baseband NCOs, the
 DC and I/Q corrections, the TX generator and mute, the baseband and digital loopbacks, the
-RX and TX streams (`ci16` on channel A, B or both; the original or extended TX core) with
-their sync modes and options, the TX MMCM, the TX phase calibration and its overrides,
+RX and TX streams (on channel A, B or both, in libusdr's wire and host formats; the
+original or extended TX core) with their sync modes and options, the TX MMCM, the TX phase calibration and its overrides,
 the TX quality check, the link's debug controls, the board's readings, and close (also on
 drop); see [PORTING.md](PORTING.md) for done, divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
 reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
@@ -22,7 +22,7 @@ secure EEPROM. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `hal`, `lp8758`, `lms7002m`, `sdr-frontend` (`../frontend`, the front-end board probe, bring-ups and controls), `sdr-stream` (`../stream`, the stream engine), `sdr-cal` (`../cal`, the quality check's tone fit) and `sdr-gearbox` (`../gearbox`, the DUC/DDC's FIR microcode) |
+| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `hal`, `lp8758`, `lms7002m`, `sdr-frontend` (`../frontend`, the front-end board probe, bring-ups and controls), `sdr-stream` (`../stream`, the stream engine), `sdr-cal` (`../cal`, the quality check's tone fit), `sdr-gearbox` (`../gearbox`, the DUC/DDC's FIR microcode) and `sdr-formats` (`../formats`, the streams' host conversions) |
 | `sim/` | `xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, the front-end boards on the M.2 connector (`sdr-frontend-sim`, `../frontend/sim`, shared with `usdr-sim`), the RX stream engine, TX core and sync unit (`sdr-stream-sim`, `../stream/sim`, likewise shared), the TX PHY port with its MMCM and A/B-I/Q tables and the RX PHY capture, virtual clock, op trace |
 | `oracle/` | `xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c`, its RX and TX streams' buffers included, with libusdr's division traps caught (`set_uint_trapping`) |
 | `nostd-check/` | `xsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `usdr`'s; `scripts/ci/portable.py xsdr` holds its dependencies to the driver's |
@@ -59,7 +59,10 @@ Mirrors `usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
   burst arithmetic, which are `sdr-stream`'s (`../stream`, shared with the uSDR, whose
   gateware has the same engine at the same registers); which channel rides which lanes
   (`RxChannels`) and the RF side stay here. Blocking code over the bus, as the uSDR's
-  `board/stream.rs`.
+  `board/stream.rs`. `src/device/format.rs` holds the streams' formats: `WireFormat`,
+  the sealed `HostSample` buffer elements (`[i16; 2]`, `[f32; 2]`, `[u8; 3]`, `i16`,
+  `f32`) and the chunked conversion through a stack scratch, with libusdr's converters
+  (`sdr-formats`, `../formats`, shared with the uSDR and LimeSDR).
 - `src/device/tx_stream.rs`: the TX stream (`create_tx_stream`, `start_tx_stream`,
   `send`, `stop_tx_stream`), as the RX stream's, on the original or extended TX core
   (`sdr-stream`'s words); `src/device/quality.rs`: the TX quality check a rate runs while
@@ -251,7 +254,9 @@ loopbacks, TDD, NCO, correction and generator paths (`Device`'s `controls`), and
 `oracle/tests/stream_parity.rs` for the RX stream, from the open to the close inclusive,
 with every packet's bytes; `oracle/tests/tx_stream_parity.rs` likewise for the TX
 stream (every packet the TX core played, every send's statistics), the TX MMCM and the
-TX phase calibration, scripted RX PHY reads driving its sweeps; and
+TX phase calibration, scripted RX PHY reads driving its sweeps;
+`oracle/tests/stream_formats_parity.rs` both streams in libusdr's other wire and host
+formats, with the same comparisons; and
 `oracle/tests/quality_parity.rs` for a rate while TX streams and the check on its own, up
 to libusdr's division trap (whole on DUC/DDC gateware); `oracle/tests/frontend_controls_parity.rs`
 for every `fe=` hint and front-end control; `oracle/tests/diagnostics_parity.rs` for the

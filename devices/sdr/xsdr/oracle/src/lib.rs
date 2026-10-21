@@ -619,6 +619,25 @@ impl Oracle {
     ///
     /// If libusdr creates a second RX stream while one exists, which it refuses.
     pub fn create_rx_stream(&mut self, channels: u64, samples_per_packet: u32) -> Result<(), i32> {
+        self.create_rx_stream_as(c"ci16", channels, samples_per_packet)
+    }
+
+    /// As [`Self::create_rx_stream`], in libusdr's data format `format` (`host@wire`, such
+    /// as `c"cf32@ci12"`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned: `-EBUSY` if a stream exists.
+    ///
+    /// # Panics
+    ///
+    /// If libusdr creates a second RX stream while one exists, which it refuses.
+    pub fn create_rx_stream_as(
+        &mut self,
+        format: &CStr,
+        channels: u64,
+        samples_per_packet: u32,
+    ) -> Result<(), i32> {
         let Some(dev) = self.dev else {
             return Err(-EINVAL);
         };
@@ -630,7 +649,7 @@ impl Oracle {
             usdr_dms_create_ex(
                 dev.as_ptr(),
                 c"/ll/srx/0".as_ptr(),
-                c"ci16".as_ptr(),
+                format.as_ptr(),
                 channels,
                 samples_per_packet,
                 0,

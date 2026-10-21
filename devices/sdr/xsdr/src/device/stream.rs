@@ -1,4 +1,4 @@
-//! The RX stream: libusdr's `/ll/srx/0` in `ci16` on channel A, B or both, created,
+//! The RX stream: libusdr's `/ll/srx/0` on channel A, B or both, created,
 //! started, read and stopped as `usdr_device_m2_lm7_1_create_stream`, `usdr_dms_sync`,
 //! `usdr_dms_op`, `usdr_dms_recv` and `unregister_stream` do it (`device/m2_lm7_1/
 //! m2_lm7_1.c`, `xsdr_ctrl.c`'s `xsdr_hwchans_cnt` and `xsdr_prepare`; the stream engine,
@@ -7,14 +7,17 @@
 //! Creating it streams the RFIC's receiver up, recalibrates the `LimeLight` link,
 //! configures the FPGA's front end and DMA, holds the sync unit stopped and asks the
 //! transport for its buffers; starting it lets the sync unit free-run and starts the DMA
-//! and front end.
+//! and front end. Each packet is converted from the wire format into the host's as
+//! `_sfetrx4_stream_recv` converts it, with libusdr's converters (`sdr-formats`).
 
 use std::time::Duration;
 
 use hal::run_sequence;
 use lms7002m::ctrl::Direction;
+use sdr_formats::{Converter, SampleFormat};
 use sdr_stream::{BurstPlan, EngineSequence, RxLanes, RxSampleFormat};
 
+use super::format::{HostSample, WireFormat, from_wire, has_element};
 use super::{Device, rate_error, run};
 use crate::board::PMIC;
 use crate::error::Error;
@@ -24,24 +27,25 @@ use crate::portable::fpga::{Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE, LMS_RX_ENABL
 use crate::portable::rate::{Gateware, SetSampleRate};
 use crate::portable::step::Step;
 
-/// Bytes of one `ci16` sample on one channel: I then Q, each a little-endian `i16`.
-const SAMPLE_BYTES: usize = 4;
-
 /// The rate `xsdr_prepare` sets when a stream is created before any (`default_rate`), on
 /// the stream's direction alone.
 const DEFAULT_RATE: u32 = 1_000_000;
 
 /// The receive channels a stream carries (libusdr's channel mask: 1 for `a`, 2 for `b`, 3
 /// for both, mapped to the lanes by `s_xsdr_chmap`).
+///
+/// On a real wire ([`WireFormat::I16`], [`WireFormat::I12`]) the mask's channel numbers
+/// name single lanes, as libusdr's do: `A` (0, `ai`) is lane 0, channel A's I, and `B` (1,
+/// `aq`) lane 1, channel A's Q; both lanes at once have no real converter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RxChannels {
-    /// Channel A: the front end's lanes 1 and 0.
+    /// Channel A: the front end's lanes 1 and 0 (on a real wire, lane 0 alone).
     A,
 
-    /// Channel B: lanes 3 and 2.
+    /// Channel B: lanes 3 and 2 (on a real wire, lane 1 alone: channel A's Q).
     B,
 
-    /// Both, A then B in each sample: all four lanes.
+    /// Both, A then B in each sample: all four lanes (complex wires only).
     Both,
 }
 
@@ -54,12 +58,14 @@ impl RxChannels {
         }
     }
 
-    /// The lanes `sfe_rx4_configure` selects for the channels' complex samples.
-    const fn lanes(self) -> RxLanes {
-        match self {
-            Self::A => RxLanes::Lanes10,
-            Self::B => RxLanes::Lanes32,
-            Self::Both => RxLanes::Lanes3210,
+    /// The lanes `sfe_rx4_configure` selects for the channels' samples in `wire`.
+    const fn lanes(self, wire: WireFormat) -> RxLanes {
+        match (wire.is_complex(), self) {
+            (true, Self::A) | (false, Self::Both) => RxLanes::Lanes10,
+            (true, Self::B) => RxLanes::Lanes32,
+            (true, Self::Both) => RxLanes::Lanes3210,
+            (false, Self::A) => RxLanes::Lane0,
+            (false, Self::B) => RxLanes::Lane1,
         }
     }
 }
@@ -97,6 +103,15 @@ pub(super) struct RxStream {
     /// Bytes per DMA block: one packet's bursts.
     block_bytes: usize,
 
+    /// Bits one sample of every channel takes on the wire.
+    wire_bits: usize,
+
+    /// The host format the buffers hold.
+    host: SampleFormat,
+
+    /// Wire to host conversion (libusdr's `tf_data`).
+    converter: Converter,
+
     /// Packets received (`rcnt`); the DMA engine is told the host is ready until the first.
     packets: u64,
 
@@ -110,7 +125,28 @@ pub(super) struct RxStream {
 impl Device {
     /// Creates the RX stream on `channels` with `samples_per_packet` samples per packet,
     /// in `ci16` (libusdr's `usdr_dms_create` of `/ll/srx/0`), leaving it stopped until
-    /// [`Self::start_rx_stream`].
+    /// [`Self::start_rx_stream`]: [`Self::create_rx_stream_as`] with a `ci16` wire and
+    /// host.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::create_rx_stream_as`].
+    pub fn create_rx_stream(
+        &mut self,
+        channels: RxChannels,
+        samples_per_packet: u32,
+    ) -> Result<(), Error> {
+        self.create_rx_stream_as(
+            channels,
+            samples_per_packet,
+            WireFormat::Ci16,
+            SampleFormat::Ci16,
+        )
+    }
+
+    /// Creates the RX stream on `channels` with `samples_per_packet` samples per packet,
+    /// packed as `wire` and received into `host` buffers (libusdr's `usdr_dms_create` of
+    /// `/ll/srx/0` in `host@wire`), leaving it stopped until [`Self::start_rx_stream`].
     ///
     /// As libusdr: the `LimeLight` maps are rewritten for the stream's channel count if it
     /// changed; without a sample rate, 1 MS/s on RX is set first (and the RFIC powered
@@ -122,6 +158,12 @@ impl Device {
     /// # Errors
     ///
     /// Before any bus access: [`Error::AlreadyStreaming`] with a stream;
+    /// [`Error::UnsupportedFormat`] for a host format with no converter from `wire` to
+    /// the channels' buffers (libusdr byte-copies a one-channel pair it does not know, and
+    /// refuses the rest after its DMA reset), both channels on a real wire (no real
+    /// converter splits two lanes) or a real `i12` host (no buffer element);
+    /// [`Error::UnsupportedPacketSize`] for a real `i12` burst ending mid-byte (libusdr
+    /// converts it whole, its half byte included);
     /// [`Error::TxClockOutOfRange`] as for [`Self::create_tx_stream`] with a TX stream,
     /// and on gateware with an RX or shared MMCM for RX's link (the default rate's
     /// included). After the map:
@@ -130,14 +172,17 @@ impl Device {
     /// [`Error::ChipMissing`] for an RX DMA engine that reads dead,
     /// [`Error::UnsupportedPacketSize`] (after the DMA reset, as libusdr checks it),
     /// [`Error::Stream`] when the transport cannot set its buffers up, or [`Error::Bus`].
-    pub fn create_rx_stream(
+    pub fn create_rx_stream_as(
         &mut self,
         channels: RxChannels,
         samples_per_packet: u32,
+        wire: WireFormat,
+        host: SampleFormat,
     ) -> Result<(), Error> {
         if self.rx_stream.is_some() {
             return Err(Error::AlreadyStreaming);
         }
+        let converter = rx_converter(channels, samples_per_packet, wire, host)?;
         let gateware = self.gateware();
         let tx = self.tx_stream.is_some();
         // The calibration clocks the MMCM as TX's with TX running, else as RX's on
@@ -164,10 +209,10 @@ impl Device {
 
         let bus = self.bus.as_mut();
         run_sequence(bus, &mut EngineSequence::rx_reset())?;
-        let sample_bits = 8 * SAMPLE_BYTES * channels.count();
-        let plan = BurstPlan::for_stream(samples_per_packet, bits(sample_bits))
+        let wire_bits = wire.sample_bits() * count(channels);
+        let plan = BurstPlan::for_stream(samples_per_packet, wire_bits)
             .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
-        let format = plan.rx_format(channels.lanes(), RxSampleFormat::Bits16);
+        let format = plan.rx_format(channels.lanes(wire), front_end_format(wire));
         run_sequence(bus, &mut EngineSequence::rx_configure(&format))?;
         bus.rx_stream_open(plan.block_bytes())
             .map_err(Error::Stream)?;
@@ -177,6 +222,9 @@ impl Device {
             samples_per_burst: size(plan.samples_per_burst()),
             bytes_per_burst: size(plan.bytes_per_burst()),
             block_bytes: size(plan.block_bytes()),
+            wire_bits: size(wire_bits),
+            host,
+            converter,
             packets: 0,
             next_sample: 0,
             lost_packets: 0,
@@ -226,8 +274,8 @@ impl Device {
     }
 
     /// Receives one packet into the front of each channel's buffer (channel A's first for
-    /// [`RxChannels::Both`]), each sample I then Q, waiting up to `timeout`
-    /// (`_sfetrx4_stream_recv` into `ci16`). Until the first packet arrives, each call
+    /// [`RxChannels::Both`]), each element one sample in the stream's host format, waiting
+    /// up to `timeout` (`_sfetrx4_stream_recv`). Until the first packet arrives, each call
     /// first tells the DMA engine the host is ready, as libusdr does.
     ///
     /// Divergences, invisible on the bus: a burst padded to whole front-end words (an odd
@@ -241,7 +289,8 @@ impl Device {
     ///
     /// # Errors
     ///
-    /// Before any bus access: [`Error::NotStreaming`]; [`Error::ChannelBuffers`] for other
+    /// Before any bus access: [`Error::NotStreaming`]; [`Error::HostFormat`] for buffers of
+    /// another host format than the stream's; [`Error::ChannelBuffers`] for other
     /// than one buffer per channel; [`Error::BufferTooSmall`] for a buffer shorter than a
     /// packet. Then [`Error::Timeout`] when no packet arrives in time, [`Error::Stream`]
     /// for another transport failure, [`Error::ShortRxBlock`] for a block shorter than a
@@ -250,14 +299,20 @@ impl Device {
     /// # Panics
     ///
     /// Never: a packet's sample count is a `u32`.
-    pub fn receive(
+    pub fn receive<S: HostSample>(
         &mut self,
-        buffers: &mut [&mut [[i16; 2]]],
+        buffers: &mut [&mut [S]],
         timeout: Duration,
     ) -> Result<RxPacket, Error> {
         let Some(stream) = self.rx_stream.as_mut() else {
             return Err(Error::NotStreaming);
         };
+        if S::FORMAT != stream.host {
+            return Err(Error::HostFormat {
+                stream: stream.host,
+                buffers: S::FORMAT,
+            });
+        }
         let expected = stream.channels.count();
         if buffers.len() != expected {
             return Err(Error::ChannelBuffers {
@@ -363,27 +418,59 @@ impl RxStream {
     /// Copies a block's samples into the first [`Self::samples_per_packet`] of each
     /// buffer, burst by burst, skipping each burst's stub; with both channels each sample
     /// time holds A's sample, then B's.
-    fn convert(&self, block: &[u8], buffers: &mut [&mut [[i16; 2]]]) {
-        let channels = self.channels.count();
-        let used = self.samples_per_burst * SAMPLE_BYTES * channels;
+    fn convert<S: HostSample>(&self, block: &[u8], buffers: &mut [&mut [S]]) {
         let bursts = (0..self.samples_per_packet)
             .step_by(self.samples_per_burst)
             .zip(block.chunks(self.bytes_per_burst));
         for (first, burst) in bursts {
-            let times = burst[..used].chunks_exact(SAMPLE_BYTES * channels);
-            for (index, time) in (first..).zip(times) {
-                for (buffer, sample) in buffers.iter_mut().zip(time.chunks_exact(SAMPLE_BYTES)) {
-                    let [i0, i1, q0, q1] = [sample[0], sample[1], sample[2], sample[3]];
-                    buffer[index] = [i16::from_le_bytes([i0, i1]), i16::from_le_bytes([q0, q1])];
-                }
-            }
+            let samples = self.samples_per_burst.min(self.samples_per_packet - first);
+            let used = &burst[..samples * self.wire_bits / 8];
+            from_wire(
+                &self.converter,
+                used,
+                self.wire_bits,
+                buffers,
+                first,
+                samples,
+            );
         }
     }
 }
 
-/// A sample's width in bits as the engine's 32-bit arithmetic takes it.
-fn bits(bits: usize) -> u32 {
-    u32::try_from(bits).expect("invariant: at most two channels' bits")
+/// The converter from `wire` to the channels' `host` buffers, once the stream can carry
+/// them; checked before any bus access.
+fn rx_converter(
+    channels: RxChannels,
+    samples_per_packet: u32,
+    wire: WireFormat,
+    host: SampleFormat,
+) -> Result<Converter, Error> {
+    let unsupported = Error::UnsupportedFormat { wire, host };
+    if (!wire.is_complex() && channels == RxChannels::Both) || !has_element(host) {
+        return Err(unsupported);
+    }
+    let converter =
+        Converter::new(wire.sample_format(), host, 1, channels.count()).map_err(|_| unsupported)?;
+    let wire_bits = wire.sample_bits() * count(channels);
+    let half_byte = BurstPlan::for_stream(samples_per_packet, wire_bits)
+        .is_some_and(|plan| plan.samples_per_burst() * wire_bits % 8 != 0);
+    if half_byte {
+        return Err(Error::UnsupportedPacketSize(samples_per_packet));
+    }
+    Ok(converter)
+}
+
+/// `sfe_rx4_configure`'s front-end format for the wire's bits.
+const fn front_end_format(wire: WireFormat) -> RxSampleFormat {
+    match wire {
+        WireFormat::Ci16 | WireFormat::I16 => RxSampleFormat::Bits16,
+        WireFormat::Ci12 | WireFormat::I12 => RxSampleFormat::Bits12,
+    }
+}
+
+/// The channel count as the engine's 32-bit arithmetic takes it.
+fn count(channels: RxChannels) -> u32 {
+    u32::try_from(channels.count()).expect("invariant: one or two channels")
 }
 
 /// A register-sized count as a buffer length.
@@ -404,6 +491,10 @@ mod tests {
             samples_per_burst,
             bytes_per_burst,
             block_bytes: bytes_per_burst * samples / samples_per_burst,
+            wire_bits: 32,
+            host: SampleFormat::Ci16,
+            converter: Converter::new(SampleFormat::Ci16, SampleFormat::Ci16, 1, 1)
+                .expect("libusdr copies ci16"),
             packets: 0,
             next_sample: 0,
             lost_packets: 0,
@@ -431,6 +522,9 @@ mod tests {
         let block = [1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0];
         let mut stream = stream(2, 2, 16);
         stream.channels = RxChannels::Both;
+        stream.wire_bits = 64;
+        stream.converter =
+            Converter::new(SampleFormat::Ci16, SampleFormat::Ci16, 1, 2).expect("libusdr splits");
         let (mut a, mut b) = ([[0; 2]; 2], [[0; 2]; 2]);
         stream.convert(&block, &mut [&mut a, &mut b]);
         assert_eq!((a, b), ([[1, 2], [5, 6]], [[3, 4], [7, 8]]));
