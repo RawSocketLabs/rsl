@@ -24,10 +24,10 @@ use lp8758::{self, Buck, BuckVoltage};
 
 use super::fpga::{
     Gpo, LMS_LDO_ENABLE, LMS_RESET_RELEASE, LMS_RX_ENABLE, LMS_TX_ENABLE, REG_CFG_PHY_0, RxPhyBank,
-    TX_DEFAULT_DELAY,
+    TX_DEFAULT_DELAY, TxPhy,
 };
 use super::frontend::XsdrFrontend;
-use super::mmcm::{ConfigureMmcm, MmcmCall, MmcmLink, MmcmPlan, MmcmUnlocked};
+use super::mmcm::{ConfigureMmcm, MmcmCall, MmcmLink, MmcmPlan, MmcmUnlocked, PhaseOverrides};
 use super::step::Step;
 use super::txcal::{TxCalError, TxCalibration, TxVerdict};
 
@@ -111,6 +111,16 @@ pub(crate) struct RateState {
     /// An RX stream was created double-pumped, so SISO (`siso_sdr_active_rx`): the link
     /// calibration no longer raises the supplies. libusdr never clears it.
     pub(crate) siso_rx: bool,
+
+    /// The phases set in place of the calibration's.
+    pub(crate) overrides: PhaseOverrides,
+
+    /// The RX phase the last RX sweep kept (`lmlcal_rx_phase`), 0 before any.
+    pub(crate) rx_phase: u16,
+
+    /// The VCO divider steps the last link calibration's RX retries added
+    /// (`g_clk_reduce`, which each calibration resets).
+    pub(crate) clock_reduce: u8,
 }
 
 /// Why a rate was not set.
@@ -406,6 +416,7 @@ impl SetSampleRate {
                     lml,
                     double_pump: pumped,
                     separate_clkdiv: gateware.separate_clkdiv,
+                    overrides: state.overrides,
                 })
             })
         })
@@ -574,6 +585,9 @@ impl SetSampleRate {
             }
             Stage::LimelightReset => self.deser(0),
             Stage::Deser(step) if step < 2 => self.deser(step + 1),
+            // An RX phase override skips both sweeps: libusdr then judges an RX badness
+            // it never measured, and fails the rate.
+            Stage::Deser(_) if self.state.overrides.rx != 0 => self.after_calibration(),
             Stage::Deser(_) => self.start_retry(),
             Stage::LfsrMode => {
                 self.sweep.probe = Probe::Lead;
@@ -615,8 +629,13 @@ impl SetSampleRate {
     fn start_calibration(&mut self) {
         self.was_running = self.control.rx_running().contains(&true);
         self.tx = self.control.tx_running().contains(&true);
+        self.state.clock_reduce = 0;
         if !self.gateware.tx_mmcm {
-            self.step(Stage::TxDelay, Step::fpga(TX_DEFAULT_DELAY));
+            let delay = match self.state.overrides.tx {
+                0 => TX_DEFAULT_DELAY,
+                phase => TxPhy::Delay.write(u32::from(phase) - 1),
+            };
+            self.step(Stage::TxDelay, Step::fpga(delay));
             return;
         }
         let above = |rate| self.state.rx > rate || self.state.tx > rate;
@@ -659,6 +678,7 @@ impl SetSampleRate {
             lml: self.control.lml(),
             double_pump: self.state.double_pump,
             separate_clkdiv: self.gateware.separate_clkdiv,
+            overrides: self.state.overrides,
         }
     }
 
@@ -928,6 +948,8 @@ impl SetSampleRate {
     /// After the RX phase: with TX running, the TX phase calibration from the RX phase
     /// kept.
     fn after_rx_calibration(&mut self) {
+        self.state.rx_phase = u16::try_from(self.sweep.kept).unwrap_or(0);
+        self.state.clock_reduce = self.sweep.clock_reduce;
         if !self.tx {
             self.after_calibration();
             return;

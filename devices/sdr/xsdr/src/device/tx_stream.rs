@@ -243,6 +243,7 @@ impl Device {
             lml: self.control.lml(),
             double_pump: self.rate.double_pump,
             separate_clkdiv: gateware.separate_clkdiv,
+            overrides: self.rate.overrides,
         })
     }
 

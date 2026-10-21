@@ -137,6 +137,26 @@ const MMCM_ROM: [u64; 64] = [
     0x3c088ffcfafa401,
 ];
 
+/// The phases a user set in place of the calibration's (`tx_override_phase`,
+/// `tx_override_phase_iq`, `rx_override_phase`; libusdr's `/dm/sdr/0/tx/phase_ovr`,
+/// `.../tx/phase_ovr_iq`, `.../rx/phase_ovr`): each 1 to [`PHASE_OVERRIDE_MAX`], or 0 for
+/// none. A call's own phase wins over its output's override.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PhaseOverrides {
+    /// The TX fabric clock's phase; without a TX MMCM, the TX delay plus one.
+    pub(crate) tx: u16,
+
+    /// The separate `CLKDIV` output's phase (`sep_clkdiv` gateware only).
+    pub(crate) tx_iq: u16,
+
+    /// The RX I/O clock's phase; set, it also skips the link calibration's sweeps.
+    pub(crate) rx: u16,
+}
+
+/// The largest phase override: raw 511 eighths of a VCO cycle, delay 63, the most an
+/// output's six-bit delay holds.
+pub(crate) const PHASE_OVERRIDE_MAX: u16 = 512;
+
 /// What one `xsdr_configure_lml_mmcm_tx` call asks beyond the link's clocks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct MmcmCall {
@@ -168,6 +188,9 @@ pub(crate) struct MmcmLink {
 
     /// The gateware has a separate `CLKDIV` output (HWID PHY bit 0x80, `sep_clkdiv`).
     pub(crate) separate_clkdiv: bool,
+
+    /// The phases set in place of the calibration's.
+    pub(crate) overrides: PhaseOverrides,
 }
 
 /// One output's counts, in VCO cycles (`struct mmcm_port_config_raw`).
@@ -249,6 +272,7 @@ impl MmcmPlan {
             lml,
             double_pump,
             separate_clkdiv,
+            overrides,
         } = *link;
         let nomul = !double_pump && (lml.tx_siso_ddr || clocks.tx_tsp_div > 1);
         let tx_mclk = clocks
@@ -295,20 +319,26 @@ impl MmcmPlan {
         }
         // 90 degrees: half of the 8 * divider eighths of a cycle.
         ports[PORT_6] = ports[PORT_6].at(4 * divider);
-        if separate_clkdiv && (call.tx_phase != 0 || call.phase_offset != 0) {
+        let phased = call.tx_phase != 0 || call.phase_offset != 0;
+        if separate_clkdiv && (overrides.tx_iq != 0 || phased) {
             // libusdr's `tx_override_phase_iq - 1` without an override wraps.
             let raw = if call.tx_phase != 0 {
                 u32::from(call.phase_offset)
             } else {
-                u32::MAX
+                u32::from(overrides.tx_iq).wrapping_sub(1)
             };
             ports[PORT_0] = ports[PORT_0].at(raw);
         }
-        if call.tx_phase != 0 {
-            ports[PORT_6] = ports[PORT_6].at(u32::from(call.tx_phase) - 1);
+        // A call's phase, else the override, counted from 1.
+        let chosen = |phase: u16, overridden: u16| match (phase, overridden) {
+            (0, 0) => None,
+            (0, phase) | (phase, _) => Some(u32::from(phase) - 1),
+        };
+        if let Some(raw) = chosen(call.tx_phase, overrides.tx) {
+            ports[PORT_6] = ports[PORT_6].at(raw);
         }
-        if call.rx_phase != 0 {
-            ports[PORT_2] = ports[PORT_2].at(u32::from(call.rx_phase) - 1);
+        if let Some(raw) = chosen(call.rx_phase, overrides.rx) {
+            ports[PORT_2] = ports[PORT_2].at(raw);
         }
         ports[PORT_FB] = if nomul {
             Port::halves(divider)
@@ -657,6 +687,100 @@ impl Sequence for ConfigureMmcm {
     }
 }
 
+/// Where an immediate TX phase override is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OverrideStage {
+    /// The TX MMCM's configuration.
+    Mmcm,
+    /// The TX serializer held in reset.
+    SerdesReset,
+    /// 1 µs.
+    SerdesWait,
+    /// The serializer running.
+    SerdesRun,
+    /// Finished.
+    Done(Result<(), MmcmUnlocked>),
+}
+
+/// `xsdr_txphase_ovr`'s board part: the TX MMCM configured with TX as the master at the
+/// RX phase the last calibration kept and the new overrides, then the TX serializer reset
+/// (`_xsdr_txserdes_reset`). An MMCM that does not lock ends it, as libusdr's `-EIO`
+/// skips the reset.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct OverrideTxPhase {
+    /// The TX MMCM's configuration.
+    configure: ConfigureMmcm,
+
+    /// The serializer's SISO DDR flag.
+    flag: u32,
+
+    /// Where it is.
+    stage: OverrideStage,
+
+    /// A bus access failed.
+    failed: bool,
+}
+
+impl OverrideTxPhase {
+    /// Starts writing `plan`, then resetting the serializer with `serdes_flag`.
+    pub(crate) fn new(plan: &MmcmPlan, serdes_flag: u32) -> Self {
+        Self {
+            configure: ConfigureMmcm::new(plan),
+            flag: serdes_flag,
+            stage: OverrideStage::Mmcm,
+            failed: false,
+        }
+    }
+
+    /// The outcome, once finished.
+    pub(crate) const fn outcome(&self) -> Option<Result<(), MmcmUnlocked>> {
+        match self.stage {
+            OverrideStage::Done(outcome) => Some(outcome),
+            _ => None,
+        }
+    }
+}
+
+impl Sequence for OverrideTxPhase {
+    fn next(&self) -> Option<SequenceAction> {
+        if self.failed {
+            return None;
+        }
+        let port = |value| SequenceAction::Fpga(TxPhy::PortControl.write(value));
+        match self.stage {
+            OverrideStage::Mmcm => self.configure.next(),
+            OverrideStage::SerdesReset => Some(port(self.flag)),
+            OverrideStage::SerdesWait => Some(SequenceAction::Sleep(Duration::from_micros(1))),
+            OverrideStage::SerdesRun => Some(port(1 | self.flag)),
+            OverrideStage::Done(_) => None,
+        }
+    }
+
+    fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
+        let Some(action) = self.next() else {
+            return Ok(());
+        };
+        if self.stage == OverrideStage::Mmcm {
+            self.configure
+                .complete(result)
+                .inspect_err(|_| self.failed = true)?;
+            match self.configure.outcome() {
+                Some(Ok(())) => self.stage = OverrideStage::SerdesReset,
+                Some(Err(unlocked)) => self.stage = OverrideStage::Done(Err(unlocked)),
+                None => {}
+            }
+            return Ok(());
+        }
+        outcome(action, result, fpga::NAME).inspect_err(|_| self.failed = true)?;
+        self.stage = match self.stage {
+            OverrideStage::SerdesReset => OverrideStage::SerdesWait,
+            OverrideStage::SerdesWait => OverrideStage::SerdesRun,
+            _ => OverrideStage::Done(Ok(())),
+        };
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -677,6 +801,7 @@ mod tests {
             },
             double_pump: false,
             separate_clkdiv: false,
+            overrides: PhaseOverrides::default(),
         }
     }
 
@@ -728,6 +853,49 @@ mod tests {
         };
         assert!(MmcmPlan::fits(&pumped(40_000_000)));
         assert!(!MmcmPlan::fits(&pumped(25_000_000)));
+    }
+
+    #[test]
+    fn overrides_stand_in_for_absent_phases_only() {
+        let link = MmcmLink {
+            overrides: PhaseOverrides {
+                tx: 20,
+                tx_iq: 9,
+                rx: 100,
+            },
+            separate_clkdiv: true,
+            ..link(320_000_000, 4, 8, 4)
+        };
+        let plan = MmcmPlan::new(&link, MmcmCall::default()).expect("configurable");
+        assert_eq!((plan.ports[PORT_6].phase, plan.ports[PORT_6].delay), (3, 2));
+        assert_eq!(
+            (plan.ports[PORT_2].phase, plan.ports[PORT_2].delay),
+            (3, 12)
+        );
+        assert_eq!((plan.ports[PORT_0].phase, plan.ports[PORT_0].delay), (0, 1));
+        let call = MmcmCall {
+            rx_phase: 1,
+            tx_phase: 2,
+            phase_offset: 3,
+            clock_reduce: 0,
+        };
+        let plan = MmcmPlan::new(&link, call).expect("configurable");
+        assert_eq!((plan.ports[PORT_6].phase, plan.ports[PORT_6].delay), (1, 0));
+        assert_eq!((plan.ports[PORT_2].phase, plan.ports[PORT_2].delay), (0, 0));
+        assert_eq!(
+            plan.ports[PORT_0].phase, 3,
+            "the call's offset, not the override"
+        );
+        // The largest override still fits an output's delay.
+        let largest = MmcmLink {
+            overrides: PhaseOverrides {
+                tx: PHASE_OVERRIDE_MAX,
+                tx_iq: PHASE_OVERRIDE_MAX,
+                rx: PHASE_OVERRIDE_MAX,
+            },
+            ..link
+        };
+        assert!(MmcmPlan::new(&largest, MmcmCall::default()).is_ok());
     }
 
     #[test]

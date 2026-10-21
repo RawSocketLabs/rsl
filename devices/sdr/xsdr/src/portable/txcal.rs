@@ -45,6 +45,12 @@ const IQS: u8 = 3 << 2;
 const DESER_RESET: u16 = 0x0007;
 /// Above this TX rate libusdr gives up an alignment late with little badness.
 const FAST_TX: u32 = 80_000_000;
+/// `_xsdr_txserdes_reset`'s SISO DDR flag (`sisosdrflag`): 16 double-pumped or for TX SISO
+/// DDR.
+pub(crate) const fn tx_serdes_flag(double_pump: bool, tx_siso_ddr: bool) -> u32 {
+    if double_pump || tx_siso_ddr { 16 } else { 0 }
+}
+
 /// The I/Q lane selections tried in turn (`msk`).
 const IQ_SELECTIONS: [u32; 4] = [0b1100, 0b0110, 0b0011, 0b1001];
 /// The SISO DDR I/Q lane selection.
@@ -369,11 +375,7 @@ impl TxCalibration {
     /// `_xsdr_calibrate_txlfsr_check`'s set-up: the serializers and FIFOs reset, the
     /// checkers on.
     fn tx_check(&mut self, restore: bool) {
-        let flag = if self.link.double_pump || self.control.lml().tx_siso_ddr {
-            16
-        } else {
-            0
-        };
+        let flag = tx_serdes_flag(self.link.double_pump, self.control.lml().tx_siso_ddr);
         self.push(Item::Tx(TxPhy::PortControl, flag));
         self.push(Item::Wait(1));
         self.push(Item::Tx(TxPhy::PortControl, 1 | flag));

@@ -81,10 +81,9 @@ fn opening_an_xsdr_turns_every_converter_on_and_leaves_the_rfic_unpowered() {
 #[test]
 fn power_up_releases_the_lms7002m_reset_before_any_spi_and_keeps_its_afe_down() {
     let (device, sim) = open_xsdr(SimBoard::new(SimVariant::Xsdr));
-    device
-        .expect("an XSDR opens")
-        .power_up()
-        .expect("its RFIC powers up");
+    // Kept open: a dropped device closes the board.
+    let mut device = device.expect("an XSDR opens");
+    device.power_up().expect("its RFIC powers up");
 
     let board = sim.board();
     let trace = board.trace();
@@ -277,4 +276,22 @@ fn open_probes_the_empty_connector_and_reports_a_breakout_without_a_dac() {
         ),
         "the breakout's oscillator and GPS are left off"
     );
+}
+
+#[test]
+fn a_dropped_device_closes_the_board_as_close_does() {
+    let closed = {
+        let (device, sim) = open_xsdr(SimBoard::new(SimVariant::Xsdr));
+        let mut device = device.expect("an XSDR opens");
+        device.power_up().expect("its RFIC powers up");
+        let opened = sim.board().trace().len();
+        device.close().expect("it closes");
+        sim.board().trace()[opened..].to_vec()
+    };
+    let (device, sim) = open_xsdr(SimBoard::new(SimVariant::Xsdr));
+    let mut device = device.expect("an XSDR opens");
+    device.power_up().expect("its RFIC powers up");
+    let opened = sim.board().trace().len();
+    drop(device);
+    assert_eq!(sim.board().trace()[opened..], closed, "the same close, once");
 }

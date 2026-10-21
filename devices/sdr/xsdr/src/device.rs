@@ -7,6 +7,7 @@ use std::time::Duration;
 
 mod controls;
 mod frontend;
+mod link;
 mod quality;
 mod stream;
 mod tx_stream;
@@ -103,6 +104,9 @@ pub struct Device {
 
     /// The TX stream, once created.
     tx_stream: Option<tx_stream::TxStream>,
+
+    /// The board has been closed, by [`Device::close`] or on drop.
+    closed: bool,
 }
 
 impl Device {
@@ -176,6 +180,7 @@ impl Device {
             hw_channels: [2; 2],
             rx_stream: None,
             tx_stream: None,
+            closed: false,
         })
     }
 
@@ -289,7 +294,7 @@ impl Device {
         // With TX running, or RX's channel A stopped, libusdr checks the TX quality.
         if self.control.tx_running()[0] || !self.control.rx_running()[0] {
             self.bus.sleep(QUALITY_SETTLE);
-            self.check_quality()?;
+            self.check_quality(true)?;
         }
         Ok(())
     }
@@ -412,8 +417,8 @@ impl Device {
     /// MMCM powered down.
     ///
     /// The chip writes follow its cached state, so a board never powered up gets the words
-    /// libusdr sends from its zeroed state. A device dropped without `close` leaves the
-    /// board as it is.
+    /// libusdr sends from its zeroed state. A device dropped without `close` is closed the
+    /// same way, its failure lost (nothing here logs), as `usdr` powers down on drop.
     ///
     /// # Errors
     ///
@@ -421,6 +426,15 @@ impl Device {
     /// that ends streaming-down, a `lms7002m_destroy` write or a board write. Failed writes
     /// earlier in streaming-down are skipped without an error, as libusdr skips them.
     pub fn close(mut self) -> Result<(), Error> {
+        self.shut_down()
+    }
+
+    /// The close, once: later calls do nothing.
+    fn shut_down(&mut self) -> Result<(), Error> {
+        if self.closed {
+            return Ok(());
+        }
+        self.closed = true;
         if self.rx_stream.take().is_some() {
             let _ = self.halt_rx();
             let _ = self.bus.rx_stream_close();
@@ -437,6 +451,13 @@ impl Device {
     #[must_use]
     pub fn hwid(&self) -> u32 {
         self.hwid
+    }
+}
+
+impl Drop for Device {
+    fn drop(&mut self) {
+        // Only `close` can report the close's failure.
+        let _ = self.shut_down();
     }
 }
 

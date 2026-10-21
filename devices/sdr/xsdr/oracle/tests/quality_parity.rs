@@ -47,6 +47,8 @@ enum Call {
     Send,
     /// Stop and destroy TX.
     StopTx,
+    /// `/dm/sdr/0/checkrxtx`, fixing the clock or not.
+    Check(bool),
 }
 
 /// The board's operations each call made, then the close's; and which calls libusdr
@@ -108,6 +110,11 @@ fn libusdr(board: SimBoard, calls: &[Call]) -> Session {
                 let stopped = oracle.stop_tx_stream();
                 oracle.destroy_tx_stream().and(stopped)
             }
+            Call::Check(fix) => {
+                // SAFETY: the check takes its value as a number.
+                unsafe { oracle.set_uint_trapping(c"/dm/sdr/0/checkrxtx", fix.into()) }
+                    .map(|caught| trap = caught)
+            }
         };
         marks.push(oracle.trace_len() - opened);
         outcomes.push(result.err().unwrap_or(0));
@@ -135,6 +142,7 @@ fn rsl(board: SimBoard, calls: &[Call]) -> Session {
             Call::StartTx => device.start_tx_stream(),
             Call::Send => device.send(&[&samples], None, TIMEOUT).map(|_| ()),
             Call::StopTx => device.stop_tx_stream(),
+            Call::Check(fix) => device.check_tx_quality(fix),
         };
         marks.push(sim.board().trace().len() - opened);
         outcomes.push(match result {
@@ -272,4 +280,26 @@ fn a_rate_in_the_core_supply_fixup_band_matches_libusdr() {
         session.slices[2].contains(&fixup),
         "the 1.36 V request, code 0x96"
     );
+}
+
+#[test]
+fn the_quality_check_on_its_own_matches_libusdr_up_to_its_division_trap() {
+    // With the fix, eight checks of a tone that never passes; without it, one.
+    for (fix, checks) in [(true, 8), (false, 1)] {
+        let session = compare(
+            || xsdr().with_reversed_capture(),
+            &[
+                Call::Rate(10_000_000),
+                Call::CreateTx,
+                Call::StartTx,
+                Call::Check(fix),
+            ],
+        );
+        assert!(session.trapped[3], "libusdr traps in the check");
+        assert_eq!(
+            captures_started(&session.slices[3]),
+            checks * 256,
+            "fix {fix}"
+        );
+    }
 }
