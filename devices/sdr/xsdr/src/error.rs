@@ -180,7 +180,7 @@ pub enum Error {
     /// with TX running, TX sample rates below about 6.35 MS/s, and on gateware with an RX
     /// or shared MMCM RX rates likewise, for which libusdr reads past its 64-entry lock
     /// and filter table (`mmcm_rom`).
-    #[error("the TX MMCM cannot be configured for this link")]
+    #[error("the TX PHY's MMCM cannot be configured for this link")]
     TxClockOutOfRange,
 
     /// Gateware built before the oldest libusdr streams TX from (`MINIM_FWID_COMPAT`):

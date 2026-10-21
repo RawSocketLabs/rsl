@@ -190,7 +190,6 @@ impl Device {
     /// # Errors
     ///
     /// Before any bus access: [`Error::AlreadyStreaming`] with a TX stream;
-    /// [`Error::UnsupportedGateware`] as for [`Self::set_sample_rate`];
     /// [`Error::NoSampleRate`] with a TX MMCM; [`Error::TxClockOutOfRange`];
     /// [`Error::UnsupportedPacketSize`] for 0, or on the extended core past one burst. After the map: [`Error::DoublePumpedMimo`]
     /// for both channels on a double-pumped link. Then streaming up's errors,

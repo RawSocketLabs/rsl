@@ -146,7 +146,8 @@ impl Device {
     /// before it is written, as libusdr keeps it.
     ///
     /// Divergence: libusdr reads only as many entries of a new map as the stream has
-    /// channels, so a map of another count still applies; it is refused here.
+    /// channels, so a map of another count still applies; it is refused here. libusdr's
+    /// swapped two-channel map (B then A) has no [`super::TxChannels`] and is not offered.
     ///
     /// # Errors
     ///

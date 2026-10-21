@@ -254,8 +254,10 @@ impl Device {
     /// waited out. Above 72 MS/s on the first call the link is double-pumped; above
     /// 70 MS/s the I/O and core supplies are raised.
     ///
-    /// Supported gateware has a TX MMCM and no DUC/DDC (HWID PHY bits). Without a TX MMCM
-    /// libusdr, and so this, fails the calibration. With an RX or shared MMCM, the link
+    /// The link calibration needs a TX MMCM (HWID PHY bits): without one libusdr, and so
+    /// this, fails it. On DUC/DDC gateware a rate below 32 MS/s runs the LMS7002M at a
+    /// multiple, which the FPGA's DSP chains, reloaded when the factor changes, divide
+    /// back. With an RX or shared MMCM, the link
     /// calibration reprograms the MMCM, RX its master, for every phase it sweeps while TX
     /// does not run. With a TX stream, it reprograms it, TX its master, likewise and
     /// calibrates the TX phase too; between 53 and 60 MS/s of TX the core supply is
@@ -263,9 +265,9 @@ impl Device {
     /// the baseband loopback and the TX processors' clock adjusted until it holds, then
     /// the running channels' baseband filters set for the rates.
     ///
-    /// Divergence, with a TX stream: libusdr's quality check ends dividing the rates by
-    /// factors only DUC/DDC gateware sets, 0 here, and traps (SIGFPE); this divides by the
-    /// board's, 1, and sets the filters.
+    /// Divergence, with a TX stream off DUC/DDC gateware: libusdr's quality check ends
+    /// dividing the rates by factors only DUC/DDC gateware sets, 0 there, and traps
+    /// (SIGFPE); this divides by 1 and sets the filters.
     ///
     /// Divergence: on gateware with a TX MMCM, a rate whose link the MMCM cannot take
     /// with a TX stream (TX below about 6.35 MS/s), or without one on gateware with an RX
