@@ -11,8 +11,12 @@ use portable::adc_power::AdcPower;
 
 use hal::{FpgaAccess, I2cAddr, Sequence, SequenceAction, SequenceFailure, SpiAddr};
 use portable::fpga::{self, DEAD, LIVENESS};
+use portable::lmk04832::ClockPlan;
+use portable::nco::{phase_increment, select_channels, set_nco};
 use portable::pga::{PgaGain, SetPga};
 use portable::probes::Probes;
+use portable::rate::{RateFinish, RatePlan, RatePrelude};
+use portable::si549::{FrequencyPlan, SetFrequency};
 use portable::single::Single;
 use portable::supplies::{Supplies, SupplyPlan};
 use portable::tps6594::{Buck, BuckVoltage};
@@ -101,6 +105,38 @@ pub fn close_writes(failing: [bool; 4]) -> usize {
         .count()
 }
 
+/// What a rate ran: its decimation, and the actions of its two parts.
+pub type RateRun = (u32, usize, usize);
+
+/// Sets `rate` with the Si549 answering `device_type`, laying out a clock generator if
+/// `clock`; `None` where libusdr refuses the rate before an access (the Si549's range or
+/// the clock's plan).
+pub fn rate(rate: u32, clock: bool, device_type: u32) -> Option<Result<RateRun, &'static str>> {
+    let plan = RatePlan::new(rate);
+    let frequency = FrequencyPlan::new(plan.adc_rate)?;
+    let clock = if clock {
+        Some(ClockPlan::new(rate, rate).ok()?)
+    } else {
+        None
+    };
+    let answer = |_, _| Ok(device_type);
+    let mut prelude = RatePrelude::new(plan, SetFrequency::new(WIRING.oscillator, frequency));
+    Some(drive(&mut prelude, answer).and_then(|prelude| {
+        let finish = drive(&mut RateFinish::new(WIRING, plan, clock), answer)?;
+        Ok((plan.decimation.factor(), prelude, finish))
+    }))
+}
+
+/// Sets the NCO to `offset` on an ADC at `adc_rate`: the phase increment and the writes
+/// issued, the channel selection first, or `None` without a rate.
+pub fn nco(adc_rate: u32, offset: u32) -> Option<(u32, usize)> {
+    let select = SequenceAction::Fpga(select_channels());
+    drive(&mut Single::new(select, fpga::NAME), |_, _| Ok(0)).ok()?;
+    let increment = phase_increment(adc_rate, offset)?;
+    let writes = drive(&mut set_nco(increment), |_, _| Ok(0)).ok()?;
+    Some((increment, 1 + writes))
+}
+
 /// Runs `sequence` to its end, answering action `n` with `answer(n, action)`: the actions
 /// issued, or the chip the failure names.
 fn drive(
@@ -108,12 +144,18 @@ fn drive(
     mut answer: impl FnMut(usize, SequenceAction) -> Result<u32, ()>,
 ) -> Result<usize, &'static str> {
     let mut actions = 0;
+    let mut first = None;
     while let Some(action) = sequence.next() {
         let result = answer(actions, action);
         actions += 1;
-        sequence.complete(result).map_err(reason)?;
+        if let Err(failure) = sequence.complete(result) {
+            if !sequence.attempts_after_failure() {
+                return Err(reason(failure));
+            }
+            first.get_or_insert(reason(failure));
+        }
     }
-    Ok(actions)
+    first.map_or(Ok(actions), Err)
 }
 
 /// The chip a failure names.
@@ -155,5 +197,22 @@ mod tests {
         // Golden lines 65-68, every write attempted.
         assert_eq!(close_writes([false; 4]), 4);
         assert_eq!(close_writes([true, false, true, false]), 2);
+    }
+
+    #[test]
+    fn the_exact_source_witness_runs_the_rate_and_the_nco() {
+        // 50 MS/s: x5; the Si549's check and 13 writes, the channel mask and 1280 microcode
+        // bytes; then the wait and the 18-step tail, with the LMK04832's 38 writes and
+        // three status reads before it on a clocked board.
+        assert_eq!(rate(50_000_000, false, 0x31), Some(Ok((5, 1295, 19))));
+        assert_eq!(rate(50_000_000, true, 0x31), Some(Ok((5, 1295, 60))));
+        assert_eq!(rate(50_000_000, false, 0xff), Some(Err("Si549")));
+        assert_eq!(
+            rate(400_000_001, false, 0x31),
+            None,
+            "past the Si549's range"
+        );
+        assert_eq!(nco(250_000_000, 10_000_000), Some((0xca3d_70a4, 6)));
+        assert_eq!(nco(0, 10_000_000), None, "no rate yet");
     }
 }

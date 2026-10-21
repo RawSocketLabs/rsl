@@ -13,6 +13,7 @@ bnb.workspace = true
 hal = { workspace = true, features = ["std"] }
 sdr-frontend = { workspace = true, features = ["std"] }
 sdr-gearbox.workspace = true
+sdr-stream.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

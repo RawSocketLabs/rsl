@@ -1,20 +1,35 @@
-//! The public device: open with its probes, ADC power, the receive PGA, and close.
+//! The public device: open with its probes, ADC power, the sample rate, the receive PGA
+//! and NCO, the temperature, the RX stream's create (`stream`), and close.
 
 use std::fmt;
 
-use hal::{Sequence, SequenceAction, run_sequence};
+use hal::{Access, Sequence, SequenceAction, run_sequence};
 use sdr_frontend::{Fe1005000Setting, FrontEnd, FrontEndKind};
 
-use crate::board::{LSDR_SUPPLIES, LSDR_WIRING};
+use crate::board::{LSDR_SUPPLIES, LSDR_TEMPERATURE, LSDR_WIRING};
 use crate::error::Error;
 use crate::frontend;
 use crate::lowlevel::Bus;
 use crate::portable::adc_power::AdcPower;
 use crate::portable::fpga::{self, DEAD, LIVENESS};
+use crate::portable::lmk04832::{self, ClockPlan};
+use crate::portable::nco::{phase_increment, select_channels, set_nco};
 use crate::portable::pga::{PgaGain, SetPga};
 use crate::portable::probes::{Fitted, Probes};
+use crate::portable::rate::{RateFinish, RatePlan, RatePrelude};
+use crate::portable::si549::{self, FrequencyPlan, SetFrequency};
 use crate::portable::single::Single;
 use crate::portable::supplies::Supplies;
+
+mod stream;
+
+pub use stream::RxChannels;
+
+/// The TMP108's name in errors.
+const TMP108: &str = "TMP108";
+
+/// The lowest frequency libusdr tunes fe1005000 to for `/dm/sdr/0/rx/frequency`, in Hz.
+const FE1005000_MIN_HZ: u32 = 2_000_000;
 
 /// How to open a board: libusdr's connection parameters that change what open does.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -55,6 +70,10 @@ pub struct Device {
     /// The front end the open's probe brought up, if any, with the state libusdr keeps
     /// for it.
     front_end: Option<FrontEnd>,
+
+    /// The ADC's rate the last sample rate set, in S/s; 0 before any (libusdr's
+    /// `adc_rate`, stored before the oscillator is tuned, so a refused rate keeps it).
+    adc_rate: u32,
 }
 
 impl Device {
@@ -88,6 +107,7 @@ impl Device {
             bus,
             fitted: probes.fitted(),
             front_end,
+            adc_rate: 0,
         })
     }
 
@@ -141,6 +161,95 @@ impl Device {
         run(&mut *self.bus, &mut SetPga::new(gain))
     }
 
+    /// Sets the sample rate, in S/s (libusdr's `/dm/rate/master`; `/dm/rate/rxtxadcdac`
+    /// passes its RX rate here and ignores the rest).
+    ///
+    /// As libusdr: the decimation is the largest of ×2–×6, ×8 and ×16–×128 that keeps the
+    /// ADC under 260 MS/s (×2 when none does), the Si549 is tuned to the ADC rate (its
+    /// output enabled) and the FIR gearbox loaded; when open found an LMK04832
+    /// ([`Fitted::clock_generator`]), its PLL2 is laid out for the rate from `CLKin0` and
+    /// both ADC ports clocked; after 100 ms the clock generator's status and lock are read
+    /// (libusdr only logs them), the bitslip logic is reset, both ADCs put in normal mode,
+    /// the DSP's mixer and the LVDS clock delay set and the DSP chain reset. The ADC rate
+    /// is kept for the NCO ([`Self::set_rx_frequency`]) even when the rate fails.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedSampleRate`] when the ADC rate is outside the Si549's 200 kHz
+    /// to 800 MHz, before any access, or when the LMK04832 has no plan, after the gearbox
+    /// is loaded; [`Error::ChipId`] when the Si549 reads another device type, before it
+    /// is written; [`Error::Bus`] when an access fails. A failure ends the rate, except
+    /// that one in its last writes still takes the DSP reset's 10 µs wait, as libusdr's
+    /// does.
+    pub fn set_sample_rate(&mut self, rate: u32) -> Result<(), Error> {
+        let unsupported = |chip| Error::UnsupportedSampleRate { rate, chip };
+        let plan = RatePlan::new(rate);
+        self.adc_rate = plan.adc_rate;
+        let frequency = FrequencyPlan::new(plan.adc_rate).ok_or(unsupported(si549::NAME))?;
+        let oscillator = SetFrequency::new(LSDR_WIRING.oscillator, frequency);
+        run(&mut *self.bus, &mut RatePrelude::new(plan, oscillator))?;
+        let clock = if self.fitted.clock_generator {
+            Some(ClockPlan::new(rate, rate).map_err(|_| unsupported(lmk04832::NAME))?)
+        } else {
+            None
+        };
+        run(
+            &mut *self.bus,
+            &mut RateFinish::new(LSDR_WIRING, plan, clock),
+        )
+    }
+
+    /// Sets the receive frequency, in Hz (libusdr's `/dm/sdr/0/rx/frequency`).
+    ///
+    /// With fe1005000 attached, its RF path is tuned to the frequency rounded down to a
+    /// kHz, kept to 32 bits as libusdr's `unsigned` keeps it (so above 2³² Hz it wraps), at
+    /// least 2 MHz, and the NCO takes the rest; without a front end, the frequency
+    /// is the NCO's offset. The NCO folds the offset's low 32 bits into one ADC period as
+    /// libusdr's integer arithmetic does (so an offset that wraps below 0 lands where
+    /// libusdr's does), selects every channel, then writes the mixer and the phase
+    /// increment.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::FrontEnd`] when fe1005000 refuses the frequency (below 20 MHz or above 6 GHz) or a front-end
+    /// access fails, before the NCO; [`Error::NoSampleRate`] before any sample rate, after
+    /// the channel selection, as libusdr fails there; [`Error::Bus`] when an access fails,
+    /// which ends the setting (libusdr carries on past a failed mixer write).
+    pub fn set_rx_frequency(&mut self, frequency: u64) -> Result<(), Error> {
+        let mut offset = frequency;
+        if let Some(FrontEnd::Fe1005000(board)) = &mut self.front_end {
+            let tuned = low32(frequency / 1000 * 1000).max(FE1005000_MIN_HZ);
+            board.apply(&mut *self.bus, Fe1005000Setting::FrequencyKhz(tuned / 1000))?;
+            offset = frequency.wrapping_sub(tuned.into());
+        }
+        run(
+            &mut *self.bus,
+            &mut Single::new(SequenceAction::Fpga(select_channels()), fpga::NAME),
+        )?;
+        let increment = phase_increment(self.adc_rate, low32(offset)).ok_or(Error::NoSampleRate)?;
+        run(&mut *self.bus, &mut set_nco(increment))
+    }
+
+    /// The board's temperature in °C, from its TMP108 (libusdr's `/dm/sensor/temp`, which
+    /// returns the sensor's word in 1/256 °C): one I2C transfer, the pointer to the
+    /// temperature register written and two bytes read, most significant first.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Bus`] when the transfer fails.
+    pub fn temperature(&mut self) -> Result<f32, Error> {
+        let mut word = [0; 2];
+        self.bus
+            .i2c(LSDR_TEMPERATURE, &[0], &mut word)
+            .map_err(|source| Error::Bus {
+                chip: TMP108,
+                access: Access::Read,
+                reg: 0,
+                source,
+            })?;
+        Ok(f32::from(i16::from_be_bytes(word)) / 256.0)
+    }
+
     /// Closes the board as libusdr does: gates the sample clock, cuts the ADC supply, and
     /// tells both ADC sockets to power down. Every write is attempted whatever the others
     /// did, as in libusdr.
@@ -165,8 +274,15 @@ impl fmt::Debug for Device {
         f.debug_struct("Device")
             .field("fitted", &self.fitted)
             .field("front_end", &self.front_end)
+            .field("adc_rate", &self.adc_rate)
             .finish_non_exhaustive()
     }
+}
+
+/// The low 32 bits of `value`, as libusdr's assignments to `int` and `unsigned` keep them.
+const fn low32(value: u64) -> u32 {
+    let [a, b, c, d, ..] = value.to_le_bytes();
+    u32::from_le_bytes([a, b, c, d])
 }
 
 /// Runs a portable sequence to its end over `bus`, with the failure in the driver's terms.

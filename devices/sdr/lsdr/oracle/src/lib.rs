@@ -56,6 +56,15 @@ unsafe extern "C" {
     fn usdr_dme_get_uint(dev: DmDev, path: *const c_char, oval: *mut u64) -> c_int;
     fn usdr_dme_get_string(dev: DmDev, path: *const c_char, oval: *mut *const c_char) -> c_int;
     fn usdr_dme_set_uint(dev: DmDev, path: *const c_char, val: u64) -> c_int;
+    fn usdr_dms_create_ex(
+        dev: DmDev,
+        sobj: *const c_char,
+        dformat: *const c_char,
+        channels: u64,
+        pktsyms: c_uint,
+        flags: c_uint,
+        outu: *mut *mut c_void,
+    ) -> c_int;
 }
 
 /// libusdr opened on a simulated board.
@@ -150,6 +159,76 @@ impl Oracle {
     /// The negative errno libusdr returned.
     pub fn set_rx_pga_gain(&mut self, value: u64) -> Result<(), i32> {
         self.set_uint(c"/dm/sdr/0/rx/gain/pga", value)
+    }
+
+    /// Sets `/dm/rate/master` (`dev_m2_d09_4_ad45_2_rate_set`): picks the decimation,
+    /// tunes the Si549 to the ADC rate, loads the FIR gearbox, lays the LMK04832 out when
+    /// open found one, waits, resets the bitslip logic, puts the ADCs in normal mode and
+    /// steps the LVDS PHY.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_sample_rate(&mut self, rate: u32) -> Result<(), i32> {
+        self.set_uint(c"/dm/rate/master", rate.into())
+    }
+
+    /// Sets `/dm/sdr/0/rx/frequency` (`dev_m2_d09_4_ad45_2_sdr_rx_freq_set`): without a
+    /// front end, the NCO offset `hz` (`set_nco`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned: `-EINVAL` before a sample rate is set.
+    pub fn set_rx_frequency(&mut self, hz: u64) -> Result<(), i32> {
+        self.set_uint(c"/dm/sdr/0/rx/frequency", hz)
+    }
+
+    /// Reads `/dm/sensor/temp` (`dev_m2_d09_4_ad45_2_senstemp_get`): the TMP108's
+    /// temperature word, sign-extended, as libusdr returns it.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn temperature(&mut self) -> Result<i64, i32> {
+        self.get_uint(c"/dm/sensor/temp")
+            .map(|raw| i64::from_ne_bytes(raw.to_ne_bytes()))
+    }
+
+    /// Creates an RX stream on `/ll/srx/0` in `ci16` (`usdr_dms_create_ex`, no flags) on
+    /// libusdr's channel mask `channels`, with `samples_per_packet` samples per packet.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    ///
+    /// # Panics
+    ///
+    /// If libusdr creates the stream: at the pin its sync step fails first (the `LSDr`
+    /// declares no `/ll/sync/0/base`), and the shim has no stream buffers to give it.
+    pub fn create_rx_stream(&mut self, channels: u64, samples_per_packet: u32) -> Result<(), i32> {
+        let Some(dev) = self.dev else {
+            return Err(-EINVAL);
+        };
+        let mut stream: *mut c_void = ptr::null_mut();
+        // SAFETY: `dev` is open, the strings are NUL-terminated, `stream` is a valid
+        // out-pointer.
+        let errno = unsafe {
+            usdr_dms_create_ex(
+                dev.as_ptr(),
+                c"/ll/srx/0".as_ptr(),
+                c"ci16".as_ptr(),
+                channels,
+                samples_per_packet,
+                0,
+                &raw mut stream,
+            )
+        };
+        resume_callback_panic();
+        assert!(
+            errno != 0,
+            "libusdr cannot create an LSDr stream at the pin"
+        );
+        Err(errno)
     }
 
     /// Writes one fe1005000 command, `/debug/hw/fe_100_5000_cmd/0/reg`
