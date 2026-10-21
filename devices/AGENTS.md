@@ -22,7 +22,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 | `sdr/chips/lms7002m/` | `lms7002m`, `lms7002m-sim` (`sim/`) | the LMS7002M register values and chip sequences (`no_std`), and the LMS7002M model the XSDR and LimeSDR sims share |
 | `sdr/chips/lp8758/` | `lp8758` | the LP8758 PMIC register values (`no_std`) |
 | `sdr/frontend/` | `sdr-frontend`, `sdr-frontend-sim` (`sim/`) | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and every bring-up it runs on the uSDR, XSDR and LSDr (`pciefe`, `xmass`, `supersync`, `simplesync`, `exm2pe`, `fe1005000`) with the boards' controls, shared by those drivers (`no_std` core, blocking probe behind `std`); and the M.2 boards' register models the uSDR and XSDR sims share |
-| `sdr/stream/` | `sdr-stream`, `sdr-stream-sim` (`sim/`) | the FPGA stream engine the uSDR and LMS7 family gateware share at the same addresses (`ipblks/streams/`): its register sequences (`EngineSequence`: RX DMA and front end, sync unit, TX cores), RX burst arithmetic (`BurstPlan`) and the original TX core's announcement and status, `no_std`; and the RX engine, TX core and sync unit models the uSDR and XSDR sims share |
+| `sdr/stream/` | `sdr-stream`, `sdr-stream-sim` (`sim/`) | the FPGA stream engine the uSDR and LMS7 family gateware share at the same addresses (`ipblks/streams/`): its register sequences (`EngineSequence`: RX DMA and front end, sync unit, TX cores), RX burst arithmetic (`BurstPlan`), the original TX core's announcement and status, and the DSP chains' FIR microcode (`fir_tables`, `ipblks/fgearbox.c`), `no_std`; and the RX engine, TX core and sync unit models the uSDR and XSDR sims share |
 | `sdr/cal/` | `sdr-cal` | libusdr's calibration mathematics (`cal/opt_func.c` integer searches, `cal/cal_filt.c` sinusoid fits), moved out of `usdr` (which re-exports it as `usdr::cal`) when the XSDR's TX quality check needed the fit; `std` (floating-point `sin`/`cos`) |
 | `sync/pe_sync/` | `pe-sync`, `pe-sync-sim`, `pe-sync-oracle`, `pe-sync-nostd-check` | the PE_SYNC clock-distribution board driver: libusdr's whole open and close |
 
@@ -57,7 +57,10 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   `usdr`'s, as no LMS7 path drives it. The third is `sdr/cal` (`sdr-cal`, 2026-10-19):
   libusdr's calibration mathematics, `usdr`'s `cal::{fit, search}` (re-exported there),
   when the XSDR's TX quality check needed the fit; the fit uses the search, so both
-  moved.
+  moved. The FIR gearbox microcode (`ipblks/fgearbox.c`) moved from `usdr`'s
+  `portable/fir_tables.rs` into `sdr-stream`'s `fir_tables` (2026-10-21) when the
+  LSDr's sample rate needed it: data only, beside the stream cores the chains feed; each
+  driver keeps its own load (the uSDR's PHY port with waits, the LSDr's GPO bank).
 - Code every kind's drivers share lives in `devices/hal` (`hal`): libusdr's
   `ls_op` seam (`Bus`, `BusError`, I2C/SPI addresses), the typed-register traits and the
   portable `Sequence` seam with its blocking executor. It is `no_std` (std items behind

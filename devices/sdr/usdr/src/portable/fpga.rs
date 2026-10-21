@@ -11,8 +11,8 @@
 use core::time::Duration;
 
 use bnb::{BitEnum, bitfield, u7, u12, u24};
+use sdr_stream::fir_tables;
 
-use super::fir_tables;
 use super::script::Script;
 use super::sequence::{FpgaAccess, Sequence, SequenceAction, SequenceFailure};
 

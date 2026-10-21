@@ -2,16 +2,19 @@
 //! gateware share, at the same addresses: the RX DMA and front end, the sync unit and the
 //! TX cores (`ipblks/streams/`), as portable register sequences ([`EngineSequence`]), how
 //! an RX stream's packets split into bursts ([`BurstPlan`]), and the original TX core's
-//! packet announcement and status words (`tx`).
+//! packet announcement and status words (`tx`). Beside them, the FIR microcode the DSP
+//! chains feeding those cores load ([`fir_tables`], `ipblks/fgearbox.c`), shared by the
+//! uSDR's and the `LSDr`'s rate changes.
 //!
 //! **Unstable; unpublished.** What differs between the boards stays in their drivers:
 //! which logical channel rides which lanes, the RF side of a stream's create and destroy,
-//! host formats and the transports' buffers.
+//! host formats, the transports' buffers and how each board loads a FIR table.
 #![no_std]
 #![forbid(unsafe_code)]
 
 mod burst;
 mod engine;
+pub mod fir_tables;
 mod tx;
 
 pub use burst::{BurstPlan, RxLanes, RxSampleFormat};
