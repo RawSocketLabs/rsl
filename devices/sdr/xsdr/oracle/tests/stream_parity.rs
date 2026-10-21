@@ -336,3 +336,15 @@ fn gateware_without_a_tx_mmcm_fails_the_create_like_libusdr() {
         "the default rate's calibration fails"
     );
 }
+
+#[test]
+fn an_xtrx_streams_on_its_own_bands_like_libusdr() {
+    // Streaming up on the automatic path picks the XTRX's first band (its low-band LNA on
+    // switch 1), where the XSDR's is the wide band on switch 0.
+    for channels in [RxChannels::A, RxChannels::Both] {
+        compare(
+            || SimBoard::new(Variant::Xtrx).with_hwid(0x002e_0020),
+            &session(channels, 1024),
+        );
+    }
+}

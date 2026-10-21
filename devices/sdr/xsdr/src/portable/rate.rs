@@ -37,6 +37,15 @@ const SISO_RATE: u32 = 72_000_000;
 const BOOST_RATE: u32 = 70_000_000;
 /// The I/O supply's boost: channel 1 to 1.94 V (`xsdr_set_vio(d, 1940)`, code 0xB8).
 const VIO_BOOST: (Buck, BuckVoltage) = (Buck::B1, BuckVoltage::from_millivolts(1940));
+/// On the XTRX, above this rate libusdr raises the I/O supply alone.
+const XTRX_BOOST_RATE: u32 = 50_000_000;
+/// On the XTRX, above this rate it raises it further.
+const XTRX_HIGH_BOOST_RATE: u32 = 60_000_000;
+/// The XTRX's I/O supply boost: channel 1 to 1.96 V (`xsdr_set_vio(d, 1960)`, code 0xB9;
+/// libusdr's `s_get_vout` and SNVSAC6B agree).
+const XTRX_VIO_BOOST: (Buck, BuckVoltage) = (Buck::B1, BuckVoltage::from_millivolts(1960));
+/// Above 60 MS/s, 2.15 V (`xsdr_set_vio(d, 2150)`, code 0xC2).
+const XTRX_VIO_HIGH_BOOST: (Buck, BuckVoltage) = (Buck::B1, BuckVoltage::from_millivolts(2150));
 /// The LMS7002M core supply's boost: channel 2, which libusdr asks at 1.32 V
 /// (`xsdr_set_lms125vdd(d, 1320)`) and writes code 0x8E, 1.325 V (SNVSAC6B; libusdr's
 /// `s_get_vout` sits one code high there, as for the 1.28 V rail at open).
@@ -65,6 +74,10 @@ const BER: u8 = 2 << 2;
 
 /// The gateware features the rate path reads from HWID's PHY bits (`xsdr_init`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent HWID bits, as libusdr's `xsdr_dev_t` keeps them"
+)]
 pub(crate) struct Gateware {
     /// A TX MMCM (`PHY_CFG_TX_MMCM`).
     pub(crate) tx_mmcm: bool,
@@ -74,6 +87,10 @@ pub(crate) struct Gateware {
 
     /// The TX MMCM has a separate `CLKDIV` output (`PHY_CFG_SEP_CLKDIV_MSK`).
     pub(crate) separate_clkdiv: bool,
+
+    /// The board is an XTRX (libusdr's `!new_rev`): the link calibration raises only the
+    /// I/O supply, above 50 MS/s, and never the core supply.
+    pub(crate) xtrx: bool,
 }
 
 /// The board's sample-rate state that outlives one call (`xsdr_dev_t`).
@@ -191,6 +208,8 @@ enum Stage {
     VddBoost,
     /// The core supply's fix-up for 53 to 60 MS/s TX.
     VddFixup,
+    /// The XTRX's I/O supply boost, its only one.
+    XtrxVioBoost,
     /// With TX running, the TX MMCM at the default phases.
     Mmcm,
     /// With TX running, the TX phase calibration.
@@ -525,7 +544,7 @@ impl SetSampleRate {
                 self.pmic_write(Stage::VddBoost, buck, voltage);
             }
             Stage::VddBoost => self.after_boost(),
-            Stage::VddFixup => self.calibrate(),
+            Stage::VddFixup | Stage::XtrxVioBoost => self.calibrate(),
             Stage::Mmcm => {
                 if let Some(error) = self.mmcm_failure() {
                     self.stage = Stage::Done(Err(error));
@@ -600,8 +619,21 @@ impl SetSampleRate {
             self.step(Stage::TxDelay, Step::fpga(TX_DEFAULT_DELAY));
             return;
         }
-        let fast = self.state.rx > BOOST_RATE || self.state.tx > BOOST_RATE;
-        if fast && !self.state.siso_rx {
+        let above = |rate| self.state.rx > rate || self.state.tx > rate;
+        if self.gateware.xtrx {
+            if above(XTRX_BOOST_RATE) && !self.state.siso_rx {
+                let (buck, voltage) = if above(XTRX_HIGH_BOOST_RATE) {
+                    XTRX_VIO_HIGH_BOOST
+                } else {
+                    XTRX_VIO_BOOST
+                };
+                self.pmic_write(Stage::XtrxVioBoost, buck, voltage);
+                return;
+            }
+            self.calibrate();
+            return;
+        }
+        if above(BOOST_RATE) && !self.state.siso_rx {
             let (buck, voltage) = VIO_BOOST;
             self.pmic_write(Stage::VioBoost, buck, voltage);
             return;

@@ -14,11 +14,12 @@ use lms7002m::ctrl::{Control, ControlError};
 use lms7002m::{Lms7002m, ResetPlan, Synthesizer};
 use lp8758::{Buck, BuckControl, BuckVoltage};
 use portable::close::{Close, Down, streaming_down};
-use portable::frontend::{RX_BANDS, TX_BANDS, XsdrFrontend};
+use portable::frontend::{RX_BANDS, TX_BANDS, XTRX_RX_BANDS, XTRX_TX_BANDS, XsdrFrontend};
 use portable::hwid::{IdentityRead, Variant};
 use portable::power::PowerUp;
 use portable::rate::{Gateware, RateError, RateState, SetSampleRate};
 use portable::supplies::{Supplies, SupplyPlan};
+use portable::xtrx::{XtrxSupplies, XtrxSupplyPlan};
 
 /// An LMS7002M on SPI bus 0 with libusdr's XSDR arguments (`xsdr_pwren`).
 const LMS: ResetPlan = ResetPlan {
@@ -40,6 +41,45 @@ const PLAN: SupplyPlan = SupplyPlan {
         .with_discharge_when_off(true)
         .with_forced_pwm(true),
 };
+
+/// A supply plan shaped like the XTRX's: four LMS-side rails, one FPGA-side.
+const XTRX_PLAN: XtrxSupplyPlan = XtrxSupplyPlan {
+    lms_pmic: I2cAddr::new(1, 0x60),
+    lms_rails: [
+        BuckVoltage::from_millivolts(2060),
+        BuckVoltage::from_millivolts(3360),
+        BuckVoltage::from_millivolts(1760),
+        BuckVoltage::from_millivolts(1500),
+    ],
+    fpga_pmic: I2cAddr::new(0, 0x60),
+    fpga_rail: (Buck::B1, BuckVoltage::from_millivolts(3000)),
+    control: BuckControl::new()
+        .with_enabled(true)
+        .with_discharge_when_off(true)
+        .with_forced_pwm(true),
+};
+
+/// Runs the XTRX's supply bring-up, answering its PMICs' revision reads with OTP revision
+/// `otp` and every other read 0: the actions issued, or the chip refused.
+pub fn xtrx_supplies(otp: u8) -> Result<usize, &'static str> {
+    let mut supplies = XtrxSupplies::new(XTRX_PLAN);
+    drive(&mut supplies, |_, action| {
+        Ok(match action {
+            SequenceAction::Access(hal::RegisterAccess::Read { reg: 0, .. }) => 0x01,
+            SequenceAction::Access(hal::RegisterAccess::Read { reg: 1, .. }) => otp.into(),
+            _ => 0,
+        })
+    })
+}
+
+/// The XTRX's bands' first RX and TX switch positions, through a control state built on
+/// them.
+pub fn xtrx_bands() -> Result<(u8, u8), &'static str> {
+    let chip = power_up_chip(0x3840)?.1.ok_or("not created")?;
+    let reference = NonZeroU32::new(26_000_000).ok_or("zero reference")?;
+    let _ = Control::new(chip, reference, XTRX_RX_BANDS, XTRX_TX_BANDS);
+    Ok((XTRX_RX_BANDS[0].switch, XTRX_TX_BANDS[0].switch))
+}
 
 /// The family member a hardware ID names, as its device ID, through the real identity
 /// sequence; an unknown device ID is the error.
@@ -65,7 +105,7 @@ pub fn supplies(byte: u8) -> Result<(usize, u16), &'static str> {
 /// Runs the RFIC power-up, answering the LMS7002M's version read with `version`: the
 /// actions issued and the chip state it leaves.
 fn power_up_chip(version: u16) -> Result<(usize, Option<Lms7002m>), &'static str> {
-    let mut power = PowerUp::new(LMS);
+    let mut power = PowerUp::new(LMS, true);
     let actions = drive(&mut power, |_, _| Ok(version.into()))?;
     Ok((actions, power.chip()))
 }
@@ -129,6 +169,7 @@ pub fn rate_unlocked(tx_mmcm: bool) -> Result<(usize, &'static str), &'static st
             tx_mmcm,
             rx_port1: true,
             separate_clkdiv: false,
+            xtrx: false,
         },
         I2cAddr::new(0, 0x60),
         (1_000_000, 1_000_000),
@@ -157,6 +198,7 @@ pub fn calibrate_link(tx_mmcm: bool) -> Result<(usize, &'static str), &'static s
             tx_mmcm,
             rx_port1: true,
             separate_clkdiv: false,
+            xtrx: false,
         },
         I2cAddr::new(0, 0x60),
     );
@@ -183,6 +225,7 @@ pub fn tx_clock_fits(rate: u32) -> Result<bool, &'static str> {
             tx_mmcm: true,
             rx_port1: true,
             separate_clkdiv: false,
+            xtrx: false,
         },
         (rate, rate),
     ))
@@ -200,6 +243,7 @@ pub fn calibrate_tx_link() -> Result<(usize, &'static str), &'static str> {
             tx_mmcm: true,
             rx_port1: true,
             separate_clkdiv: false,
+            xtrx: false,
         },
         I2cAddr::new(0, 0x60),
     );
@@ -269,6 +313,15 @@ mod tests {
         // writes. A never-created chip also selects both banks first.
         assert_eq!(close(true, None), Ok(35));
         assert_eq!(close(false, None), Ok(36));
+    }
+
+    #[test]
+    fn the_exact_source_witness_brings_the_xtrx_up() {
+        // XTRX golden lines 12-36: three GPO writes, 12 LMS PMIC accesses, the release,
+        // seven FPGA PMIC accesses.
+        assert_eq!(xtrx_supplies(0xe0), Ok(23));
+        assert_eq!(xtrx_supplies(0xe1), Err("LP8758"));
+        assert_eq!(xtrx_bands(), Ok((1, 0)));
     }
 
     #[test]

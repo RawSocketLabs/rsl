@@ -1,9 +1,10 @@
-//! RFIC power-up on the `new_rev` boards (XSDR): `xsdr_pwren(.., true)` with
-//! `_xsdr_pwren_revx` in `device/m2_lm7_1/xsdr_ctrl.c`, then `lms7002m_create`.
+//! RFIC power-up: `xsdr_pwren(.., true)` in `device/m2_lm7_1/xsdr_ctrl.c`, with
+//! `_xsdr_pwren_revx` on the `new_rev` boards (XSDR) and `_xsdr_pwren_revo`, which does
+//! nothing, on the XTRX; then `lms7002m_create`.
 //!
-//! The LMS7002M is held in reset while its external LDOs come on, then its own LDOs, then
-//! the reset is released and the chip programmed (`lms7002m`'s [`Create`]). The waits
-//! are libusdr's.
+//! The LMS7002M is held in reset while its external LDOs come on (XSDR), then its own
+//! LDOs, then the reset is released and the chip programmed (`lms7002m`'s [`Create`]).
+//! The waits are libusdr's.
 
 use core::time::Duration;
 
@@ -38,7 +39,7 @@ enum Step {
     Create,
 }
 
-/// `xsdr_pwren(.., true)` on an XSDR whose PMIC revision libusdr accepted.
+/// `xsdr_pwren(.., true)` on an XSDR whose PMIC revision libusdr accepted, or an XTRX.
 ///
 /// libusdr refuses the power-up of a board whose PMIC revision it did not accept, after
 /// holding the LMS7002M in reset; the driver refuses before running this sequence at all
@@ -51,16 +52,22 @@ pub(crate) struct PowerUp {
     /// The LMS7002M's part, run at [`Step::Create`].
     create: Create,
 
+    /// The board switches the LMS7002M's external LDOs (`_xsdr_pwren_revx`; the XTRX's
+    /// `_xsdr_pwren_revo` has none).
+    external_ldo: bool,
+
     /// A step failed; nothing more is issued.
     failed: bool,
 }
 
 impl PowerUp {
-    /// Starts the sequence; nothing has been accessed yet.
-    pub(crate) fn new(lms: ResetPlan) -> Self {
+    /// Starts the sequence, with the external LDOs' step if `external_ldo`; nothing has
+    /// been accessed yet.
+    pub(crate) fn new(lms: ResetPlan, external_ldo: bool) -> Self {
         Self {
             step: Step::Reset,
             create: Create::new(lms),
+            external_ldo,
             failed: false,
         }
     }
@@ -104,9 +111,9 @@ impl Sequence for PowerUp {
         outcome(action, result, fpga::NAME).inspect_err(|_| self.failed = true)?;
         self.step = match self.step {
             Step::Reset => Step::ResetWait,
-            Step::ResetWait => Step::ExternalLdo,
+            Step::ResetWait if self.external_ldo => Step::ExternalLdo,
+            Step::ResetWait | Step::ExternalLdoWait => Step::SupplyWait,
             Step::ExternalLdo => Step::ExternalLdoWait,
-            Step::ExternalLdoWait => Step::SupplyWait,
             Step::SupplyWait => Step::ChipLdo,
             Step::ChipLdo => Step::ChipLdoWait,
             Step::ChipLdoWait => Step::Release,
@@ -145,14 +152,38 @@ mod tests {
 
     #[test]
     fn a_wait_reported_as_failed_still_counts_as_waited() {
-        let mut power = PowerUp::new(LMS);
+        let mut power = PowerUp::new(LMS, true);
         assert_eq!(run(&mut power, 0x3840), Ok(()));
         assert!(power.chip().is_some(), "the LMS7002M is created");
     }
 
     #[test]
+    fn without_external_ldos_the_power_up_keeps_both_waits() {
+        let count = |external_ldo| {
+            let mut power = PowerUp::new(LMS, external_ldo);
+            let mut fpga = 0;
+            while let Some(action) = power.next() {
+                fpga += usize::from(matches!(
+                    action,
+                    SequenceAction::Fpga(FpgaAccess::Write { .. })
+                ));
+                let read = matches!(
+                    action,
+                    SequenceAction::Fpga(FpgaAccess::Spi { write: false, .. })
+                );
+                power
+                    .complete::<()>(Ok(if read { 0x3840 } else { 0 }))
+                    .expect("no failure");
+            }
+            fpga
+        };
+        // The XSDR's LDO write is the one gateware write the XTRX does not make.
+        assert_eq!(count(true), count(false) + 1);
+    }
+
+    #[test]
     fn a_wrong_lms7002m_ends_the_power_up() {
-        let mut power = PowerUp::new(LMS);
+        let mut power = PowerUp::new(LMS, true);
         assert!(matches!(
             run(&mut power, 0),
             Err(SequenceFailure::ChipId {

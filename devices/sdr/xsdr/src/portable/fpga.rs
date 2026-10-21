@@ -31,6 +31,10 @@ pub(crate) enum Gpo {
     /// The RX antenna switch (`IGPO_RXSW`): the RX band's switch position.
     RxSwitch = 3,
 
+    /// The external GPIOs' I/O voltage (`IGPO_IOVCCSEL`): the XTRX's open writes 1, "Set
+    /// external GPIOs to 3.3V".
+    IoVoltage = 8,
+
     /// The LMS7002M's external LDOs (`IGPO_LDOLMS_EN`): 1 enables them.
     LmsLdo = 17,
 

@@ -310,6 +310,21 @@ impl SimBoard {
         self
     }
 
+    /// The same XTRX without its DAC80501: a revision 4 board, whose MCP4725 at 0x62 is
+    /// not modelled, so both DACs' addresses read the idle bus (libusdr takes the DAC80501
+    /// ID 0xFFFF for revision 4).
+    #[must_use]
+    pub fn without_trim_dac(mut self) -> Self {
+        self.dac = None;
+        self
+    }
+
+    /// The XTRX DAC80501's output code (register 8), if one is fitted.
+    #[must_use]
+    pub fn trim_dac_code(&self) -> Option<u16> {
+        self.dac.as_ref().map(Dac80501::code)
+    }
+
     /// The same board with an FPGA-side PMIC reporting `revision` (`OTP_REV << 8 |
     /// DEV_REV`) instead of the one libusdr expects, to exercise its refusal.
     #[must_use]

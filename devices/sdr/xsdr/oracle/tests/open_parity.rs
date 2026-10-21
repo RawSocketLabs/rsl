@@ -4,9 +4,12 @@
 //! Each open includes its front-end probe on I2C bus 1 (`device_fe_probe`, through
 //! `sdr-frontend`), compared whole.
 //!
+//! The XTRX has no front-end connector; its open ends at its reference-trim DAC.
+//!
 //! Whitelisted divergences, each confined to the scenario that shows it:
-//! - Variants xsdr identifies but does not bring up are refused after the HWID reads
-//!   libusdr makes too; libusdr carries on.
+//! - Variants xsdr identifies but does not bring up (sSDR, sSDR Pro) are refused after the
+//!   HWID reads libusdr makes too; libusdr carries on (and fails for want of the LMS8001
+//!   the sim lacks).
 //! - A PMIC revision libusdr rejects: libusdr fails the power-up after holding the LMS7002M
 //!   in reset and reading the temperature sensor's ID for its log; xsdr refuses before
 //!   any bus access.
@@ -37,8 +40,16 @@ struct Reference {
     close: Vec<Op>,
 }
 
-/// Runs libusdr on `board`: open, `/dm/power/en` = 1 if `power_up`, close.
+/// Runs libusdr on an XSDR `board`: open, `/dm/power/en` = 1 if `power_up`, close.
 fn reference(board: SimBoard, power_up: bool) -> Reference {
+    let (reference, probed) = session(board, power_up);
+    assert!(probed, "libusdr probes the XSDR's front-end connector");
+    reference
+}
+
+/// Runs libusdr on `board` as [`reference`], and whether its open probed the front-end
+/// connector.
+fn session(board: SimBoard, power_up: bool) -> (Reference, bool) {
     let mut oracle = Oracle::open(board).expect("libusdr opens the board");
     let opened = oracle.trace_len();
     let outcome = if power_up { oracle.power_up() } else { Ok(()) };
@@ -46,21 +57,21 @@ fn reference(board: SimBoard, power_up: bool) -> Reference {
     let board = oracle.close();
     let trace = board.trace();
     let open = &trace[..opened];
-    assert!(
-        open.iter().any(|op| matches!(
+    let probed = open.iter().any(|op| {
+        matches!(
             op,
             Op::RegWrite {
                 addr: REG_FRONT_END_GPIO,
                 ..
             }
-        )),
-        "libusdr probes the XSDR's front-end connector"
-    );
-    Reference {
+        )
+    });
+    let reference = Reference {
         open: open.to_vec(),
         power_up: (trace[opened..powered].to_vec(), outcome),
         close: trace[powered..].to_vec(),
-    }
+    };
+    (reference, probed)
 }
 
 /// Panics at the first operation where `actual` leaves `expected`.
@@ -137,8 +148,67 @@ fn an_unknown_device_id_is_refused_like_libusdr() {
 }
 
 #[test]
+fn an_xtrx_session_matches_libusdr_with_either_trim_dac() {
+    let revision_5 = || SimBoard::new(Variant::Xtrx);
+    let revision_4 = || SimBoard::new(Variant::Xtrx).without_trim_dac();
+    for (board, dac, revision) in [
+        (revision_5 as fn() -> SimBoard, Some(0xa8f5), "revision 5"),
+        (revision_4, None, "revision 4"),
+    ] {
+        let (libusdr, probed) = session(board(), true);
+        assert!(!probed, "{revision}: the XTRX has no connector to probe");
+        assert_eq!(
+            libusdr.power_up.1,
+            Ok(()),
+            "{revision}: libusdr powers the RFIC up"
+        );
+
+        let sim = SimBus::new(board());
+        let mut device = Device::open(sim.clone()).expect("xsdr opens the XTRX");
+        assert_eq!(device.front_end(), None);
+        assert_eq!(sim.board().trim_dac_code(), dac, "{revision}: mid-range");
+        let opened = sim.board().trace().len();
+        device.power_up().expect("xsdr powers the RFIC up");
+        let powered = sim.board().trace().len();
+        device.close().expect("xsdr closes the XTRX");
+
+        let board = sim.board();
+        let trace = board.trace();
+        assert_same_ops(&libusdr.open, &trace[..opened], &format!("{revision} open"));
+        assert_same_ops(
+            &libusdr.power_up.0,
+            &trace[opened..powered],
+            &format!("{revision} power-up"),
+        );
+        assert_same_ops(
+            &libusdr.close,
+            &trace[powered..],
+            &format!("{revision} close"),
+        );
+    }
+}
+
+#[test]
+fn an_xtrx_with_an_unaccepted_pmic_fails_its_open_like_libusdr() {
+    let board = || SimBoard::new(Variant::Xtrx).with_fpga_pmic_revision(0xe101);
+    let libusdr = Oracle::open(board()).err().expect("libusdr refuses it");
+    assert_eq!(libusdr.errno, -EIO);
+
+    let sim = SimBus::new(board());
+    assert!(matches!(
+        Device::open(sim.clone()),
+        Err(Error::ChipId {
+            chip: "LP8758",
+            found: 0xe101,
+            ..
+        })
+    ));
+    assert_same_ops(libusdr.board.trace(), sim.board().trace(), "refused PMIC");
+}
+
+#[test]
 fn unported_variants_stop_after_the_identification_libusdr_shares() {
-    for variant in [Variant::Xtrx, Variant::Ssdr, Variant::SsdrPro] {
+    for variant in [Variant::Ssdr, Variant::SsdrPro] {
         let reference = match Oracle::open(SimBoard::new(variant)) {
             Ok(oracle) => oracle.close(),
             // sSDR: refused later, for want of the LMS8001 the sim lacks.

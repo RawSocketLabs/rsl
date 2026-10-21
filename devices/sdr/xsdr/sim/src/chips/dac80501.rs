@@ -15,6 +15,8 @@ use super::I2cChip;
 
 /// `DEVID`, the device identification register.
 const DEVID: u8 = 1;
+/// `DAC`, the output code.
+const CODE: u8 = 8;
 /// What [`DEVID`] reads; see the module docs.
 const DEVID_VALUE: u16 = 0x0195;
 
@@ -31,6 +33,11 @@ impl Dac80501 {
         Self {
             regs: BTreeMap::from([(DEVID, DEVID_VALUE)]),
         }
+    }
+
+    /// The output code last written; 0 out of reset.
+    pub(crate) fn code(&self) -> u16 {
+        self.regs.get(&CODE).copied().unwrap_or(0)
     }
 }
 

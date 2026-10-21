@@ -376,3 +376,21 @@ fn a_failing_vco_comparator_fails_tuning_and_the_rate_like_libusdr() {
         "SXX fails with -EIO; every CGEN attempt fails, so the rate -ERANGE"
     );
 }
+
+#[test]
+fn an_xtrx_raises_only_its_io_supply_above_50_and_60_ms_like_libusdr() {
+    // `_xsdr_calibrate_lml` on `!new_rev`: 1.96 V above 50 MS/s, 2.15 V above 60 MS/s, no
+    // core supply; the XTRX's bands for the LOs.
+    for rate in [40_000_000, 55_000_000, 65_000_000, 80_000_000] {
+        assert_same_on(
+            &|| SimBoard::new(Variant::Xtrx).with_hwid(0x002e_0020),
+            &[
+                Call::PowerUp,
+                Call::Rate(rate),
+                Call::Rx(1_000_000_000),
+                Call::Tx(3_000_000_000),
+            ],
+            &format!("XTRX at {rate} S/s"),
+        );
+    }
+}

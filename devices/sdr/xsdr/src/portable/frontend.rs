@@ -1,6 +1,6 @@
-//! What the XSDR gives libusdr's LMS7002M control code: its antenna switches
+//! What the XSDR and XTRX give libusdr's LMS7002M control code: their antenna switches
 //! (`_xsdr_antenna_port_switch`) and `LimeLight` sample orders (`lms7nfe_get_lml_portcfg`),
-//! and its automatic bands (`_xsdr_init_revx`).
+//! and their automatic bands (`_xsdr_init_revx`, `_xsdr_init_revo`).
 
 use lms7002m::ctrl::{Direction, Frontend, RxAntenna, StreamFlags, TxAntenna};
 use lms7002m::{LmlMap, LmlSample, Mac, RxPath, TxPath};
@@ -52,7 +52,50 @@ pub(crate) const TX_BANDS: [TxAntenna; 2] = [
     },
 ];
 
-/// The XSDR as the control code's board.
+/// The XTRX's receive bands (`_xsdr_init_revo`'s `cfg_auto_rx`): the low-band LNA below
+/// 1.1 GHz on switch 1, the wide band below 2.7 GHz on 0, the high band below 4 GHz on 2;
+/// every band's loopback switch is 3.
+pub(crate) const XTRX_RX_BANDS: [RxAntenna; 3] = [
+    RxAntenna {
+        below_hz: 1_100_000_000,
+        path: RxPath::LnaL,
+        switch: 1,
+        loopback_switch: 3,
+    },
+    RxAntenna {
+        below_hz: 2_700_000_000,
+        path: RxPath::LnaW,
+        switch: 0,
+        loopback_switch: 3,
+    },
+    RxAntenna {
+        below_hz: 4_000_000_000,
+        path: RxPath::LnaH,
+        switch: 2,
+        loopback_switch: 3,
+    },
+];
+
+/// The XTRX's transmit bands (`_xsdr_init_revo`'s `cfg_auto_tx`): band 2 ("W", "B2") below
+/// 2.2 GHz on switch 0, band 1 ("H", "B1") below 4 GHz on 1; their loopback switches swap.
+pub(crate) const XTRX_TX_BANDS: [TxAntenna; 2] = [
+    TxAntenna {
+        below_hz: 2_200_000_000,
+        path: TxPath::Band2,
+        switch: 0,
+        loopback_switch: 1,
+        names: ["W", "B2"],
+    },
+    TxAntenna {
+        below_hz: 4_000_000_000,
+        path: TxPath::Band1,
+        switch: 1,
+        loopback_switch: 0,
+        names: ["H", "B1"],
+    },
+];
+
+/// The XSDR (and the XTRX, whose hooks are the same) as the control code's board.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct XsdrFrontend;
 

@@ -13,14 +13,22 @@ use sdr_frontend::{Connector, FrontEnd, FrontEndSelection};
 use crate::error::Error;
 use crate::lowlevel::Bus;
 
-/// Probes the XSDR's connector as libusdr's open does without an `fe=` hint, and keeps the
-/// board that came up. A board that fails to come up is logged and skipped, as libusdr
-/// does.
+/// Probes the XSDR's connector as libusdr's open does with `selection` (its `fe=` option),
+/// and keeps the board that came up. Probing automatically, a board that fails to come up
+/// is logged and skipped and an empty connector is no error, as in libusdr.
 ///
 /// # Errors
 ///
-/// Only a bus failure the probe does not skip; open never sees one from an automatic
-/// probe.
-pub(crate) fn probe(bus: &mut dyn Bus) -> Result<Option<FrontEnd>, Error> {
-    Ok(Connector::M2KeyAE.probe(bus, &FrontEndSelection::Auto)?)
+/// [`Error::NoFrontEnd`] when a hint (or [`FrontEndSelection::None`]) finds nothing,
+/// libusdr's `-ENODEV`, which the XSDR's open does not ignore; [`Error::FrontEnd`] for the
+/// hinted board's failure.
+pub(crate) fn probe(
+    bus: &mut dyn Bus,
+    selection: &FrontEndSelection,
+) -> Result<Option<FrontEnd>, Error> {
+    let found = Connector::M2KeyAE.probe(bus, selection)?;
+    if found.is_none() && *selection != FrontEndSelection::Auto {
+        return Err(Error::NoFrontEnd);
+    }
+    Ok(found)
 }
