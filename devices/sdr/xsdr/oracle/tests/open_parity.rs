@@ -10,9 +10,6 @@
 //! - Variants xsdr identifies but does not bring up (sSDR, sSDR Pro) are refused after the
 //!   HWID reads libusdr makes too; libusdr carries on (and fails for want of the LMS8001
 //!   the sim lacks).
-//! - A PMIC revision libusdr rejects: libusdr fails the power-up after holding the LMS7002M
-//!   in reset and reading the temperature sensor's ID for its log; xsdr refuses before
-//!   any bus access.
 
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
@@ -236,7 +233,7 @@ fn unported_variants_stop_after_the_identification_libusdr_shares() {
 }
 
 #[test]
-fn an_unaccepted_pmic_is_refused_at_power_up_before_any_bus_access() {
+fn an_unaccepted_pmic_is_refused_at_power_up_like_libusdr() {
     let board = || SimBoard::new(Variant::Xsdr).with_fpga_pmic_revision(0xe101);
     let libusdr = reference(board(), true);
     let (ops, outcome) = &libusdr.power_up;
@@ -266,15 +263,16 @@ fn an_unaccepted_pmic_is_refused_at_power_up_before_any_bus_access() {
         device.power_up(),
         Err(Error::ChipId { chip: "LP8758", .. })
     ));
-    assert_eq!(
-        sim.board().trace().len(),
-        opened,
-        "xsdr's refusal drives nothing"
+    let refused = sim.board().trace().len();
+    assert_same_ops(
+        ops,
+        &sim.board().trace()[opened..refused],
+        "the refused power-up: reset, wait, the sensor's ID",
     );
     device.close().expect("xsdr closes it");
     assert_same_ops(
         &libusdr.close,
-        &sim.board().trace()[opened..],
+        &sim.board().trace()[refused..],
         "close after the refused power-up",
     );
 }
