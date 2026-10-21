@@ -8,19 +8,20 @@
 //! front-end board probe at open, with or without an `fe=` hint ([`Device::open`],
 //! [`Device::open_with`], [`Device::front_end`]; the probe and the boards' controls are
 //! `sdr-frontend`'s), the XTRX's two PMICs and reference-trim DAC, the oscillator trim
-//! ([`Device::set_oscillator_dac`]) and the front ends' controls, the RFIC power-up ([`Device::power_up`]), the sample rate on
-//! gateware with a TX MMCM ([`Device::set_sample_rate`]), RX/TX LO tuning, gains and
-//! baseband bandwidths, explicit RX/TX paths with the RF loopback, TDD tuning, the
-//! baseband NCOs, the DC and I/Q corrections, the TX test generator and mute, the
-//! baseband and digital loopbacks, the RX and TX streams in `ci16`
+//! ([`Device::set_oscillator_dac`]) and the front ends' controls, the RFIC power-up
+//! ([`Device::power_up`]), the sample rate on gateware with a TX MMCM, an RX or shared
+//! MMCM too ([`Device::set_sample_rate`]), RX/TX LO tuning, gains and baseband
+//! bandwidths, explicit RX/TX paths with the RF loopback, TDD tuning, the baseband NCOs,
+//! the DC and I/Q corrections, the TX test generator and mute, the baseband and digital
+//! loopbacks, the RX and TX streams in `ci16` on the original or the extended TX core
 //! ([`Device::create_rx_stream`], [`Device::receive`], [`Device::create_tx_stream`],
-//! [`Device::send`]; the stream engine's registers are `sdr-stream`'s, shared with the
-//! uSDR) with the TX MMCM, the TX phase calibration and the TX quality check, and the
-//! close ([`Device::close`]); the probe brings up every board the connector admits, as
-//! libusdr does; gateware with an RX or shared MMCM too. Not yet ported: the sSDR
-//! variants (identified, then refused), gateware with a DUC/DDC or the extended TX front
-//! end, and the RF calibrations. The LMS7002M's register values,
-//! chip operations and control code are `lms7002m`'s. See `PORTING.md` beside this crate.
+//! [`Device::send`], with their sync modes and options; the stream engine's registers
+//! are `sdr-stream`'s, shared with the uSDR) with the TX MMCM, the TX phase calibration,
+//! its phase overrides and the TX quality check, and the close ([`Device::close`], or on
+//! drop); the probe brings up every board the connector admits, as libusdr does. Not yet
+//! ported: the sSDR variants (identified, then refused), gateware with a DUC/DDC, other
+//! stream formats, and the RF calibrations. The LMS7002M's register values, chip
+//! operations and control code are `lms7002m`'s. See `PORTING.md` beside this crate.
 //!
 //! # The XSDR board
 //!
@@ -46,7 +47,8 @@ mod portable;
 mod trim_dac;
 
 pub use device::{
-    Device, IqCorrection, LmlRxMode, RxChannels, RxPacket, TxChannels, TxGenerator, TxTelemetry,
+    Device, IqCorrection, LmlRxMode, RxChannels, RxPacket, StreamSync, TxChannels, TxGenerator,
+    TxMute, TxTelemetry,
 };
 pub use error::{Access, Error};
 pub use lms7002m::Mac;

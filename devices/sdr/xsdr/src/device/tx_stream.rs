@@ -1,33 +1,39 @@
 //! The TX stream: libusdr's `/ll/stx/0` in `ci16` on channel A, B or both, created,
 //! started, fed and stopped as `usdr_device_m2_lm7_1_create_stream`, `usdr_dms_op`,
 //! `usdr_dms_sync`, `usdr_dms_send_stat` and `unregister_stream` do it
-//! (`device/m2_lm7_1/m2_lm7_1.c`, `xsdr_ctrl.c`'s `xsdr_hwchans_cnt` and `xsdr_prepare`;
-//! the original TX core and the stream engine, `ipblks/streams/sfe_tx_4.c` and
-//! `stream_sfetrx4_dma32.c`, are `sdr-stream`'s, shared with the uSDR).
+//! (`device/m2_lm7_1/m2_lm7_1.c`, `xsdr_ctrl.c`'s `xsdr_hwchans_cnt`, `xsdr_prepare` and
+//! `xsdr_reset_extfe`; the original and extended TX cores and the stream engine,
+//! `ipblks/streams/sfe_tx_4.c`, `sfe_rx_4.c`'s `exfe_*` and `stream_sfetrx4_dma32.c`, are
+//! `sdr-stream`'s, shared with the uSDR).
 //!
 //! Creating it streams the RFIC's transmitter up (and the receiver with an RX stream),
 //! recalibrates the `LimeLight` link with the TX MMCM and the TX phase, checks the
 //! gateware is new enough, holds the sync unit stopped and asks the transport for its
-//! buffers; starting it starts the TX core on the stream's lanes and lets the sync unit
-//! free-run. Each send interleaves the channels' samples into a transport buffer and
-//! announces it to the core with its time.
+//! buffers; on gateware with the extended TX front end (HWID PHY bit 0x08) it first
+//! pulses that front end's reset and, after the gateware check, sets it up for the
+//! stream's lanes. Starting it starts the TX core on the stream's lanes and lets the sync
+//! unit free-run. Each send interleaves the channels' samples into a transport buffer and
+//! announces it to the core with its time; a send longer than a packet goes as several,
+//! on the original core, as libusdr splits it.
 
 use std::time::Duration;
 
 use lms7002m::Mac;
 use lms7002m::ctrl::{Direction, StreamFlags};
 use sdr_stream::{
-    EngineSequence, MAX_TX_TIMESTAMP, REG_TX_PUSH, REG_TX_STATUS, SyncTrigger, TxCoreStatus,
-    TxLanes, extend_drop_count, tx_block_bytes, tx_gateware_supported, tx_push_words,
+    EngineSequence, ExtendedTxPush, MAX_EXTENDED_TX_TIMESTAMP, MAX_TX_TIMESTAMP, REG_TX_PUSH,
+    REG_TX_STATUS, SyncTrigger, TxCoreStatus, TxLanes, extend_drop_count, tx_block_bytes,
+    tx_gateware_supported, tx_push_words,
 };
 
 use super::{Device, run};
 use crate::error::{Access, Error};
 use crate::lowlevel::{BusError, TxCommit};
 use crate::portable::close::{Down, streaming_down};
-use crate::portable::fpga::{NAME as FPGA, REG_HWID};
+use crate::portable::fpga::{Gpo, NAME as FPGA, REG_HWID};
 use crate::portable::frontend::XsdrFrontend;
 use crate::portable::mmcm::{MmcmLink, MmcmPlan};
+use crate::portable::step::Step;
 
 /// Bytes of one `ci16` sample on one channel: I then Q, each a little-endian `i16`.
 const SAMPLE_BYTES: usize = 4;
@@ -52,22 +58,39 @@ pub enum TxChannels {
 
 impl TxChannels {
     /// Host buffers one send takes.
-    const fn count(self) -> usize {
+    pub(super) const fn count(self) -> usize {
         match self {
             Self::A | Self::B => 1,
             Self::Both => 2,
         }
     }
 
-    /// How the stream uses the core's lanes (`initialize_stream_tx_32` on the original
-    /// core): one channel mutes the lane it does not use, channel B swaps them.
-    fn lanes(self) -> TxLanes {
-        let (mute, swap, channels_log2) = match self {
-            Self::A => (0b10, false, 0),
-            Self::B => (0b01, true, 0),
-            Self::Both => (0, false, 1),
-        };
-        TxLanes::new(mute, swap, channels_log2).expect("invariant: two-bit mute and channel count")
+    /// How a new stream uses the original core's lanes (`initialize_stream_tx_32`,
+    /// `fe_tx4_swap_ab_get`): one channel mutes the lane it does not use, channel B swaps
+    /// them. The mute is libusdr's two-bit mask, bit 0 lane A.
+    const fn created_lanes(self) -> (u8, bool) {
+        match self {
+            Self::A => (0b10, false),
+            Self::B => (0b01, true),
+            Self::Both => (0, false),
+        }
+    }
+
+    /// `log2` of the channel count (`lgchcnt`).
+    const fn channels_log2(self) -> u8 {
+        match self {
+            Self::A | Self::B => 0,
+            Self::Both => 1,
+        }
+    }
+
+    /// The channels' numbers on the extended core's lanes (`s_xsdr_chmap`: `a` 0, `b` 1).
+    pub(super) const fn lane_map(self) -> &'static [u8] {
+        match self {
+            Self::A => &[0],
+            Self::B => &[1],
+            Self::Both => &[0, 1],
+        }
     }
 }
 
@@ -95,7 +118,17 @@ pub(super) struct TxStream {
     samples_per_packet: usize,
 
     /// The channels, one host buffer each.
-    channels: TxChannels,
+    pub(super) channels: TxChannels,
+
+    /// The original core's lanes muted (`fe_old_tx_mute`, bit 0 lane A); the extended
+    /// core's start mutes nothing.
+    pub(super) mute: u8,
+
+    /// The original core's lanes swapped (`fe_old_tx_swap`).
+    pub(super) swap: bool,
+
+    /// The extended core's announcing registers, `None` on the original core.
+    pub(super) extended: Option<ExtendedTxPush>,
 
     /// Bursts the front end dropped, extended past its 8-bit counter (`fe_drop`).
     front_end_drops: u64,
@@ -105,6 +138,13 @@ pub(super) struct TxStream {
 }
 
 impl TxStream {
+    /// How starting the core sets its lanes (`_sfetrx4_op` starting TX): the mute and
+    /// swap, and the channel count.
+    pub(super) fn lanes(&self) -> TxLanes {
+        TxLanes::new(self.mute, self.swap, self.channels.channels_log2())
+            .expect("invariant: two-bit mute and channel count")
+    }
+
     /// Takes a buffer's status words into the drop counts and reports them, as
     /// `_sfetrx4_stream_send` fills `usdr_dms_send_stat`.
     fn account(&mut self, words: [u32; 4]) -> TxTelemetry {
@@ -134,20 +174,25 @@ impl Device {
     /// the stream's channels, both banks selected, the TX processor's self-test started
     /// and the DC correctors enabled for the running channels.
     ///
+    /// On gateware with the extended TX front end (HWID PHY bit 0x08), as libusdr: after
+    /// streaming up, its reset pulsed (`xsdr_reset_extfe`), and after the gateware check
+    /// the front end unmuted and set up for the stream's lanes (`exfe_tx4_mute`,
+    /// `exfe_tx4_config`, `exfe_trx4_update_chmap`).
+    ///
     /// Divergences, before any bus access: without a sample rate on gateware with a TX
     /// MMCM, where libusdr sets 1 MS/s and its TX MMCM configuration then reads past its
     /// table, the create is refused (without a TX MMCM the default rate is set, as in
-    /// libusdr, and fails its calibration); so are other links that would (TX rates below about 6.35 MS/s), packets of
-    /// no samples (libusdr's "the transport's largest") and gateware with the extended TX
-    /// core (HWID PHY bit 0x08), whose create is not ported.
+    /// libusdr, and fails its calibration); so are other links that would (TX rates below
+    /// about 6.35 MS/s), packets of no samples (libusdr's "the transport's largest") and,
+    /// on the extended core, packets past one burst (the core's FIFO), which libusdr
+    /// splits into bursts.
     ///
     /// # Errors
     ///
     /// Before any bus access: [`Error::AlreadyStreaming`] with a TX stream;
-    /// [`Error::UnsupportedGateware`] as for [`Self::set_sample_rate`], and for the
-    /// extended TX core; [`Error::NoSampleRate`] with a TX MMCM;
-    /// [`Error::TxClockOutOfRange`];
-    /// [`Error::UnsupportedPacketSize`] for 0. After the map: [`Error::DoublePumpedMimo`]
+    /// [`Error::UnsupportedGateware`] as for [`Self::set_sample_rate`];
+    /// [`Error::NoSampleRate`] with a TX MMCM; [`Error::TxClockOutOfRange`];
+    /// [`Error::UnsupportedPacketSize`] for 0, or on the extended core past one burst. After the map: [`Error::DoublePumpedMimo`]
     /// for both channels on a double-pumped link. Then streaming up's errors,
     /// [`Error::LinkCalibration`], [`Error::TxClockUnlocked`],
     /// [`Error::OutdatedGateware`], [`Error::UnsupportedPacketSize`] for a packet past the
@@ -167,8 +212,11 @@ impl Device {
         }
         let gateware = self.gateware()?;
         let [.., phy] = self.hwid.to_be_bytes();
-        if phy & PHY_EXTENDED_TX != 0 {
-            return Err(Error::UnsupportedGateware(phy));
+        let extended = phy & PHY_EXTENDED_TX != 0;
+        let count = u32::try_from(channels.count()).expect("1 or 2");
+        let sample_bytes = 4 * count;
+        if extended && tx_block_bytes(samples_per_packet, sample_bytes).is_none() {
+            return Err(Error::UnsupportedPacketSize(samples_per_packet));
         }
         // libusdr's 1 MS/s default reads past its MMCM table with a TX MMCM; without one,
         // its calibration fails the default rate, as here.
@@ -189,6 +237,15 @@ impl Device {
             return Err(Error::DoublePumpedMimo);
         }
         self.prepare(self.rx_stream.is_some(), true, gateware)?;
+        if extended {
+            // `xsdr_reset_extfe`.
+            for value in [EXTENDED_TX_RESET, 0] {
+                run(
+                    &mut *self.bus,
+                    &mut Step::fpga(Gpo::TxChainReset.write(value)),
+                )?;
+            }
+        }
 
         // `/dm/revision`: the build stamp, then the hardware ID.
         let mut build = [0];
@@ -202,21 +259,31 @@ impl Device {
         if !tx_gateware_supported(build[0]) {
             return Err(Error::OutdatedGateware(build[0]));
         }
+        if extended {
+            let mut setup = EngineSequence::extended_tx_configure(channels.lane_map(), false);
+            run(&mut *self.bus, &mut setup)?;
+        }
         run(
             &mut *self.bus,
             &mut EngineSequence::new().sync(SyncTrigger::Stop),
         )?;
-        let count = u32::try_from(channels.count()).expect("1 or 2");
-        let sample_bytes = 4 * count;
         let block_bytes = tx_block_bytes(samples_per_packet, sample_bytes)
             .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
         self.bus
             .tx_stream_open(block_bytes, sample_bytes)
             .map_err(Error::Stream)?;
+        let (mute, swap) = if extended {
+            (0, false)
+        } else {
+            channels.created_lanes()
+        };
         self.tx_stream = Some(TxStream {
             samples_per_packet: usize::try_from(samples_per_packet)
                 .expect("invariant: a 32-bit count fits in usize"),
             channels,
+            mute,
+            swap,
+            extended: extended.then(ExtendedTxPush::new),
             front_end_drops: 0,
             dma_drops: 0,
         });
@@ -256,12 +323,7 @@ impl Device {
     ///
     /// [`Error::NotStreaming`] without a TX stream, before any bus access; [`Error::Bus`].
     pub fn start_tx_stream(&mut self) -> Result<(), Error> {
-        let Some(stream) = self.tx_stream.as_ref() else {
-            return Err(Error::NotStreaming);
-        };
-        let lanes = stream.channels.lanes();
-        let mut start = EngineSequence::start_lanes(false, Some(lanes), SyncTrigger::FreeRun);
-        run(&mut *self.bus, &mut start)
+        self.start_tx_stream_with(super::StreamSync::None)
     }
 
     /// Sends one packet: each channel's buffer whole (channel A's first for
@@ -272,9 +334,16 @@ impl Device {
     ///
     /// On a timeout libusdr reads the core's four status words for its log; so does this.
     ///
+    /// A send longer than a packet goes as several on the original core, as libusdr
+    /// splits it: a packet's worth at a time, each timed the first's time plus the samples
+    /// before it, each waiting up to `timeout`; the last buffer's telemetry is returned, or
+    /// an earlier one's if the last had none; a send "now" sends every packet "now". A
+    /// failure ends the send there.
+    ///
     /// Divergences, before any bus access: buffers other than one per channel, of unequal
-    /// lengths, empty or longer than a packet (libusdr splits a long send into packets),
-    /// and a time past the core's 47 bits are refused.
+    /// lengths, empty, and on the extended core longer than a packet (libusdr's burst
+    /// split writes past its buffer there), and a time past the core's 47 bits (63 on the
+    /// extended core) are refused.
     ///
     /// # Errors
     ///
@@ -310,15 +379,52 @@ impl Device {
                 other: other.len(),
             });
         }
-        if samples == 0 || samples > stream.samples_per_packet {
+        let packet = stream.samples_per_packet;
+        if samples == 0 || (stream.extended.is_some() && samples > packet) {
             return Err(Error::SendSize {
-                max: stream.samples_per_packet,
+                max: packet,
                 got: samples,
             });
         }
-        if let Some(time) = time.filter(|&time| time > MAX_TX_TIMESTAMP) {
+        let max_time = if stream.extended.is_some() {
+            MAX_EXTENDED_TX_TIMESTAMP
+        } else {
+            MAX_TX_TIMESTAMP
+        };
+        if let Some(time) = time.filter(|&time| time > max_time) {
             return Err(Error::UnsupportedTimestamp(time));
         }
+        // `_sfetrx4_stream_send`'s split, packet by packet: a time below `INT64_MAX`
+        // advances by each; "now" (all ones) stays "now".
+        let mut telemetry = None;
+        let mut at = time;
+        for start in (0..samples).step_by(packet) {
+            let end = samples.min(start + packet);
+            let mut chunks = [&[][..]; 2];
+            for (chunk, buffer) in chunks.iter_mut().zip(buffers) {
+                *chunk = &buffer[start..end];
+            }
+            let sent = self.send_packet(&chunks[..expected], at, timeout)?;
+            telemetry = sent.or(telemetry);
+            let advance = u64::try_from(end - start).expect("invariant: a packet's samples");
+            at = at.map(|time| time + advance);
+        }
+        Ok(telemetry)
+    }
+
+    /// Sends one packet of at most a packet's samples, checked by [`Self::send`].
+    fn send_packet(
+        &mut self,
+        buffers: &[&[[i16; 2]]],
+        time: Option<u64>,
+        timeout: Duration,
+    ) -> Result<Option<TxTelemetry>, Error> {
+        let stream = self
+            .tx_stream
+            .as_mut()
+            .expect("invariant: send checked the stream");
+        let expected = buffers.len();
+        let samples = buffers.first().map_or(0, |buffer| buffer.len());
         let wire_bytes = samples * SAMPLE_BYTES * expected;
         let mut status = None;
         let mut written = 0;
@@ -352,9 +458,20 @@ impl Device {
         let telemetry = status.map(|words| stream.account(words));
         if commit == TxCommit::Registers {
             let count = u32::try_from(samples).expect("invariant: at most one packet");
-            self.bus
-                .write_regs(REG_TX_PUSH, &tx_push_words(count, time))
-                .map_err(|source| fpga_error(Access::Write, REG_TX_PUSH, source))?;
+            match stream.extended.as_mut() {
+                Some(push) => {
+                    let bytes = u32::try_from(wire_bytes).expect("invariant: one burst");
+                    for &(reg, word) in push.announce(bytes, count, time).as_slice() {
+                        self.bus
+                            .write_regs(reg, &[word])
+                            .map_err(|source| fpga_error(Access::Write, reg, source))?;
+                    }
+                }
+                None => self
+                    .bus
+                    .write_regs(REG_TX_PUSH, &tx_push_words(count, time))
+                    .map_err(|source| fpga_error(Access::Write, REG_TX_PUSH, source))?,
+            }
         }
         Ok(telemetry)
     }
@@ -420,9 +537,13 @@ impl Device {
     }
 }
 
-/// HWID PHY bit: the extended TX front end (`PHY_EXTENDED_TXFE`), whose TX create is not
-/// ported.
+/// HWID PHY bit: the extended TX front end (`PHY_EXTENDED_TXFE`), its stream core
+/// `CORE_EXFETX_DMA32_R0_2`.
 const PHY_EXTENDED_TX: u8 = 0x08;
+
+/// `xsdr_reset_extfe`'s reset of the TX chain's extended front end, bit 2 of
+/// [`Gpo::TxChainReset`]; then 0 releases it.
+const EXTENDED_TX_RESET: u8 = 0x4;
 
 /// A failed gateware register access in the driver's terms.
 fn fpga_error(access: Access, reg: u32, source: BusError) -> Error {
@@ -462,8 +583,9 @@ mod tests {
     #[test]
     fn one_channel_mutes_the_lane_it_leaves_and_b_swaps() {
         let word = |channels: TxChannels| {
-            let mut start =
-                EngineSequence::start_lanes(false, Some(channels.lanes()), SyncTrigger::Stop);
+            let (mute, swap) = channels.created_lanes();
+            let lanes = TxLanes::new(mute, swap, channels.channels_log2()).expect("two bits");
+            let mut start = EngineSequence::start_lanes(false, Some(lanes), SyncTrigger::Stop);
             let mut last = 0;
             while let Some(hal::SequenceAction::Fpga(hal::FpgaAccess::Write { value, .. })) =
                 hal::Sequence::next(&start)

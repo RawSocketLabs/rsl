@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use hal::run_sequence;
 use lms7002m::ctrl::Direction;
-use sdr_stream::{BurstPlan, EngineSequence, RxLanes, RxSampleFormat, SyncTrigger};
+use sdr_stream::{BurstPlan, EngineSequence, RxLanes, RxSampleFormat};
 
 use super::{Device, rate_error, run};
 use crate::board::PMIC;
@@ -221,13 +221,7 @@ impl Device {
     ///
     /// [`Error::NotStreaming`] without a stream, before any bus access; [`Error::Bus`].
     pub fn start_rx_stream(&mut self) -> Result<(), Error> {
-        if self.rx_stream.is_none() {
-            return Err(Error::NotStreaming);
-        }
-        let mut start = EngineSequence::new()
-            .sync(SyncTrigger::FreeRun)
-            .run_rx(true);
-        run(&mut *self.bus, &mut start)
+        self.start_rx_stream_with(super::StreamSync::None)
     }
 
     /// Receives one packet into the front of each channel's buffer (channel A's first for

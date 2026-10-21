@@ -71,6 +71,8 @@ const LMS7_REFERENCE_HZ: u32 = 26_000_000;
 
 /// The LP8758 every variant has (`I2C_BUS_LP8758_FPGA`: bus 0, `I2C_DEV_PMIC_FPGA` 0x60).
 const I2C_FPGA_PMIC: I2cAddress = I2cAddress { bus: 0, addr: 0x60 };
+/// HWID PHY bit 0x08: the extended TX front end (`PHY_EXTENDED_TXFE`).
+const PHY_EXTENDED_TX: u32 = 0x08;
 /// The XTRX's LMS7002M supply LP8758 (`I2C_BUS_LP8758_LMSINIT`: bus 1, 0x60).
 const I2C_LMS_PMIC: I2cAddress = I2cAddress { bus: 1, addr: 0x60 };
 /// The XTRX revision-5 DAC80501 (`I2C_BUS_DAC80501`: bus 0, `I2C_DEV_DAC80501M_A0_SCL`
@@ -186,7 +188,8 @@ pub struct SimBoard {
     /// The TX stream core and its transport buffers (`sdr-stream-sim`'s, the uSDR sim's
     /// model): the original core at the same registers (`m2_lm7_1.c` passes
     /// `M2PCI_REG_WR_TXDMA_CNF_L`, `M2PCI_REG_WR_SYNC_CTRL` and `M2PCI_REG_RD_TXDMA_STAT`,
-    /// as `m2_lm6_1.c` does). The extended core (HWID PHY bit 0x08) is not modelled.
+    /// as `m2_lm6_1.c` does), or with HWID PHY bit 0x08 the extended one at
+    /// `M2PCI_REG_WR_TXDMA_CFG0` and `CSR_TFE4_BASE` ([`SimBoard::with_hwid`]).
     tx: TxEngine,
     /// The TX PHY port and its MMCM (`tx_phy.rs`).
     tx_phy: TxPhy,
@@ -261,9 +264,16 @@ impl SimBoard {
     }
 
     /// The same board reporting `hwid` instead, for gateware the model does not name.
+    /// PHY bit 0x08 (`PHY_EXTENDED_TXFE`) gives it the extended TX core
+    /// (`CORE_EXFETX_DMA32_R0_2`, `sdr-stream-sim`'s model, the uSDR sim's).
     #[must_use]
     pub fn with_hwid(mut self, hwid: u32) -> Self {
         self.regs.insert(REG_GPI_HWID, hwid);
+        self.tx = if hwid & PHY_EXTENDED_TX != 0 {
+            TxEngine::extended()
+        } else {
+            TxEngine::default()
+        };
         self
     }
 
