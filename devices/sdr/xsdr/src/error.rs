@@ -58,7 +58,8 @@ pub enum Error {
     #[error("unknown LMS7 family device ID {0:#04x}")]
     UnknownDevice(u8),
 
-    /// A family member this driver identifies but does not bring up yet.
+    /// A family member this driver identifies but does not bring up yet: the sSDR and
+    /// sSDR Pro.
     #[error("{0:?} is not supported yet")]
     UnsupportedVariant(Variant),
 
@@ -222,10 +223,26 @@ pub enum Error {
     #[error("TX time {0} is past the TX core's 47 bits")]
     UnsupportedTimestamp(u64),
 
-    /// The front-end probe failed. Probing automatically, as open does, a board that fails
-    /// is logged and skipped as libusdr skips it, so open reports none of these yet.
-    #[error("front-end probe failed")]
+    /// A front end failed: the hinted board's bring-up at open (probing automatically, a
+    /// board that fails is logged and skipped as libusdr skips it), or one of its
+    /// controls.
+    #[error("front end failed")]
     FrontEnd(#[from] sdr_frontend::Error),
+
+    /// An open's `fe=` hint, or `fe=none`, found no front end: libusdr's `-ENODEV`, which
+    /// fails the XSDR's open.
+    #[error("the front-end hint found no front end")]
+    NoFrontEnd,
+
+    /// No oscillator trim DAC to set: an XSDR without the `PCIe` front end or the
+    /// M.2-to-`PCIe` breakout (libusdr's `-ENOTSUP`).
+    #[error("no oscillator trim DAC is fitted")]
+    NoOscillatorDac,
+
+    /// The call needs a front end that is not attached: libusdr's name for it, or the
+    /// names of the boards that would do.
+    #[error("no {0} front end is attached")]
+    FrontEndMissing(&'static str),
 }
 
 /// A failed portable register sequence, with the register or chip it names.

@@ -6,6 +6,7 @@ use std::fmt;
 use std::time::Duration;
 
 mod controls;
+mod frontend;
 mod quality;
 mod stream;
 mod tx_stream;
@@ -18,19 +19,21 @@ use hal::{Sequence, run_sequence};
 use lms7002m::ctrl::{Control, ControlError, Direction, Frontend, Gain, Operation};
 use lms7002m::{Lms7002m, Synthesizer, TuneError};
 use lp8758::{self, Revision};
-use sdr_frontend::{FrontEnd, FrontEndKind};
+use sdr_frontend::{FrontEnd, FrontEndKind, FrontEndSelection};
 
-use crate::board::{REFERENCE_HZ, XSDR_LMS, XSDR_SUPPLIES};
+use crate::board::{PMIC, REFERENCE_HZ, XSDR_LMS, XSDR_SUPPLIES, XTRX_LMS, XTRX_SUPPLIES};
 use crate::error::Error;
 use crate::fe_probe;
 use crate::lowlevel::Bus;
 use crate::portable::close::Close;
-use crate::portable::frontend::{RX_BANDS, TX_BANDS, XsdrFrontend};
+use crate::portable::frontend::{RX_BANDS, TX_BANDS, XTRX_RX_BANDS, XTRX_TX_BANDS, XsdrFrontend};
 use crate::portable::hwid::{IdentityRead, Variant};
 use crate::portable::power::PowerUp;
 use crate::portable::rate::{Gateware, RateError, RateState, SetSampleRate};
 use crate::portable::supplies::Supplies;
 use crate::portable::txcal::TxCalError;
+use crate::portable::xtrx::XtrxSupplies;
+use crate::trim_dac::TrimDac;
 
 /// The wait before a rate's TX quality check (`usleep(50000)`).
 const QUALITY_SETTLE: Duration = Duration::from_millis(50);
@@ -55,7 +58,7 @@ const PHY_LML2_IS_RX: u8 = 0x40;
 /// The PHY bits whose rate paths are not ported (see [`Error::UnsupportedGateware`]).
 const PHY_UNPORTED: u8 = PHY_RX_MMCM | PHY_SINGLE_MMCM | PHY_DUC_DDC;
 
-/// An open LMS7 family board. Only the XSDR opens so far.
+/// An open LMS7 family board: an XSDR or an XTRX.
 pub struct Device {
     /// The board's bus.
     bus: Box<dyn Bus>,
@@ -63,8 +66,15 @@ pub struct Device {
     /// The hardware ID read at open.
     hwid: u32,
 
-    /// The PMIC's revision, read at open.
+    /// The family member it names.
+    variant: Variant,
+
+    /// The FPGA-side PMIC's revision, read at open (an XTRX's open refuses all but
+    /// libusdr's).
     pmic: Revision,
+
+    /// The XTRX's reference-trim DAC, identified at open.
+    trim_dac: Option<TrimDac>,
 
     /// The LMS7002M control state, its chip cache zeroed until a power-up creates it, as
     /// in libusdr.
@@ -96,40 +106,69 @@ pub struct Device {
 }
 
 impl Device {
-    /// Opens the board on `bus`, as libusdr's open does without an `fe=` hint: reads the
-    /// hardware ID, pulses the LMS7002M power control, checks the LP8758's revision, sets
-    /// the rails, turns on all four converters and selects the internal reference clock,
-    /// then probes the front-end connector ([`Self::front_end`]). The RFIC stays unpowered
-    /// ([`Self::power_up`]).
+    /// Opens the board on `bus`, as libusdr's open does without an `fe=` hint.
+    ///
+    /// On an XSDR: reads the hardware ID, pulses the LMS7002M power control, checks the
+    /// LP8758's revision, sets the rails, turns on all four converters and selects the
+    /// internal reference clock, then probes the front-end connector ([`Self::front_end`]).
+    /// On an XTRX: holds the LMS7002M in reset, brings up its LMS-side and FPGA-side
+    /// LP8758s and sets its reference-trim DAC to mid-range; it has no front-end
+    /// connector. The RFIC stays unpowered ([`Self::power_up`]).
     ///
     /// # Errors
     ///
-    /// [`Error::UnknownDevice`] or [`Error::UnsupportedVariant`] after the identification
-    /// reads, before anything is driven; [`Error::Bus`] when an access fails. A front end
-    /// that fails to come up is logged and skipped, as libusdr does.
+    /// [`Error::UnknownDevice`] or [`Error::UnsupportedVariant`] (sSDR, sSDR Pro) after the
+    /// identification reads, before anything is driven; on an XTRX, [`Error::ChipId`] for
+    /// an LP8758 whose revision is not 0xE001 or a trim DAC libusdr does not know (its
+    /// `-EIO`); [`Error::Bus`] when an access fails. A front end that fails to come up is
+    /// logged and skipped, as libusdr does.
     pub fn open(bus: impl Bus + 'static) -> Result<Self, Error> {
+        Self::open_with(bus, &FrontEndSelection::Auto)
+    }
+
+    /// Opens the board as [`Self::open`] does, probing an XSDR's front-end connector as
+    /// `selection` says (libusdr's `fe=` option); the XTRX, which has no connector, ignores
+    /// it, as libusdr does.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::open`], and on an XSDR [`Error::NoFrontEnd`] when a hint (or
+    /// [`FrontEndSelection::None`]) finds nothing, libusdr's `-ENODEV`, and
+    /// [`Error::FrontEnd`] when the hinted board fails to come up. The board is left as the
+    /// failure leaves it.
+    pub fn open_with(
+        bus: impl Bus + 'static,
+        selection: &FrontEndSelection,
+    ) -> Result<Self, Error> {
         let mut bus: Box<dyn Bus> = Box::new(bus);
         let mut identity = IdentityRead::new();
         run(&mut *bus, &mut identity)?;
         let hwid = identity.hwid();
-        match Variant::from_hwid(hwid).map_err(Error::UnknownDevice)? {
-            Variant::Xsdr => {}
+        let variant = Variant::from_hwid(hwid).map_err(Error::UnknownDevice)?;
+        let (pmic, trim_dac, front_end, (rx_bands, tx_bands)) = match variant {
+            Variant::Xsdr => {
+                let mut supplies = Supplies::new(XSDR_SUPPLIES);
+                run(&mut *bus, &mut supplies)?;
+                let front_end = fe_probe::probe(&mut *bus, selection)?;
+                let bands = (RX_BANDS, TX_BANDS);
+                (supplies.pmic_revision(), None, front_end, bands)
+            }
+            Variant::Xtrx => {
+                run(&mut *bus, &mut XtrxSupplies::new(XTRX_SUPPLIES))?;
+                let trim_dac = TrimDac::init(&mut *bus)?;
+                let bands = (XTRX_RX_BANDS, XTRX_TX_BANDS);
+                (lp8758::REVISION, Some(trim_dac), None, bands)
+            }
             other => return Err(Error::UnsupportedVariant(other)),
-        }
-
-        let mut supplies = Supplies::new(XSDR_SUPPLIES);
-        run(&mut *bus, &mut supplies)?;
-        let front_end = fe_probe::probe(&mut *bus)?;
+        };
+        let lms = Self::lms_plan(variant);
         Ok(Self {
             bus,
             hwid,
-            pmic: supplies.pmic_revision(),
-            control: Control::new(
-                Lms7002m::new(XSDR_LMS.target),
-                REFERENCE_HZ,
-                RX_BANDS,
-                TX_BANDS,
-            ),
+            variant,
+            pmic,
+            trim_dac,
+            control: Control::new(Lms7002m::new(lms.target), REFERENCE_HZ, rx_bands, tx_bands),
             powered: false,
             rate: RateState::default(),
             lo_last: [0; 2],
@@ -140,19 +179,35 @@ impl Device {
         })
     }
 
+    /// The board's LMS7002M arguments to `lms7002m_create`.
+    const fn lms_plan(variant: Variant) -> lms7002m::ResetPlan {
+        match variant {
+            Variant::Xtrx => XTRX_LMS,
+            Variant::Xsdr | Variant::Ssdr | Variant::SsdrPro => XSDR_LMS,
+        }
+    }
+
+    /// The family member the hardware ID names.
+    #[must_use]
+    pub fn variant(&self) -> Variant {
+        self.variant
+    }
+
     /// The front end the open's probe brought up: on an empty connector, the M.2-to-`PCIe`
-    /// breakout without a DAC, which libusdr cannot tell from no board.
+    /// breakout without a DAC, which libusdr cannot tell from no board. Always `None` on an
+    /// XTRX, which has no connector.
     #[must_use]
     pub fn front_end(&self) -> Option<FrontEndKind> {
         self.front_end.as_ref().map(FrontEnd::kind)
     }
 
-    /// Powers the LMS7002M up (libusdr's `/dm/power/en` = 1): its LDOs on, its reset
-    /// released, its reset programme loaded and its version checked.
+    /// Powers the LMS7002M up (libusdr's `/dm/power/en` = 1): its LDOs on (on the XSDR
+    /// its external LDOs first), its reset released, its reset programme loaded and its
+    /// version checked.
     ///
     /// # Errors
     ///
-    /// [`Error::ChipId`] for an LP8758 whose revision is not 0xE001, the one libusdr
+    /// [`Error::ChipId`] for an XSDR's LP8758 whose revision is not 0xE001, the one libusdr
     /// accepts, before any bus access; [`Error::ChipId`] for an LMS7002M other than version 7,
     /// revision 1; [`Error::Bus`] when an access fails.
     pub fn power_up(&mut self) -> Result<(), Error> {
@@ -163,7 +218,8 @@ impl Device {
                 found: self.pmic.to_raw().into(),
             });
         }
-        let mut power = PowerUp::new(XSDR_LMS);
+        let external_ldo = self.variant == Variant::Xsdr;
+        let mut power = PowerUp::new(Self::lms_plan(self.variant), external_ldo);
         run(&mut *self.bus, &mut power)?;
         if let Some(lms) = power.chip() {
             *self.control.chip_mut() = lms;
@@ -222,13 +278,7 @@ impl Device {
         if !self.powered {
             self.power_up()?;
         }
-        let mut rate = SetSampleRate::new(
-            &self.control,
-            self.rate,
-            gateware,
-            XSDR_SUPPLIES.pmic,
-            (rx, tx),
-        );
+        let mut rate = SetSampleRate::new(&self.control, self.rate, gateware, PMIC, (rx, tx));
         let ran = run(&mut *self.bus, &mut rate);
         self.control = *rate.control();
         self.rate = rate.state();
@@ -298,6 +348,7 @@ impl Device {
             tx_mmcm: phy & PHY_TX_MMCM != 0,
             rx_port1: phy & PHY_LML2_IS_RX == 0,
             separate_clkdiv: phy & PHY_SEPARATE_CLKDIV != 0,
+            xtrx: self.variant == Variant::Xtrx,
         })
     }
 

@@ -1,12 +1,14 @@
-//! Pure-Rust driver for libusdr's LMS7 family (`m2_lm7_1`): the XSDR first.
+//! Pure-Rust driver for libusdr's LMS7 family (`m2_lm7_1`): the XSDR and the XTRX.
 //!
 //! [`Device`] talks to the board through a [`lowlevel::Bus`], the register/SPI/I2C seam of
 //! libusdr's `ls_op`, so its operations are checked against libusdr's on a simulated board
 //! (`xsdr-oracle`).
 //!
 //! **Unstable; unpublished.** Ported: identification by HWID, the XSDR's supply bring-up and
-//! front-end board probe at open ([`Device::open`], [`Device::front_end`]; the probe is
-//! `sdr-frontend`'s), the RFIC power-up ([`Device::power_up`]), the sample rate on
+//! front-end board probe at open, with or without an `fe=` hint ([`Device::open`],
+//! [`Device::open_with`], [`Device::front_end`]; the probe and the boards' controls are
+//! `sdr-frontend`'s), the XTRX's two PMICs and reference-trim DAC, the oscillator trim
+//! ([`Device::set_oscillator_dac`]) and the front ends' controls, the RFIC power-up ([`Device::power_up`]), the sample rate on
 //! gateware with a TX MMCM ([`Device::set_sample_rate`]), RX/TX LO tuning, gains and
 //! baseband bandwidths, explicit RX/TX paths with the RF loopback, TDD tuning, the
 //! baseband NCOs, the DC and I/Q corrections, the TX test generator and mute, the
@@ -15,8 +17,7 @@
 //! [`Device::send`]; the stream engine's registers are `sdr-stream`'s, shared with the
 //! uSDR) with the TX MMCM, the TX phase calibration and the TX quality check, and the
 //! close ([`Device::close`]); the probe brings up every board the connector admits, as
-//! libusdr does. Not yet ported: the front ends' controls, the XTRX and sSDR variants
-//! (identified, then refused), gateware with an RX or shared MMCM, a DUC/DDC or the
+//! libusdr does. Not yet ported: the sSDR variants (identified, then refused), gateware with an RX or shared MMCM, a DUC/DDC or the
 //! extended TX front end, and the RF calibrations. The LMS7002M's register values,
 //! chip operations and control code are `lms7002m`'s. See `PORTING.md` beside this crate.
 //!
@@ -41,6 +42,7 @@ mod error;
 mod fe_probe;
 pub mod lowlevel;
 mod portable;
+mod trim_dac;
 
 pub use device::{
     Device, IqCorrection, LmlRxMode, RxChannels, RxPacket, TxChannels, TxGenerator, TxTelemetry,
@@ -49,4 +51,8 @@ pub use error::{Access, Error};
 pub use lms7002m::Mac;
 pub use lms7002m::ctrl::{Direction, Gain, RfPath, RxRoute, TxRoute};
 pub use portable::hwid::Variant;
-pub use sdr_frontend::FrontEndKind;
+pub use sdr_frontend::{
+    Exm2peOptions, FrontEndKind, FrontEndSelection, PciefeAttenuation, PciefeDuplexer,
+    PciefeOptions, PciefePath, PciefeRevision, PciefeRxFilter, PciefeSetting, PciefeTxFilter,
+    XmassCalibrationPath,
+};

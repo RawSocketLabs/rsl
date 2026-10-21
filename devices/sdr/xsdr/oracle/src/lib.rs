@@ -391,6 +391,20 @@ impl Oracle {
     /// When a variable in [`FORBIDDEN_ENV`] is set: libusdr would take a different path
     /// than the one the trace stands for.
     pub fn open(board: SimBoard) -> Result<Self, OpenError> {
+        Self::open_with(board, c"")
+    }
+
+    /// Opens `board` as [`Self::open`] does, with libusdr's connection string
+    /// `connection`, such as `c"fe=xmass"`.
+    ///
+    /// # Errors
+    ///
+    /// [`OpenError`] when libusdr's open fails.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::open`].
+    pub fn open_with(board: SimBoard, connection: &CStr) -> Result<Self, OpenError> {
         for name in FORBIDDEN_ENV {
             assert!(
                 env::var_os(name).is_none(),
@@ -402,7 +416,7 @@ impl Oracle {
 
         let mut dev: DmDev = ptr::null_mut();
         // SAFETY: the connection string is NUL-terminated and `dev` is a valid out-pointer.
-        let errno = unsafe { usdr_dmd_create_string(c"".as_ptr(), &raw mut dev) };
+        let errno = unsafe { usdr_dmd_create_string(connection.as_ptr(), &raw mut dev) };
 
         let Some(dev) = NonNull::new(dev) else {
             resume_callback_panic();
@@ -497,6 +511,59 @@ impl Oracle {
         } else {
             Err(errno)
         }
+    }
+
+    /// Sets the oscillator trim DAC, `/dm/sdr/0/dac_vctcxo`
+    /// (`dev_m2_lm7_1_dev_dac_vctcxo_set`: the `PCIe` front end's or the breakout's DAC,
+    /// else the XTRX's trim DAC).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_oscillator_dac(&mut self, code: u16) -> Result<(), i32> {
+        // SAFETY: the handler reads the value as a number.
+        unsafe { self.set_uint(c"/dm/sdr/0/dac_vctcxo", code.into()) }
+    }
+
+    /// Writes one `PCIe` front-end command, `/debug/hw/pciefe_cmd/0/reg`: `command` is the
+    /// `FECMD_*` address (`pciefe_cmd.yaml`), `value` its data; bit 23 marks the write.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; the path exists only while a `PCIe` front end
+    /// is up.
+    pub fn pciefe_command(&mut self, command: u8, value: u16) -> Result<(), i32> {
+        let word = 0x0080_0000 | u64::from(command & 0x7f) << 16 | u64::from(value);
+        // SAFETY: the handler reads the value as a number.
+        unsafe { self.set_uint(c"/debug/hw/pciefe_cmd/0/reg", word) }
+    }
+
+    /// Retunes a synchronization board's calibration LO, `/dm/sync/cal/freq`, in Hz; with
+    /// `sdr_path`, XMASS's second path to it, `/dm/sdr/0/sync/cal/freq`.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; the paths exist only while XMASS (or, the first,
+    /// `SimpleSync`) is up.
+    pub fn set_sync_calibration_frequency(&mut self, hz: u64, sdr_path: bool) -> Result<(), i32> {
+        let path = if sdr_path {
+            c"/dm/sdr/0/sync/cal/freq"
+        } else {
+            c"/dm/sync/cal/freq"
+        };
+        // SAFETY: both handlers read the value as a number.
+        unsafe { self.set_uint(path, hz) }
+    }
+
+    /// Routes XMASS's calibration signal, `/dm/sdr/0/sync/cal/path`
+    /// (`board_xmass_sync_source`: 0 off, 1 LO, 2 noise, 3 LO to LNA3, 4 noise to LNA3).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn set_sync_calibration_path(&mut self, path: u64) -> Result<(), i32> {
+        // SAFETY: the handler reads the value as a number.
+        unsafe { self.set_uint(c"/dm/sdr/0/sync/cal/path", path) }
     }
 
     /// Sets the RX and TX sample rates, with no converter floors

@@ -1,6 +1,6 @@
-//! Opening, powering up and closing an XSDR on the simulated board: the board state
-//! libusdr's sequence leaves (`device/m2_lm7_1/xsdr_ctrl.c`), and the refusals before it.
-//! Operation parity with libusdr itself is `oracle/tests/open_parity.rs`.
+//! Opening, powering up and closing an XSDR and an XTRX on the simulated board: the board
+//! state libusdr's sequence leaves (`device/m2_lm7_1/xsdr_ctrl.c`), and the refusals
+//! before it. Operation parity with libusdr itself is `oracle/tests/open_parity.rs`.
 
 mod common;
 
@@ -145,9 +145,65 @@ fn an_unknown_device_id_is_refused_having_read_only_the_hwid() {
 }
 
 #[test]
+fn an_xtrx_opens_without_a_front_end_and_trims_its_dac() {
+    for (board, dac) in [
+        (SimBoard::new(SimVariant::Xtrx), Some(0xa8f5)),
+        (SimBoard::new(SimVariant::Xtrx).without_trim_dac(), None),
+    ] {
+        let (device, sim) = open_xsdr(board);
+        let mut device = device.expect("an XTRX opens");
+        assert_eq!(device.variant(), Variant::Xtrx);
+        assert_eq!(device.front_end(), None, "no connector, no probe");
+        assert_eq!(sim.board().trim_dac_code(), dac, "mid-range at open");
+        assert!(
+            sim.board()
+                .trace()
+                .iter()
+                .all(|op| !matches!(op, Op::RegWrite { addr: 3, .. })),
+            "the connector's GPIO core is never written"
+        );
+
+        // `xsdr_trim_dac_vctcxo`, which libusdr's `dac_vctcxo` cannot reach on the XTRX
+        // (it looks up a front end its open never set).
+        let before = sim.board().trace().len();
+        device
+            .set_oscillator_dac(0x1234)
+            .expect("the trim DAC answers");
+        let board = sim.board();
+        let written = &board.trace()[before..];
+        let expected = if dac.is_some() {
+            [0x08, 0x12, 0x34].to_vec()
+        } else {
+            // The MCP4725's fast mode: the code's top 12 bits.
+            [0x01, 0x23].to_vec()
+        };
+        assert!(
+            matches!(written, [Op::I2c { write, .. }] if *write == expected),
+            "{written:?}"
+        );
+        if dac.is_some() {
+            assert_eq!(board.trim_dac_code(), Some(0x1234));
+        }
+    }
+}
+
+#[test]
+fn an_xsdr_without_an_oscillator_dac_refuses_the_trim_untouched() {
+    let sim = SimBus::new(SimBoard::new(SimVariant::Xsdr));
+    let mut device =
+        Device::open_with(sim.clone(), &xsdr::FrontEndSelection::Auto).expect("an XSDR opens");
+    let before = sim.board().trace().len();
+    // The empty connector's breakout has no DAC.
+    assert!(matches!(
+        device.set_oscillator_dac(1),
+        Err(Error::FrontEnd(_))
+    ));
+    assert_eq!(sim.board().trace().len(), before, "nothing driven");
+}
+
+#[test]
 fn members_not_yet_ported_are_identified_and_refused_before_anything_is_driven() {
     for (sim, variant) in [
-        (SimVariant::Xtrx, Variant::Xtrx),
         (SimVariant::Ssdr, Variant::Ssdr),
         (SimVariant::SsdrPro, Variant::SsdrPro),
     ] {

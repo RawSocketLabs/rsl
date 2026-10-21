@@ -16,7 +16,7 @@ use lms7002m::ctrl::Direction;
 use sdr_stream::{BurstPlan, EngineSequence, RxLanes, RxSampleFormat, SyncTrigger};
 
 use super::{Device, rate_error, run};
-use crate::board::XSDR_SUPPLIES;
+use crate::board::PMIC;
 use crate::error::Error;
 use crate::lowlevel::BusError;
 use crate::portable::close::{Down, streaming_down};
@@ -195,8 +195,7 @@ impl Device {
         self.control.set_running([rx; 2], [tx; 2]);
         self.stream_up(rx, tx)?;
         self.rate.afe_active = true;
-        let mut link =
-            SetSampleRate::calibrate_link(&self.control, self.rate, gateware, XSDR_SUPPLIES.pmic);
+        let mut link = SetSampleRate::calibrate_link(&self.control, self.rate, gateware, PMIC);
         let ran = run(&mut *self.bus, &mut link);
         self.control = *link.control();
         self.rate = link.state();
