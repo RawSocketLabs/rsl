@@ -515,8 +515,9 @@ impl EngineSequence {
 
     /// Puts the front end in reset, sets the burst size and format and releases it
     /// (`_configure_simple_fe_generic` for one channel), then sizes the DMA blocks
-    /// (`dma_rx32_configure`).
-    fn configure_rx(self, format: &RxFormat) -> Self {
+    /// (`dma_rx32_configure`): [`Self::rx_configure`] without its sync-unit write, for a
+    /// board that declares no sync unit (the `LSDr`, whose libusdr create fails there).
+    pub fn configure_rx(self, format: &RxFormat) -> Self {
         let all_reset = FrontEndControl::new()
             .with_reset_burster(true)
             .with_reset_assembler(true)
