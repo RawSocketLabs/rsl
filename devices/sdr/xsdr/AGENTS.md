@@ -14,8 +14,8 @@ with a TX MMCM, an RX or shared MMCM too, and a DUC/DDC), RX/TX LO tuning (FDD a
 gains, baseband bandwidths, explicit paths with the RF loopback, the baseband NCOs, the
 DC and I/Q corrections, the TX generator and mute, the baseband and digital loopbacks, the
 RX and TX streams (on channel A, B or both, in libusdr's wire and host formats; the
-original or extended TX core) with their sync modes and options, the TX MMCM, the TX phase calibration and its overrides,
-the TX quality check, the link's debug controls, the board's readings, and close (also on
+original or extended TX core) with their sync modes and options, the TX MMCM, the TX
+phase calibration and its overrides, the TX quality check, the link's debug controls, the board's readings, and close (also on
 drop); see [PORTING.md](PORTING.md) for done, divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
 reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
 secure EEPROM. Nothing here is hardware-qualified.
@@ -266,10 +266,10 @@ debug controls and readings, values included. The XTRX's session is compared who
 ## Verify
 
 ```sh
-cargo fmt -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal --check
-cargo clippy -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal --all-targets -- -D warnings
-cargo test -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal
-cargo check -p lms7002m -p sdr-frontend -p sdr-stream --target thumbv7em-none-eabi
+cargo fmt -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal -p sdr-formats --check
+cargo clippy -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal -p sdr-formats --all-targets -- -D warnings
+cargo test -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal -p sdr-formats
+cargo check -p lms7002m -p sdr-frontend -p sdr-stream -p sdr-formats --target thumbv7em-none-eabi
 python3 scripts/ci/portable.py xsdr
 cargo fmt --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml -- --check
 cargo clippy --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml --locked --all-targets -- -D warnings

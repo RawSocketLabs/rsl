@@ -116,7 +116,8 @@ impl StreamSetup {
     ///
     /// # Panics
     ///
-    /// Never: a burst's payload and its host bytes are a few KiB.
+    /// Never: a burst's payload and its host bytes (at most 10 880, `ci12` to `cf32`)
+    /// are a few KiB.
     pub fn new(
         direction: Direction,
         wire: WireFormat,
@@ -172,7 +173,7 @@ impl StreamSetup {
             bursts,
             samples_per_burst,
             host_bytes_per_burst: u32::try_from(host_bytes)
-                .expect("invariant: at most twice a burst's payload"),
+                .expect("invariant: a burst's payload converts to a few KiB"),
             sample_multiple,
             converter,
         })

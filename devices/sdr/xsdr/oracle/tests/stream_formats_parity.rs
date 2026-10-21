@@ -319,6 +319,18 @@ fn every_complex_rx_format_on_each_channel_choice_matches_libusdr() {
 }
 
 #[test]
+fn twelve_bit_packets_of_several_bursts_match_libusdr() {
+    // Both channels' `ci12` and lane 0's `i12`, split over several stub-free bursts.
+    compare_rx(
+        WireFormat::Ci12,
+        SampleFormat::Cf32,
+        RxChannels::Both,
+        16_384,
+    );
+    compare_rx(WireFormat::I12, SampleFormat::F32, RxChannels::A, 65_536);
+}
+
+#[test]
 fn every_real_rx_format_on_either_lane_matches_libusdr() {
     for wire in [WireFormat::I16, WireFormat::I12] {
         for channels in [RxChannels::A, RxChannels::B] {
@@ -476,7 +488,7 @@ fn every_tx_host_on_the_original_core_matches_libusdr() {
 #[test]
 fn every_tx_format_on_the_extended_core_matches_libusdr() {
     for wire in [WireFormat::Ci16, WireFormat::Ci12] {
-        for channels in [TxChannels::A, TxChannels::Both] {
+        for channels in [TxChannels::A, TxChannels::B, TxChannels::Both] {
             for host in [SampleFormat::Ci16, SampleFormat::Cf32, SampleFormat::Ci12] {
                 // libusdr has no two-to-one `ci12` interleavers.
                 if host == SampleFormat::Ci12 && channels == TxChannels::Both {
