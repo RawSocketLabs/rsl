@@ -178,7 +178,7 @@ impl Device {
         if samples_per_packet == 0 {
             return Err(Error::UnsupportedPacketSize(0));
         }
-        if gateware.tx_mmcm && !self.tx_clock_fits() {
+        if gateware.tx_mmcm && !self.link_clock_fits(false) {
             return Err(Error::TxClockOutOfRange);
         }
         // `xsdr_hwchans_cnt(d, false, logicchs)`: a format without `&` reports 0.
@@ -232,19 +232,20 @@ impl Device {
         run(&mut *self.bus, &mut dc)
     }
 
-    /// Whether the link the last sample rate left takes the TX MMCM's every
-    /// configuration ([`MmcmPlan::fits`]).
-    pub(super) fn tx_clock_fits(&self) -> bool {
+    /// Whether the link the last sample rate left takes the MMCM's every configuration
+    /// with `rx_master` as the master ([`MmcmPlan::fits`]).
+    pub(super) fn link_clock_fits(&self, rx_master: bool) -> bool {
         let Ok(gateware) = self.gateware() else {
             return true;
         };
-        MmcmPlan::fits(&MmcmLink {
+        let link = MmcmLink {
             clocks: self.control.clocks(),
             lml: self.control.lml(),
             double_pump: self.rate.double_pump,
             separate_clkdiv: gateware.separate_clkdiv,
             overrides: self.rate.overrides,
-        })
+        };
+        MmcmPlan::fits(&link, rx_master)
     }
 
     /// Starts the TX stream free-running: libusdr's `USDR_DMS_START` (the TX core stopped,

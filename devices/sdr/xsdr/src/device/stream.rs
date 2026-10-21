@@ -139,7 +139,15 @@ impl Device {
         }
         let gateware = self.gateware()?;
         let tx = self.tx_stream.is_some();
-        if tx && gateware.tx_mmcm && !self.tx_clock_fits() {
+        // The calibration clocks the MMCM as TX's with TX running, else as RX's on
+        // gateware with an RX or shared MMCM; without a rate, at the default rate.
+        let fits = if self.control.clocks().cgen == 0 {
+            let rates = (DEFAULT_RATE, if tx { DEFAULT_RATE } else { 0 });
+            SetSampleRate::clock_fits(&self.control, self.rate, gateware, rates, !tx)
+        } else {
+            self.link_clock_fits(!tx)
+        };
+        if gateware.tx_mmcm && (tx || gateware.rx_mmcm) && !fits {
             return Err(Error::TxClockOutOfRange);
         }
         // `xsdr_hwchans_cnt(d, true, logicchs)`: a stream format without `&` reports 0

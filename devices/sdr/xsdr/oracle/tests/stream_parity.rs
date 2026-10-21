@@ -348,3 +348,14 @@ fn an_xtrx_streams_on_its_own_bands_like_libusdr() {
         );
     }
 }
+
+#[test]
+fn rx_or_shared_mmcm_gateware_streams_like_libusdr() {
+    // The stream's calibration reconfigures the MMCM with RX as its master per phase.
+    for phy in [0x30, 0x21] {
+        compare(
+            || SimBoard::new(Variant::Xsdr).with_hwid(0x0030_0000 | phy),
+            &session(RxChannels::Both, 1024),
+        );
+    }
+}

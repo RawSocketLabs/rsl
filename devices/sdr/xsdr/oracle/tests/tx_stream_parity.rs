@@ -962,3 +962,27 @@ fn applying_a_tx_phase_override_before_any_rate_drives_nothing_like_libusdr() {
     ));
     assert_eq!(sim.board().trace().len(), before, "nothing driven");
 }
+
+#[test]
+fn rx_or_shared_mmcm_gateware_transmits_like_libusdr() {
+    // TX the MMCM's master while TX runs; RX again after the TX stream's destroy.
+    for phy in [0x30, 0x21] {
+        compare(
+            || {
+                SimBoard::new(Variant::Xsdr)
+                    .with_hwid(0x0030_0000 | phy)
+                    .with_gateware_build(TX_GATEWARE)
+            },
+            &[
+                Call::Rate(10_000_000),
+                Call::CreateTx(TxChannels::A, 1024),
+                Call::StartTx,
+                Call::Send(1024, None),
+                Call::CreateRx(RxChannels::A, 1024),
+                Call::StopTx,
+                Call::Rate(20_000_000),
+                Call::StopRx,
+            ],
+        );
+    }
+}
