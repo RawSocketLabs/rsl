@@ -4,7 +4,8 @@
 //! Register facts cite the pinned libusdr (`device/u3_limesdr/limesdr_ctrl.c`). The
 //! firmware's command semantics are not in the pinned source (the FT601 transport that
 //! sends the frames is not vendored), so each one below is an assumption, stated where it
-//! is encoded.
+//! is encoded. So are the stream blocks' (`ipblks/streams/stream_limesdr.c` is how libusdr
+//! reads and writes them; the gateware that makes and takes them is not in the source).
 
 use std::collections::BTreeMap;
 
@@ -41,6 +42,25 @@ const FDC_GATE_HZ: u64 = 100_000_000;
 /// [`FDC_GATE_HZ`], about 168 ms.
 pub const DETECTOR_GATE_US: u64 = (FDC_GATE_CYCLES * 1_000_000).div_ceil(FDC_GATE_HZ);
 
+/// Stream control (`LIMESDR_REG_000A`): bit 0, `RX_EN`, "controls both receiver and
+/// transmitter".
+const STREAM_CONTROL: u16 = 0x000a;
+/// The bit of [`STREAM_CONTROL`] that lets RX blocks flow.
+const RX_EN: u16 = 1 << 0;
+/// The stream's clears (`LIMESDR_REG_0009`): bit 0, `SMPL_NR_CLR`, "rising edge clears"
+/// the sample counter.
+const STREAM_CLEARS: u16 = 0x0009;
+/// The bit of [`STREAM_CLEARS`] whose rising edge clears the sample counter.
+const SMPL_NR_CLR: u16 = 1 << 0;
+/// A stream burst: a 16-byte header, then samples (`stream_limesdr.c`'s `burst_size` and
+/// `LIMESDR_STREAM_HDR`).
+const BURST_BYTES: usize = 4096;
+/// A burst's header.
+const HEADER_BYTES: usize = 16;
+/// Samples in one RX burst: `ci16`, 4 bytes each. Assumption: the gateware streams 16-bit
+/// samples, the only width libusdr's stream sync asks for.
+const BURST_SAMPLES: u64 = ((BURST_BYTES - HEADER_BYTES) / 4) as u64;
+
 /// The LMS7002M's metal-mask revision on this board. `limesdr_init` rejects any version
 /// word but 0x3841 (`-EIO`), so a board libusdr opens has mask 1.
 const LMS7_MASK: u8 = 1;
@@ -69,6 +89,17 @@ pub struct SimBoard {
     detector_due_us: Option<u64>,
     /// Virtual time, advanced only by [`SimBoard::sleep_us`].
     now_us: u64,
+    /// The RX stream's block, once the transport set it up.
+    rx_block_bytes: Option<u32>,
+    /// The TX stream's largest block, once the transport set it up.
+    tx_block_bytes: Option<u32>,
+    /// The sample counter: the next RX burst's first sample time.
+    rx_time: u64,
+    /// RX bursts delivered since the counter was last cleared.
+    rx_bursts: u64,
+    /// A gap in the RX samples: after this many bursts since the counter was cleared, the
+    /// counter skips this many samples.
+    rx_gap: Option<(u64, u64)>,
     /// Every operation performed, in order.
     trace: Vec<Op>,
 }
@@ -101,6 +132,11 @@ impl SimBoard {
             detector_delay_us: 0,
             detector_due_us: None,
             now_us: 0,
+            rx_block_bytes: None,
+            tx_block_bytes: None,
+            rx_time: 0,
+            rx_bursts: 0,
+            rx_gap: None,
             trace: Vec::new(),
         }
     }
@@ -160,6 +196,15 @@ impl SimBoard {
     #[must_use]
     pub fn with_detector_delay_us(mut self, us: u64) -> Self {
         self.detector_delay_us = us;
+        self
+    }
+
+    /// The same board with `samples` RX samples lost after `bursts` bursts since the
+    /// sample counter was last cleared: the next burst's time is that much later (fault
+    /// injection, for the receive's lost-sample filling; not a modelled overrun).
+    #[must_use]
+    pub fn with_rx_gap(mut self, bursts: u64, samples: u64) -> Self {
+        self.rx_gap = Some((bursts, samples));
         self
     }
 
@@ -252,6 +297,10 @@ impl SimBoard {
     /// Writes a gateware register, running the frequency detector on [`FDC_CONTROL`].
     fn write_fpga(&mut self, addr: u16, value: u16) {
         self.trace.push(Op::FpgaWrite { addr, value });
+        if addr == STREAM_CLEARS && value & !self.fpga_reg(addr) & SMPL_NR_CLR != 0 {
+            self.rx_time = 0;
+            self.rx_bursts = 0;
+        }
         if addr == FDC_CONTROL {
             // Rewriting the start bit restarts the measurement, whose result is the same: an
             // edge and a level trigger are indistinguishable here.
@@ -298,6 +347,89 @@ impl SimBoard {
             u16::from_be_bytes([hi_hi, hi_lo]),
             u16::from_be_bytes([lo_hi, lo_lo]),
         ]
+    }
+
+    /// Sets a stream up for blocks of `block_bytes`, as the transport's `stream_initialize`
+    /// asks (`tx` for stream 1, else stream 0); a later call replaces an earlier one.
+    ///
+    /// # Panics
+    ///
+    /// When `block_bytes` is not a whole number of 4 KiB bursts, which `stream_limesdr.c`
+    /// never asks for.
+    pub fn stream_open(&mut self, tx: bool, block_bytes: u32) {
+        assert!(
+            block_bytes != 0 && block_bytes as usize % BURST_BYTES == 0,
+            "a stream block is whole bursts"
+        );
+        self.trace.push(Op::StreamOpen { tx, block_bytes });
+        if tx {
+            self.tx_block_bytes = Some(block_bytes);
+        } else {
+            self.rx_block_bytes = Some(block_bytes);
+        }
+    }
+
+    /// The next RX block, or `None` (a timeout) without an RX stream or while stream
+    /// control's `RX_EN` is clear. Each 4 KiB burst is a header holding the burst's first
+    /// sample time at byte 8 (little-endian; bytes 0 to 7 zero), then 1020 `ci16`
+    /// samples; the sample of time `t` is I = `t`, Q = `!t`, both truncated to 16 bits.
+    /// Assumptions: the gateware sends blocks as the transport sized them, as long as
+    /// `RX_EN` is set, at the rate the host reads them (no overrun is modelled; see
+    /// [`SimBoard::with_rx_gap`]), its counter counting every sample since `SMPL_NR_CLR`
+    /// last rose; byte 0 to 7's contents are not in the source.
+    pub fn rx_block(&mut self) -> Option<Vec<u8>> {
+        let block_bytes = self.rx_block_bytes?;
+        if self.fpga_reg(STREAM_CONTROL) & RX_EN == 0 {
+            return None;
+        }
+        let mut block = vec![0; block_bytes as usize];
+        let first = self.rx_time;
+        for burst in block.chunks_exact_mut(BURST_BYTES) {
+            if self
+                .rx_gap
+                .is_some_and(|(after, _)| after == self.rx_bursts)
+            {
+                self.rx_time += self.rx_gap.map_or(0, |(_, samples)| samples);
+            }
+            burst[8..HEADER_BYTES].copy_from_slice(&self.rx_time.to_le_bytes());
+            for (n, sample) in (0..).zip(burst[HEADER_BYTES..].chunks_exact_mut(4)) {
+                let [low, high, ..] = (self.rx_time + n).to_le_bytes();
+                let t = u16::from_le_bytes([low, high]);
+                sample[..2].copy_from_slice(&t.to_le_bytes());
+                sample[2..].copy_from_slice(&(!t).to_le_bytes());
+            }
+            self.rx_time += BURST_SAMPLES;
+            self.rx_bursts += 1;
+        }
+        self.trace.push(Op::RxBlock {
+            len: block.len(),
+            time: first,
+        });
+        Some(block)
+    }
+
+    /// The TX stream's block size in bytes, once the transport set it up: the buffer a
+    /// transport lends the driver to frame a block in.
+    #[must_use]
+    pub fn tx_capacity(&self) -> Option<usize> {
+        self.tx_block_bytes.map(|bytes| bytes as usize)
+    }
+
+    /// Takes a TX block the transport committed with `time` as its out-of-band word; false
+    /// without a TX stream or for a block over its size. Assumption: the gateware takes
+    /// every block it is given; nothing is played.
+    pub fn tx_block(&mut self, bytes: &[u8], time: Option<u64>) -> bool {
+        if self
+            .tx_block_bytes
+            .is_none_or(|max| bytes.len() > max as usize)
+        {
+            return false;
+        }
+        self.trace.push(Op::TxBlock {
+            bytes: bytes.to_vec(),
+            time,
+        });
+        true
     }
 
     /// Advances virtual time.
@@ -551,6 +683,58 @@ mod tests {
             "a refused request decodes to no register operation"
         );
         assert_eq!(board.lms7_reg(0x0020), 0);
+    }
+
+    #[test]
+    fn rx_blocks_flow_while_rx_en_is_set_their_times_counting_from_the_last_clear() {
+        let mut board = SimBoard::new().with_rx_gap(3, 100);
+        assert_eq!(board.rx_block(), None, "no stream");
+        board.stream_open(false, 2 * 4096);
+        assert_eq!(board.rx_block(), None, "not enabled");
+        write_fpga(&mut board, STREAM_CONTROL, RX_EN);
+        let block = board.rx_block().expect("a block");
+        assert_eq!(block.len(), 8192);
+        assert_eq!(
+            &block[..16],
+            &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(&block[16..24], &[0, 0, 0xff, 0xff, 1, 0, 0xfe, 0xff]);
+        assert_eq!(&block[4096 + 8..4096 + 16], &1020u64.to_le_bytes());
+        let block = board.rx_block().expect("a block");
+        assert_eq!(&block[8..16], &2040u64.to_le_bytes());
+        assert_eq!(
+            &block[4096 + 8..4096 + 16],
+            &3160u64.to_le_bytes(),
+            "the gap"
+        );
+        write_fpga(&mut board, STREAM_CLEARS, SMPL_NR_CLR);
+        let block = board.rx_block().expect("a block");
+        assert_eq!(
+            &block[8..16],
+            &0u64.to_le_bytes(),
+            "the rising edge cleared it"
+        );
+        write_fpga(&mut board, STREAM_CLEARS, SMPL_NR_CLR);
+        assert_eq!(
+            &board.rx_block().expect("a block")[8..16],
+            &2040u64.to_le_bytes()
+        );
+        let lines: Vec<String> = board.trace().iter().map(ToString::to_string).collect();
+        assert!(lines.contains(&"stream-open rx 8192".to_owned()));
+        assert!(lines.contains(&"rx-block 8192 2040".to_owned()));
+    }
+
+    #[test]
+    fn tx_blocks_are_taken_up_to_the_streams_size() {
+        let mut board = SimBoard::new();
+        assert!(!board.tx_block(&[0; 16], None), "no stream");
+        board.stream_open(true, 4096);
+        assert!(board.tx_block(&[1, 2], Some(7)));
+        assert!(!board.tx_block(&[0; 4097], None));
+        assert_eq!(
+            board.trace().last().map(ToString::to_string).as_deref(),
+            Some("tx-block 2 7 082f2407b4e8902a")
+        );
     }
 
     #[test]

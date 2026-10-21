@@ -47,12 +47,35 @@ pub enum Op {
         /// Virtual microseconds slept.
         us: u64,
     },
+    /// The transport set a stream up (`stream_initialize`).
+    StreamOpen {
+        /// Whether it is the TX stream (stream 1); else RX (stream 0).
+        tx: bool,
+        /// Bytes per transport block.
+        block_bytes: u32,
+    },
+    /// The board delivered an RX block.
+    RxBlock {
+        /// Its bytes.
+        len: usize,
+        /// Its first burst's time.
+        time: u64,
+    },
+    /// The board took a TX block.
+    TxBlock {
+        /// The block, as committed.
+        bytes: Vec<u8>,
+        /// The commit's out-of-band time, `None` for as soon as possible.
+        time: Option<u64>,
+    },
 }
 
 /// One line per operation, the line format of the characterization golden traces:
 /// `req FRAME`, `rep FRAME` (see [`Frame`]'s `Display`), `fpga-wr ADDR VALUE`,
-/// `fpga-rd ADDR VALUE`, `lms7-wr ADDR VALUE`, `lms7-rd ADDR VALUE`, `lms7-reset` and
-/// `sleep US`. Addresses and values are fixed-width hex.
+/// `fpga-rd ADDR VALUE`, `lms7-wr ADDR VALUE`, `lms7-rd ADDR VALUE`, `lms7-reset`,
+/// `sleep US`, `stream-open rx|tx BYTES`, `rx-block BYTES TIME` and
+/// `tx-block BYTES TIME|- FNV`, the last the block's 64-bit FNV-1a hash. Addresses and
+/// values are fixed-width hex.
 impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -64,6 +87,22 @@ impl fmt::Display for Op {
             Self::Lms7Read { addr, value } => write!(f, "lms7-rd {addr:#06x} {value:#06x}"),
             Self::Lms7Reset => f.write_str("lms7-reset"),
             Self::Sleep { us } => write!(f, "sleep {us}"),
+            Self::StreamOpen { tx, block_bytes } => {
+                let stream = if *tx { "tx" } else { "rx" };
+                write!(f, "stream-open {stream} {block_bytes}")
+            }
+            Self::RxBlock { len, time } => write!(f, "rx-block {len} {time}"),
+            Self::TxBlock { bytes, time } => {
+                write!(f, "tx-block {} ", bytes.len())?;
+                match time {
+                    Some(time) => write!(f, "{time}")?,
+                    None => f.write_str("-")?,
+                }
+                let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, &byte| {
+                    (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+                });
+                write!(f, " {hash:016x}")
+            }
         }
     }
 }
