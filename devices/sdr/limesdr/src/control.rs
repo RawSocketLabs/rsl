@@ -73,7 +73,8 @@ pub trait ControlPort: Send {
     /// `send_dma_get`), which frames the block from the buffer's start and returns its
     /// length in bytes; then commits that many bytes (`send_dma_commit`) with `time`, the
     /// block's first sample time or `None` for as soon as possible, as its out-of-band
-    /// word. The block's headers already carry both.
+    /// word. The block's headers already carry both. When `fill` returns `None` (the
+    /// buffer is too short for the block) nothing is committed and the buffer is kept.
     ///
     /// # Errors
     ///
@@ -83,7 +84,7 @@ pub trait ControlPort: Send {
         &mut self,
         timeout: Duration,
         time: Option<u64>,
-        fill: &mut dyn FnMut(&mut [u8]) -> usize,
+        fill: &mut dyn FnMut(&mut [u8]) -> Option<usize>,
     ) -> Result<(), BusError> {
         let _ = (timeout, time, fill);
         Err(BusError::Unsupported("TX streaming"))

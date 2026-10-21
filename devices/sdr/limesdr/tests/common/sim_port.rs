@@ -13,17 +13,32 @@ use limesdr_sim::SimBoard;
 
 /// A shared simulated board; clone it to inspect the board while a `Device` owns the port.
 #[derive(Clone)]
-pub(crate) struct SimPort(Arc<Mutex<SimBoard>>);
+pub(crate) struct SimPort {
+    /// The board.
+    board: Arc<Mutex<SimBoard>>,
+    /// The TX buffers' size, if not the stream's block.
+    tx_buffer: Option<usize>,
+}
 
 impl SimPort {
     /// Wraps a board.
     pub(crate) fn new(board: SimBoard) -> Self {
-        Self(Arc::new(Mutex::new(board)))
+        Self {
+            board: Arc::new(Mutex::new(board)),
+            tx_buffer: None,
+        }
+    }
+
+    /// The same port lending TX buffers of `bytes`, whatever the stream's block.
+    #[allow(dead_code, reason = "only some of the including test binaries use it")]
+    pub(crate) fn with_tx_buffer(mut self, bytes: usize) -> Self {
+        self.tx_buffer = Some(bytes);
+        self
     }
 
     /// Locks the board.
     pub(crate) fn board(&self) -> MutexGuard<'_, SimBoard> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.board.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -62,14 +77,16 @@ impl ControlPort for SimPort {
         &mut self,
         _timeout: Duration,
         time: Option<u64>,
-        fill: &mut dyn FnMut(&mut [u8]) -> usize,
+        fill: &mut dyn FnMut(&mut [u8]) -> Option<usize>,
     ) -> Result<(), BusError> {
         let mut board = self.board();
         let Some(capacity) = board.tx_capacity() else {
             return Err(BusError::Unsupported("no TX stream"));
         };
-        let mut buffer = vec![0; capacity];
-        let len = fill(&mut buffer);
+        let mut buffer = vec![0; self.tx_buffer.unwrap_or(capacity)];
+        let Some(len) = fill(&mut buffer) else {
+            return Ok(());
+        };
         if board.tx_block(&buffer[..len], time) {
             Ok(())
         } else {

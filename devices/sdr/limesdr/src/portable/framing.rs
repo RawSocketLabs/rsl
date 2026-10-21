@@ -87,16 +87,20 @@ pub(crate) struct RxDeframer {
 }
 
 impl RxDeframer {
-    /// A stream of `packet` host samples per receive over blocks of `bursts` bursts.
-    pub(crate) const fn new(packet: u32, bursts: u32) -> Self {
-        Self {
+    /// A stream of `packet` host samples per receive over blocks of `bursts` bursts;
+    /// `None` for no samples or no bursts, or a block over 4 GiB.
+    pub(crate) const fn new(packet: u32, bursts: u32) -> Option<Self> {
+        if packet == 0 || bursts == 0 || bursts.checked_mul(BURST_BYTES).is_none() {
+            return None;
+        }
+        Some(Self {
             packet,
             bursts,
             last_burst: u64::MAX,
             lag: 0,
             held: None,
             overruns: 0,
-        }
+        })
     }
 
     /// Bytes of one transport block.
@@ -105,7 +109,9 @@ impl RxDeframer {
     }
 
     /// Whole packets lost so far, as libusdr counts them: a burst whose time is not the
-    /// last one's plus a burst's samples adds the gap's whole packets.
+    /// last one's plus a burst's samples adds the gap's whole packets, wrapping. A burst
+    /// timed before the last (after a stream sync reset the counter) counts as a gap of
+    /// nearly 2^64 samples, as in libusdr.
     pub(crate) const fn overruns(&self) -> u64 {
         self.overruns
     }
@@ -139,7 +145,7 @@ impl RxDeframer {
             };
             loop {
                 let mut burst_samples = BURST_SAMPLES;
-                if offset % (BURST_BYTES) == 0 {
+                if offset % BURST_BYTES == 0 {
                     burst_time = counter(block, offset);
                     self.lag = if self.last_burst == u64::MAX {
                         0
@@ -157,7 +163,7 @@ impl RxDeframer {
                 if self.lag != 0 {
                     let fill = if host_at == 0 {
                         let packet = u64::from(self.packet);
-                        self.overruns += self.lag / packet;
+                        self.overruns = self.overruns.wrapping_add(self.lag / packet);
                         self.lag %= packet;
                         first = burst_time.wrapping_sub(self.lag);
                         self.lag
@@ -314,7 +320,7 @@ mod tests {
         // 480 of the next, the second the next's other 540 and 960 of a third.
         let blocks = [block(&[0]), block(&[1020]), block(&[2040])];
         let mut fetched = blocks.iter();
-        let mut deframer = RxDeframer::new(1500, 1);
+        let mut deframer = deframer(1500, 1);
         let mut held = [0u8; 4096];
         let mut host = [[0i16; 2]; 1500];
         let mut fetch = |buf: &mut [u8]| {
@@ -333,7 +339,7 @@ mod tests {
         // lost, 560 zero samples, then the burst's first 460.
         let blocks = [block(&[0, 1020 + 2600, 2040 + 2600])];
         let mut fetched = blocks.iter();
-        let mut deframer = RxDeframer::new(1020, 3);
+        let mut deframer = deframer(1020, 3);
         let mut held = [0u8; 3 * 4096];
         let mut host = [[0i16; 2]; 1020];
         let mut fetch = |buf: &mut [u8]| {
@@ -354,11 +360,92 @@ mod tests {
 
     #[test]
     fn a_failed_fetch_keeps_nothing_held() {
-        let mut deframer = RxDeframer::new(1020, 1);
+        let mut deframer = deframer(1020, 1);
         let mut held = [0u8; 4096];
         let mut host = [[0i16; 2]; 1020];
         assert_eq!(deframer.receive(&mut held, &mut host, |_| Err(7)), Err(7));
-        assert_eq!(deframer, RxDeframer::new(1020, 1));
+        assert_eq!(deframer, self::deframer(1020, 1));
+    }
+
+    #[test]
+    fn streams_without_samples_or_bursts_or_over_4_gib_are_not_framed() {
+        assert_eq!(RxDeframer::new(0, 1), None);
+        assert_eq!(RxDeframer::new(1, 0), None);
+        assert_eq!(RxDeframer::new(1, 1 << 20), None, "a 4 GiB block");
+        assert!(RxDeframer::new(1, (1 << 20) - 1).is_some());
+    }
+
+    /// Receives `count` packets from `blocks`, one per fetch: each packet and its time.
+    fn receive_all(
+        deframer: &mut RxDeframer,
+        blocks: &[Vec<u8>],
+        count: usize,
+    ) -> Vec<(Vec<[i16; 2]>, u64)> {
+        let mut fetched = blocks.iter();
+        let mut held = std::vec![0u8; blocks[0].len()];
+        let mut host = std::vec![[0x55i16; 2]; deframer.packet as usize];
+        (0..count)
+            .map(|_| {
+                let time = deframer
+                    .receive(&mut held, &mut host, |buf| {
+                        buf.copy_from_slice(fetched.next().expect("a block"));
+                        Ok::<_, ()>(())
+                    })
+                    .expect("received");
+                (host.clone(), time)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_gap_reached_mid_packet_fills_the_rest_and_carries_its_remainder() {
+        // Packets of 1500 over one-burst blocks; the second burst 2000 samples late. The
+        // first packet takes the first burst, then 480 of the 2000 zeroes; the second
+        // drops one whole packet of the 1520 left, fills 20, then takes the second burst
+        // and 460 of the third.
+        let blocks = [block(&[0]), block(&[1020 + 2000]), block(&[4040])];
+        let mut deframer = deframer(1500, 1);
+        let packets = receive_all(&mut deframer, &blocks, 2);
+        let (first, second) = (&packets[0].0, &packets[1].0);
+        assert_eq!(packets[0].1, 0);
+        assert!((0..).zip(&first[..1020]).all(|(t, &s)| s == sample(t)));
+        assert!(first[1020..].iter().all(|&s| s == [0, 0]));
+        assert_eq!(packets[1].1, 3000, "the burst's time less the 20 zeroes");
+        assert_eq!(deframer.overruns(), 1);
+        assert!(second[..20].iter().all(|&s| s == [0, 0]));
+        assert!(
+            (3020..)
+                .zip(&second[20..1040])
+                .all(|(t, &s)| s == sample(t))
+        );
+        assert!((4040..).zip(&second[1040..]).all(|(t, &s)| s == sample(t)));
+    }
+
+    #[test]
+    fn a_gap_of_whole_packets_fills_nothing() {
+        let blocks = [block(&[0]), block(&[1020 + 2040])];
+        let mut deframer = deframer(1020, 1);
+        let packets = receive_all(&mut deframer, &blocks, 2);
+        assert_eq!(packets[1].1, 3060);
+        assert_eq!(deframer.overruns(), 2);
+        assert!((3060..).zip(&packets[1].0).all(|(t, &s)| s == sample(t)));
+    }
+
+    #[test]
+    fn bursts_timed_backwards_wrap_the_overrun_count_as_libusdr_does() {
+        // Packets of one sample: each backward burst adds nearly 2^64 packets.
+        let blocks = [block(&[5000]), block(&[0]), block(&[0])];
+        let mut deframer = deframer(1, 1);
+        let packets = receive_all(&mut deframer, &blocks, 3 * 1020);
+        assert_eq!(packets[1020].1, 0, "the backward burst's own time");
+        let first = 0u64.wrapping_sub(1020).wrapping_sub(5000);
+        let second = 0u64.wrapping_sub(1020);
+        assert_eq!(deframer.overruns(), first.wrapping_add(second));
+    }
+
+    /// A deframer for a valid stream.
+    fn deframer(packet: u32, bursts: u32) -> RxDeframer {
+        RxDeframer::new(packet, bursts).expect("a valid stream")
     }
 
     #[test]

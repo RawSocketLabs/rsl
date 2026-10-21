@@ -482,8 +482,9 @@ impl Oracle {
             max_parts: 0,
             extra: 0,
         };
-        // SAFETY: the stream is live (libusdr never frees it); its one host buffer holds a
-        // packet of 4-byte `ci16` samples; `nfo` is valid for the fields it writes.
+        // SAFETY: the stream is live: libusdr's unregister frees nothing, and a destroyed
+        // stream is taken out of the oracle; its one host buffer holds a packet of 4-byte
+        // `ci16` samples; `nfo` is valid for the fields it writes.
         let errno = unsafe {
             usdr_dms_recv(
                 stream.handle.as_ptr(),
@@ -517,7 +518,8 @@ impl Oracle {
         let stream = self.tx.expect("a TX stream");
         let mut buffers = [samples.as_ptr().cast::<c_void>()];
         let count = c_uint::try_from(samples.len()).expect("a test-sized send");
-        // SAFETY: the stream is live; its one host buffer holds `count` samples, read only.
+        // SAFETY: the stream is live, as in `receive`; its one host buffer holds `count`
+        // samples, read only.
         let errno = unsafe {
             usdr_dms_send(
                 stream.handle.as_ptr(),

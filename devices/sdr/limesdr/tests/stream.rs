@@ -101,6 +101,20 @@ fn a_destroyed_stream_can_be_created_again_without_preparing_twice_on_the_bus() 
     );
 }
 
+#[test]
+fn a_tx_buffer_shorter_than_the_block_is_not_committed() {
+    // Four samples frame to 32 bytes: a header and their 16.
+    let sim = SimPort::new(SimBoard::new()).with_tx_buffer(31);
+    let mut device = Device::open(sim.clone()).expect("the board opens");
+    device.create_tx_stream(4096).expect("TX stream");
+    let created = sim.board().trace().len();
+    assert!(matches!(
+        device.send(&[[0; 2]; 4], None, TIMEOUT),
+        Err(Error::Stream(BusError::Unsupported(_)))
+    ));
+    assert_eq!(sim.board().trace().len(), created, "nothing committed");
+}
+
 /// A port that only controls the board: the default stream methods.
 struct ControlOnly(SimPort);
 
