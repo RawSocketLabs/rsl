@@ -3,8 +3,9 @@
 //! libusdr (vendored once, in `../../../vendor/libusdr/`, pinned by its `PIN`) is
 //! compiled with its hardware transports replaced by `shim/sim_plugin.c`. That plugin
 //! reports the `PE_SYNC` device ID and forwards every low-level operation to the board
-//! installed by [`Oracle::open`]; libusdr's `usleep` advances the board's virtual clock. The
-//! board's trace is the reference the `PE_SYNC` port is checked against.
+//! installed by [`Oracle::open`]; libusdr's `usleep` advances the board's virtual clock, and
+//! the chip drivers' lock waits read it as their wall clock (`build.rs`). The board's trace
+//! is the reference the `PE_SYNC` port is checked against.
 //!
 //! libusdr keeps process-global state, so one [`Oracle`] exists at a time: [`Oracle::open`]
 //! blocks until any other instance is closed.
@@ -402,6 +403,17 @@ extern "C" fn pe_sync_oracle_sleep_us(us: c_ulonglong) {
         board.sleep_us(us);
         0
     });
+}
+
+/// The chip drivers' wall clock, redirected by the shim: the board's virtual time, or 0
+/// while no oracle is open.
+#[unsafe(no_mangle)]
+extern "C" fn pe_sync_oracle_now_us() -> c_ulonglong {
+    BOARD
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .map_or(0, SimBoard::now_us)
 }
 
 /// The sim plugin's `ls_op`: dispatches one libusdr low-level operation to the board.

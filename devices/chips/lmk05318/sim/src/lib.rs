@@ -12,9 +12,11 @@
 //!   writes none).
 //! - `PLL1_CALSTAT1` (0x165) and `PLL2_CALSTAT1` (0x16f), YAML page "Status", which the C
 //!   only reads: bit 5 `PLLn_VM_INSIDE` reports the charge pump in range, which the APLL1
-//!   and APLL2 lock waits require. They ignore writes. Lock is reported from power-on
-//!   (or never, [`Lmk05318::unlock`]), not acquired by calibration: libusdr's lock waits
-//!   time out by wall clock, and a reported lock ends each on its first poll.
+//!   and APLL2 lock waits require. They ignore writes. Lock is reported, not acquired by
+//!   calibration: from power-on by default, so a lock wait ends on its first poll; per
+//!   APLL, after a number of reads or never ([`Lmk05318::set_lock`], [`Lmk05318::unlock`]),
+//!   to drive a wait's repeated polls or its timeout. Unlocked reads are counted per APLL
+//!   across waits and opens, as a PLL that stays unlocked would.
 //! - No reset or sync side effects: `DEV_CTL` (0x0c) `RESET_SW` and `SYNC_SW` are stored
 //!   like any other bit. The interrupt flags (`INT_FLAG0`/`INT_FLAG1`, 0x13/0x14) are plain
 //!   storage, so after libusdr clears them they report no loss of lock or signal.
@@ -36,14 +38,37 @@ const VCO_STATUS: [u16; 2] = [0x0165, 0x016f];
 /// `PLLn_VM_INSIDE`, bit 5 of each VCO status register.
 const VM_INSIDE: u8 = 1 << 5;
 
-/// An LMK05318 whose APLLs report lock unless [`Lmk05318::unlock`]ed.
+/// One of the chip's two APLLs, by its VCO status register.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Apll {
+    /// APLL1 (`PLL1_CALSTAT1`).
+    Apll1,
+    /// APLL2 (`PLL2_CALSTAT1`).
+    Apll2,
+}
+
+/// How a PLL's lock detect reports.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Lock {
+    /// Locked from the first read: a healthy chip.
+    #[default]
+    Immediate,
+    /// The first `n` reads report unlocked, every later one locked: a slow lock.
+    AfterReads(u32),
+    /// Every read reports unlocked: a PLL that never locks.
+    Never,
+}
+
+/// An LMK05318 whose APLLs report lock unless told otherwise ([`Lmk05318::set_lock`]).
 #[derive(Debug)]
 pub struct Lmk05318 {
     /// Every register's contents, indexed by address; the identity and VCO status
     /// registers are answered without it.
     regs: Vec<u8>,
-    /// Whether the VCO status registers report the charge pumps in range.
-    locked: bool,
+    /// How each APLL's VCO status reports lock, by [`VCO_STATUS`] index.
+    locks: [Lock; 2],
+    /// Unlocked reads of each VCO status so far.
+    unlocked_reads: [u32; 2],
 }
 
 impl Lmk05318 {
@@ -52,14 +77,33 @@ impl Lmk05318 {
     pub fn new() -> Self {
         Self {
             regs: vec![0; 1 << 16],
-            locked: true,
+            locks: [Lock::Immediate; 2],
+            unlocked_reads: [0; 2],
         }
+    }
+
+    /// Makes `apll` report its lock as `lock` from now on, its unlocked reads counted
+    /// afresh.
+    pub fn set_lock(&mut self, apll: Apll, lock: Lock) {
+        let i = apll as usize;
+        self.locks[i] = lock;
+        self.unlocked_reads[i] = 0;
     }
 
     /// Makes both APLLs report their charge pumps out of range from now on, so they never
     /// lock.
     pub fn unlock(&mut self) {
-        self.locked = false;
+        self.set_lock(Apll::Apll1, Lock::Never);
+        self.set_lock(Apll::Apll2, Lock::Never);
+    }
+
+    /// Whether the APLL with VCO status `VCO_STATUS[i]` reports lock now.
+    fn locked(&self, i: usize) -> bool {
+        match self.locks[i] {
+            Lock::Immediate => true,
+            Lock::AfterReads(n) => self.unlocked_reads[i] >= n,
+            Lock::Never => false,
+        }
     }
 
     /// The register at `addr`, as a read returns it.
@@ -68,10 +112,21 @@ impl Lmk05318 {
         if let Some(&id) = ID.get(usize::from(addr)) {
             return id;
         }
-        if VCO_STATUS.contains(&addr) {
-            return if self.locked { VM_INSIDE } else { 0 };
+        if let Some(i) = VCO_STATUS.iter().position(|&status| status == addr) {
+            return if self.locked(i) { VM_INSIDE } else { 0 };
         }
         self.regs[usize::from(addr)]
+    }
+
+    /// One read of the register at `addr` over the bus, which counts towards a slow lock.
+    fn read(&mut self, addr: u16) -> u8 {
+        let byte = self.reg(addr);
+        if let Some(i) = VCO_STATUS.iter().position(|&status| status == addr) {
+            if byte == 0 {
+                self.unlocked_reads[i] = self.unlocked_reads[i].saturating_add(1);
+            }
+        }
+        byte
     }
 
     /// Performs a write-then-read transfer: `write` is the bytes sent (the two pointer
@@ -90,7 +145,7 @@ impl Lmk05318 {
         }
         (0..read_len)
             .map(|_| {
-                let byte = self.reg(addr);
+                let byte = self.read(addr);
                 addr = addr.wrapping_add(1);
                 byte
             })
@@ -124,6 +179,21 @@ mod tests {
         assert_eq!((chip.reg(0), chip.reg(0x0165)), (0x10, VM_INSIDE));
         chip.unlock();
         assert_eq!(chip.transfer(&[0x01, 0x6f], 1), vec![0]);
+    }
+
+    #[test]
+    fn a_slow_apll_reports_unlocked_for_its_reads_only() {
+        let mut chip = Lmk05318::new();
+        chip.set_lock(Apll::Apll2, Lock::AfterReads(2));
+        let reads: Vec<u8> = (0..3)
+            .flat_map(|_| chip.transfer(&[0x01, 0x6f], 1))
+            .collect();
+        assert_eq!(reads, [0, 0, VM_INSIDE]);
+        assert_eq!(
+            chip.transfer(&[0x01, 0x65], 1),
+            vec![VM_INSIDE],
+            "APLL1 unaffected"
+        );
     }
 
     #[test]
