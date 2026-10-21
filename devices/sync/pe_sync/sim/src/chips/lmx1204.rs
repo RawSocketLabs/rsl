@@ -25,13 +25,14 @@ const RESET: [Reset; 35] = [
     (0x4f, 0x0104, 0x8000), (0x56, 0x0000, 0x0000), (0x5a, 0x0000, 0xff00),
 ];
 
-/// A healthy LMX1204 whose multiplier PLL reports lock.
+/// A healthy LMX1204 whose multiplier PLL reports lock ([`Lock`](super::Lock) changes
+/// when).
 ///
-/// Assumption: lock is reported from power-on. The YAML resets `RB_LD` to 3 (unlocked, VTUNE
-/// high); `pe_sync.c` asks for a 4x multiplier (1 GHz in, 4 GHz out), so
-/// `lmx1204_wait_pll_lock` polls `RB_LD` until `RB_LD_LOCKED`, timing out by wall clock. A
-/// reported lock ends the wait on its first poll. Temperature (`R24`) and VCO selection
-/// (`R65`) keep their YAML reset values; libusdr only logs them.
+/// Assumption: lock is reported, not acquired. The YAML resets `RB_LD` to 3 (unlocked,
+/// VTUNE high), which it reads while unlocked; `pe_sync.c` asks for a 4x multiplier (1 GHz
+/// in, 4 GHz out), so `lmx1204_wait_pll_lock` polls `RB_LD` until `RB_LD_LOCKED`.
+/// Temperature (`R24`) and VCO selection (`R65`) keep their YAML reset values; libusdr only
+/// logs them.
 pub(crate) fn lmx1204() -> SpiRegisters {
-    SpiRegisters::new(&RESET).with_status(R75, RB_LD, RB_LD_LOCKED)
+    SpiRegisters::new(&RESET).with_lock_detect(R75, RB_LD, RB_LD_LOCKED)
 }

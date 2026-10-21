@@ -47,14 +47,12 @@ const RESET: [Reset; 123] = [
     (0x78, 0x0000, 0xffff), (0x79, 0x0000, 0xffff), (0x7a, 0x0000, 0xffff),
 ];
 
-/// A healthy LMX2820 whose PLL reports lock.
+/// A healthy LMX2820 whose PLL reports lock ([`Lock`](super::Lock) changes when).
 ///
-/// Assumption: lock is reported from power-on, not modelled as acquired by calibration.
-/// `RB_LD` resets to 0 (unlocked) in the YAML, and `lmx2820_wait_pll_lock` polls it after
-/// `lmx2820_tune` until `RB_LD_LOCKED`, timing out by wall clock; a reported lock ends the
-/// wait on its first poll, so the trace does not depend on host speed. Temperature
-/// (`R76`) and the VCO readbacks (`R75`) keep their YAML reset value 0; libusdr only logs
-/// them.
+/// Assumption: lock is reported, not modelled as acquired by calibration. `RB_LD` resets
+/// to 0 (unlocked) in the YAML, and `lmx2820_wait_pll_lock` polls it after `lmx2820_tune`
+/// until `RB_LD_LOCKED`; unlocked, it reads that reset value. Temperature (`R76`) and the
+/// VCO readbacks (`R75`) keep their YAML reset value 0; libusdr only logs them.
 pub(crate) fn lmx2820() -> SpiRegisters {
-    SpiRegisters::new(&RESET).with_status(R74, RB_LD, RB_LD_LOCKED)
+    SpiRegisters::new(&RESET).with_lock_detect(R74, RB_LD, RB_LD_LOCKED)
 }

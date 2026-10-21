@@ -103,8 +103,10 @@ All of it, on the sim: every lock wait ends on its first poll and open returns 0
 DPLL stays disabled (`dpll.enabled = false` in `pe_sync.c`), so the 240 s reference
 validation wait is skipped; APLL2 is used (its lock is polled). The C's lock waits
 (`lmk05318_wait_apll{1,2}_lock`, `lmx2820_wait_pll_lock`, `lmx1204_wait_pll_lock`) time out
-by wall clock (`clock_get_time`), not by `usleep`, so an unlocked model would make the
-trace depend on host speed; the sim therefore reports lock from power-on.
+by wall clock (`clock_get_time`, from `cal/opt_func.h`), not by `usleep`; `oracle/build.rs`
+compiles those three sources with `clock_gettime` renamed to the shim's, which reads the
+board's virtual clock, so a slow or absent lock (`SimBoard::with_lock`) gives a trace that
+does not depend on host speed and matches the driver's poll counts.
 
 ## What the sim models, and its assumptions
 
@@ -117,13 +119,18 @@ Each is stated again, with its evidence, where it is encoded.
   values and read-only masks from the vendored YAMLs** (`dflt`, `mode: R`, which also
   covers reserved bits); undocumented addresses reset to 0. Writes leave read-only bits
   alone; reset bits have no side effects; a write reads back 0. Lock detect reads locked
-  (LMX2820 `R74` `RB_LD` = 2, LMX1204 `R75` `RB_LD` = 2); temperatures keep their YAML
-  defaults (logged only).
+  (LMX2820 `R74` `RB_LD` = 2, LMX1204 `R75` `RB_LD` = 2), or its YAML reset value (0, 3)
+  while unlocked; temperatures keep their YAML defaults (logged only).
+- Lock (`pe_sync_sim::Lock`, per `Pll`): reported, not acquired by calibration. A healthy
+  board reports it from the first read; `AfterReads(n)` reports the first `n` reads of the
+  status register unlocked, `Never` all of them. Reads are counted across waits, status
+  reads and opens.
 - LMK05318B: 16-bit pointer, byte registers. Its YAML has no reset values, so all reset to
   0 except identity bytes 0x0000-0x0003 = 10 0b 35 42 (what `lmk05318_create` requires)
-  and `PLL1/PLL2_VM_INSIDE` (0x165, 0x16f bit 5); the sim makes those read-only (the YAML
-  gives no access modes). `BAW_LOCK` (0x50 bit 7, "Lock Detect Status" in the YAML) is
-  stored, not reported: the C writes 1 there itself on its no-DPLL path and polls it back.
+  and `PLL1/PLL2_VM_INSIDE` (0x165, 0x16f bit 5, the APLLs' lock detects); the sim makes
+  those read-only (the YAML gives no access modes). `BAW_LOCK` (0x50 bit 7, "Lock Detect
+  Status" in the YAML) is stored, not reported: the C writes 1 there itself on its no-DPLL
+  path and polls it back.
   Interrupt flags are plain storage, so cleared flags report no loss. No reset/sync side
   effects.
 - LMK1D1208I: 8-bit pointer; YAML defaults (`R5` = 0x20: `REV_ID` 2, `DEV_ID` 0, accepted).
@@ -132,8 +139,8 @@ Each is stated again, with its evidence, where it is encoded.
 - I2C readback packing (first byte most significant, little-endian copy) and the
   three-out/four-in limits are transport facts from the uSDR oracle; here the LMK05318B
   identity burst confirms the packing.
-- Sleeps advance virtual time only (the shim replaces `usleep`): a session is 4.27 s of
-  virtual time.
+- Sleeps advance virtual time only (the shim replaces `usleep`), and the lock waits' wall
+  clock reads it: a session is 4.27 s of virtual time.
 
 ## Characterization golden
 
@@ -153,7 +160,8 @@ These counts are as captured; the fixture is authoritative, so recount them on a
 (`-ENODEV`) and power-off when the LMK05318B does not answer; `oracle/tests/power.rs`
 asserts supplies-before-chips and the closed state. The driver is compared with live
 libusdr, not with this file: `oracle/tests/open_parity.rs` covers every golden line (open
-and close) and the refusals; `oracle/tests/chip_parity.rs` sweeps the LMX solvers beyond
+and close), the refusals, and every lock wait slow or timing out (with a reopen after a
+timeout); `oracle/tests/chip_parity.rs` sweeps the LMX solvers beyond
 the board's setpoints. Not covered: any control after open (there is none in libusdr
 besides the refused rate), sysref windowing, DAC trims, the external SPI.
 
@@ -183,10 +191,9 @@ as `pe-sync-portable`.
 
 ## Open items and blockers
 
-- Lock is reported, not acquired (and LMK05318B `BAW_LOCK` is whatever the C wrote):
-  modelling calibration (`FCAL_EN`, `PLLn` calibrate triggers) is needed before testing a
-  driver's unlocked or retry paths, which in libusdr also need a fake wall clock
-  (`clock_get_time` is not redirected).
+- Lock is reported after a chosen number of reads, not acquired (and LMK05318B `BAW_LOCK`
+  is whatever the C wrote): calibration (`FCAL_EN`, `PLLn` calibrate triggers) is not
+  modelled, so nothing checks that a driver calibrates before it waits.
 - LMK05318B reset values and its DPLL (`REFVALSTAT`, reference validation) are not in the
   PIN subset; enabling the DPLL needs both.
 - The YAML reset tables were transcribed from the PIN by script; nothing re-derives them

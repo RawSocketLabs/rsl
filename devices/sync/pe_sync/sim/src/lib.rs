@@ -9,7 +9,8 @@
 //! [`Op`] traces can be compared without hardware.
 //!
 //! The model covers identification and libusdr's whole open (power-on, status read, clock
-//! tree configuration) and close (power-off). Each modelling assumption is stated, with its
+//! tree configuration) and close (power-off). Each PLL whose lock the open waits for can be
+//! made slow to lock or never to lock ([`SimBoard::with_lock`]). Each modelling assumption is stated, with its
 //! evidence, where it is encoded; `devices/sync/pe_sync/AGENTS.md` lists them all.
 #![forbid(unsafe_code)]
 
@@ -17,5 +18,6 @@ mod board;
 mod chips;
 mod trace;
 
-pub use board::{I2cAddress, SimBoard, SimError};
+pub use board::{I2cAddress, Pll, SimBoard, SimError};
+pub use chips::Lock;
 pub use trace::Op;

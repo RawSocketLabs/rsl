@@ -7,6 +7,8 @@
 //! - No reset or sync side effects: `DEV_CTL` (0x0c) `RESET_SW` and `SYNC_SW` are stored
 //!   like any other bit. The interrupt flags (`INT_FLAG0`/`INT_FLAG1`, 0x13/0x14) are
 //!   plain storage, so after libusdr clears them they report no loss of lock or signal.
+//! - `PLL1_CALSTAT1` and `PLL2_CALSTAT1` bit 5 (`PLLn_VM_INSIDE`) report each APLL's lock
+//!   ([`Lock`](super::Lock)): in range from power-on on a healthy board, 0 while unlocked.
 //! - DPLL reference validation (`REFVALSTAT`) is not modelled: `pe_sync.c` leaves the DPLL
 //!   disabled, so `lmk05318_wait_dpll_ref_stat` returns without reading it.
 //! - `BAW_LOCKDET_PPM_MAX_BY1` (0x50) is plain storage. The YAML calls bit 7 `BAW_LOCK`
@@ -27,17 +29,25 @@ const RESET: [Reset; 6] = [
     (0x0001, 0x0b, 0xff),
     (0x0002, 0x35, 0xff),
     (0x0003, 0x42, 0xff),
-    // `PLL1_CALSTAT1` and `PLL2_CALSTAT1` (YAML page "Status"; the C never writes them): bit
-    // 5 `PLLn_VM_INSIDE` reads in range, which the APLL1 and APLL2 lock waits require.
-    (0x0165, 0x20, 0xff),
-    (0x016f, 0x20, 0xff),
+    // `PLL1_CALSTAT1` and `PLL2_CALSTAT1` (YAML page "Status"; the C never writes them):
+    // bit 5 `PLLn_VM_INSIDE` is the lock detect below, which the APLL1 and APLL2 lock waits
+    // require.
+    (PLL1_CALSTAT1, 0x00, 0xff),
+    (PLL2_CALSTAT1, 0x00, 0xff),
 ];
+
+/// `PLL1_CALSTAT1`: APLL1's VCO status.
+pub(crate) const PLL1_CALSTAT1: u16 = 0x0165;
+/// `PLL2_CALSTAT1`: APLL2's VCO status.
+pub(crate) const PLL2_CALSTAT1: u16 = 0x016f;
+/// `PLLn_VM_INSIDE`: the VCO's tuning voltage in range.
+const VM_INSIDE: u8 = 0x20;
 
 /// A healthy LMK05318B whose APLLs report lock.
 ///
-/// Assumption: lock is reported from power-on, not modelled as acquired by calibration;
-/// libusdr's lock waits time out by wall clock, and a reported lock ends each on its first
-/// poll.
+/// Assumption: lock is reported, not modelled as acquired by calibration.
 pub(crate) fn lmk05318() -> I2cRegisters {
     I2cRegisters::new(2, &RESET)
+        .with_lock_detect(PLL1_CALSTAT1, VM_INSIDE, VM_INSIDE)
+        .with_lock_detect(PLL2_CALSTAT1, VM_INSIDE, VM_INSIDE)
 }

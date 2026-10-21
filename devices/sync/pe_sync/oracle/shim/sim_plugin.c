@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "usdr_lowlevel.h"
@@ -23,11 +24,24 @@
 int pe_sync_oracle_ls_op(unsigned op, unsigned addr, size_t insz, void* pin, size_t outsz,
                              const void* pout);
 void pe_sync_oracle_sleep_us(unsigned long long us);
+unsigned long long pe_sync_oracle_now_us(void);
 
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
 {
     pe_sync_oracle_sleep_us(us);
+    return 0;
+}
+
+// The chip drivers' clock_gettime (renamed by build.rs in the sources whose lock waits read
+// the wall clock): the board's virtual clock, whatever the clock asked for, so a lock
+// wait's timeout counts the virtual time its usleeps advance.
+int pe_sync_oracle_clock_gettime(clockid_t clock, struct timespec* ts)
+{
+    (void)clock;
+    unsigned long long us = pe_sync_oracle_now_us();
+    ts->tv_sec = (time_t)(us / 1000000);
+    ts->tv_nsec = (long)(us % 1000000) * 1000;
     return 0;
 }
 

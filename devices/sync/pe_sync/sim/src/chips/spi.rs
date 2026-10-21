@@ -14,6 +14,8 @@
 //! - A write reads back 0. libusdr discards what MISO carries during a write
 //!   (`common_spi_post` passes no read buffer), so the value is unconstrained.
 
+use super::lock::{Lock, LockDetect};
+
 /// Bit 23 of an SPI word: a read (`MAKE_*_REG_RD`).
 const READ: u8 = 0x80;
 
@@ -27,6 +29,8 @@ pub(crate) struct SpiRegisters {
     regs: [u16; 128],
     /// Bits writes cannot change, indexed by address.
     read_only: [u16; 128],
+    /// The PLL's lock detect, on chips that report one.
+    lock: Option<LockDetect>,
 }
 
 impl SpiRegisters {
@@ -35,6 +39,7 @@ impl SpiRegisters {
         let mut chip = Self {
             regs: [0; 128],
             read_only: [0; 128],
+            lock: None,
         };
         for &(addr, value, read_only) in reset {
             chip.regs[usize::from(addr)] = value;
@@ -43,21 +48,32 @@ impl SpiRegisters {
         chip
     }
 
-    /// The same chip with the read-only bits `mask` of register `addr` reading `value`: a
-    /// status the chip reports instead of its reset value.
+    /// The same chip with the read-only bits `mask` of register `addr` reporting its PLL's
+    /// lock: `locked` once locked, their reset value until then.
     ///
     /// # Panics
     ///
     /// When `mask` covers writable bits, which would let the driver overwrite the status.
-    pub(crate) fn with_status(mut self, addr: u8, mask: u16, value: u16) -> Self {
-        let addr = usize::from(addr);
+    pub(crate) fn with_lock_detect(mut self, addr: u8, mask: u16, locked: u16) -> Self {
         assert_eq!(
-            self.read_only[addr] & mask,
+            self.read_only[usize::from(addr)] & mask,
             mask,
             "invariant: a status occupies read-only bits"
         );
-        self.regs[addr] = self.regs[addr] & !mask | value & mask;
+        self.lock = Some(LockDetect::new(addr.into(), mask, locked));
         self
+    }
+
+    /// Makes the lock detect report as `lock`.
+    ///
+    /// # Panics
+    ///
+    /// On a chip without a lock detect.
+    pub(crate) fn set_lock(&mut self, lock: Lock) {
+        self.lock
+            .as_mut()
+            .expect("invariant: only PLLs are given a lock behaviour")
+            .set(lock);
     }
 
     /// Shifts one SPI word through the chip and returns the word read back: the register's
@@ -66,7 +82,11 @@ impl SpiRegisters {
         let [_, command, data_hi, data_lo] = word.to_be_bytes();
         let addr = command & !READ;
         if command & READ != 0 {
-            return u32::from(self.reg(addr));
+            let stored = self.reg(addr);
+            return u32::from(match &mut self.lock {
+                Some(lock) if lock.addr == u16::from(addr) => lock.read(stored),
+                _ => stored,
+            });
         }
         let addr = usize::from(addr);
         let kept = self.regs[addr] & self.read_only[addr];
@@ -74,7 +94,7 @@ impl SpiRegisters {
         0
     }
 
-    /// A register's current contents.
+    /// A register's stored contents, lock detect aside.
     pub(crate) fn reg(&self, addr: u8) -> u16 {
         self.regs[usize::from(addr & !READ)]
     }
@@ -101,8 +121,16 @@ mod tests {
     }
 
     #[test]
-    fn a_status_replaces_read_only_bits_only() {
-        let chip = SpiRegisters::new(&RESET).with_status(0x02, 0x0300, 0x0200);
-        assert_eq!(chip.reg(0x02), 0xaa00);
+    fn a_lock_detect_replaces_read_only_bits_only() {
+        let mut chip = SpiRegisters::new(&RESET).with_lock_detect(0x02, 0x0300, 0x0200);
+        chip.transact(0x0002_00ff);
+        assert_eq!(chip.transact(0x0082_0000), 0xaaff);
+    }
+
+    #[test]
+    fn an_unlocked_pll_reads_its_reset_status() {
+        let mut chip = SpiRegisters::new(&RESET).with_lock_detect(0x02, 0x0300, 0x0200);
+        chip.set_lock(Lock::Never);
+        assert_eq!(chip.transact(0x0082_0000), 0xab00);
     }
 }

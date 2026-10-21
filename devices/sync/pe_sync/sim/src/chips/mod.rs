@@ -7,14 +7,16 @@ mod lmk1d1208i;
 mod lmx1204;
 mod lmx1214;
 mod lmx2820;
+mod lock;
 mod lp87524;
 mod spi;
 
 pub(crate) use i2c::I2cRegisters;
 pub(crate) use lmk1d1208i::lmk1d1208i;
-pub(crate) use lmk05318::lmk05318;
+pub(crate) use lmk05318::{PLL1_CALSTAT1, PLL2_CALSTAT1, lmk05318};
 pub(crate) use lmx1204::lmx1204;
 pub(crate) use lmx1214::lmx1214;
 pub(crate) use lmx2820::lmx2820;
+pub use lock::Lock;
 pub(crate) use lp87524::lp87524;
 pub(crate) use spi::SpiRegisters;

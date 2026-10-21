@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::chips::{
-    I2cRegisters, SpiRegisters, lmk1d1208i, lmk05318, lmx1204, lmx1214, lmx2820, lp87524,
+    I2cRegisters, Lock, PLL1_CALSTAT1, PLL2_CALSTAT1, SpiRegisters, lmk1d1208i, lmk05318, lmx1204,
+    lmx1214, lmx2820, lp87524,
 };
 use crate::trace::Op;
 
@@ -80,6 +81,21 @@ impl fmt::Display for I2cAddress {
     }
 }
 
+/// A PLL whose lock libusdr's open waits for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pll {
+    /// The LMK05318B's APLL1 (`PLL1_VM_INSIDE`).
+    Apll1,
+    /// The LMK05318B's APLL2 (`PLL2_VM_INSIDE`).
+    Apll2,
+    /// `LMXGen0`'s PLL (`R74` `RB_LD`).
+    Lmx2820_0,
+    /// `LMXGen1`'s PLL.
+    Lmx2820_1,
+    /// The LMX1204's multiplier PLL (`R75` `RB_LD`).
+    Lmx1204,
+}
+
 /// A transfer the board cannot complete.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SimError {
@@ -148,6 +164,21 @@ impl SimBoard {
     #[must_use]
     pub fn without(mut self, addr: I2cAddress) -> Self {
         self.absent.insert(addr);
+        self
+    }
+
+    /// The same board with `pll` reporting its lock as `lock` says: slow
+    /// ([`Lock::AfterReads`]) or never ([`Lock::Never`]), to drive a lock wait's repeated
+    /// polls or its timeout.
+    #[must_use]
+    pub fn with_lock(mut self, pll: Pll, lock: Lock) -> Self {
+        match pll {
+            Pll::Apll1 => self.lmk05318.set_lock(PLL1_CALSTAT1, lock),
+            Pll::Apll2 => self.lmk05318.set_lock(PLL2_CALSTAT1, lock),
+            Pll::Lmx2820_0 => self.lmx2820[0].set_lock(lock),
+            Pll::Lmx2820_1 => self.lmx2820[1].set_lock(lock),
+            Pll::Lmx1204 => self.lmx1204.set_lock(lock),
+        }
         self
     }
 
@@ -288,6 +319,24 @@ mod tests {
             let vm = board.i2c(I2C_LMK05318, &calstat, 1);
             assert_eq!(vm, [0x20], "LMK05318 PLLn_VM_INSIDE at {calstat:02x?}");
         }
+    }
+
+    #[test]
+    fn a_slow_pll_reports_unlocked_for_its_reads_only() {
+        let mut board = SimBoard::new().with_lock(Pll::Lmx1204, Lock::AfterReads(1));
+        let mut rb_ld = || board.spi(SPI_LMX1204, LMX1204_READ_R75).expect("wired") >> 8 & 0b11;
+        assert_eq!(
+            [rb_ld(), rb_ld()],
+            [3, RB_LD_LOCKED],
+            "YAML reset 3, then locked"
+        );
+    }
+
+    #[test]
+    fn each_apll_has_its_own_lock_detect() {
+        let mut board = SimBoard::new().with_lock(Pll::Apll2, Lock::Never);
+        assert_eq!(board.i2c(I2C_LMK05318, &[0x01, 0x65], 1), [0x20], "APLL1");
+        assert_eq!(board.i2c(I2C_LMK05318, &[0x01, 0x6f], 1), [0x00], "APLL2");
     }
 
     #[test]
