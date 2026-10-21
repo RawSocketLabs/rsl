@@ -15,7 +15,7 @@ mod sim_bus;
 
 use std::ffi::CStr;
 
-use lsdr::{Device, Error, OpenOptions};
+use lsdr::{ClockPlanFailure, Device, Error, OpenOptions};
 use lsdr_oracle::Oracle;
 use lsdr_sim::{Op, SimBoard, Variant};
 use sim_bus::SimBus;
@@ -135,9 +135,12 @@ fn libusdr(fit: Fit, steps: &[Step]) -> Session {
 /// The errno libusdr returns where lsdr returns `error`.
 fn errno(error: &Error) -> i32 {
     match error {
-        Error::UnsupportedSampleRate { chip: "Si549", .. } => -ERANGE,
-        // The LMK04832's one refusal here is for want of dividers.
-        Error::UnsupportedSampleRate { .. } | Error::NoSampleRate | Error::FrontEnd(_) => -EINVAL,
+        Error::UnsupportedSampleRate { .. }
+        | Error::ClockPlan {
+            source: ClockPlanFailure::NoVco,
+            ..
+        } => -ERANGE,
+        Error::ClockPlan { .. } | Error::NoSampleRate | Error::FrontEnd(_) => -EINVAL,
         other => panic!("no libusdr failure in these scenarios matches {other:?}"),
     }
 }
@@ -221,6 +224,8 @@ fn every_decimation_and_clock_tap_matches_libusdr_on_every_fit() {
         40_000_000,
         50_000_000,
         60_000_000,
+        // x4 is exactly 260 MS/s, not under it: x3.
+        65_000_000,
         80_000_000,
         100_000_000,
         110_000_000,

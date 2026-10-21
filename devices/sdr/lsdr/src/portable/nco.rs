@@ -17,10 +17,11 @@ pub(crate) const fn select_channels() -> FpgaAccess {
 }
 
 /// The NCO's phase increment for `offset` on an ADC at `adc_rate` S/s, or `None` without
-/// a rate (libusdr's `-EINVAL`), with libusdr's integer arithmetic: `offset` is the low 32 bits of the frequency asked for
-/// (its `int`), compared and folded as unsigned (`while (offset > adc_rate)`), so a
-/// negative offset folds from 2³² down; then `offset − rate / 4` as a signed word, times
-/// 2³³, divided by the rate and by 2, truncated to 32 bits.
+/// a rate (libusdr's `-EINVAL`), with libusdr's integer arithmetic: `offset` is the low 32
+/// bits of the frequency asked for (its `int`), compared and folded as unsigned
+/// (`while (offset > adc_rate)`), so a negative offset folds from 2³² down; then
+/// `offset − rate / 4` as a signed word, times 2³³, divided by the rate and by 2, truncated
+/// to 32 bits.
 pub(crate) fn phase_increment(adc_rate: u32, offset: u32) -> Option<u32> {
     if adc_rate == 0 {
         return None;

@@ -32,6 +32,7 @@ const DSP_RESET_PULSE: Duration = Duration::from_millis(1);
 /// `0a`/`a` is channel 0, `0b`/`b` channel 1; the second ADC's are commented out there,
 /// "disable now").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RxChannels {
     /// Channel A (libusdr's channel mask 1): the front end's lanes 1 and 0.
     A,
@@ -71,6 +72,9 @@ impl Device {
     /// reset pulsed, the RX DMA reset, and the RX front end and DMA configured for the
     /// packet's bursts; then the sync unit, which the `LSDr` does not declare, cannot be
     /// held stopped. The board is left with the ADCs powered and the engine configured.
+    ///
+    /// **Unstable test surface:** it cannot return `Ok` at the pin, and its signature
+    /// will change (a stream handle) if streaming past libusdr's create is ported.
     ///
     /// # Errors
     ///

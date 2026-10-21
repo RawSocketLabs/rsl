@@ -5,6 +5,7 @@ use hal::SequenceFailure;
 use sdr_frontend::Board;
 
 use crate::lowlevel::BusError;
+use crate::portable::lmk04832::ClockPlanFailure;
 
 /// A failed driver operation.
 #[derive(Debug, thiserror::Error)]
@@ -76,18 +77,30 @@ pub enum Error {
     #[error("the {} front end answered; its bring-up is not ported", .0.name())]
     FrontEndNotPorted(Board),
 
-    /// A clock cannot be made for the sample rate: the Si549 refuses the ADC rate it
-    /// implies (outside 200 kHz to 800 MHz, libusdr's `-ERANGE`, before any access), or
-    /// the LMK04832 has no plan for it (libusdr's `-EINVAL`/`-ERANGE`, after the Si549
-    /// and the FIR gearbox are set, as libusdr fails there).
+    /// The Si549 refuses the ADC rate the sample rate implies (outside 200 kHz to 800 MHz,
+    /// libusdr's `-ERANGE`), before any access.
     #[error("the {chip} cannot clock {rate} S/s")]
     #[non_exhaustive]
     UnsupportedSampleRate {
         /// The sample rate asked for, in S/s.
         rate: u32,
 
-        /// The clock that refused it: `"Si549"` or `"LMK04832"`.
+        /// The clock that refused it: `"Si549"`.
         chip: &'static str,
+    },
+
+    /// The LMK04832 has no plan for the sample rate, after the Si549 and the FIR gearbox
+    /// are set, as libusdr fails there; the reason keeps libusdr's distinction
+    /// (`-ERANGE` for no VCO, `-EINVAL` otherwise).
+    #[error("the LMK04832 cannot distribute {rate} S/s")]
+    #[non_exhaustive]
+    ClockPlan {
+        /// The sample rate asked for, in S/s.
+        rate: u32,
+
+        /// Why there is no plan.
+        #[source]
+        source: ClockPlanFailure,
     },
 
     /// The NCO was set before any sample rate (libusdr's `-EINVAL`, after it selected

@@ -235,18 +235,32 @@ const ADC_PORTS: [u16; 2] = [0, 6];
 /// How many writes [`ClockPlan::layout`] issues: 22 for the layout, 8 per ADC port.
 pub(crate) const LAYOUT_WRITES: usize = 22 + 8 * ADC_PORTS.len();
 
-/// Why [`ClockPlan::new`] has no plan; each is libusdr's failure before any access.
+/// Why the LMK04832 has no plan for a sample rate (`lmk04832_configure_layout`); each is
+/// libusdr's failure before any access to the chip.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PlanFailure {
-    /// No frequency, or above the fastest VCO (`-EINVAL`).
+#[non_exhaustive]
+pub enum ClockPlanFailure {
+    /// No frequency, or above the fastest VCO (libusdr's `-EINVAL`).
     OutOfRange,
 
-    /// No multiple of the frequency falls in either VCO's range (`-ERANGE`).
+    /// No multiple of the frequency falls in either VCO's range (libusdr's `-ERANGE`).
     NoVco,
 
-    /// No R, prescaler and N divider reach it from the input (`-EINVAL`).
+    /// No R, prescaler and N divider reach it from the input (libusdr's `-EINVAL`).
     NoDividers,
 }
+
+impl core::fmt::Display for ClockPlanFailure {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::OutOfRange => "no frequency, or above the fastest VCO",
+            Self::NoVco => "no VCO reaches a multiple of the frequency",
+            Self::NoDividers => "no PLL2 dividers reach the frequency from the input",
+        })
+    }
+}
+
+impl core::error::Error for ClockPlanFailure {}
 
 /// What `lmk04832_configure_layout` programs on the `LSDr`'s route,
 /// `LMK04832_CLKPATH_CLK0IN_PLL2` (`CLKin0` into PLL2, PLL1 off, an internal VCO
@@ -282,16 +296,16 @@ impl ClockPlan {
     ///
     /// Only this route with a nonzero input is ported, the one call the `LSDr` makes;
     /// libusdr's search without an input and its other routes are not.
-    pub(crate) fn new(input: u32, distribution: u32) -> Result<Self, PlanFailure> {
+    pub(crate) fn new(input: u32, distribution: u32) -> Result<Self, ClockPlanFailure> {
         if input == 0 || distribution == 0 || distribution > VCOS[1].1 {
-            return Err(PlanFailure::OutOfRange);
+            return Err(ClockPlanFailure::OutOfRange);
         }
         let multiples = VCOS.map(|(min, max)| {
             let low = min.wrapping_add(distribution).wrapping_sub(1) / distribution;
             (low.max(1), max / distribution)
         });
         if multiples.iter().all(|(low, high)| low > high) {
-            return Err(PlanFailure::NoVco);
+            return Err(ClockPlanFailure::NoVco);
         }
         for r in 1..512 {
             if input / r > PLL2_PFD_MAX {
@@ -308,7 +322,7 @@ impl ClockPlan {
                 }
             }
         }
-        Err(PlanFailure::NoDividers)
+        Err(ClockPlanFailure::NoDividers)
     }
 
     /// The plan with R `r` and the VCO at `k` times the output, if libusdr takes it.
@@ -504,15 +518,15 @@ mod tests {
 
     #[test]
     fn frequencies_no_vco_reaches_are_refused_as_libusdr_does() {
-        assert_eq!(ClockPlan::new(1, 0), Err(PlanFailure::OutOfRange));
+        assert_eq!(ClockPlan::new(1, 0), Err(ClockPlanFailure::OutOfRange));
         assert_eq!(
             ClockPlan::new(1, 3_255_000_001),
-            Err(PlanFailure::OutOfRange)
+            Err(ClockPlanFailure::OutOfRange)
         );
         // 1.3 GHz: twice is past VCO0, three times past VCO1.
         assert_eq!(
             ClockPlan::new(1_300_000_000, 1_300_000_000),
-            Err(PlanFailure::NoVco)
+            Err(ClockPlanFailure::NoVco)
         );
     }
 

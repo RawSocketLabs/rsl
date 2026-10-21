@@ -28,6 +28,7 @@ fn mask(channels: RxChannels) -> u64 {
         RxChannels::A => 1,
         RxChannels::B => 2,
         RxChannels::Both => 3,
+        other => panic!("no libusdr mask for {other:?}"),
     }
 }
 
