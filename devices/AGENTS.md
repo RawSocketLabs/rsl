@@ -16,7 +16,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 | `vendor/` | none | `libusdr/`, the vendored libusdr C subset every oracle compiles (one tree, one PIN), and `vendor.sh`, its refresh script |
 | `sdr/usdr/` | `usdr`, `usdr-sim`, `usdr-pcie`, `usdr-oracle`, `usdr-nostd-check` | the uSDR driver (unpublished until parity), its board simulator, its PCIe driver interface, the libusdr parity oracle (own workspace: compiles the vendored C) and its `no_std` portable-tree witness |
 | `sdr/xsdr/` | `xsdr`, `xsdr-sim`, `xsdr-oracle`, `xsdr-nostd-check` | the LMS7 family driver: XSDR and XTRX open (the XSDR's front-end probe, hints and boards' controls), RFIC power-up, sample rate on every gateware variant, LO tuning, gains, bandwidths, paths and loopbacks, NCOs, corrections, the RX and TX streams with their options, the link's calibration, overrides and debug controls, the RF calibration and DC readback, and close; oracle and witness as above |
-| `sdr/lsdr/` | `lsdr`, `lsdr-sim`, `lsdr-oracle`, `lsdr-nostd-check` | the LSDr (receive-only ADC board) driver: open with its front-end probe and fe1005000's bring-up, ADC power, PGA gain and close |
+| `sdr/lsdr/` | `lsdr`, `lsdr-sim`, `lsdr-oracle`, `lsdr-nostd-check` | the LSDr (receive-only ADC board) driver: open with its front-end probe and fe1005000's bring-up, ADC power, sample rate, receive frequency and NCO, PGA gain, temperature, the RX stream's create (which libusdr fails at the pin) and close |
 | `sdr/limesdr/` | `limesdr`, `limesdr-sim`, `limesdr-oracle`, `limesdr-nostd-check` | the LimeSDR-mini driver: open over its LMS64C control channel, power-up, sample rate, LO tuning, gains, bandwidths, stream preparation and close; no FT601 transport yet |
 | `sdr/rtlsdr/` | `rtlsdr`, `rtlsdr-sim` | the clean-room RTL2832U RTL-SDR driver (no oracle: every value from `PROVENANCE.md`): its control seam with a usbfs port, R820T2 register maths from the register description, and the dongle simulator with the capture replay harness; the RTL2832U side awaits captures |
 | `sdr/chips/lms7002m/` | `lms7002m`, `lms7002m-sim` (`sim/`) | the LMS7002M register values and chip sequences (`no_std`), and the LMS7002M model the XSDR and LimeSDR sims share (with its receive DC over an RF loop) |
@@ -61,8 +61,9 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   `cal::{fit, search}` (re-exported there), when the XSDR's TX quality check needed the
   fit; the fit uses the search, so both moved. The fourth is `sdr/gearbox`
   (`sdr-gearbox`, 2026-10-21): the FPGA FIR gearbox's microcode tables, `usdr`'s
-  `portable/fir_tables.rs`, when the XSDR's DUC/DDC gateware needed them (the LSDr will
-  too); each driver keeps its own loader, as their write targets and gaps differ. The
+  `portable/fir_tables.rs`, when the XSDR's DUC/DDC gateware needed them; the LSDr's
+  sample rate loads them too, with five decimation tables only it uses (×3, ×5, ×6, ×64,
+  ×128). Each driver keeps its own loader, as their write targets and gaps differ. The
   fifth is `sdr/formats` (`sdr-formats`, 2026-10-21): libusdr's host sample-format
   converters, `usdr`'s `dsp::{Converter, SampleFormat, ConversionError}` (re-exported
   there), when the XSDR's streams took its other formats and the LimeSDR's stream setup
