@@ -42,6 +42,11 @@ impl ByteRegisters {
     pub(crate) fn get(&self, addr: u8) -> u8 {
         self.regs[usize::from(addr)]
     }
+
+    /// Clears the bits of `mask` in register `addr`, as a chip's self-clearing bits do.
+    pub(crate) fn clear(&mut self, addr: u8, mask: u8) {
+        self.regs[usize::from(addr)] &= !mask;
+    }
 }
 
 impl I2cChip for ByteRegisters {

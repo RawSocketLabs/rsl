@@ -2,9 +2,10 @@
 //!
 //! Register 0 (`DEVICE` `TYPE`) reads 0x31: the vendored YAML calls it a "read only
 //! value of 49 (dec)", and `si549_set_freq` refuses any other. Every other register
-//! powers on as 0 (assumption: the YAML documents no reset values). The self-clearing
-//! `CFG` bits (register 7) are not modelled: only `si549_set_freq`, which open, power-up
-//! and close never call, writes that register.
+//! powers on as 0 (assumption: the YAML documents no reset values). The `CFG` bits the
+//! YAML calls self-clearing (register 7: `RESET`, bit 7, and `MS_ICAL2`, bit 3) clear as
+//! soon as they are written: the sim completes the reset or calibration at once, and
+//! models neither (a sim choice; libusdr never reads `CFG` back).
 
 use super::I2cChip;
 use super::i2c::ByteRegisters;
@@ -13,6 +14,10 @@ use super::i2c::ByteRegisters;
 const DEVICE: u8 = 0;
 /// `DEVICE` `TYPE` of an Si549.
 const DEVICE_TYPE: u8 = 0x31;
+/// `CFG` (register 7).
+const CFG: u8 = 7;
+/// `CFG`'s self-clearing `RESET` (bit 7) and `MS_ICAL2` (bit 3).
+const CFG_SELF_CLEARING: u8 = 0x88;
 
 /// One Si549.
 #[derive(Debug)]
@@ -37,13 +42,22 @@ impl Si549 {
 
 impl I2cChip for Si549 {
     fn transfer(&mut self, write: &[u8], read_len: usize) -> Vec<u8> {
-        self.regs.transfer(write, read_len)
+        let read = self.regs.transfer(write, read_len);
+        self.regs.clear(CFG, CFG_SELF_CLEARING);
+        read
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_calibration_start_clears_itself() {
+        let mut osc = Si549::new();
+        osc.transfer(&[CFG, 0x0a], 0);
+        assert_eq!(osc.reg(CFG), 0x02);
+    }
 
     #[test]
     fn the_device_type_is_the_one_si549_set_freq_accepts_and_cannot_be_overwritten() {

@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::chips::{Ads42lbx9, Fe1005000, I2cChip, Lmk04832, Si549, Tps6594};
+use crate::chips::{Ads42lbx9, Fe1005000, I2cChip, Lmk04832, ROOM, Si549, Tmp108, Tps6594};
 use crate::trace::Op;
 
 /// FPGA register 0: the general-purpose outputs on write (`dev_gpo_set` writes
@@ -34,6 +34,8 @@ const REG_SPI_EXT_CONFIG: u32 = 58;
 const I2C_TPS6594: I2cAddress = I2cAddress::new(0, 0x48);
 /// `I2C_BUS_SI549`: bus 0, 0x67.
 const I2C_SI549: I2cAddress = I2cAddress::new(0, 0x67);
+/// `I2C_BUS_TMP108`: bus 1, 0x4b.
+const I2C_TMP108: I2cAddress = I2cAddress::new(1, 0x4b);
 
 /// `LDO4_CTRL`, the TPS6594 register switching the ADC supply (`_lsdr_adc_activate`).
 const TPS6594_LDO4_CTRL: u8 = 0x20;
@@ -125,6 +127,8 @@ pub struct SimBoard {
     pmic: Tps6594,
     /// The ADC clock oscillator.
     oscillator: Si549,
+    /// The temperature sensor.
+    sensor: Tmp108,
     /// fe1005000 on the front-end connector, if attached; see
     /// [`SimBoard::with_fe1005000`].
     fe1005000: Option<Fe1005000>,
@@ -146,6 +150,7 @@ impl SimBoard {
             lmk: dual.then(Lmk04832::new),
             pmic: Tps6594::new(),
             oscillator: Si549::new(),
+            sensor: Tmp108::new(ROOM),
             fe1005000: None,
             now_us: 0,
             trace: Vec::new(),
@@ -167,6 +172,14 @@ impl SimBoard {
     #[must_use]
     pub fn with_fe1005000(mut self) -> Self {
         self.fe1005000 = Some(Fe1005000::new());
+        self
+    }
+
+    /// The same board with its TMP108 reading `word`, in 1/256 °C (25 °C, 0x1900, by
+    /// default; `chips::tmp108` states the model).
+    #[must_use]
+    pub fn with_temperature(mut self, word: i16) -> Self {
+        self.sensor = Tmp108::new(word);
         self
     }
 
@@ -227,6 +240,7 @@ impl SimBoard {
         let chip: Option<&mut dyn I2cChip> = match addr {
             I2C_TPS6594 => Some(&mut self.pmic),
             I2C_SI549 => Some(&mut self.oscillator),
+            I2C_TMP108 => Some(&mut self.sensor),
             _ => None,
         };
         let read = chip.map_or_else(
