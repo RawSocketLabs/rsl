@@ -1,13 +1,15 @@
-//! The LMX1214's plan: libusdr's `lmx1214_solver` (with `lmx1214_solver_prevalidate`)
-//! without its precision mode, which `PE_SYNC` does not use (not ported), and the register
-//! list it writes.
+//! The LMX1214's plan: libusdr's `lmx1214_solver` (with `lmx1214_solver_prevalidate`) and
+//! the register list it writes; and the registers its SYNC windowing writes from the plan.
 
 use core::fmt;
 
 use bnb::{u3, u9, u10, u12};
 
-use super::super::float::{abs, c_f64, c_unsigned};
-use super::reg::{AuxBypass, AuxDivider, AuxFormat, AuxOutput, ClockMux, MainMode, Outputs, Reg};
+use super::super::float::{abs, c_f64, c_u64, c_unsigned};
+use super::super::ti_sync::delay_step;
+use super::reg::{
+    AuxBypass, AuxDivider, AuxFormat, AuxOutput, Capture, ClockMux, MainMode, Outputs, Reg,
+};
 use crate::portable::ti_spi::Register;
 
 /// The input range (`CLKIN_MIN`, `CLKIN_MAX_BUF`), in Hz.
@@ -41,9 +43,11 @@ pub(crate) enum PlanError {
     AuxOutOfRange,
     /// Outputs 2 and 3 differ in being on (`OUT_EN2 != OUT_EN3`).
     UnevenOutputs,
-    /// No divider from 2 to 8 reaches the output within 1 Hz.
+    /// No divider from 2 to 8 reaches the output within 1 Hz, or (precision mode) none
+    /// divides the input exactly.
     Unreachable,
-    /// No auxiliary pre-divider and divider reach the auxiliary output within 1 Hz.
+    /// No auxiliary pre-divider and divider reach the auxiliary output within 1 Hz (in
+    /// precision mode, exactly).
     AuxUnreachable,
 }
 
@@ -89,11 +93,15 @@ pub(crate) struct Request {
     pub(crate) outputs: [bool; 4],
     /// The auxiliary output.
     pub(crate) aux: Aux,
+    /// Precision mode (`prec_mode`): every divider must divide exactly, not within 1 Hz.
+    pub(crate) precision: bool,
 }
 
 /// A plan: the main outputs' mode and divider, and the auxiliary path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Plan {
+    /// The input, in Hz.
+    input_hz: u64,
     /// Buffer or divider.
     mode: MainMode,
     /// The main divider; 1 in buffer mode.
@@ -118,6 +126,7 @@ impl Plan {
             output_hz,
             outputs,
             aux,
+            precision,
         } = *request;
         if !INPUT_HZ.contains(&input_hz) {
             return Err(PlanError::InputOutOfRange);
@@ -153,16 +162,21 @@ impl Plan {
             if abs(reached - c_f64(output_hz)) > TOLERANCE_HZ {
                 return Err(PlanError::Unreachable);
             }
+            // `in != out * clk_div`, in 64-bit integers.
+            if precision && input_hz != output_hz.wrapping_mul(u64::from(divider)) {
+                return Err(PlanError::Unreachable);
+            }
             (MainMode::Divider, divider)
         };
 
         let (aux_pre_divider, aux_bypass, aux_divider) = if aux.enabled {
-            aux_path(input_hz, aux_hz).ok_or(PlanError::AuxUnreachable)?
+            aux_path(input_hz, aux_hz, precision).ok_or(PlanError::AuxUnreachable)?
         } else {
             // libusdr's defaults: pre-divider 4, divider 0x20.
             (4, false, 0x20)
         };
         Ok(Self {
+            input_hz,
             mode,
             divider: u8::try_from(divider).map_err(|_| PlanError::Unreachable)?,
             outputs,
@@ -192,12 +206,9 @@ impl Plan {
                 .with_divider_less_one(u3::new(self.divider - 1))
                 .with_mode(self.mode)
                 .entry(),
-            // R14: undisclosed bit 1 at 1; no SYNC latch, no clock-position capture.
-            raw(Reg::Capture, 0x0002),
-            AuxDivider::new()
-                .with_bypass(self.aux_bypass)
-                .with_divider(u10::new(self.aux_divider))
-                .entry(),
+            // No SYNC latch, no clock-position capture.
+            capture(false),
+            self.aux_divider(false),
             AuxOutput::new()
                 .with_pre_divider(u3::new(self.aux_pre_divider))
                 .with_enabled(self.aux.enabled)
@@ -221,16 +232,40 @@ impl Plan {
             raw(Reg::Control, 0x0000),
         ]
     }
+
+    /// R9 as the plan sets it, with the SYNC path on or off (`SYNC_EN`): off in the
+    /// solver's registers and after the windowing, on before the SYNC it captures.
+    pub(crate) fn aux_divider(&self, sync: bool) -> (u8, u16) {
+        AuxDivider::new()
+            .with_sync(sync)
+            .with_bypass(self.aux_bypass)
+            .with_divider(u10::new(self.aux_divider))
+            .entry()
+    }
+
+    /// The SYNC delay step for the plan's input (`lmx1214_sysref_windowing_beforesync`).
+    pub(crate) fn sync_delay_step(&self) -> (u8, u16) {
+        (Reg::SyncDelayStep.into(), delay_step(self.input_hz))
+    }
+}
+
+/// R14 with the clock-position capture on or off.
+pub(crate) fn capture(enabled: bool) -> (u8, u16) {
+    Capture::new()
+        .with_enabled(enabled)
+        .with_undisclosed(true)
+        .entry()
 }
 
 /// The auxiliary pre-divider, bypass and divider for `aux_hz` (the solver's search): the
 /// smallest pre-divider whose output the divider takes, from 1 (bypassing the divider,
-/// when it hits the frequency exactly), then 2 and 4.
+/// when it hits the frequency exactly), then 2 and 4. In precision mode a pre-divider must
+/// divide the input exactly, as the divider its output.
 #[expect(
     clippy::float_cmp,
-    reason = "libusdr bypasses the divider only on an exact match"
+    reason = "libusdr bypasses the divider only on an exact match, and compares doubles exactly in precision mode"
 )]
-fn aux_path(input_hz: u64, aux_hz: f64) -> Option<(u8, bool, u16)> {
+fn aux_path(input_hz: u64, aux_hz: f64, precision: bool) -> Option<(u8, bool, u16)> {
     let start: u8 = if input_hz <= AUX_DIVIDER_INPUT_MAX_HZ {
         1
     } else if input_hz <= AUX_DIVIDER_INPUT_MAX_HZ << 1 {
@@ -240,6 +275,10 @@ fn aux_path(input_hz: u64, aux_hz: f64) -> Option<(u8, bool, u16)> {
     };
     for pre in (start..=4).filter(|&pre| pre != 3) {
         let into_divider = c_f64(input_hz) / f64::from(pre);
+        // `in != (uint64_t)(fmid + 0.5) * auxclk_div_pre`.
+        if precision && input_hz != c_u64(into_divider + 0.5).wrapping_mul(u64::from(pre)) {
+            continue;
+        }
         if pre == 1 {
             if into_divider == aux_hz {
                 return Some((1, true, 0x20));
@@ -252,6 +291,9 @@ fn aux_path(input_hz: u64, aux_hz: f64) -> Option<(u8, bool, u16)> {
             continue;
         }
         if abs(into_divider / f64::from(divider) - aux_hz) > TOLERANCE_HZ {
+            continue;
+        }
+        if precision && into_divider != aux_hz * f64::from(divider) {
             continue;
         }
         return Some((pre, false, u16::try_from(divider).ok()?));
@@ -274,6 +316,7 @@ mod tests {
             hz: 550_000_000,
             format: AuxFormat::Lvds,
         },
+        precision: false,
     };
 
     #[test]

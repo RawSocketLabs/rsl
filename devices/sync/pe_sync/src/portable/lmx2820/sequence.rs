@@ -1,5 +1,6 @@
 //! The LMX2820's bus operations as `hw/lmx2820/lmx2820.c` runs them: `lmx2820_create`,
-//! `lmx2820_tune` (without instant calibration) and `lmx2820_read_status`.
+//! `lmx2820_tune` and `lmx2820_instant_calibration_init` (`lmx2820_tune_internal` without
+//! and with instant calibration) and `lmx2820_read_status`.
 
 use core::time::Duration;
 
@@ -12,7 +13,7 @@ use crate::portable::chain::Then;
 use crate::portable::outcome::outcome;
 use crate::portable::poll::{LockPoll, Wait};
 use crate::portable::script::Script;
-use crate::portable::ti_spi::{self, Register};
+use crate::portable::ti_spi::{self, Modify, Register};
 
 /// The chip's name in errors.
 pub(crate) const NAME: &str = "LMX2820";
@@ -105,10 +106,21 @@ impl Sequence for Create {
     }
 }
 
-/// `lmx2820_tune` without instant calibration: the plan's registers, 10 ms, then the lock
-/// wait. A timed-out wait ends the sequence without failure; [`Tune::locked`] says so.
+/// `FCAL_EN`'s bit in R0.
+const FCAL_EN: u16 = 1 << 4;
+
+/// `lmx2820_tune_internal`: the plan's registers, 10 ms, then the lock wait; for a plan
+/// made for instant calibration ([`Plan::for_instant_calibration`]), once locked, the VCO
+/// calibration switched off (R0 read and written back without `FCAL_EN`,
+/// `lmx2820_calibrate(st, false)`). A timed-out wait ends the sequence without failure;
+/// [`Tune::locked`] says so.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Tune(Then<Script, LockPoll>);
+pub(crate) struct Tune {
+    /// The registers and the lock wait.
+    tune: Then<Script, LockPoll>,
+    /// The calibration's switch-off after lock, for instant calibration.
+    finish: Option<Modify>,
+}
 
 impl Tune {
     /// Starts tuning the chip at `target` to `plan`.
@@ -124,25 +136,40 @@ impl Tune {
             LOCK_INTERVAL,
             LOCK_TIMEOUT,
         );
-        Self(Then::new(
-            writes.then(NAME, SequenceAction::Sleep(SETTLE)),
-            lock,
-        ))
+        let finish = plan
+            .for_instant()
+            .then(|| Modify::new(NAME, target, Reg::Control as u8, 0, FCAL_EN));
+        Self {
+            tune: Then::new(writes.then(NAME, SequenceAction::Sleep(SETTLE)), lock),
+            finish,
+        }
     }
 
     /// Whether the PLL reported lock; `false` until the wait has ended.
     pub(crate) fn locked(&self) -> bool {
-        self.0.second.outcome() == Wait::Locked
+        self.tune.second.outcome() == Wait::Locked
+    }
+
+    /// The calibration's switch-off, once locked.
+    fn finish(&self) -> Option<&Modify> {
+        self.finish.as_ref().filter(|_| self.locked())
     }
 }
 
 impl Sequence for Tune {
     fn next(&self) -> Option<SequenceAction> {
-        self.0.next()
+        self.tune
+            .next()
+            .or_else(|| self.finish().and_then(Sequence::next))
     }
 
     fn complete<E>(&mut self, result: Result<u32, E>) -> Result<(), SequenceFailure<E>> {
-        self.0.complete(result)
+        if self.tune.next().is_some() || self.finish().is_none() {
+            return self.tune.complete(result);
+        }
+        self.finish
+            .as_mut()
+            .map_or(Ok(()), |finish| finish.complete(result))
     }
 }
 
@@ -195,6 +222,7 @@ mod tests {
             multiplier: None,
             out_a_hz: 1_000_000_000,
             out_b_hz: 1_000_000_000,
+            sysref: None,
         })
         .expect("libusdr's plan")
     }

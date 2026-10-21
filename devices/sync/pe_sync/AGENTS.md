@@ -40,11 +40,15 @@ Mirrors `xsdr` (`../../sdr/xsdr/AGENTS.md`):
   `power.rs` the power-on/off with libusdr's `float` LED fades; `status.rs` the status
   check; one module per PE_SYNC-only chip (`lmx2820/`, `lmx1214/`, `lmx1204/`:
   `reg.rs` typed registers, `plan.rs` the vendor solver, `sequence.rs` the chip
-  operations; `lmk1d1208i.rs`), on shared helpers (`ti_spi.rs` the TI 24-bit SPI word and
-  read-modify-write, `script.rs` fixed action lists, `chain.rs` sequencing, `poll.rs` lock
-  waits, `float.rs` C's conversions and exact integer forms of `ceil`/`floor`/`log2`).
-  Those chips are only PE_SYNC's in libusdr, so they stay here until a second driver
-  needs them (`../../AGENTS.md`).
+  operations the open runs; `lmx2820/controls.rs` (instant retune, phase sync) and
+  `lmx1204/`, `lmx1214/windowing.rs` (SYSREF delays and windowing), which no libusdr
+  device calls and `Device` does not reach (`#[allow(dead_code)]`, compared by
+  `chip_parity.rs`); `lmk1d1208i.rs`), on shared helpers (`ti_spi.rs` the TI 24-bit SPI
+  word and read-modify-writes, `ti_sync.rs` the windowing capture and delay step both
+  distribution chips share, `script.rs` fixed action lists, `chain.rs` sequencing,
+  `poll.rs` lock waits, `float.rs` C's conversions and exact integer forms of
+  `ceil`/`floor`/`log2`). Those chips are only PE_SYNC's in libusdr, so they stay here
+  until a second driver needs them (`../../AGENTS.md`).
 - `src/lowlevel.rs`: `hal`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `pe-sync-sim` (both I2C cores);
   `oracle/tests/open_parity.rs` includes it with `#[path]`, and
@@ -161,9 +165,12 @@ These counts are as captured; the fixture is authoritative, so recount them on a
 asserts supplies-before-chips and the closed state. The driver is compared with live
 libusdr, not with this file: `oracle/tests/open_parity.rs` covers every golden line (open
 and close), the refusals, and every lock wait slow or timing out (with a reopen after a
-timeout); `oracle/tests/chip_parity.rs` sweeps the LMX solvers beyond
-the board's setpoints. Not covered: any control after open (there is none in libusdr
-besides the refused rate), sysref windowing, DAC trims, the external SPI.
+timeout); `oracle/tests/chip_parity.rs` sweeps the LMX solvers beyond the board's
+setpoints, and the chip operations `PE_SYNC` never calls (LMX2820 SYSREF, instant
+calibration and phase sync; LMX1204/LMX1214 precision mode, SYSREF delays and windowing)
+against the C chip drivers called directly. Not covered: any control after open (there is
+none in libusdr besides the refused rate), a windowing capture's success path (undefined in
+libusdr), DAC trims and the external SPI (libusdr has no code for them).
 
 ## Verify
 
@@ -198,5 +205,6 @@ as `pe-sync-portable`.
   PIN subset; enabling the DPLL needs both.
 - The YAML reset tables were transcribed from the PIN by script; nothing re-derives them
   on a PIN bump, so the bump must re-check them.
-- The AD5662 DACs, sysref windowing (`lmx1204/lmx1214_sysref_windowing_*`) and the
-  external SPI are not modelled; nothing in open/close uses them.
+- The AD5662 DACs and the external SPI are not modelled; nothing in libusdr drives them.
+  The clock-position readbacks a windowing capture reads (R11/R12) keep their YAML reset
+  values: the LMX1204's (all set) would be accepted, the LMX1214's (0) are refused.

@@ -10,7 +10,7 @@ use hal::{I2cAddr, SpiAddr};
 use lmk05318::plan::{OutputFormat, OutputRequest, Xo, XoInput};
 
 use super::lmk1d1208i::{Bank, Config};
-use super::lmx1204::plan::{Channel, Request as Lmx1204Request};
+use super::lmx1204::plan::{Channel, Delay, Request as Lmx1204Request};
 use super::lmx1204::reg::{Format, SysrefModeCode};
 use super::lmx1214::plan::{Aux, Request as Lmx1214Request};
 use super::lmx1214::reg::AuxFormat;
@@ -78,6 +78,7 @@ pub(crate) const LMX2820_0_TUNE: Lmx2820Request = Lmx2820Request {
     multiplier: None,
     out_a_hz: LMX2820_0_OUT_HZ,
     out_b_hz: LMX2820_0_OUT_HZ,
+    sysref: None,
 };
 
 /// LMX2820 #0's outputs, in Hz; output B feeds the LMX1204.
@@ -104,6 +105,7 @@ pub(crate) const LMX1214_SETUP: Lmx1214Request = Lmx1214Request {
         hz: LMX2820_1_OUT_HZ,
         format: AuxFormat::Lvds,
     },
+    precision: false,
 };
 
 /// Every LMX1204 channel output on.
@@ -129,6 +131,8 @@ pub(crate) const LMX1204_SETUP: Lmx1204Request = Lmx1204Request {
     logic_hz: 125_000_000,
     logic_clock_format: Format::Lvds,
     logic_sysref_format: Format::Lvds,
+    delays: [Delay::CREATE; 5],
+    precision: false,
 };
 
 /// Both LMK1D1208Is (`lmk1d_cfg`): IN0 on and IN1 off, both banks from IN0 unmuted, all

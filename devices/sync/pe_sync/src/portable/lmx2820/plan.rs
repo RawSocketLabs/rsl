@@ -1,7 +1,8 @@
 //! The LMX2820's frequency plan: libusdr's `lmx2820_solver` (`lmx2820_solver_prepare`,
-//! `lmx2820_calculate_input_chain`, `lmx2820_tune_vco`,
+//! `lmx2820_calculate_input_chain`, `lmx2820_tune_vco`, `lmx2820_calculate_systef_chain`,
 //! `lmx2820_solver_validate_and_save`) and the register list `lmx2820_tune_internal` writes
-//! for it, without SYSREF and instant calibration (not ported).
+//! for it, with or without SYSREF and instant calibration; and instant calibration's
+//! retune (`lmx2820_solver_instcal`) and its register list (`lmx2820_tune_instcal`).
 //!
 //! The arithmetic is the C's, step for step: integer widths follow it, and `double`
 //! expressions keep its order of operations. `log2`, `ceil` and `floor` of integer
@@ -11,13 +12,20 @@ use core::fmt;
 
 use bnb::{u2, u3, u4, u5, u6, u9, u11, u12, u15};
 
-use super::super::float::{abs, c_f64, c_u64, ceil_log2_ratio, gcd};
+use super::super::float::{abs, c_f64, c_u64, c_unsigned, ceil_log2_ratio, gcd};
 use super::reg::{
     CalibrationClock, ChannelDividers, Control, FeedbackInteger, HighPfdAdjust, LowPfdAdjust,
     MashOrder, Modulator, OutputA, OutputB, OutputSource, ReferenceDivider, ReferenceDoubler,
-    ReferenceMultiplier, ReferencePreDivider, Reg, SYSREF_OFF, Sync, VcoStart,
+    ReferenceMultiplier, ReferencePreDivider, Reg, SYSREF_OFF, Sync, Sysref, SysrefDelay,
+    SysrefDivider, SysrefOutput, SysrefPulses, VcoStart,
 };
 use crate::portable::ti_spi::Register;
+
+#[allow(
+    dead_code,
+    reason = "ported for op-for-op parity; no libusdr PE_SYNC path calls it, and exposing it on `Device` awaits the owner"
+)]
+mod instant;
 
 /// The reference input range (`OSC_IN_MIN`, `OSC_IN_MAX`), in Hz.
 const OSC_IN_HZ: core::ops::RangeInclusive<u64> = 5_000_000..=1_400_000_000;
@@ -59,6 +67,18 @@ const CHANNEL_DIVIDER_LOG2: core::ops::RangeInclusive<u8> = 1..=7;
 const RATIO_LOG2_MAX: u32 = 8;
 /// The feedback divider's limit (`PLL_N_MAX + 1`, kept in a `uint16_t` by the C).
 const FEEDBACK_MAX: u16 = 32_768;
+/// The highest reference SYSREF takes (`OSC_IN_MAX_SYNC`), in Hz.
+const SYSREF_REFERENCE_MAX_HZ: u64 = 200_000_000;
+/// The SYSREF interpolator's range (`SYSREF_FINTERPOLATOR_MIN`, `_MAX`), in Hz.
+const INTERPOLATOR_HZ: core::ops::RangeInclusive<f64> = 600e6..=1500e6;
+/// The SYSREF divider's range (`SYSREF_DIV_MIN`, `SYSREF_DIV_MAX`).
+const SYSREF_DIVIDER: core::ops::RangeInclusive<u32> = 2..=2049;
+/// SYSREF's pulse counts (`SYSREF_PULSE_CNT_MIN`, `_MAX`).
+const SYSREF_PULSES: core::ops::RangeInclusive<u8> = 1..=15;
+/// SYSREF's delay steps (`SYSREF_DELAY_CTRL_MAX`).
+const SYSREF_DELAY_MAX: u8 = 251;
+/// Instant calibration's wait with it off: `INSTCAL_DLY`'s reset value, 500.
+const INSTANT_DELAY_DEFAULT: u16 = 0x1f4;
 
 /// The VCO cores (`VCO_CORES`): each one's lower bound, in Hz, and its smallest feedback
 /// divider by modulator order. A core covers up to the next one's bound; the last up to
@@ -94,6 +114,10 @@ pub(crate) enum PlanError {
     Feedback,
     /// The VCO or an output misses its frequency.
     Inexact,
+    /// SYSREF cannot be made: the reference is above 200 MHz, the pulse count or delay
+    /// step is out of range, no pre-divider brings the VCO to the interpolator's range, or
+    /// no divider from 2 to 2049 reaches SROUT.
+    Sysref,
 }
 
 impl PlanError {
@@ -107,6 +131,7 @@ impl PlanError {
             Self::ReferencePath => "no reference path reaches the phase detector",
             Self::Feedback => "feedback divider out of range",
             Self::Inexact => "frequency not reached exactly",
+            Self::Sysref => "no SYSREF configuration",
         }
     }
 }
@@ -117,7 +142,63 @@ impl fmt::Display for PlanError {
     }
 }
 
-/// What `lmx2820_tune` is asked for, SYSREF aside.
+/// SYSREF as `lmx2820_sysref_chain_t` asks for it, when `enabled`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SysrefRequest {
+    /// SROUT, in Hz (`srout`).
+    pub(crate) out_hz: u64,
+    /// Master mode, or repeater mode with SRREQ's input format (`master_mode`,
+    /// `srreq_fmt`).
+    pub(crate) source: SysrefSource,
+    /// `None` for continuous SYSREF (`cont_pulse`), or the pulses per request, 1 to 15
+    /// (`pulse_cnt`).
+    pub(crate) pulses: Option<u8>,
+    /// The delay, 0 to 251 steps of the interpolator (`delay_ctrl`).
+    pub(crate) delay_step: u8,
+}
+
+/// Where SYSREF comes from (`master_mode`).
+#[allow(
+    dead_code,
+    reason = "`PE_SYNC` leaves SYSREF off; the chip parity sweeps request it"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SysrefSource {
+    /// Generated here.
+    Master,
+    /// Repeated from SRREQ, in this format.
+    Repeater(RequestFormat),
+}
+
+/// SRREQ's input format (`lmx2820_sysref_in_fmt`), whose codes are `SYSREF_INP_FMT`'s.
+#[allow(
+    dead_code,
+    reason = "`PE_SYNC` leaves SYSREF off; the chip parity sweeps request it"
+)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RequestFormat {
+    /// CMOS at `SRREQ_P`, 1.8 to 3.3 V (`SRREQ_CMOS`).
+    Cmos = 0,
+    /// AC-coupled CMOS at `SRREQ_P` (`SRREQ_CMOS_AC`).
+    CmosAc = 1,
+    /// AC-coupled LVDS (`SRREQ_LVDS_AC`).
+    LvdsAc = 2,
+    /// DC-coupled LVDS (`SRREQ_LVDS_DC`).
+    LvdsDc = 3,
+}
+
+/// The SYSREF chain a plan programs (`lmx2820_calculate_systef_chain`'s results).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SysrefPlan {
+    /// The request.
+    request: SysrefRequest,
+    /// The pre-divider from the VCO: 2, 4 or 8.
+    pre_divider: u8,
+    /// The divider, 2 to 2049.
+    divider: u16,
+}
+
+/// What `lmx2820_tune` is asked for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Request {
     /// The reference, in Hz (`osc_in`).
@@ -131,6 +212,8 @@ pub(crate) struct Request {
     pub(crate) out_a_hz: u64,
     /// RFOUTB, in Hz.
     pub(crate) out_b_hz: u64,
+    /// SYSREF, or `None` for off (`lmx2820_sysref_chain_t`'s `enabled`).
+    pub(crate) sysref: Option<SysrefRequest>,
 }
 
 /// The outputs' VCO, channel dividers and sources (`lmx2820_solver_prepare`).
@@ -176,10 +259,15 @@ pub(crate) struct Plan {
     den: u32,
     /// The outputs.
     outputs: Outputs,
+    /// SYSREF, when on.
+    sysref: Option<SysrefPlan>,
+    /// Instant calibration's wait, in µs, when the plan is for it
+    /// ([`Plan::for_instant_calibration`]).
+    instant_delay: Option<u16>,
 }
 
 impl Plan {
-    /// Plans `request` (`lmx2820_solver` with SYSREF off).
+    /// Plans `request` (`lmx2820_solver`).
     pub(crate) fn solve(request: &Request) -> Result<Self, PlanError> {
         if !OSC_IN_HZ.contains(&request.reference_hz) {
             return Err(PlanError::ReferenceOutOfRange);
@@ -188,14 +276,66 @@ impl Plan {
             return Err(PlanError::OutputOutOfRange);
         }
         let outputs = Outputs::prepare(request.out_a_hz, request.out_b_hz)?;
-        let plan = Self::reference_path(request, outputs)?.tune_vco()?;
-        plan.validate(request)?;
+        let mut plan = Self::reference_path(request, outputs)?.tune_vco()?;
+        plan.sysref = request
+            .sysref
+            .map(|sysref| plan.sysref_chain(sysref))
+            .transpose()?;
+        plan.validate(request.out_a_hz, request.out_b_hz)?;
         Ok(plan)
+    }
+
+    /// Instant calibration's wait after an instant retune, in µs (`st->instcal_dly`:
+    /// libusdr's 500 when the plan was not made for it).
+    pub(crate) fn instant_delay_us(&self) -> u16 {
+        self.instant_delay.unwrap_or(INSTANT_DELAY_DEFAULT)
+    }
+
+    /// Whether the plan is instant calibration's set-up, after whose lock the VCO
+    /// calibration is switched off.
+    pub(crate) const fn for_instant(&self) -> bool {
+        self.instant_delay.is_some()
+    }
+
+    /// The SYSREF chain for `request` over the plan's VCO
+    /// (`lmx2820_calculate_systef_chain`): the largest pre-divider (8, 4, 2) that brings
+    /// the VCO into the interpolator's range, then the divider nearest SROUT. libusdr
+    /// divides by zero for a 0 Hz SROUT, which this refuses.
+    fn sysref_chain(&self, request: SysrefRequest) -> Result<SysrefPlan, PlanError> {
+        if self.reference_hz > SYSREF_REFERENCE_MAX_HZ
+            || request
+                .pulses
+                .is_some_and(|pulses| !SYSREF_PULSES.contains(&pulses))
+            || request.delay_step > SYSREF_DELAY_MAX
+            || request.out_hz == 0
+        {
+            return Err(PlanError::Sysref);
+        }
+        let vco = c_f64(self.outputs.vco_hz);
+        let (pre_divider, interpolator) = [8_u8, 4, 2]
+            .into_iter()
+            .map(|pre| (pre, vco / f64::from(pre)))
+            .find(|(_, hz)| INTERPOLATOR_HZ.contains(hz))
+            .ok_or(PlanError::Sysref)?;
+        // `(unsigned)(fdiv / sr->srout + 0.5f)`: the float half is exact.
+        let divider = c_unsigned(interpolator / 4.0 / c_f64(request.out_hz) + 0.5);
+        if !SYSREF_DIVIDER.contains(&divider) {
+            return Err(PlanError::Sysref);
+        }
+        Ok(SysrefPlan {
+            request,
+            pre_divider,
+            divider: u16::try_from(divider).map_err(|_| PlanError::Sysref)?,
+        })
     }
 
     /// The reference path to the phase detector (`lmx2820_calculate_input_chain`, up to its
     /// `lmx2820_tune_vco`): the doubler when it fits, otherwise the multiplier or the
     /// dividers the reference needs.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "libusdr's lmx2820_calculate_input_chain, step for step"
+    )]
     fn reference_path(request: &Request, outputs: Outputs) -> Result<Self, PlanError> {
         let vco_hz = outputs.vco_hz;
         let (_, min_n) = vco_core(vco_hz, request.mash)?;
@@ -299,6 +439,8 @@ impl Plan {
             num: 0,
             den: 0,
             outputs,
+            sysref: None,
+            instant_delay: None,
         })
     }
 
@@ -348,7 +490,7 @@ impl Plan {
     }
 
     /// Both outputs land exactly on their requests (`lmx2820_solver_validate_and_save`).
-    fn validate(&self, request: &Request) -> Result<(), PlanError> {
+    fn validate(&self, a_hz: u64, b_hz: u64) -> Result<(), PlanError> {
         // The VCO the fraction reaches, which `tune_vco` proved equal to the request.
         let vco = c_f64(self.outputs.vco_hz);
         let reached = |source, log2: u8| match source {
@@ -359,7 +501,7 @@ impl Plan {
         let a = reached(self.outputs.a_source, self.outputs.a_log2);
         let b = reached(self.outputs.b_source, self.outputs.b_log2);
         // `RF_ACCURACY` is 0.
-        if abs(c_f64(request.out_a_hz) - a) > 0.0 || abs(c_f64(request.out_b_hz) - b) > 0.0 {
+        if abs(c_f64(a_hz) - a) > 0.0 || abs(c_f64(b_hz) - b) > 0.0 {
             return Err(PlanError::Inexact);
         }
         Ok(())
@@ -368,8 +510,6 @@ impl Plan {
     /// The registers `lmx2820_tune_internal` writes, in its order, ending with R0, whose
     /// `FCAL_EN` starts the VCO calibration.
     pub(crate) fn registers(&self) -> [(u8, u16); 25] {
-        let [num_high, num_low] = split(self.num);
-        let [den_high, den_low] = split(self.den);
         let [
             sysref_output,
             phase_sync_input,
@@ -377,39 +517,50 @@ impl Plan {
             sysref_delay,
             sysref_divider,
             sysref,
-        ] = SYSREF_OFF.map(|(reg, value)| (u8::from(reg), value));
-        let raw = |reg: Reg, value| (u8::from(reg), value);
+        ] = self.sysref_registers();
+        let [
+            out_b,
+            out_a,
+            instant_low,
+            instant_high,
+            num_low,
+            num_high,
+            den_low,
+            den_high,
+            feedback,
+            channel_dividers,
+        ] = self.instant_registers();
+        // Without instant calibration its numerator is 0.
+        let (instant_low, instant_high) = if self.for_instant() {
+            (instant_low, instant_high)
+        } else {
+            (
+                (Reg::InstantNumeratorLow.into(), 0),
+                (Reg::InstantNumeratorHigh.into(), 0),
+            )
+        };
         [
-            OutputB::new()
-                .with_source(self.outputs.b_source)
-                .with_a_power(u3::new(7))
-                .entry(),
-            OutputA::new().with_source(self.outputs.a_source).entry(),
+            out_b,
+            out_a,
             sysref_output,
             phase_sync_input,
             sysref_pulses,
             sysref_delay,
             sysref_divider,
             sysref,
-            // No instant calibration: its numerator is 0.
-            raw(Reg::InstantNumeratorLow, 0),
-            raw(Reg::InstantNumeratorHigh, 0),
-            raw(Reg::NumeratorLow, num_low),
-            raw(Reg::NumeratorHigh, num_high),
-            raw(Reg::DenominatorLow, den_low),
-            raw(Reg::DenominatorHigh, den_high),
-            FeedbackInteger::new().with_n(u15::new(self.n)).entry(),
+            instant_low,
+            instant_high,
+            num_low,
+            num_high,
+            den_low,
+            den_high,
+            feedback,
             Modulator::new()
                 .with_reserved(u3::new(1))
                 .with_running(true)
                 .with_order(self.mash)
                 .entry(),
-            ChannelDividers::new()
-                .with_reserved_high(u4::new(1))
-                .with_b_log2_less_one(u3::new(self.outputs.b_log2 - 1))
-                .with_a_log2_less_one(u3::new(self.outputs.a_log2 - 1))
-                .with_reserved_low(u6::new(1))
-                .entry(),
+            channel_dividers,
             VcoStart::new()
                 .with_core(u3::new(self.vco_core))
                 .with_reserved(u5::new(2))
@@ -435,11 +586,14 @@ impl Plan {
             CalibrationClock::new()
                 .with_reserved(true)
                 .with_divider_log2(calibration_clock_divider(self.reference_hz))
-                .with_instant_delay(u11::new(0x1f4))
+                .with_instant_delay(u11::from_raw(self.instant_delay_us()))
                 .entry(),
             Sync::new()
+                .with_phase_sync(self.sysref.is_some())
                 .with_reserved(u9::new(0x15e))
                 .with_vtune_lock_detect(true)
+                .with_instant_doubler(self.for_instant())
+                .with_instant_calibration(self.for_instant())
                 .entry(),
             Control::new()
                 .with_reserved_high(u2::new(1))
@@ -451,6 +605,93 @@ impl Plan {
                 .with_calibrate(true)
                 .entry(),
         ]
+    }
+
+    /// The registers `lmx2820_tune_instcal` writes before its R0, in its order: the
+    /// outputs, instant calibration's numerator (`2^32 * NUM / DEN`), the fraction, the
+    /// feedback divider and the channel dividers.
+    pub(crate) fn instant_registers(&self) -> [(u8, u16); 10] {
+        let raw = |reg: Reg, value| (u8::from(reg), value);
+        let [instant_high, instant_low] = split(self.instant_numerator());
+        let [num_high, num_low] = split(self.num);
+        let [den_high, den_low] = split(self.den);
+        [
+            OutputB::new()
+                .with_source(self.outputs.b_source)
+                .with_a_power(u3::new(7))
+                .entry(),
+            OutputA::new().with_source(self.outputs.a_source).entry(),
+            raw(Reg::InstantNumeratorLow, instant_low),
+            raw(Reg::InstantNumeratorHigh, instant_high),
+            raw(Reg::NumeratorLow, num_low),
+            raw(Reg::NumeratorHigh, num_high),
+            raw(Reg::DenominatorLow, den_low),
+            raw(Reg::DenominatorHigh, den_high),
+            FeedbackInteger::new().with_n(u15::new(self.n)).entry(),
+            ChannelDividers::new()
+                .with_reserved_high(u4::new(1))
+                .with_b_log2_less_one(u3::new(self.outputs.b_log2 - 1))
+                .with_a_log2_less_one(u3::new(self.outputs.a_log2 - 1))
+                .with_reserved_low(u6::new(1))
+                .entry(),
+        ]
+    }
+
+    /// Instant calibration's numerator: `(double)(1 << 32) * ((double)NUM / DEN)`,
+    /// converted to `uint32_t` as GCC does.
+    fn instant_numerator(&self) -> u32 {
+        c_unsigned(c_f64(1 << 32) * (f64::from(self.num) / f64::from(self.den)))
+    }
+
+    /// R69 down to R64 in `lmx2820_tune_internal`'s order: SYSREF's output, PSYNC, pulses
+    /// and delay, divider and mode; the YAML's resets with SYSREF off ([`SYSREF_OFF`]).
+    fn sysref_registers(&self) -> [(u8, u16); 6] {
+        let Some(SysrefPlan {
+            request,
+            pre_divider,
+            divider,
+        }) = self.sysref
+        else {
+            return SYSREF_OFF.map(|(reg, value)| (u8::from(reg), value));
+        };
+        let [dac1, dac2, dac3, dac4] = jesd_delay(request.delay_step).map(u6::new);
+        let (format, repeater) = match request.source {
+            SysrefSource::Master => (2, false),
+            SysrefSource::Repeater(format) => (format as u8, true),
+        };
+        // `lmx2820_encode_sysref_prediv`: /2, /4 and /8 are 1, 2 and 4.
+        let pre_divider = u3::new(pre_divider >> 1);
+        [
+            SysrefOutput::new().with_reserved(u4::new(1)).entry(),
+            (Reg::PhaseSyncInput.into(), 0),
+            SysrefPulses::new()
+                .with_count(u4::from_raw(request.pulses.unwrap_or(1)))
+                .with_dac4(dac4)
+                .with_dac3(dac3)
+                .entry(),
+            SysrefDelay::new().with_dac2(dac2).with_dac1(dac1).entry(),
+            SysrefDivider::new()
+                .with_divider_less_two(u11::from_raw(divider - 2))
+                .entry(),
+            Sysref::new()
+                .with_input_format(u2::new(format))
+                .with_pre_divider(pre_divider)
+                .with_pulsed(request.pulses.is_some())
+                .with_enabled(true)
+                .with_repeater(repeater)
+                .entry(),
+        ]
+    }
+}
+
+/// The SYSREF delay DACs 1 to 4 for `step` (libusdr's `JESD` table, `lmx2820_fill_jesd`):
+/// 63 on DAC1 at 0, then each step moves one unit from one DAC to the next, round the four.
+fn jesd_delay(step: u8) -> [u8; 4] {
+    match step {
+        0..=63 => [63 - step, step, 0, 0],
+        64..=126 => [0, 126 - step, step - 63, 0],
+        127..=189 => [0, 0, 189 - step, step - 126],
+        _ => [step - 189, 0, 0, 252 - step],
     }
 }
 
@@ -625,6 +866,7 @@ mod tests {
         multiplier: None,
         out_a_hz: 1_000_000_000,
         out_b_hz: 1_000_000_000,
+        sysref: None,
     };
 
     #[test]

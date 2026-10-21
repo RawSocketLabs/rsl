@@ -132,7 +132,7 @@ impl Sequence for WaitLock {
 mod tests {
     use hal::FpgaAccess;
 
-    use super::super::plan::{Channel, Request};
+    use super::super::plan::{Channel, Delay, Request};
     use super::super::reg::{Format, SysrefModeCode};
     use super::*;
     use crate::portable::testing::{Exchange, drive};
@@ -159,6 +159,8 @@ mod tests {
             logic_hz: 125_000_000,
             logic_clock_format: Format::Lvds,
             logic_sysref_format: Format::Lvds,
+            delays: [Delay::CREATE; 5],
+            precision: false,
         })
         .expect("libusdr's plan")
     }

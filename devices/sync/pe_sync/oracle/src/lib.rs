@@ -50,21 +50,58 @@ static PANIC: Mutex<Option<Box<dyn Any + Send>>> = Mutex::new(None);
 /// Opaque libusdr device-manager handle (`pdm_dev_t`).
 type DmDev = *mut c_void;
 
-/// `lmx2820_tune`'s arguments (`hw/lmx2820/lmx2820.c`); enum arguments take libusdr's codes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Lmx2820Tune {
-    /// The SPI bus the chip answers on (`lsaddr`): 2 or 3 on `PE_SYNC`.
-    pub bus: u32,
+/// The windowing steps a chip session runs after its solver (bits of `windowing`, in this
+/// order): the LMX1204's SYSREF delay reload ...
+pub const RELOAD_DELAYS: c_uint = 1;
+/// ... `*_sysref_windowing_beforesync` ...
+pub const BEFORE_SYNC: c_uint = 2;
+/// ... `*_sysref_windowing_capture` ...
+pub const CAPTURE: c_uint = 4;
+/// ... and `*_sysref_windowing_aftersync`.
+pub const AFTER_SYNC: c_uint = 8;
+
+/// One LMX2820 session, the shim's `struct rsl_lmx2820_session`: `lmx2820_tune`'s (or
+/// `lmx2820_instant_calibration_init`'s) arguments, the `lmx2820_sysref_chain_t` fields and
+/// the calls that follow; enums take libusdr's codes.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Lmx2820Session {
     /// `osc_in`, in Hz.
     pub osc_in: u64,
-    /// `mash_order`, 0 to 3 (`MASH_ORDER_*`).
-    pub mash_order: u32,
-    /// `force_mult`; 0 lets the solver choose.
-    pub force_mult: u32,
-    /// `rfouta`, in Hz.
+    /// `rfouta`, in Hz (ignored by instant calibration's set-up).
     pub rfouta: u64,
     /// `rfoutb`, in Hz.
     pub rfoutb: u64,
+    /// `srout`, in Hz.
+    pub srout: u64,
+    /// `lmx2820_tune_instcal`'s `rfouta`, in Hz.
+    pub retune_a: u64,
+    /// Its `rfoutb`.
+    pub retune_b: u64,
+    /// The SPI bus the chip answers on (`lsaddr`): 2 or 3 on `PE_SYNC`.
+    pub bus: c_uint,
+    /// `mash_order`, 0 to 3 (`MASH_ORDER_*`).
+    pub mash_order: c_uint,
+    /// `force_mult`; 0 lets the solver choose.
+    pub force_mult: c_uint,
+    /// SYSREF on (`enabled`).
+    pub sysref_enabled: c_uint,
+    /// `master_mode`.
+    pub master_mode: c_uint,
+    /// `cont_pulse`.
+    pub cont_pulse: c_uint,
+    /// `pulse_cnt`.
+    pub pulse_cnt: c_uint,
+    /// `delay_ctrl`.
+    pub delay_ctrl: c_uint,
+    /// `srreq_fmt`: `SRREQ_CMOS` 0 to `SRREQ_LVDS_DC` 3.
+    pub srreq_fmt: c_uint,
+    /// `lmx2820_instant_calibration_init` instead of `lmx2820_tune`.
+    pub instant: c_uint,
+    /// Then `lmx2820_tune_instcal`.
+    pub retune: c_uint,
+    /// Then `lmx2820_sync`.
+    pub sync: c_uint,
 }
 
 /// `lmx1214_solver`'s arguments, the shim's `struct rsl_lmx1214_request`.
@@ -81,8 +118,34 @@ pub struct Lmx1214Request {
     pub aux_enable: c_uint,
     /// `aux->fmt`: `LMX1214_FMT_LVDS` 0, `LMX1214_FMT_CML` 2.
     pub aux_format: c_uint,
+    /// `prec_mode`.
+    pub prec_mode: c_uint,
+    /// The windowing steps after the solver ([`BEFORE_SYNC`], [`CAPTURE`], [`AFTER_SYNC`]).
+    pub windowing: c_uint,
     /// `aux->freq`, in Hz.
     pub aux_freq: f64,
+}
+
+/// One SYSREF output's delay, the shim's `struct rsl_lmx1204_delay`
+/// (`lmx1204_init_sysrefout_ch_delay`'s arguments).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Lmx1204Delay {
+    /// `phase`.
+    pub phase: c_uint,
+    /// `i`.
+    pub i: c_uint,
+    /// `q`.
+    pub q: c_uint,
+}
+
+impl Lmx1204Delay {
+    /// `lmx1204_create`'s default for every output: phase QCLK0, I = 7, Q = 0x7F - 7.
+    pub const CREATE: Self = Self {
+        phase: 1,
+        i: 7,
+        q: 0x7f - 7,
+    };
 }
 
 /// The `lmx1204_state_t` fields a board sets, the shim's `struct rsl_lmx1204_request`; the
@@ -110,39 +173,41 @@ pub struct Lmx1204Request {
     pub logiclkout_fmt: c_uint,
     /// `logisysrefout_fmt`, as `logiclkout_fmt`.
     pub logisysrefout_fmt: c_uint,
+    /// `prec_mode`.
+    pub prec_mode: c_uint,
+    /// The steps after the lock wait ([`RELOAD_DELAYS`], [`BEFORE_SYNC`], [`CAPTURE`],
+    /// [`AFTER_SYNC`]).
+    pub windowing: c_uint,
     /// `clkout`, in Hz.
     pub clkout: f64,
     /// `sysrefout`, in Hz.
     pub sysrefout: f64,
     /// `logiclkout`, in Hz.
     pub logiclkout: f64,
+    /// Each output's SYSREF delay before the solver, channels 0 to 3 then the logic one.
+    pub delays: [Lmx1204Delay; 5],
+    /// The delays [`RELOAD_DELAYS`] sets and reloads.
+    pub reload: [Lmx1204Delay; 5],
 }
 
-/// Runs libusdr's `lmx2820_tune` (solver, registers, lock wait) on a zeroed chip state whose
-/// SPI reaches `board`: the result (0 or a negative errno) and the board with its trace.
-/// Serialised with [`Oracle`]s, which share the board slot.
+/// Runs one LMX2820 session on a zeroed chip state whose SPI reaches `board`:
+/// `lmx2820_tune` (solver, registers, lock wait) or `lmx2820_instant_calibration_init`,
+/// then, while each succeeds, `lmx2820_tune_instcal` and `lmx2820_sync` as `session` asks.
+/// The result (0 or the first negative errno) and the board with its trace. Serialised
+/// with [`Oracle`]s, which share the board slot.
 ///
 /// # Panics
 ///
 /// If a callback panicked (resumed here).
 #[must_use]
-pub fn lmx2820_tune(board: SimBoard, tune: Lmx2820Tune) -> (i32, SimBoard) {
-    let Lmx2820Tune {
-        bus,
-        osc_in,
-        mash_order,
-        force_mult,
-        rfouta,
-        rfoutb,
-    } = tune;
-    // SAFETY: the shim takes plain values and keeps nothing.
-    run_on(board, || unsafe {
-        pe_sync_oracle_lmx2820_tune(bus, osc_in, mash_order, force_mult, rfouta, rfoutb)
-    })
+pub fn lmx2820_session(board: SimBoard, session: &Lmx2820Session) -> (i32, SimBoard) {
+    // SAFETY: `session` is valid for the call; the shim only reads it.
+    run_on(board, || unsafe { pe_sync_oracle_lmx2820_session(session) })
 }
 
-/// Runs libusdr's `lmx1214_solver` (registers written, no precision mode) on a zeroed chip
-/// state on SPI bus 5 of `board`; result and board, as [`lmx2820_tune`].
+/// Runs libusdr's `lmx1214_solver` (registers written) on a zeroed chip state on SPI bus 5
+/// of `board`, then, while each succeeds, the windowing steps `request` asks for; result
+/// and board, as [`lmx2820_session`].
 ///
 /// # Panics
 ///
@@ -153,9 +218,10 @@ pub fn lmx1214_solver(board: SimBoard, request: &Lmx1214Request) -> (i32, SimBoa
     run_on(board, || unsafe { pe_sync_oracle_lmx1214_solver(request) })
 }
 
-/// Runs libusdr's `lmx1204_solver` (registers written, no precision mode) on SPI bus 4 of
-/// `board`, from the state `lmx1204_create` leaves, then, if it succeeded, its
-/// `lmx1204_wait_pll_lock`; result and board, as [`lmx2820_tune`].
+/// Runs libusdr's `lmx1204_solver` (registers written) on SPI bus 4 of `board`, from the
+/// state `lmx1204_create` leaves with `request`'s delays, then, if it succeeded, its
+/// `lmx1204_wait_pll_lock` and, while each succeeds, the steps `request` asks for; result
+/// and board, as [`lmx2820_session`].
 ///
 /// # Panics
 ///
@@ -178,14 +244,7 @@ fn run_on(board: SimBoard, call: impl FnOnce() -> c_int) -> (i32, SimBoard) {
 }
 
 unsafe extern "C" {
-    fn pe_sync_oracle_lmx2820_tune(
-        bus: c_uint,
-        osc_in: u64,
-        mash_order: c_uint,
-        force_mult: c_uint,
-        rfouta: u64,
-        rfoutb: u64,
-    ) -> c_int;
+    fn pe_sync_oracle_lmx2820_session(session: *const Lmx2820Session) -> c_int;
     fn pe_sync_oracle_lmx1214_solver(request: *const Lmx1214Request) -> c_int;
     fn pe_sync_oracle_lmx1204_solver(request: *const Lmx1204Request) -> c_int;
     fn usdr_dmd_create_string(connection_string: *const c_char, odev: *mut DmDev) -> c_int;

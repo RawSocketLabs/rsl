@@ -33,6 +33,8 @@ pub(crate) enum Reg {
     /// (1.4–2.7 GHz), 1 for 15 ps (2.4–4.7 GHz), 2 for 11 ps (3.1–5.7 GHz), 3 for 8 ps
     /// (4.5–12.8 GHz). `R13`.
     DelayStepSize = 0x0d,
+    /// See [`Capture`]. `R14`.
+    Capture = 0x0e,
     /// See [`Sysref`]. `R15`.
     Sysref = 0x0f,
     /// See [`SysrefDivider`]. `R16`.
@@ -253,6 +255,24 @@ pub(crate) struct LogicDivider {
 impl Register for LogicDivider {
     type Map = Reg;
     const ADDR: Reg = Reg::LogicDivider;
+}
+
+/// SYSREFREQ's input and the clock-position capture. `R14`: libusdr leaves the SYNC mute
+/// and latch fields at 0.
+#[bitfield(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Capture {
+    /// The next SYSREFREQ edge latches the clock positions (`RB_CLKPOS`, R12:R11).
+    /// `CLKPOS_CAPTURE_EN`, bit 2.
+    #[bits(2..=2)]
+    enabled: bool,
+    /// SYSREFREQ comes from the SYSREFREQ pins rather than SYNC (`SYSREFREQ_MODE`, bit 1).
+    #[bits(1..=1)]
+    request_pins: bool,
+}
+impl Register for Capture {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Capture;
 }
 
 /// The SYSREF subsystem. `R15`.
