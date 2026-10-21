@@ -8,7 +8,12 @@
 //! recorded [`Op`] traces, frames and decoded register operations alike, can be compared
 //! without hardware.
 //!
-//! The model covers identification, `limesdr_init` and close. Each modelling assumption is
+//! Its stream blocks ([`SimBoard::stream_open`], [`SimBoard::rx_block`],
+//! [`SimBoard::tx_block`]) stand in for the gateware's sample streams over the same
+//! bridge.
+//!
+//! The model covers identification, `limesdr_init`, the control paths, the streams and
+//! close. Each modelling assumption is
 //! stated, with its evidence, where it is encoded; see the family's `AGENTS.md` for the
 //! full list.
 #![forbid(unsafe_code)]
