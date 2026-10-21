@@ -1,6 +1,6 @@
 //! libusdr's FPGA FIR gearbox (`ipblks/fgearbox.c`): the microcode its rate changers load
-//! for each RX decimation and TX interpolation factor, on the 7-series FPGAs of the uSDR
-//! and the LMS7 family. 32 DSP lines of 40 bits, a byte per register write; which register
+//! for each RX decimation and TX interpolation factor, on the 7-series FPGAs of the uSDR,
+//! the LMS7 family and the `LSDr`. 32 DSP lines of 40 bits, a byte per register write; which register
 //! and how far apart each driver writes them stay in the driver.
 //!
 //! **Unstable; unpublished.** The tables were `usdr`'s (`portable/fir_tables.rs`), moved
@@ -92,6 +92,41 @@ impl Factor {
             Self::X8 => &tables::INTERPOLATE_8,
             Self::X16 => &tables::INTERPOLATE_16,
             Self::X32 => &tables::INTERPOLATE_32,
+        }
+    }
+}
+
+/// A decimation factor only the decimator has a 7-series table for, beyond [`Factor`]'s
+/// (`FGBOX_X3`, `FGBOX_X5`, `FGBOX_X6`, `FGBOX_X64`, `FGBOX_X128`): the `LSDr` loads them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DecimationOnly {
+    /// 3.
+    X3,
+
+    /// 5.
+    X5,
+
+    /// 6.
+    X6,
+
+    /// 64.
+    X64,
+
+    /// 128.
+    X128,
+}
+
+impl DecimationOnly {
+    /// The decimator's microcode for this factor on a 7-series FPGA
+    /// (`fgearbox_load_fir_ex` with `DSP_7SERIES`).
+    #[must_use]
+    pub const fn decimation_ucode(self) -> &'static [u8; UCODE_BYTES] {
+        match self {
+            Self::X3 => &tables::DECIMATE_3,
+            Self::X5 => &tables::DECIMATE_5,
+            Self::X6 => &tables::DECIMATE_6,
+            Self::X64 => &tables::DECIMATE_64,
+            Self::X128 => &tables::DECIMATE_128,
         }
     }
 }
