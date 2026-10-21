@@ -17,6 +17,7 @@ resolver = "3"
 lms7002m = { path = "../../chips/lms7002m", version = "0.0.0", default-features = false }
 hal = { path = "../../../hal", version = "0.0.0", default-features = false }
 lp8758 = { path = "../../chips/lp8758", version = "0.0.0", default-features = false }
+sdr-gearbox = { path = "../../gearbox", version = "0.0.0", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"

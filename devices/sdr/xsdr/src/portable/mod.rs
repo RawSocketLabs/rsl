@@ -6,6 +6,7 @@
 pub(crate) mod close;
 pub(crate) mod fpga;
 pub(crate) mod frontend;
+pub(crate) mod gearbox;
 pub(crate) mod hwid;
 pub(crate) mod mmcm;
 pub(crate) mod outcome;

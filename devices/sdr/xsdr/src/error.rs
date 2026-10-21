@@ -68,12 +68,6 @@ pub enum Error {
     #[error("sample rate {0} is out of range")]
     InvalidRate(u32),
 
-    /// Gateware whose sample-rate path is not ported (HWID PHY bits, here): an FPGA
-    /// DUC/DDC, or for TX streams the extended TX front end. Refused before any bus
-    /// access.
-    #[error("gateware PHY features {0:#04x} are not supported yet")]
-    UnsupportedGateware(u8),
-
     /// The LMS7002M's processors cannot divide down to the rate: libusdr's `-EINVAL`
     /// ("can't deliver decimation").
     #[error("the LMS7002M cannot deliver this sample rate")]

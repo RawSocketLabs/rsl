@@ -6,9 +6,7 @@
 //! PHY reads an error-free link and its LMS7002M answers the VCO comparators from the
 //! 26 MHz reference (`xsdr-sim`, `lms7002m-sim`).
 //!
-//! Whitelisted divergence: gateware with a DUC/DDC is refused by xsdr before any bus
-//! access, where libusdr configures it
-//! (`gateware_xsdr_does_not_port_is_refused_before_any_access`). Not run against libusdr,
+//! No divergence is whitelisted. Not run against libusdr,
 //! which reads past its MMCM table there: rates whose link the MMCM cannot take with RX
 //! as its master, on gateware with an RX or shared MMCM; xsdr refuses them before any bus
 //! access (`low_rates_an_rx_master_mmcm_cannot_take_are_refused_before_any_access`).
@@ -364,25 +362,6 @@ fn low_rates_an_rx_master_mmcm_cannot_take_are_refused_before_any_access() {
 }
 
 #[test]
-fn gateware_xsdr_does_not_port_is_refused_before_any_access() {
-    for phy in [0x04, 0x14] {
-        let sim = SimBus::new(SimBoard::new(Variant::Xsdr).with_hwid(TX_MMCM | phy));
-        let mut device = Device::open(sim.clone()).expect("opens");
-        device.power_up().expect("powers up");
-        let before = sim.board().trace().len();
-        assert!(matches!(
-            device.set_sample_rate(1_000_000, 1_000_000),
-            Err(Error::UnsupportedGateware(_))
-        ));
-        assert_eq!(
-            sim.board().trace().len(),
-            before,
-            "PHY {phy:#04x}: nothing driven"
-        );
-    }
-}
-
-#[test]
 fn a_link_dirty_for_three_phases_is_swept_past_like_libusdr() {
     // Phases 1 to 3 read one error on their first counter; the rest read clean.
     let dirty = [1, 0, 0, 0].repeat(3);
@@ -454,4 +433,47 @@ fn an_xtrx_raises_only_its_io_supply_above_50_and_60_ms_like_libusdr() {
             &format!("XTRX at {rate} S/s"),
         );
     }
+}
+
+#[test]
+fn duc_ddc_gateware_raises_the_rate_and_loads_its_chains_like_libusdr() {
+    // Each factor: the LMS7002M at 32 MS/s or more, the DSP chains' microcode loaded on a
+    // change and their resets pulsed when it holds; a rate past 32 MS/s takes factor 1.
+    let results = assert_same(
+        TX_MMCM | 0x04,
+        &[
+            Call::PowerUp,
+            Call::Rate(1_000_000),
+            Call::Rate(1_000_000),
+            Call::Rate(5_000_000),
+            Call::Rate(10_000_000),
+            Call::Rates(20_000_000, 0),
+            Call::Rates(0, 3_000_000),
+            Call::Rate(40_000_000),
+            Call::Rx(1_000_000_000),
+            Call::Bandwidth(Direction::Rx, 5_000_000),
+        ],
+        "DUC/DDC",
+    );
+    assert!(results.iter().all(|&result| result == 0), "{results:?}");
+    let (_, ops) = libusdr(
+        SimBoard::new(Variant::Xsdr).with_hwid(TX_MMCM | 0x04),
+        &[Call::PowerUp, Call::Rate(1_000_000), Call::Rate(1_000_000)],
+    );
+    let microcode = |bank: u32| {
+        ops.iter()
+            .filter(|op| matches!(op, Op::RegWrite { addr: 0, value } if value >> 24 == bank))
+            .count()
+    };
+    assert_eq!(
+        (microcode(20), microcode(22)),
+        (1280, 1280),
+        "each chain's microcode once, at the first rate"
+    );
+    // With an RX or shared MMCM too.
+    assert_same(
+        TX_MMCM | 0x14,
+        &[Call::PowerUp, Call::Rate(2_000_000), Call::Rate(8_000_000)],
+        "DUC/DDC with an RX MMCM",
+    );
 }

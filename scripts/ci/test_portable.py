@@ -11,7 +11,8 @@ from portable import FIXTURES, validate
 # The registered dependencies' own manifests, which the contract also reads.
 OWNED = ("codecs/bitsandbytes/bnb/Cargo.toml", "devices/hal/Cargo.toml",
          "devices/sdr/chips/lp8758/Cargo.toml", "devices/sdr/chips/lms7002m/Cargo.toml",
-         "devices/chips/lmk05318/Cargo.toml", "devices/sdr/stream/Cargo.toml")
+         "devices/chips/lmk05318/Cargo.toml", "devices/sdr/stream/Cargo.toml",
+         "devices/sdr/gearbox/Cargo.toml")
 USDR = FIXTURES["usdr"]
 XSDR = FIXTURES["xsdr"]
 LIMESDR = FIXTURES["limesdr"]

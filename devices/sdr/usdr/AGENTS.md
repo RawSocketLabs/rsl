@@ -126,11 +126,11 @@ Each layer calls only the ones below it.
   libusdr's `cal/opt_func.c` and `cal_filt.c` (`oracle/tests/cal_parity.rs`), the shared
   `sdr-cal`'s (`../cal`, 2026-10-19, for the XSDR's TX quality check) re-exported.
 - `src/fpga/`: gateware registers: GPO/GPI, the DSP chains' configuration ports (`phy`;
-  the port words, GPO words and the decimator FIR tables are portable, `portable/fpga.rs`
-  and `portable/fir_tables.rs`), the RX stream engine (`stream`:
-  front end, DMA, sync), the TX stream cores (`tx_stream`: the original core's
-  announcement and status read over the bus, `sdr-stream`'s words, and the extended
-  core's cached announcement; its front-end
+  the port words and GPO words are portable, `portable/fpga.rs`, and the FIR tables the
+  shared `sdr-gearbox`'s, `../gearbox`, 2026-10-21, for the XSDR's DUC/DDC), the RX stream
+  engine (`stream`: front end, DMA, sync), the TX stream cores (`tx_stream`: the original
+  and extended cores' announcements and status read over the bus, `sdr-stream`'s words
+  and the extended core's announcement cache; its front-end
   commands and lane map are `portable/stream.rs`'s `EngineSequence`s), and
   the QSPI flash controller (`flash`: libusdr's `espi_flash.c`,
   plus the public `FlashId`, `FlashError` and `WriteOptions`).
@@ -213,7 +213,7 @@ Each layer calls only the ones below it.
   (`si5332/sequence.rs`), the stream engine's register sequences (`stream.rs`), the
   LMS6002D's register values, cache, straight-line operations as `Script`s, PLL tuning
   and DC calibrations (`lms6002d/`), the gateware's GPO and DSP-port words, FIR loads,
-  correction writes and constant generator (`fpga.rs`, `fir_tables.rs`; the IQ terms'
+  correction writes and constant generator (`fpga.rs`, on `sdr-gearbox`'s tables; the IQ terms'
   trigonometry stays host-side in `fpga/phy.rs`), `Script` (`script.rs`, a fixed action list), the board's
   RF state and composite machines (`radio/`: `Radio`; `run.rs`'s `Run` drives a
   composite's parts with libusdr's stop, carry-on-and-report and ignore failure

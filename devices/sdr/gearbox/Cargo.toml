@@ -1,0 +1,14 @@
+[package]
+name = "sdr-gearbox"
+version = "0.0.0"
+description = "libusdr's FPGA FIR gearbox microcode (ipblks/fgearbox.c), shared by the pure-Rust uSDR and LMS7 family drivers."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

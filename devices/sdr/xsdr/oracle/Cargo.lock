@@ -190,6 +190,10 @@ name = "sdr-frontend-sim"
 version = "0.0.0"
 
 [[package]]
+name = "sdr-gearbox"
+version = "0.0.0"
+
+[[package]]
 name = "sdr-stream"
 version = "0.0.0"
 dependencies = [
@@ -356,6 +360,7 @@ dependencies = [
  "num-complex",
  "sdr-cal",
  "sdr-frontend",
+ "sdr-gearbox",
  "sdr-stream",
  "thiserror",
 ]

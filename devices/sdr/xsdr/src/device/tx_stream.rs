@@ -210,7 +210,7 @@ impl Device {
         if self.tx_stream.is_some() {
             return Err(Error::AlreadyStreaming);
         }
-        let gateware = self.gateware()?;
+        let gateware = self.gateware();
         let [.., phy] = self.hwid.to_be_bytes();
         let extended = phy & PHY_EXTENDED_TX != 0;
         let count = u32::try_from(channels.count()).expect("1 or 2");
@@ -302,9 +302,7 @@ impl Device {
     /// Whether the link the last sample rate left takes the MMCM's every configuration
     /// with `rx_master` as the master ([`MmcmPlan::fits`]).
     pub(super) fn link_clock_fits(&self, rx_master: bool) -> bool {
-        let Ok(gateware) = self.gateware() else {
-            return true;
-        };
+        let gateware = self.gateware();
         let link = MmcmLink {
             clocks: self.control.clocks(),
             lml: self.control.lml(),

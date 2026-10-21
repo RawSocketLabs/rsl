@@ -109,16 +109,9 @@ fn links_the_tx_mmcm_cannot_take_are_refused_before_any_access() {
 }
 
 #[test]
-fn unported_gateware_and_empty_packets_are_refused_before_any_access() {
-    // A DUC/DDC (HWID PHY bit 0x04); on the extended TX front end (0x08), a packet past
-    // one burst, which libusdr splits into bursts.
-    let (mut device, sim) = xsdr(TX_MMCM | 0x04);
-    let before = traced(&sim);
-    assert!(matches!(
-        device.create_tx_stream(TxChannels::A, 1024),
-        Err(Error::UnsupportedGateware(0x24))
-    ));
-    assert_eq!(traced(&sim), before);
+fn oversized_extended_packets_and_empty_packets_are_refused_before_any_access() {
+    // On the extended TX front end (HWID PHY bit 0x08), a packet past one burst, which
+    // libusdr splits into bursts.
     let (mut device, sim) = xsdr(TX_MMCM | 0x08);
     device
         .set_sample_rate(10_000_000, 10_000_000)

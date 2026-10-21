@@ -34,9 +34,11 @@ class Fixture:
 
 
 FIXTURES = {
-    "usdr": Fixture(USDR, {"bnb": set(), "hal": {"std"}, "lp8758": set(), "sdr-stream": set()},
+    "usdr": Fixture(USDR, {"bnb": set(), "hal": {"std"}, "lp8758": set(), "sdr-stream": set(),
+                           "sdr-gearbox": set()},
                     {"default": ["usb"], "usb": []}),
-    "xsdr": Fixture(XSDR, {"lms7002m": set(), "hal": {"std"}, "lp8758": set()},
+    "xsdr": Fixture(XSDR, {"lms7002m": set(), "hal": {"std"}, "lp8758": set(),
+                           "sdr-gearbox": set()},
                     None),
     "lsdr": Fixture(LSDR, {"bnb": set(), "hal": {"std"}}, None),
     "limesdr": Fixture(LIMESDR, {"lms7002m": set(), "hal": {"std"}}, None),

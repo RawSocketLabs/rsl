@@ -98,7 +98,7 @@ fn gateware_without_a_tx_mmcm_fails_the_calibration_after_its_fixed_delay() {
 }
 
 #[test]
-fn invalid_rates_and_unported_gateware_are_refused_before_any_access() {
+fn invalid_rates_are_refused_before_any_access() {
     let (mut device, sim) = xsdr(TX_MMCM);
     let opened = sim.board().trace().len();
     for (rx, tx) in [(0, 0), (89_999, 0), (0, 195_000_001)] {
@@ -107,14 +107,7 @@ fn invalid_rates_and_unported_gateware_are_refused_before_any_access() {
             Err(Error::InvalidRate(_))
         ));
     }
-    let (mut duc_ddc, other) = xsdr(TX_MMCM | 0x04);
-    let other_opened = other.board().trace().len();
-    assert!(matches!(
-        duc_ddc.set_sample_rate(1_000_000, 1_000_000),
-        Err(Error::UnsupportedGateware(0x24))
-    ));
     assert_eq!(sim.board().trace().len(), opened);
-    assert_eq!(other.board().trace().len(), other_opened);
 }
 
 #[test]

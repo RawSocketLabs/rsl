@@ -36,6 +36,8 @@ members = [
     "devices/sdr/stream/sim",
     # libusdr's calibration mathematics, shared by the SDR drivers
     "devices/sdr/cal",
+    # libusdr's FPGA FIR gearbox microcode, shared by the SDR drivers
+    "devices/sdr/gearbox",
     # pure-Rust uSDR driver and its board simulator
     "devices/sdr/usdr",
     "devices/sdr/usdr/sim",
@@ -121,6 +123,7 @@ lmk05318 = { path = "devices/chips/lmk05318", version = "0.0.0", default-feature
 sdr-frontend = { path = "devices/sdr/frontend", version = "0.0.0", default-features = false }
 sdr-stream = { path = "devices/sdr/stream", version = "0.0.0", default-features = false }
 sdr-cal = { path = "devices/sdr/cal", version = "0.0.0" }
+sdr-gearbox = { path = "devices/sdr/gearbox", version = "0.0.0", default-features = false }
 # unpublished test support, dev-dependency only
 usdr-sim = { path = "devices/sdr/usdr/sim" }
 usdr-pcie = { path = "devices/sdr/usdr/pcie" }

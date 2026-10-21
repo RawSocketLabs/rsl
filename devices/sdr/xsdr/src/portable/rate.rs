@@ -28,6 +28,7 @@ use super::fpga::{
     TX_DEFAULT_DELAY, TxPhy,
 };
 use super::frontend::XsdrFrontend;
+use super::gearbox::{ChainState, UpdateFeDsp};
 use super::mmcm::{ConfigureMmcm, MmcmCall, MmcmLink, MmcmPlan, MmcmUnlocked, PhaseOverrides};
 use super::step::Step;
 use super::txcal::{TxCalError, TxCalibration, TxVerdict};
@@ -72,6 +73,11 @@ const SEVERE: u64 = 100;
 const TX_IQ_SEVERE: u32 = 10;
 /// The LFSR counters' read selector: `LFSR_CNTR_BER` in bits 3:2.
 const BER: u8 = 2 << 2;
+/// The rate the FPGA's DUC/DDC raises a rate to at least, before the LMS7002M's
+/// (`RATE_MIN` in `xsdr_set_samplerate_ex`).
+const DUC_DDC_RATE_MIN: u32 = 32_000_000;
+/// The FPGA's decimation and interpolation factors, smallest first (`fpga_dxc`).
+const DUC_DDC_FACTORS: [u32; 6] = [1, 2, 4, 8, 16, 32];
 
 /// The gateware features the rate path reads from HWID's PHY bits (`xsdr_init`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,6 +99,10 @@ pub(crate) struct Gateware {
     /// the link calibration configures the MMCM with RX as the master while TX does not
     /// run.
     pub(crate) rx_mmcm: bool,
+
+    /// An FPGA DUC/DDC (`PHY_CFG_HAS_DUC_DDC`): rates below 32 MS/s run the LMS7002M at a
+    /// multiple, which the FPGA's DSP chains decimate and interpolate back.
+    pub(crate) duc_ddc: bool,
 
     /// The board is an XTRX (libusdr's `!new_rev`): the link calibration raises only the
     /// I/O supply, above 50 MS/s, and never the core supply.
@@ -127,6 +137,12 @@ pub(crate) struct RateState {
     /// The VCO divider steps the last link calibration's RX retries added
     /// (`g_clk_reduce`, which each calibration resets).
     pub(crate) clock_reduce: u8,
+
+    /// The RX DSP chain's decimation as last loaded (`s_rx_dec`), 0 before any.
+    pub(crate) rx_decimation: u32,
+
+    /// The TX DSP chain's interpolation (`s_tx_int`), likewise.
+    pub(crate) tx_interpolation: u32,
 }
 
 /// Why a rate was not set.
@@ -248,6 +264,8 @@ enum Stage {
     Probe,
     /// The RX FIFO back to the processor (RX was running before).
     NormalMode,
+    /// On DUC/DDC gateware, the FPGA's DSP chains updated.
+    FeDsp,
     /// Bank A selected.
     SelectA,
     /// 25 ms before each self-test check.
@@ -281,6 +299,8 @@ enum Part {
     Mmcm(ConfigureMmcm),
     /// The TX phase calibration.
     TxCalibration(TxCalibration),
+    /// The DSP chains' update.
+    FeDsp(UpdateFeDsp),
 }
 
 impl Part {
@@ -294,6 +314,7 @@ impl Part {
             Self::Bist(check) => check.next(),
             Self::Mmcm(configure) => configure.next(),
             Self::TxCalibration(calibration) => calibration.next(),
+            Self::FeDsp(update) => update.next(),
         }
     }
 
@@ -307,6 +328,7 @@ impl Part {
             Self::Bist(check) => check.complete(result),
             Self::Mmcm(configure) => configure.complete(result),
             Self::TxCalibration(calibration) => calibration.complete(result),
+            Self::FeDsp(update) => update.complete(result),
         }
     }
 }
@@ -375,6 +397,7 @@ impl SetSampleRate {
         (rx, tx): (u32, u32),
     ) -> Self {
         let mut rate = Self::idle(control, state, gateware, pmic, (rx, tx));
+        rate.scale_for_duc_ddc();
         if state.afe_active {
             rate.start_rate();
         } else {
@@ -413,9 +436,11 @@ impl SetSampleRate {
         (rx, tx): (u32, u32),
         rx_master: bool,
     ) -> bool {
+        let mut idle = Self::idle(control, state, gateware, I2cAddr::new(0, 0), (rx, tx));
+        idle.scale_for_duc_ddc();
+        let mut request = idle.request;
+        let (rx, tx) = (request.rx, request.tx);
         let pumped = state.double_pump || (!state.afe_active && (rx > SISO_RATE || tx > SISO_RATE));
-        let mut request =
-            Self::idle(control, state, gateware, I2cAddr::new(0, 0), (rx, tx)).request;
         request.flags = Self::rate_flags(pumped);
         (0..).map_while(|pass| request.plan(pass)).all(|plan| {
             plan.map_or(true, |(clocks, lml)| {
@@ -429,6 +454,28 @@ impl SetSampleRate {
                 MmcmPlan::fits(&link, rx_master)
             })
         })
+    }
+
+    /// On DUC/DDC gateware, the rates raised by the first factor that takes either to
+    /// 32 MS/s or more (32 at most), the LMS7002M's decimation and interpolation set to it,
+    /// as `xsdr_set_samplerate_ex` does.
+    fn scale_for_duc_ddc(&mut self) {
+        if !self.gateware.duc_ddc {
+            return;
+        }
+        let request = &mut self.request;
+        let reaches =
+            |rate: u32, factor: u32| rate != 0 && rate.saturating_mul(factor) >= DUC_DDC_RATE_MIN;
+        let (last, smaller) = DUC_DDC_FACTORS.split_last().expect("six factors");
+        let factor = smaller
+            .iter()
+            .copied()
+            .find(|&factor| reaches(request.rx, factor) || reaches(request.tx, factor))
+            .unwrap_or(*last);
+        request.rx = request.rx.wrapping_mul(factor);
+        request.tx = request.tx.wrapping_mul(factor);
+        request.rx_decimation = factor;
+        request.tx_interpolation = factor;
     }
 
     /// libusdr's `/dm/rate` flags (maximum converter rate, extended CGEN), with SISO DDR
@@ -604,6 +651,7 @@ impl SetSampleRate {
             }
             Stage::Probe => self.probe_advance(),
             Stage::NormalMode => self.finish_calibration(),
+            Stage::FeDsp => self.after_fe_dsp(),
             Stage::SelectA => self.bist_wait(),
             Stage::BistWait => {
                 self.stage = Stage::BistRx;
@@ -1020,6 +1068,41 @@ impl SetSampleRate {
             self.stage = Stage::Done(Ok(()));
             return;
         }
+        if self.gateware.duc_ddc {
+            let (rx, tx) = self.chain_states();
+            self.stage = Stage::FeDsp;
+            self.part = Part::FeDsp(UpdateFeDsp::new(rx, tx));
+            return;
+        }
+        self.select_a();
+    }
+
+    /// The DSP chains as the rate leaves them, for `_xsdr_update_fe_dsp`.
+    fn chain_states(&self) -> (ChainState, ChainState) {
+        let clocks = self.control.clocks();
+        (
+            ChainState {
+                rate: self.state.rx,
+                held: self.state.rx_decimation,
+                wanted: clocks.rx_decimation,
+            },
+            ChainState {
+                rate: self.state.tx,
+                held: self.state.tx_interpolation,
+                wanted: clocks.tx_interpolation,
+            },
+        )
+    }
+
+    /// After the DSP chains' update: the factors they now hold, then bank A.
+    fn after_fe_dsp(&mut self) {
+        let (rx, tx) = self.chain_states();
+        (self.state.rx_decimation, self.state.tx_interpolation) = UpdateFeDsp::held(rx, tx);
+        self.select_a();
+    }
+
+    /// Bank A selected.
+    fn select_a(&mut self) {
         let batch = self.control.chip_mut().mac_set(Mac::A);
         self.chip(Stage::SelectA, batch);
     }
@@ -1063,7 +1146,7 @@ impl Sequence for SetSampleRate {
             Part::Control(op) => self.control = *op.control(),
             Part::StreamUp(op) => self.control = *op.control(),
             Part::TxCalibration(calibration) => self.control = *calibration.control(),
-            Part::Chip(_) | Part::Step(_) | Part::Bist(_) | Part::Mmcm(_) => {}
+            Part::Chip(_) | Part::Step(_) | Part::Bist(_) | Part::Mmcm(_) | Part::FeDsp(_) => {}
         }
         match completed {
             Ok(()) => {}

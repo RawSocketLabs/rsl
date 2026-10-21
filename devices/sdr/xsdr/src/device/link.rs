@@ -62,7 +62,7 @@ impl Device {
     ///
     /// [`Error::InvalidPhase`] as [`Self::set_tx_phase_override`]; then, the overrides
     /// kept, before any bus access: [`Error::NoSampleRate`] before any rate (libusdr
-    /// divides by the zero converter divider), [`Error::UnsupportedGateware`],
+    /// divides by the zero converter divider),
     /// [`Error::TxClockOutOfRange`] for a link the TX MMCM cannot take; then
     /// [`Error::TxClockUnlocked`] (libusdr's `-EIO`, the serializer not reset) or
     /// [`Error::Bus`].
@@ -73,7 +73,7 @@ impl Device {
         if self.control.clocks().cgen == 0 {
             return Err(Error::NoSampleRate);
         }
-        let gateware = self.gateware()?;
+        let gateware = self.gateware();
         let lml = self.control.lml();
         let link = MmcmLink {
             clocks: self.control.clocks(),
