@@ -38,7 +38,7 @@ FIXTURES = {
                     {"default": ["usb"], "usb": []}),
     "xsdr": Fixture(XSDR, {"lms7002m": set(), "hal": {"std"}, "lp8758": set()},
                     None),
-    "lsdr": Fixture(LSDR, {"bnb": set(), "hal": {"std"}}, None),
+    "lsdr": Fixture(LSDR, {"bnb": set(), "hal": {"std"}, "sdr-stream": set()}, None),
     "limesdr": Fixture(LIMESDR, {"lms7002m": set(), "hal": {"std"}}, None),
     "pe-sync": Fixture(PE_SYNC, {"bnb": set(), "lmk05318": set(), "hal": {"std"}},
                        None),

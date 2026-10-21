@@ -85,6 +85,7 @@ dependencies = [
  "bitsandbytes",
  "hal",
  "sdr-frontend",
+ "sdr-stream",
  "thiserror",
 ]
 
@@ -159,6 +160,14 @@ dependencies = [
  "hal",
  "lmk05318",
  "thiserror",
+]
+
+[[package]]
+name = "sdr-stream"
+version = "0.0.0"
+dependencies = [
+ "bitsandbytes",
+ "hal",
 ]
 
 [[package]]

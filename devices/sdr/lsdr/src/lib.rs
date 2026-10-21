@@ -4,16 +4,19 @@
 //! libusdr's `ls_op`, so its operations are checked against libusdr's on a simulated board
 //! (`lsdr-oracle`).
 //!
-//! **First slice; unstable; unpublished.** Ported: open with libusdr's front-end probe
+//! **Unstable; unpublished.** Ported: open with libusdr's front-end probe
 //! ([`Device::open`], with what it finds in [`Device::fitted`] and
 //! [`Device::front_end`]; the probe and fe1005000's bring-up are `sdr-frontend`'s), ADC
-//! power ([`Device::set_power`]), the receive PGA gain ([`Device::set_rx_pga_gain`]),
-//! fe1005000's debug-command controls ([`Device::configure_fe1005000`]) and close
-//! ([`Device::close`]). Not yet ported: fe1005000's device-level controls (gains and
-//! frequency with a front end, `/dm/sdr/0/fe/*`), fe4ch4007200's bring-up, the sample
-//! rate (Si549
-//! frequency, FIR gearbox, LMK04832 layout, ADC normal mode, LVDS PHY), the NCO frequency,
-//! RX streaming and the temperature sensor. See `PORTING.md` beside this crate.
+//! power ([`Device::set_power`]), the sample rate ([`Device::set_sample_rate`]: Si549
+//! frequency, FIR gearbox, LMK04832 layout, ADC normal mode, LVDS PHY), the receive
+//! frequency with its NCO ([`Device::set_rx_frequency`]), the receive PGA gain
+//! ([`Device::set_rx_pga_gain`]), the temperature ([`Device::temperature`]), the RX
+//! stream's create as far as libusdr gets ([`Device::create_rx_stream`], which fails at the
+//! pinned revision as libusdr's does), fe1005000's debug-command controls
+//! ([`Device::configure_fe1005000`]) and close ([`Device::close`]). Not yet ported:
+//! fe1005000's other device-level controls (gains with a front end, `/dm/sdr/0/fe/*`),
+//! fe4ch4007200's bring-up, `/dm/stat`'s PHY sweep and the debug paths. See `PORTING.md`
+//! beside this crate.
 //!
 //! # The board
 //!
@@ -31,7 +34,7 @@ mod frontend;
 pub mod lowlevel;
 mod portable;
 
-pub use device::{Device, OpenOptions};
+pub use device::{Device, OpenOptions, RxChannels};
 pub use error::{Access, Error};
 pub use portable::pga::PgaGain;
 pub use portable::probes::Fitted;

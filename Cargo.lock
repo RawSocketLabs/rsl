@@ -2220,6 +2220,7 @@ dependencies = [
  "hal",
  "lsdr-sim",
  "sdr-frontend",
+ "sdr-stream",
  "thiserror 2.0.21",
 ]
 
