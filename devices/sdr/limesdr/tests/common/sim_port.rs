@@ -37,4 +37,43 @@ impl ControlPort for SimPort {
             .expect("invariant: board delays fit in u64 microseconds");
         self.board().sleep_us(us);
     }
+
+    fn rx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        self.board().stream_open(false, block_bytes);
+        Ok(())
+    }
+
+    fn rx_stream_recv(
+        &mut self,
+        _timeout: Duration,
+        consume: &mut dyn FnMut(&[u8]),
+    ) -> Result<(), BusError> {
+        let block = self.board().rx_block().ok_or(BusError::Timeout)?;
+        consume(&block);
+        Ok(())
+    }
+
+    fn tx_stream_open(&mut self, block_bytes: u32) -> Result<(), BusError> {
+        self.board().stream_open(true, block_bytes);
+        Ok(())
+    }
+
+    fn tx_stream_send(
+        &mut self,
+        _timeout: Duration,
+        time: Option<u64>,
+        fill: &mut dyn FnMut(&mut [u8]) -> usize,
+    ) -> Result<(), BusError> {
+        let mut board = self.board();
+        let Some(capacity) = board.tx_capacity() else {
+            return Err(BusError::Unsupported("no TX stream"));
+        };
+        let mut buffer = vec![0; capacity];
+        let len = fill(&mut buffer);
+        if board.tx_block(&buffer[..len], time) {
+            Ok(())
+        } else {
+            Err(BusError::Unsupported("TX block over the stream's size"))
+        }
+    }
 }

@@ -51,3 +51,26 @@ pub(crate) const RX_SWITCH_SHIFT: u16 = 8;
 
 /// Where [`RF_SWITCHES`] holds the transmit path's position.
 pub(crate) const TX_SWITCH_SHIFT: u16 = 12;
+
+/// Chip select (`LIMESDR_REG_FFFF`): `limesdr_setup_stream` and `limesdr_disable_stream`
+/// write `1 << chipId`, chip 0, first.
+pub(crate) const CHIP_SELECT: u16 = 0xffff;
+
+/// Stream channel enables (`LIMESDR_REG_0007`): the setup writes 1, "Only channel 0 is
+/// enabled".
+pub(crate) const STREAM_CHANNELS: u16 = 0x0007;
+
+/// Stream mode (`LIMESDR_REG_0008`): 0x0040 SISO SDR, 0x0100 the default, 0x0180 with the
+/// trigger pulse, bit 1 for 12-bit samples (`limesdr_setup_stream`).
+pub(crate) const STREAM_MODE: u16 = 0x0008;
+
+/// The stream's clears (`LIMESDR_REG_0009`); see [`CLEAR_SAMPLES`] and [`CLEAR_TX_LOSS`].
+pub(crate) const STREAM_CLEARS: u16 = 0x0009;
+
+/// [`STREAM_CLEARS`] bit 0, `SMPL_NR_CLR`: "rising edge clears" the sample counter, the
+/// stream's timestamp.
+pub(crate) const CLEAR_SAMPLES: u16 = 1 << 0;
+
+/// [`STREAM_CLEARS`] bit 1, `TXPCT_LOSS_CLR`: "0 - normal operation, 1-clear" the TX
+/// packet-loss flag.
+pub(crate) const CLEAR_TX_LOSS: u16 = 1 << 1;

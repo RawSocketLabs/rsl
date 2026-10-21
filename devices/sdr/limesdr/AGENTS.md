@@ -7,17 +7,18 @@
 
 A pure-Rust port of libusdr's LimeSDR family, its board simulator and the libusdr reference
 oracle. The driver covers the open (`limesdr_init`), power-up, sample rate, RX/TX LO
-tuning, gains, baseband bandwidths, the automatic antenna switching and the LMS7002M's
-stream preparation (`limesdr_prepare_streaming`), and the close, over an LMS64C control
-channel; no hardware transport exists yet, so no stream runs. See [PORTING.md](PORTING.md)
-for done, divergences and remaining. Board: an FT601 USB 3 bridge, gateware with a 16-bit
-register file, firmware answering LMS64C control frames, and an LMS7002M RFIC. Nothing here
-is hardware-qualified.
+tuning, gains, baseband bandwidths, the automatic antenna switching, the LMS7002M's
+stream preparation (`limesdr_prepare_streaming`), the `ci16` RX and TX streams with their
+sync (`stream_limesdr.c`, `limesdr_setup_stream`, `limesdr_disable_stream`), and the close,
+over an LMS64C control channel and its stream blocks; no hardware transport exists yet.
+See [PORTING.md](PORTING.md) for done, divergences and remaining. Board: an FT601 USB 3
+bridge, gateware with a 16-bit register file, firmware answering LMS64C control frames, and
+an LMS7002M RFIC. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `limesdr` (unpublished, root workspace member) | The driver, on `hal` and `lms7002m` |
-| `sim/` | `limesdr-sim` (unpublished, root workspace member) | Board model at the LMS64C seam: gateware registers with the reference-clock detector, the LMS7002M (VCO comparators clocked from the board reference), virtual clock, trace of frames and decoded register operations |
+| `sim/` | `limesdr-sim` (unpublished, root workspace member) | Board model at the LMS64C seam: gateware registers with the reference-clock detector, the LMS7002M (VCO comparators clocked from the board reference), the stream blocks (RX bursts timed by the sample counter, TX blocks taken), virtual clock, trace of frames, decoded register operations and stream blocks |
 | `oracle/` | `limesdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `u3_limesdr` driving `sim` through `oracle/shim/sim_plugin.c`, and its `lms64c_proto.c` builder and parser called directly |
 | `nostd-check/` | `limesdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `xsdr`'s; `scripts/ci/portable.py limesdr` holds its dependencies to the driver's |
 | `../chips/lms7002m/` | `lms7002m` (shared with `xsdr`, `no_std`) | The LMS7002M register values and `hw/lms7002m` operations: `Create` is the open's `lms7002m_create` (the 0x3841 mask check is this board's, in `limesdr`), `spi_read` its version read; `ctrl` is `lms7002m_ctrl.c` (`Control`, `Operation`, the `Frontend` hooks this board implements), whose `streaming_up` with TX this family added |
@@ -37,17 +38,21 @@ goldens did not change.
 
 Mirrors `xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
 
-- `src/device.rs`: `Device`, the public API: `open`, `power_up` and `close` (both no bus
+- `src/device/mod.rs`: `Device`, the public API: `open`, `power_up` and `close` (both no bus
   operation, as in libusdr), `set_sample_rate`, `set_rx_frequency`, `set_tx_frequency`,
   `set_gain`, `set_bandwidth`, `prepare_streaming`, `reference_hz` and the emulated
-  `revision`. It owns the control channel (`Box<dyn ControlPort>`) and the LMS7002M control
-  state (`lms7002m::ctrl::Control`, as the open leaves it, then as each operation
-  leaves it, also after a failure), and runs the portable open and sequences, one LMS64C
-  exchange per access (`LsOp::from_access`).
+  `revision`; `src/device/stream.rs` the streams (`create_rx_stream`, `create_tx_stream`,
+  `start_streams`, `stop_streams`, `receive`, `send`, `destroy_rx_stream`,
+  `destroy_tx_stream`, `RxPacket`). It owns the control channel (`Box<dyn ControlPort>`)
+  and the LMS7002M control state (`lms7002m::ctrl::Control`, as the open leaves it, then
+  as each operation leaves it, also after a failure), and runs the portable open and
+  sequences, one LMS64C exchange per access (`LsOp::from_access`).
 - `src/control.rs`: `ControlPort`, the transport seam: one 64-byte request and its reply at
-  a time, plus sleep; `hal`'s `BusError`, re-exported. Unlike `xsdr`'s `Bus`,
-  it is not libusdr's `ls_op`: on this board the firmware's LMS64C frames are the wire, and
-  which frame carries which operation is the driver's (`portable/lsop.rs`).
+  a time, plus sleep, and the stream blocks (`{rx,tx}_stream_open`, `rx_stream_recv`,
+  `tx_stream_send`, `hal::Bus`'s shapes, unsupported by default); `hal`'s `BusError`,
+  re-exported. Unlike `xsdr`'s `Bus`, it is not libusdr's `ls_op`: on this board the
+  firmware's LMS64C frames are the wire, and which frame carries which operation is the
+  driver's (`portable/lsop.rs`).
 - `src/portable/`: core only, no allocation, imports within the tree and the shared
   `no_std` crates (`nostd-check` compiles it unchanged). `lms64c.rs`: the codec, public as
   `limesdr::lms64c` (single-frame register writes and reads, the reset pulse, reply
@@ -58,13 +63,16 @@ Mirrors `xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
   `frontend.rs`: the board's `Frontend` (`LimeFrontend`: antenna switches, `LimeLight`
   order) and band tables. `modify.rs`: `Modify`, a gateware read-modify-write.
   `rate.rs`: `SetSampleRate` (`limesdr_set_samplerate`). `stream.rs`: `PrepareStreaming`
-  (`limesdr_prepare_streaming`).
+  (`limesdr_prepare_streaming`). `sync.rs`: `StreamSync` (`limesdr_setup_stream` as the
+  stream sync calls it, `limesdr_disable_stream`). `framing.rs`: `stream_limesdr.c`'s
+  packet arithmetic, `RxDeframer` and `frame_tx`. The gateware is LimeSuite's, not the
+  uSDR's stream engine, so nothing comes from `sdr-stream`.
 - `src/error.rs`: `Error` and `ExchangeError` (transport failure, a reply status other
   than completed, or a reply to another command). `src/gain.rs`: `Gain`, libusdr's gain
   paths on this family. The control code's refusals are mapped per operation in
-  `device.rs`; those this board cannot meet (no channel, an unsound rate) are invariants.
-- `tests/common/sim_port.rs`: `ControlPort` over `limesdr-sim`; the oracle's parity
-  tests include it with `#[path]`.
+  `device/mod.rs`; those this board cannot meet (no channel, an unsound rate) are invariants.
+- `tests/common/sim_port.rs`: `ControlPort` over `limesdr-sim`, streams included; the
+  oracle's parity tests include it with `#[path]`.
 
 Rules: every ported sequence gets an op-for-op parity test in `oracle/tests/` against
 libusdr on fresh boards, frames included; divergences are whitelisted per scenario there and
@@ -127,10 +135,15 @@ the vendored `lms64c_proto.c`. `limesdr` adopts the same mapping
   `CMD_LMS7002_RD` of bits 30:16; the 16-bit result is zero-extended (`limesdr_init`
   compares the whole word). Peripheral 0.
 - `CUSTOM_CMD` 0 → `CMD_LMS7002_RST` with `LMS_RST_PULSE`.
-- The transport's `stream_initialize` → `-EOPNOTSUPP`: the FT601 stream pipes are not
-  vendored. `u3_limesdr`'s own stream initialisation runs `limesdr_prepare_streaming`
-  first, so creating an RX stream (`Oracle::create_rx_stream`) traces the preparation and
-  then fails; no stream exists.
+- Streams: a fake buffer boundary, not the FT601 stream pipes (not vendored). The
+  transport's `stream_initialize` sizes one buffer per direction to the block
+  `stream_limesdr.c` asks for (stream 0 RX, 1 TX, the channel the stream number) and
+  tells the board (`SimBoard::stream_open`); `recv_dma_wait` fills the RX buffer with the
+  board's next block or returns `-ETIMEDOUT`, `recv_dma_release` does nothing;
+  `send_dma_get` lends the TX buffer and `send_dma_commit` hands its bytes and the send's
+  timestamp (top bit set: none) to the board. `u3_limesdr`'s own stream initialisation
+  runs `limesdr_prepare_streaming` first. `stream_limesdr.c`'s framing is compiled
+  unchanged, so the bursts in the blocks are libusdr's.
 - A reply status other than `STATUS_COMPLETED_CMD` is `-EIO`; no USB framing, endpoints or
   FT601 configuration is modelled. `limesdr` also refuses a reply naming another
   command than its request (`ExchangeError::Mismatched`), which the shim does not check.
@@ -163,6 +176,14 @@ Each is stated again, with its evidence, where it is encoded (`sim/src/board.rs`
   the comparators.
 - Direct clocking (0x0005) and the RF switches (0x0017) are plain storage: no PLL,
   clock or switch is modelled behind them.
+- Streams: blocks of whole 4 KiB bursts, sized as the transport set them up. RX blocks
+  flow while stream control's `RX_EN` (0x000A bit 0) is set and none otherwise (a
+  timeout); each burst is a 16-byte header with its first sample time at byte 8 (bytes 0
+  to 7 zero, not in the source) and 1020 `ci16` samples, sample `t` being I = `t`,
+  Q = `!t`. The sample counter counts every sample since `SMPL_NR_CLR` (0x0009 bit 0) last
+  rose; no overrun is modelled (`with_rx_gap` skips the counter once, fault injection).
+  The stream mode registers (0x0007, 0x0008) are plain storage: always 16-bit samples. TX
+  blocks are taken whole, up to the stream's size, and nothing is played.
 - Sleeps advance virtual time only (the shim replaces `usleep`).
 
 ## libusdr behaviour a port must reproduce or deliberately fix
@@ -212,12 +233,15 @@ stream-control read-modify-write of 0x000A). Power-up and close: empty.
 `oracle/tests/identify.rs` covers device-ID-only identity, the 0x3841 gate, reset-first
 ordering, the reference-clock outcomes above and the vendored gateware-info builder.
 Not covered here: sample rate, tuning, gain, bandwidth, stream preparation (live-compared
-by `oracle/tests/control_parity.rs`), streams, `stream_limesdr.c`.
+by `oracle/tests/control_parity.rs`), the streams and `stream_limesdr.c` (live-compared by
+`oracle/tests/stream_parity.rs`).
 
 The driver is compared with live libusdr, not with this file: `oracle/tests/open_parity.rs`
 runs both drivers' whole sessions (every golden line, frames included) and the variants
 above; `oracle/tests/control_parity.rs` everything the rate, tuning, gain, bandwidth and
-stream-preparation paths do between the open and the close; `oracle/tests/lms64c_parity.rs`
+stream-preparation paths do between the open and the close; `oracle/tests/stream_parity.rs`
+the streams' creation, sync, every received sample and time and every TX block byte for
+byte; `oracle/tests/lms64c_parity.rs`
 compares the codec with `lms64c_fill_packet` and `lms64c_parse_packet` byte for byte.
 
 ## Verify
@@ -257,5 +281,5 @@ is process-global.
   identity values need LimeSuite or firmware source, neither vendored.
 - LMS7002M reset values and channel banking (see `../xsdr/AGENTS.md`): not needed by the
   ported paths, which read only the version and the comparators.
-- Streams: `stream_limesdr.c`, `limesdr_setup_stream` (stream sync), `limesdr_disable_stream`,
-  the 16-byte data header; they need the FT601 transport's stream pipes.
+- The FT601 stream pipes behind `ControlPort`'s stream blocks; stream host formats other
+  than `ci16` (see `PORTING.md`).

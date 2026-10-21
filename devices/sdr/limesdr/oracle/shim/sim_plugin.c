@@ -10,6 +10,10 @@
 // The mapping below is this shim's assumption (see devices/sdr/limesdr/AGENTS.md); the
 // frames themselves are built and parsed by libusdr's own ipblks/lms64c_proto.c.
 //
+// Its streams are a fake buffer boundary: one RX and one TX buffer of the block size
+// stream_limesdr.c asks for, filled from and committed to the board. The bursts inside
+// them are stream_limesdr.c's own framing, compiled unchanged.
+//
 // Pattern copied from the XSDR oracle's shim (devices/sdr/xsdr/oracle/shim/sim_plugin.c).
 
 #include <errno.h>
@@ -32,6 +36,9 @@ _Static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "the oracle assumes a 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
 int limesdr_oracle_lms64c(const uint8_t* request, uint8_t* reply);
 void limesdr_oracle_sleep_us(unsigned long long us);
+int limesdr_oracle_stream_open(unsigned tx, unsigned block_size);
+int limesdr_oracle_rx_block(uint8_t* out, unsigned size);
+int limesdr_oracle_tx_block(const uint8_t* data, unsigned size, uint64_t time);
 
 // Replaces libc's usleep so libusdr's delays advance the board's virtual clock instead.
 int usleep(useconds_t us)
@@ -186,14 +193,79 @@ static int sim_ls_op(lldev_t dev, subdev_t subdev, unsigned op, lsopaddr_t addr,
     return -EOPNOTSUPP;
 }
 
+// The streams' buffers, one per direction (stream_limesdr.c holds at most one RX buffer
+// and fills one TX buffer at a time), sized by the last stream_initialize.
+static uint8_t* s_buf[2];
+static unsigned s_buf_size[2];
+
 // The transport's stream setup, which u3_limesdr's own stream_initialize calls after
-// limesdr_prepare_streaming. The FT601 stream pipes are not vendored, so a stream ends
-// here: the LMS7002M's streaming-up is traced, the stream itself is refused.
+// limesdr_prepare_streaming: stream 0 RX, 1 TX, the channel number the stream number.
 static int sim_stream_initialize(lldev_t dev, subdev_t subdev, lowlevel_stream_params_t* params,
                                  stream_t* channel)
 {
-    (void)dev; (void)subdev; (void)params; (void)channel;
-    return -EOPNOTSUPP;
+    (void)dev; (void)subdev;
+    unsigned no = params->streamno;
+    if (no > 1 || params->block_size == 0) {
+        return -EINVAL;
+    }
+    uint8_t* buf = realloc(s_buf[no], params->block_size);
+    if (buf == NULL) {
+        return -ENOMEM;
+    }
+    s_buf[no] = buf;
+    s_buf_size[no] = params->block_size;
+    int res = limesdr_oracle_stream_open(no, params->block_size);
+    if (res) {
+        return res;
+    }
+    params->underlying_fd = -1;
+    *channel = no;
+    return 0;
+}
+
+static int sim_recv_dma_wait(lldev_t dev, subdev_t subdev, stream_t channel, void** buffer,
+                             void* oob_ptr, unsigned* oob_size, unsigned timeout)
+{
+    (void)dev; (void)subdev; (void)oob_ptr; (void)oob_size; (void)timeout;
+    if (channel != 0 || s_buf[0] == NULL) {
+        return -EINVAL;
+    }
+    int res = limesdr_oracle_rx_block(s_buf[0], s_buf_size[0]);
+    if (res) {
+        return res;
+    }
+    *buffer = s_buf[0];
+    return 0;
+}
+
+static int sim_recv_dma_release(lldev_t dev, subdev_t subdev, stream_t channel, void* buffer)
+{
+    (void)dev; (void)subdev;
+    return channel == 0 && buffer == s_buf[0] ? 0 : -EINVAL;
+}
+
+static int sim_send_dma_get(lldev_t dev, subdev_t subdev, stream_t channel, void** buffer,
+                            void* oob_ptr, unsigned* oob_size, unsigned timeout)
+{
+    (void)dev; (void)subdev; (void)oob_ptr; (void)oob_size; (void)timeout;
+    if (channel != 1 || s_buf[1] == NULL) {
+        return -EINVAL;
+    }
+    *buffer = s_buf[1];
+    return 0;
+}
+
+// The commit's out-of-band word is the send's timestamp (stream_limesdr.c passes it).
+static int sim_send_dma_commit(lldev_t dev, subdev_t subdev, stream_t channel, void* buffer,
+                               unsigned sz, const void* oob_ptr, unsigned oob_size)
+{
+    (void)dev; (void)subdev;
+    if (channel != 1 || buffer != s_buf[1] || sz > s_buf_size[1] || oob_size != sizeof(uint64_t)) {
+        return -EINVAL;
+    }
+    uint64_t time;
+    memcpy(&time, oob_ptr, sizeof(time));
+    return limesdr_oracle_tx_block(buffer, sz, time);
 }
 
 static int sim_destroy(lldev_t dev)
@@ -209,6 +281,10 @@ static lowlevel_ops_t s_sim_ops = {
     .generic_get = sim_generic_get,
     .ls_op = sim_ls_op,
     .stream_initialize = sim_stream_initialize,
+    .recv_dma_wait = sim_recv_dma_wait,
+    .recv_dma_release = sim_recv_dma_release,
+    .send_dma_get = sim_send_dma_get,
+    .send_dma_commit = sim_send_dma_commit,
     .destroy = sim_destroy,
 };
 

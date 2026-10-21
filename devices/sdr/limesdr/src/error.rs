@@ -118,6 +118,69 @@ pub enum Error {
     /// Streaming was prepared with no sample rate: the default one did not lock.
     #[error("no sample rate is set")]
     NoSampleRate,
+
+    /// A stream of that direction already exists.
+    #[error("a stream already exists")]
+    AlreadyStreaming,
+
+    /// No stream of that direction exists.
+    #[error("no stream exists")]
+    NotStreaming,
+
+    /// A stream cannot have this many samples per packet: an RX packet of 0, a TX packet
+    /// not a multiple of 4 (libusdr's `-EINVAL`), or a transport block over 4 GiB.
+    #[error("{0} samples per packet cannot be streamed")]
+    UnsupportedPacketSize(u32),
+
+    /// The stream transport failed.
+    #[error("stream transport failed")]
+    Stream(#[source] BusError),
+
+    /// No RX block arrived, or no TX buffer freed, in time.
+    #[error("the stream timed out")]
+    Timeout,
+
+    /// The transport delivered an RX block shorter than the stream's.
+    #[error("RX block of {got} bytes, expected {expected}")]
+    #[non_exhaustive]
+    ShortRxBlock {
+        /// The stream's block, in bytes.
+        expected: usize,
+        /// The block delivered, in bytes.
+        got: usize,
+    },
+
+    /// A receive buffer shorter than the stream's packet.
+    #[error("buffer of {got} samples, a packet is {needed}")]
+    #[non_exhaustive]
+    BufferTooSmall {
+        /// The packet, in samples.
+        needed: usize,
+        /// The buffer, in samples.
+        got: usize,
+    },
+
+    /// A send of more samples than the TX stream's block holds, or not a multiple of
+    /// `multiple` (libusdr's `-EINVAL`).
+    #[error("a send of {got} samples: at most {max}, in multiples of {multiple}")]
+    #[non_exhaustive]
+    SendSize {
+        /// The most samples a send takes.
+        max: usize,
+        /// What a send's samples must be a multiple of.
+        multiple: usize,
+        /// The samples given.
+        got: usize,
+    },
+
+    /// A TX time at or after 2^63 samples, which libusdr would take for none.
+    #[error("TX time {0} is out of range")]
+    UnsupportedTimestamp(u64),
+
+    /// Streaming read as running after the stream sync stopped it, so the timestamp was
+    /// not reset: libusdr's debug build's `-EPERM`.
+    #[error("streaming did not stop")]
+    StillStreaming,
 }
 
 /// A failed open, with the register or chip it names.

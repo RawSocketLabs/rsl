@@ -1,5 +1,7 @@
 //! The public device: open, power-up, sample rate, LO tuning, gains, bandwidths, stream
-//! preparation and close.
+//! preparation and close; the streams are in `stream`.
+
+mod stream;
 
 use std::fmt;
 
@@ -16,6 +18,9 @@ use crate::portable::lsop::{BadReply, LsOp};
 use crate::portable::open::{Action, Open};
 use crate::portable::rate::SetSampleRate;
 use crate::portable::stream::PrepareStreaming;
+
+pub use stream::RxPacket;
+use stream::{RxStream, TxStream};
 
 /// What libusdr reports at `/dm/revision` for this family: an emulated constant, the same
 /// for every board (`dev_limesdr_sdr_revision_get`, which documents none of its fields).
@@ -37,6 +42,15 @@ pub struct Device {
     /// The LMS7002M control state `limesdr_init` leaves, then each operation's, kept also
     /// when one fails, as libusdr keeps its.
     control: Control,
+
+    /// The RX stream, once created.
+    rx_stream: Option<RxStream>,
+
+    /// The TX stream, once created.
+    tx_stream: Option<TxStream>,
+
+    /// Whether the streams were started (libusdr's `started`).
+    streams_started: bool,
 }
 
 impl Device {
@@ -78,6 +92,9 @@ impl Device {
             port,
             reference_hz,
             control,
+            rx_stream: None,
+            tx_stream: None,
+            streams_started: false,
         })
     }
 
@@ -184,8 +201,8 @@ impl Device {
     /// Prepares the LMS7002M to stream, as libusdr does when it creates an RX or TX stream
     /// (`limesdr_prepare_streaming`): a 1 MS/s rate both ways if none is set, then channel
     /// A streamed up in both directions, each band and antenna switch following its LO.
-    /// Later rates and tunings then update the running paths. The streams themselves need
-    /// the FT601 transport, which is not ported.
+    /// Later rates and tunings then update the running paths. Creating a stream does this
+    /// first ([`Self::create_rx_stream`], [`Self::create_tx_stream`]).
     ///
     /// # Errors
     ///
@@ -203,8 +220,8 @@ impl Device {
     }
 
     /// Closes the board as libusdr's `usdr_dmd_close` does on this family: without a bus
-    /// operation (`limesdr_dtor` is a "TODO"), leaving the LMS7002M as the open and later
-    /// operations left it and releasing the control channel.
+    /// operation (`limesdr_dtor` is a "TODO"), leaving the LMS7002M and any streaming as
+    /// the open and later operations left them and releasing the control channel.
     ///
     /// # Errors
     ///
