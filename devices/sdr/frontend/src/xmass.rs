@@ -19,7 +19,7 @@ use lmk05318::plan::{Affinity, OutputFormat, OutputRequest, Xo, XoInput};
 
 use crate::FRONT_END_BUS;
 use crate::chips::at24::At24Security;
-use crate::chips::lmk05318::Lmk05318;
+use crate::chips::lmk05318::{Lmk05318, log_lock};
 use crate::chips::tca9555::{Reg, Tca9555};
 use crate::chips::tmp114::Tmp114;
 use crate::error::Error;
@@ -172,7 +172,7 @@ impl Xmass {
             .lmk
             .wait_apll1_lock(bus, BRING_UP_LOCK_TIMEOUT)
             .and_then(|()| board.lmk.wait_apll2_lock(bus, BRING_UP_LOCK_TIMEOUT));
-        board.lmk.log_lock(bus);
+        log_lock(&board.lmk, bus);
         locked?;
 
         // Pulse SYNC_N to bring the outputs into phase.
@@ -207,8 +207,8 @@ impl Xmass {
             .and_then(|()| self.lmk.write_staged(bus));
         bus.sleep(Duration::from_millis(10));
         let locked = written.and_then(|()| self.lmk.wait_apll2_lock(bus, RETUNE_LOCK_TIMEOUT));
-        self.lmk.log_lock(bus);
-        locked
+        log_lock(&self.lmk, bus);
+        Ok(locked?)
     }
 
     /// Switches the calibration path to `path` (`board_xmass_sync_source`).

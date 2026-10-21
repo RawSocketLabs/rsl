@@ -20,7 +20,7 @@ hardware-qualified.
 | `sim/` | `pe-sync-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, the SPI and I2C clock chips, virtual clock, op trace |
 | `oracle/` | `pe-sync-oracle` (unpublished, own workspace: compiles C) | libusdr's `pe_sync` driving `sim` through `oracle/shim/sim_plugin.c`; also the LMX chips' C drivers called directly |
 | `nostd-check/` | `pe-sync-nostd-check` (unpublished, own workspace) | Exact-source `no_std` witness for `src/portable` |
-| `../../chips/lmk05318` | `lmk05318` (unpublished, root workspace member) | The LMK05318's plan, staging map and register types, shared with `usdr` (extracted from it 2026-10-13) |
+| `../../chips/lmk05318` | `lmk05318` (unpublished, root workspace member) | The LMK05318's plan, staging map and register types, shared with `usdr` (extracted from it 2026-10-13), and its bus driver, shared with `sdr-frontend` (2026-10-20) |
 
 ## Driver layout
 
@@ -30,11 +30,10 @@ Mirrors `xsdr` (`../../sdr/xsdr/AGENTS.md`):
   power-off on failure) and `close`. It owns the bus (`Box<dyn Bus>`) and runs the portable
   sequences with `hal`'s blocking `run_sequence`, in `pe_sync_configure`'s order and
   with its failure rules (which reads libusdr only logs, which failures it ignores).
-- `src/lmk05318.rs`: the LMK05318's bus traffic (identity, register load, soft reset, APLL
-  lock waits, sync) as blocking code on `lmk05318`: its 16-bit register pointer and
-  four-byte identity read do not fit the `Sequence` seam. `sdr-frontend`'s
-  `src/chips/lmk05318.rs` does the same for the front ends with its own error type;
-  `PORTING.md` records the duplication.
+- The LMK05318's bus traffic (identity, register load, soft reset, APLL lock waits,
+  sync) is `lmk05318::driver` (feature `std`), the blocking code `sdr-frontend` runs for
+  the front ends too: its 16-bit register pointer and four-byte identity read do not fit
+  the `Sequence` seam. `src/error.rs` maps its error.
 - `src/portable/`: core only, no allocation. `board.rs` holds the wiring and every setpoint
   (`pe_sync_configure`'s frequencies and configurations); `fpga.rs` the GPO banks and bits;
   `power.rs` the power-on/off with libusdr's `float` LED fades; `status.rs` the status

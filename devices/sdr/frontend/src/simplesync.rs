@@ -11,11 +11,12 @@ use std::time::Duration;
 
 use deps::tracing::info;
 use hal::{Bus, I2cAddr};
+use lmk05318::driver::Error as Lmk05318Error;
 use lmk05318::plan::{Affinity, OutputFormat, OutputRequest, Xo, XoInput};
 
 use crate::FRONT_END_BUS;
 use crate::chips::clock_id;
-use crate::chips::lmk05318::Lmk05318;
+use crate::chips::lmk05318::{Lmk05318, log_lock};
 use crate::error::Error;
 use crate::gpio::{FrontEndGpio, GpioCommand, Pin, PinMode};
 
@@ -103,7 +104,7 @@ impl SimpleSync {
             .and_then(|()| board.lmk.wait_apll1_lock(bus, LOCK_TIMEOUT))
             .and_then(|()| board.lmk.wait_apll2_lock(bus, LOCK_TIMEOUT))
             .and_then(|()| board.lmk.sync(bus));
-        board.lmk.log_lock(bus);
+        log_lock(&board.lmk, bus);
         ready?;
         info!("SimpleSync LMK05318 initialized");
         Ok(Some(board))
@@ -118,7 +119,7 @@ impl SimpleSync {
     /// [`Error::ClockUnlocked`] if APLL2 does not lock; any bus failure.
     pub fn tune_lo(&mut self, bus: &mut dyn Bus, hz: u32) -> Result<(), Error> {
         if hz < LO_CUTOFF_HZ {
-            return self.power_down_lo(bus);
+            return Ok(self.power_down_lo(bus)?);
         }
         let lo = LO_OUTPUTS.map(|port| {
             OutputRequest::new(port, hz, OutputFormat::Lvds).with_affinity(Affinity::Apll2)
@@ -129,12 +130,12 @@ impl SimpleSync {
             .lmk
             .wait_apll2_lock(bus, LOCK_TIMEOUT)
             .and_then(|()| self.lmk.sync(bus));
-        self.lmk.log_lock(bus);
-        synced
+        log_lock(&self.lmk, bus);
+        Ok(synced?)
     }
 
     /// Turns outputs 0 to 3 off (`simplesync_pd_low_chs`).
-    fn power_down_lo(&self, bus: &mut dyn Bus) -> Result<(), Error> {
+    fn power_down_lo(&self, bus: &mut dyn Bus) -> Result<(), Lmk05318Error> {
         LO_OUTPUTS
             .into_iter()
             .try_for_each(|port| self.lmk.disable_output(bus, port))

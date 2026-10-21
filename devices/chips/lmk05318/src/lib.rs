@@ -12,14 +12,15 @@
 //!
 //! # What this crate holds
 //!
-//! libusdr's `hw/lmk05318/lmk05318.c` without its bus: the frequency plan ([`plan`]: XO
-//! path, APLL1, the output solver with APLL2's state, output 7's stages), the registers a
-//! plan and the common settings stage ([`staging`]) into libusdr's staging map ([`map`]),
-//! the address map ([`reg`]) and the value types by block ([`apll`], [`control`],
-//! [`output`], [`xo`]). The bring-up's bus traffic (identity check, writing the map, soft
-//! reset, lock waits, output synchronization) stays with each driver: the 16-bit
-//! addresses and four-byte identity read do not fit `hal`'s `Sequence` seam.
-//! Without the DPLL, which no board here enables (not ported), APLL1 runs free.
+//! libusdr's `hw/lmk05318/lmk05318.c`: the frequency plan ([`plan`]: XO path, APLL1, the
+//! output solver with APLL2's state, output 7's stages), the registers a plan and the
+//! common settings stage ([`staging`]) into libusdr's staging map ([`map`]), the address
+//! map ([`reg`]) and the value types by block ([`apll`], [`control`], [`output`],
+//! [`xo`]); and, behind feature `std`, the bus traffic every board runs (`driver`:
+//! identity check, writing the map, soft reset, lock waits, output synchronization) as
+//! blocking code over `hal`'s `Bus`, since the 16-bit addresses and four-byte identity
+//! read do not fit its portable `Sequence` seam. Without the DPLL, which no board here
+//! enables (not ported), APLL1 runs free.
 //!
 //! # Sources
 //!
@@ -27,7 +28,8 @@
 //! it) for fields and meanings. The YAML does not document addresses 0 to 3, so the
 //! identity stays four raw bytes.
 //!
-//! `no_std` with `alloc`: plans are vectors; `bnb`'s bitfields need `alloc` too.
+//! `no_std` with `alloc`: plans are vectors; `bnb`'s bitfields need `alloc` too. Feature
+//! `std` adds the blocking driver.
 #![no_std]
 #![forbid(unsafe_code)]
 
@@ -37,6 +39,8 @@ extern crate std;
 
 pub mod apll;
 pub mod control;
+#[cfg(feature = "std")]
+pub mod driver;
 pub mod map;
 pub mod output;
 pub mod plan;

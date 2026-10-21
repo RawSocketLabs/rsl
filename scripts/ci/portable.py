@@ -42,7 +42,7 @@ FIXTURES = {
                     None),
     "lsdr": Fixture(LSDR, {"bnb": set(), "hal": {"std"}, "sdr-gearbox": set()}, None),
     "limesdr": Fixture(LIMESDR, {"lms7002m": set(), "hal": {"std"}}, None),
-    "pe-sync": Fixture(PE_SYNC, {"bnb": set(), "lmk05318": set(), "hal": {"std"}},
+    "pe-sync": Fixture(PE_SYNC, {"bnb": set(), "lmk05318": {"std"}, "hal": {"std"}},
                        None),
 }
 # Every crate a fixture compiles without std, directly or through an owned dependency (the

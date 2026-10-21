@@ -146,7 +146,7 @@ Each layer calls only the ones below it.
   connector (`device/device_fe.c`, `device/ext_*`). The probe itself, every board's
   identification and bring-up with its controls (pciefe, XMASS, `SuperSync`,
   `SimpleSync`, exm2pe), the connector's GPIO core and the boards' chips (TCA6416,
-  TCA9555, DACx0501, LMK05318 bus code, LMK5C33216, TMP114, AT24) are `sdr-frontend`'s
+  TCA9555, DACx0501, LMK05318, LMK5C33216, TMP114, AT24) are `sdr-frontend`'s
   (`../frontend`, 2026-10-18), shared with the XSDR and LSDr drivers; `frontend/mod.rs`
   re-exports its public types (`FrontEndSelection`, `FrontEndKind`, the `Pciefe*` and
   `Exm2peOptions` options, `XmassCalibrationPath`, `ClockPlanError`) and runs
@@ -160,7 +160,7 @@ Each layer calls only the ones below it.
   GPIO-core writes with I2C transfers wider than the `Sequence` seam's one-register
   actions; why the native power-up still skips the probe, and the seam extension it
   would take, is PORTING.md's front-end row (*Native probe*). The LMK05318
-  (`sdr-frontend`'s `chips::lmk05318`, XMASS and `SimpleSync`) keeps libusdr's per-chip
+  (`lmk05318::driver`, run by `sdr-frontend`'s XMASS and `SimpleSync`) keeps libusdr's per-chip
   state (APLL2, the register staging map), its
   frequency plan in `plan.rs` and the plan's registers in `staging.rs`, both bus-free, so
   the oracle compiles them with the map and value types directly
@@ -169,8 +169,8 @@ Each layer calls only the ones below it.
   16-bit addresses take chip-local `Lmk05318Register`/`IndexedLmk05318Register` traits in
   place of the 8-bit shared ones. Since PE_SYNC needs it too, the bus-free modules (plan,
   staging, map, `reg` and the value types) are the shared `lmk05318`
-  (`devices/chips/lmk05318`); the bus code moved with the bring-ups to `sdr-frontend`
-  (`pe-sync` has its own, `../../sync/pe_sync/PORTING.md`), and the oracle's
+  (`devices/chips/lmk05318`); the bus code moved with the bring-ups to `sdr-frontend`,
+  then (2026-10-20) into the shared crate's `driver`, which `pe-sync` runs too, and the oracle's
   `lmk05318_parity.rs` compiles the shared crate's plans directly.
 - `src/lowlevel.rs`: the public, unstable `Bus` seam, mirroring libusdr's `ls_op`: the shared
   `hal` crate's `Bus`, `BusError` and addresses, re-exported unchanged, plus

@@ -8,7 +8,7 @@
 //! | [`dac80501`] | `DACx0501` DAC | `PCIe` and M.2-to-`PCIe` front ends: oscillator trim; fe4ch4007200 |
 //! | [`tca9555`] | TCA9555-compatible GPIO expander | XMASS: board control |
 //! | [`clock_id`] | LMK05318, LMK5C33216 identification | `SimpleSync`, `SuperSync` |
-//! | [`lmk05318`] | LMK05318 clock synchronizer (bus code) | `SimpleSync`, XMASS |
+//! | [`lmk05318`] | LMK05318 clock synchronizer (`lmk05318::driver` and its lock log) | `SimpleSync`, XMASS |
 //! | [`lmk5c33216`] | LMK5C33216 clock synchronizer | `SuperSync` |
 //! | [`tca6424a`] | TCA6424A GPIO expander | fe4ch4007200: filters, switches, amplifiers, LEDs |
 //! | [`tmp114`] | TMP114 temperature sensor | XMASS revision 1a, fe4ch4007200 |

@@ -23,8 +23,8 @@
 //! `SimpleSync` (`simplesync`), the M.2-to-`PCIe` breakout (`exm2pe`) and the 100–5000 MHz
 //! front end (`fe1005000`) and the four-channel 400–7200 MHz front end (`Fe4ch4007200`,
 //! whose chips sit on I2C core 1, which only the `LSDr`'s oracle transport passes), with
-//! the chips they carry (the LMK05318's bus code over `lmk05318`'s plans, the
-//! LMK5C33216, ...). A driver keeps the `FrontEnd`
+//! the chips they carry (the LMK05318 through `lmk05318`'s driver, the LMK5C33216, ...).
+//! A driver keeps the `FrontEnd`
 //! and offers the controls libusdr's device offers. The I2C bring-ups mix connector writes
 //! with transfers wider than one register, which the portable `Sequence` seam does not
 //! express, so they run as blocking code.

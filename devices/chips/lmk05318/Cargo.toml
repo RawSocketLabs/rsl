@@ -1,7 +1,7 @@
 [package]
 name = "lmk05318"
 version = "0.0.0"
-description = "TI LMK05318 network synchronizer register values and frequency plans, shared by the pure-Rust uSDR and PE_SYNC drivers."
+description = "TI LMK05318 network synchronizer register values, frequency plans and bus traffic, shared by the pure-Rust uSDR and PE_SYNC drivers."
 publish = false
 edition.workspace = true
 license.workspace = true
@@ -10,6 +10,11 @@ rust-version.workspace = true
 
 [dependencies]
 bnb.workspace = true
+hal.workspace = true
+
+[features]
+## The chip's blocking bus traffic over `hal`'s `Bus` (`driver`).
+std = ["hal/std"]
 
 [lints]
 workspace = true

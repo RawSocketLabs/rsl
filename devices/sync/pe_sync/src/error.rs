@@ -2,6 +2,7 @@
 
 pub use hal::Access;
 use hal::SequenceFailure;
+use lmk05318::driver::Error as Lmk05318Error;
 pub use lmk05318::plan::ClockPlanError;
 
 use crate::lowlevel::BusError;
@@ -73,6 +74,31 @@ pub enum Error {
     /// the LMX1204's multiplier.
     #[error("{0} did not lock")]
     Unlocked(&'static str),
+}
+
+/// A failed LMK05318 operation, named as the driver's other chips are.
+impl From<Lmk05318Error> for Error {
+    fn from(error: Lmk05318Error) -> Self {
+        match error {
+            Lmk05318Error::Bus {
+                access,
+                reg,
+                source,
+            } => Self::Bus {
+                chip: lmk05318::NAME,
+                access,
+                reg: reg.into(),
+                source,
+            },
+            Lmk05318Error::ChipId { expected, found } => Self::ChipId {
+                chip: lmk05318::NAME,
+                expected,
+                found,
+            },
+            Lmk05318Error::ClockPlan(error) => Self::ClockPlan(error),
+            Lmk05318Error::Unlocked(pll) => Self::Unlocked(pll),
+        }
+    }
 }
 
 /// A failed portable register sequence, with the register or chip it names.
