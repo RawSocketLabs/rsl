@@ -17,6 +17,10 @@ pub(crate) const LSDR_WIRING: Wiring = Wiring {
     clock_generator: SpiAddr(2),
 };
 
+/// `I2C_BUS_TMP108`: the TMP108 temperature sensor at I2C bus 1, 0x4b, which
+/// `/dm/sensor/temp` reads (`tmp108_temp_get`).
+pub(crate) const LSDR_TEMPERATURE: I2cAddr = I2cAddr::new(1, 0x4b);
+
 /// The bucks open sets, in libusdr's order: 1 and 2 at 920 mV, 3 at 2200 mV, 4 at 1200 mV.
 /// libusdr's source does not say what each rail feeds.
 pub(crate) const LSDR_SUPPLIES: SupplyPlan = SupplyPlan {

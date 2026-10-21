@@ -34,9 +34,8 @@ pub enum Error {
     #[error("the LSDr does not answer: its status register reads all ones")]
     DeadLink,
 
-    /// A chip identified itself with an unexpected ID. Not produced yet: no ported sequence
-    /// checks an ID it requires; it keeps `hal`'s sequence failures mapped one to
-    /// one.
+    /// A chip identified itself with an unexpected ID: the Si549's device type, which the
+    /// sample rate checks before tuning it (libusdr's `-EIO`).
     #[error("{chip} reports ID {found:#x}, expected {expected:#x}")]
     #[non_exhaustive]
     ChipId {
@@ -50,13 +49,15 @@ pub enum Error {
         found: u32,
     },
 
-    /// No chip answered where one must be. Not produced yet, as [`Self::ChipId`]: an
-    /// absent ADC or clock generator is reported by [`Device::fitted`](crate::Device::fitted).
+    /// No chip answered where one must be: the RX DMA engine reading dead when a stream is
+    /// created. An absent ADC or clock generator is not an error; it is reported by
+    /// [`Device::fitted`](crate::Device::fitted).
     #[error("{0} not found")]
     #[non_exhaustive]
     ChipMissing(&'static str),
 
-    /// A chip reported no input signal it needs. Not produced yet, as [`Self::ChipId`].
+    /// A chip reported no input signal it needs. Not produced yet: no ported sequence checks
+    /// one; it keeps `hal`'s sequence failures mapped one to one.
     #[error("{0} has no input signal")]
     #[non_exhaustive]
     InputMissing(&'static str),
@@ -74,6 +75,36 @@ pub enum Error {
     /// libusdr would bring it up. Open stops there.
     #[error("the {} front end answered; its bring-up is not ported", .0.name())]
     FrontEndNotPorted(Board),
+
+    /// A clock cannot be made for the sample rate: the Si549 refuses the ADC rate it
+    /// implies (outside 200 kHz to 800 MHz, libusdr's `-ERANGE`, before any access), or
+    /// the LMK04832 has no plan for it (libusdr's `-EINVAL`/`-ERANGE`, after the Si549
+    /// and the FIR gearbox are set, as libusdr fails there).
+    #[error("the {chip} cannot clock {rate} S/s")]
+    #[non_exhaustive]
+    UnsupportedSampleRate {
+        /// The sample rate asked for, in S/s.
+        rate: u32,
+
+        /// The clock that refused it: `"Si549"` or `"LMK04832"`.
+        chip: &'static str,
+    },
+
+    /// The NCO was set before any sample rate (libusdr's `-EINVAL`, after it selected
+    /// the channels).
+    #[error("the NCO needs a sample rate first")]
+    NoSampleRate,
+
+    /// The RX stream's packet size cannot be split into the gateware's bursts (libusdr's
+    /// `-EINVAL`, after the DMA reset).
+    #[error("{0} samples per packet cannot be split into the RX front end's bursts")]
+    UnsupportedPacketSize(u32),
+
+    /// The RX stream cannot be synchronised: the `LSDr` declares no stream sync unit
+    /// (`/ll/sync/0/base`), so libusdr's create fails there (`-ENOENT`), after configuring
+    /// the RX front end and DMA, at the pinned revision.
+    #[error("the LSDr declares no stream sync unit, so libusdr cannot create its RX stream")]
+    NoSyncUnit,
 }
 
 /// A failed portable register sequence, with the register or chip it names.

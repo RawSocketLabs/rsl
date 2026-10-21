@@ -2241,6 +2241,7 @@ dependencies = [
  "lsdr-sim",
  "sdr-frontend",
  "sdr-gearbox",
+ "sdr-stream",
  "thiserror 2.0.21",
 ]
 
