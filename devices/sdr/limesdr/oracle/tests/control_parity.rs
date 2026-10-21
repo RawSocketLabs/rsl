@@ -4,8 +4,8 @@
 //!
 //! The sim's LMS7002M answers the VCO comparators from the board's 40 MHz reference
 //! (`limesdr-sim`, `lms7002m-sim`). libusdr prepares streaming when it creates a
-//! stream; the shim then refuses the transport's stream (the FT601 pipes are not vendored),
-//! so libusdr's stream preparation succeeds as `-EOPNOTSUPP`.
+//! stream, then sets the transport's stream up: an RX stream's creation is compared, and
+//! a second one in libusdr (which keeps both) is limesdr's destroy, then create.
 //!
 //! No divergence is whitelisted here: neither of limesdr's on these paths can be shown
 //! against libusdr. Refusing to stream up when the default rate did not lock, where
@@ -29,9 +29,8 @@ const EINVAL: i32 = 22;
 const ERANGE: i32 = 34;
 /// `EIO`.
 const EIO: i32 = 5;
-/// `EOPNOTSUPP`: the shim's refusal of a transport stream, libusdr's stream preparation
-/// having succeeded.
-const EOPNOTSUPP: i32 = 95;
+/// Samples per packet of the RX streams created: one burst.
+const RX_PACKET: u32 = 1020;
 /// The RF switches, gateware register 0x0017.
 const RF_SWITCHES: u16 = 0x0017;
 
@@ -97,11 +96,7 @@ fn libusdr(board: SimBoard, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
                 Call::Bandwidth(Direction::Tx, hz) => {
                     set_uint(&mut oracle, c"/dm/sdr/0/tx/bandwidth", hz.into())
                 }
-                Call::Stream => match oracle.create_rx_stream() {
-                    Err(errno) if errno == -EOPNOTSUPP => Ok(()),
-                    Ok(()) => panic!("the shim refuses every transport stream"),
-                    Err(errno) => Err(errno),
-                },
+                Call::Stream => oracle.create_rx_stream(RX_PACKET),
             };
             result.err().unwrap_or(0)
         })
@@ -126,7 +121,11 @@ fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<i32>, Vec<Op>) {
                 Call::Tx(hz) => device.set_tx_frequency(hz),
                 Call::Gain(gain, value) => device.set_gain(gain, value).map(|_| ()),
                 Call::Bandwidth(direction, hz) => device.set_bandwidth(direction, hz),
-                Call::Stream => device.prepare_streaming(),
+                Call::Stream => {
+                    // libusdr's unregister forgets a stream without a bus operation.
+                    let _ = device.destroy_rx_stream();
+                    device.create_rx_stream(RX_PACKET)
+                }
             };
             errno(result)
         })

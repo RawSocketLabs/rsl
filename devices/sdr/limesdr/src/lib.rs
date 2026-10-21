@@ -8,10 +8,12 @@
 //! the power-up and the close, which on this family do nothing on the bus, the sample rate
 //! ([`Device::set_sample_rate`]), RX/TX LO tuning, gains and baseband bandwidths, with the
 //! antenna switches following the LOs, the LMS7002M's preparation for streaming
-//! ([`Device::prepare_streaming`]) and a stream's setup in libusdr's formats
+//! ([`Device::prepare_streaming`]), a stream's setup in libusdr's formats
 //! ([`Device::setup_stream`], [`StreamSetup`]: its converter, `sdr-formats`'s, and burst
-//! geometry). Not yet ported: the FT601 USB transport (not in the pinned libusdr) and with
-//! it the streams themselves. The LMS7002M's register values, chip
+//! geometry), and the `ci16` RX and TX streams with their sync
+//! ([`Device::create_rx_stream`], [`Device::start_streams`], [`Device::receive`],
+//! [`Device::send`]) over a [`control::ControlPort`]'s stream blocks. Not yet ported: the
+//! FT601 USB transport (not in the pinned libusdr). The LMS7002M's register values, chip
 //! operations and control code are `lms7002m`'s. See `PORTING.md` beside this crate.
 //!
 //! # The LimeSDR-mini
@@ -34,7 +36,7 @@ mod gain;
 mod portable;
 pub mod stream;
 
-pub use device::Device;
+pub use device::{Device, RxPacket};
 pub use error::{Access, Error, ExchangeError};
 pub use gain::Gain;
 pub use lms7002m::ctrl::Direction;

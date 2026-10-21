@@ -4,10 +4,11 @@
 //! operation between the open and the close, and the burst's host size from libusdr's own
 //! `get_transform_fn` size function.
 //!
-//! libusdr's calls: `usdr_dms_create` of `/ll/srx/0` or `/ll/stx/0` in `host@wire`; the shim
-//! records the transport's stream setup, then refuses it (the FT601 stream pipes are not
-//! vendored), so libusdr's success is `-EOPNOTSUPP` after its stream initialisation
-//! prepared the LMS7002M. limesdr's: `Device::setup_stream`.
+//! libusdr's calls: `usdr_dms_create` of `/ll/srx/0` or `/ll/stx/0` in `host@wire`, then
+//! `usdr_dms_destroy`; the shim records the transport's stream setup, then opens the
+//! simulated board's stream with it. limesdr's: `Device::setup_stream`, which opens no
+//! transport stream, so libusdr's trailing stream open is checked against the setup's
+//! block and left out of the operations compared.
 //!
 //! Whitelisted divergence: a host format libusdr has no converter for, which it
 //! byte-copies, is refused before any exchange
@@ -25,8 +26,6 @@ use sim_port::SimPort;
 
 /// `EINVAL`.
 const EINVAL: i32 = 22;
-/// `EOPNOTSUPP`: the shim's refusal of the transport stream.
-const EOPNOTSUPP: i32 = 95;
 /// A burst's payload: 4096 bytes less the 16-byte header.
 const PAYLOAD: u32 = 4080;
 
@@ -62,10 +61,20 @@ fn libusdr(
     let mut oracle = Oracle::open(SimBoard::new()).expect("libusdr opens the board");
     let opened = oracle.trace_len();
     let format = CString::new(format!("{}@{}", host_name(host), wire_name(wire))).expect("no NUL");
-    let (errno, params) = oracle.create_stream(direction == Direction::Rx, &format, samples);
+    let (errno, params) = oracle.setup_stream(direction == Direction::Rx, &format, samples);
     let used = oracle.trace_len();
     let board = oracle.close();
-    (errno, params, board.trace()[opened..used].to_vec())
+    let mut trace = board.trace()[opened..used].to_vec();
+    // The transport's stream open, which limesdr's setup leaves to the stream's create.
+    if let Some(&Op::StreamOpen { tx, block_bytes }) = trace.last() {
+        assert_eq!(
+            Some((u32::from(tx), block_bytes)),
+            params.map(|params| (params.stream_number, params.block_bytes)),
+            "the board's stream is the one set up"
+        );
+        trace.pop();
+    }
+    (errno, params, trace)
 }
 
 /// limesdr's setup and its operations after the open.
@@ -91,10 +100,7 @@ fn compare(direction: Direction, wire: WireFormat, host: SampleFormat, samples: 
     let (setup, trace) = rsl(direction, wire, host, samples);
     match setup {
         Ok(setup) => {
-            assert_eq!(
-                errno, -EOPNOTSUPP,
-                "{scenario}: libusdr reached the transport"
-            );
+            assert_eq!(errno, 0, "{scenario}: libusdr created the stream");
             let stream_number = u32::from(direction == Direction::Tx);
             let expected = StreamParams {
                 stream_number,
@@ -170,10 +176,7 @@ fn a_host_libusdr_byte_copies_is_refused_before_any_exchange() {
         (Direction::Tx, SampleFormat::I16),
     ] {
         let (errno, params, reference) = libusdr(direction, WireFormat::Ci16, host, 4096);
-        assert_eq!(
-            errno, -EOPNOTSUPP,
-            "libusdr streams {host:?} as copied bytes"
-        );
+        assert_eq!(errno, 0, "libusdr streams {host:?} as copied bytes");
         assert!(
             params.is_some() && !reference.is_empty(),
             "and prepares streaming"

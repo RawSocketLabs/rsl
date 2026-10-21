@@ -8,11 +8,15 @@
 mod portable;
 
 use hal::{Sequence, SequenceAction, SequenceFailure};
+use portable::framing::{
+    BURST_BYTES, RxDeframer, TX_SAMPLE_MULTIPLE, frame_tx, rx_bursts, tx_frame_bytes, tx_plan,
+};
 use portable::lms64c::{FRAME_LEN, Frame, STATUS_COMPLETED};
 use portable::lsop::{BadReply, LsOp};
 use portable::open::{Action, Failure, Open};
 use portable::rate::SetSampleRate;
 use portable::stream::PrepareStreaming;
+use portable::sync::StreamSync;
 
 /// LMS7002M registers the fake board stores: the chip's 0x0000 to 0x07FF.
 const LMS_REGS: usize = 0x0800;
@@ -173,6 +177,56 @@ pub fn prepare_streaming(rate: Option<(u32, u32)>) -> Result<usize, &'static str
     }
 }
 
+/// Opens the healthy board, prepares streaming, then starts and stops the streams through
+/// the real sync sequences, mapping and codec: the start's and the stop's exchanges.
+pub fn sync_streams() -> Result<(usize, usize), &'static str> {
+    let mut board = Board::new(0x3841);
+    let (_, open) = board.open()?;
+    let control = open.control().ok_or("no control state")?;
+    let mut prepare = PrepareStreaming::new(&control);
+    board.drive(&mut prepare)?;
+    let mut setup = StreamSync::setup(prepare.control());
+    let started = board.drive(&mut setup)?;
+    if setup.refused() {
+        return Err("still streaming");
+    }
+    Ok((started, board.drive(&mut StreamSync::disable())?))
+}
+
+/// Frames two bursts of TX samples timed from 77 into a block and receives a packet of
+/// them back through the RX deframer (a TX block's layout is an RX one's; a TX stream
+/// of that packet is raised to 4096 samples, five bursts): the bytes
+/// framed and the packet's first sample time, or what differed.
+pub fn frame_and_receive() -> Result<(usize, u64), &'static str> {
+    const BLOCK: usize = 2 * BURST_BYTES as usize;
+    const SAMPLES: u32 = 2040;
+    let samples = [[1i16, -1]; SAMPLES as usize];
+    let mut wire = [0u8; BLOCK];
+    let framed = frame_tx(&samples, Some(77), &mut wire);
+    if framed != tx_frame_bytes(samples.len()) || tx_plan(SAMPLES) != Some(5) {
+        return Err("TX plan");
+    }
+    if SAMPLES % TX_SAMPLE_MULTIPLE != 0 {
+        return Err("TX multiple");
+    }
+    let mut deframer = RxDeframer::new(SAMPLES, rx_bursts(SAMPLES));
+    if deframer.block_bytes() as usize != BLOCK {
+        return Err("RX block");
+    }
+    let mut held = [0u8; BLOCK];
+    let mut host = [[0i16; 2]; SAMPLES as usize];
+    let time = deframer
+        .receive(&mut held, &mut host, |block| {
+            block.copy_from_slice(&wire);
+            Ok::<_, ()>(())
+        })
+        .map_err(|()| "fetch")?;
+    if host != samples || deframer.overruns() != 0 {
+        return Err("samples");
+    }
+    Ok((framed, time))
+}
+
 /// The chip a sequence failure names.
 fn failure_chip(failure: &SequenceFailure<u8>) -> &'static str {
     match *failure {
@@ -217,5 +271,17 @@ mod tests {
             default, set,
             "the default rate is 1 MS/s, set the same way as any other"
         );
+    }
+
+    #[test]
+    fn the_exact_source_witness_starts_and_stops_the_streams() {
+        // Start: select, stop (2), check, reset (4), DC (8 LMS7002M writes), mode,
+        // channels, the clears' read, start (2), the pulse (2). Stop: select, stop (2).
+        assert_eq!(sync_streams(), Ok((1 + 2 + 1 + 4 + 8 + 2 + 1 + 2 + 2, 3)));
+    }
+
+    #[test]
+    fn the_exact_source_witness_frames_and_receives_samples() {
+        assert_eq!(frame_and_receive(), Ok((2 * 4096, 77)));
     }
 }
