@@ -110,15 +110,23 @@ fn links_the_tx_mmcm_cannot_take_are_refused_before_any_access() {
 
 #[test]
 fn unported_gateware_and_empty_packets_are_refused_before_any_access() {
-    // The extended TX front end (HWID PHY bit 0x08).
+    // A DUC/DDC (HWID PHY bit 0x04); on the extended TX front end (0x08), a packet past
+    // one burst, which libusdr splits into bursts.
+    let (mut device, sim) = xsdr(TX_MMCM | 0x04);
+    let before = traced(&sim);
+    assert!(matches!(
+        device.create_tx_stream(TxChannels::A, 1024),
+        Err(Error::UnsupportedGateware(0x24))
+    ));
+    assert_eq!(traced(&sim), before);
     let (mut device, sim) = xsdr(TX_MMCM | 0x08);
     device
         .set_sample_rate(10_000_000, 10_000_000)
         .expect("rate");
     let before = traced(&sim);
     assert!(matches!(
-        device.create_tx_stream(TxChannels::A, 1024),
-        Err(Error::UnsupportedGateware(0x28))
+        device.create_tx_stream(TxChannels::Both, 15_873),
+        Err(Error::UnsupportedPacketSize(15_873))
     ));
     assert_eq!(traced(&sim), before);
 
@@ -166,10 +174,6 @@ fn sends_unlike_the_stream_are_refused_before_any_access() {
             other: 3,
             ..
         })
-    ));
-    assert!(matches!(
-        device.send(&[&sample, &sample], None, TIMEOUT),
-        Err(Error::SendSize { max: 4, got: 8, .. })
     ));
     assert!(matches!(
         device.send(&[&sample[..0], &sample[..0]], None, TIMEOUT),

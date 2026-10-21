@@ -20,7 +20,7 @@ mod sim_bus;
 use std::time::Duration;
 
 use sim_bus::SimBus;
-use xsdr::{Device, Error, RxChannels};
+use xsdr::{Device, Error, RxChannels, StreamSync};
 use xsdr_oracle::Oracle;
 use xsdr_sim::{Op, SimBoard, Variant};
 
@@ -48,6 +48,28 @@ enum Call {
     Receive,
     /// Stop, then destroy.
     Stop,
+    /// Sync with this type, then start.
+    StartWith(StreamSync),
+    /// `/dm/sdr/0/rfe/throttle`.
+    Throttle(Option<(u8, u8)>),
+    /// The stream's `"ready"` option.
+    Ready,
+    /// `/dm/sdr/0/rxdsp/swapab`.
+    SwapAb(bool),
+}
+
+/// libusdr's sync type for `sync`.
+fn sync_type(sync: StreamSync) -> &'static core::ffi::CStr {
+    match sync {
+        StreamSync::None => c"none",
+        StreamSync::All => c"all",
+        StreamSync::Any => c"any",
+        StreamSync::RxActivity => c"rx",
+        StreamSync::TxActivity => c"tx",
+        StreamSync::OnePps => c"1pps",
+        StreamSync::GeneratedSysref => c"sysref+gen",
+        other => panic!("no libusdr sync type for {other:?}"),
+    }
 }
 
 /// What a step returned: 0 or a negative errno, and a receive's channels' host bytes, its
@@ -94,6 +116,23 @@ fn libusdr(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, Vec<Op>) {
                     let stopped = oracle.stop_rx_stream();
                     status(oracle.destroy_rx_stream().and(stopped))
                 }
+                Call::StartWith(sync) => status(
+                    oracle
+                        .sync_rx_stream(sync_type(sync))
+                        .and_then(|()| oracle.start_rx_stream()),
+                ),
+                Call::Throttle(throttle) => {
+                    let value = throttle.map_or(0, |(send, skip)| {
+                        1 << 16 | u64::from(send) << 8 | u64::from(skip)
+                    });
+                    // SAFETY: the throttle takes its value as a number.
+                    status(unsafe { oracle.set_uint(c"/dm/sdr/0/rfe/throttle", value) })
+                }
+                Call::Ready => status(oracle.set_rx_ready()),
+                Call::SwapAb(swap) => {
+                    // SAFETY: the swap takes its value as a number.
+                    status(unsafe { oracle.set_uint(c"/dm/sdr/0/rxdsp/swapab", swap.into()) })
+                }
             }
         })
         .collect();
@@ -134,6 +173,10 @@ fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, Vec<Op>) {
                     }
                 }
                 Call::Stop => status(device.stop_rx_stream()),
+                Call::StartWith(sync) => status(device.start_rx_stream_with(sync)),
+                Call::Throttle(throttle) => status(device.set_rx_throttle(throttle)),
+                Call::Ready => status(device.signal_rx_ready()),
+                Call::SwapAb(swap) => status(device.swap_rx_channels(swap)),
             }
         })
         .collect();
@@ -155,7 +198,9 @@ fn host_bytes(samples: &[[i16; 2]]) -> Vec<u8> {
 fn errno(result: Result<(), Error>) -> i32 {
     match result {
         Ok(()) => 0,
-        Err(Error::DoublePumpedMimo | Error::UnsupportedPacketSize(_)) => -EINVAL,
+        Err(Error::DoublePumpedMimo | Error::UnsupportedPacketSize(_) | Error::NotStreaming) => {
+            -EINVAL
+        }
         Err(Error::LinkCalibration) => -ERANGE,
         Err(Error::AlreadyStreaming) => -EBUSY,
         Err(other) => panic!("no libusdr errno for {other:?}"),
@@ -358,4 +403,28 @@ fn rx_or_shared_mmcm_gateware_streams_like_libusdr() {
             &session(RxChannels::Both, 1024),
         );
     }
+}
+
+#[test]
+fn the_rx_streams_options_match_libusdr() {
+    // A throttle and its release, a host-ready signal, the A/B swap and its undoing, then
+    // a start on activity; the throttle without a stream is refused.
+    let outcomes = compare(
+        xsdr,
+        &[
+            Call::Throttle(Some((1, 2))),
+            Call::Rate(10_000_000),
+            Call::SwapAb(true),
+            Call::Create(RxChannels::Both, 1024),
+            Call::SwapAb(true),
+            Call::Throttle(Some((3, 0))),
+            Call::Ready,
+            Call::StartWith(StreamSync::All),
+            Call::Receive,
+            Call::Throttle(None),
+            Call::SwapAb(false),
+            Call::Stop,
+        ],
+    );
+    assert_eq!(outcomes[0].0, -EINVAL, "no stream to throttle");
 }

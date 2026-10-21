@@ -40,6 +40,14 @@ pub(crate) enum Gpo {
 
     /// The board LED (`IGPO_LED`): `xsdr_dtor` writes 0.
     Led = 18,
+
+    /// The TX DSP chain's resets (`IGPO_DSPCHAIN_TX_RST`): bit 2 the extended front end's
+    /// (`xsdr_reset_extfe`).
+    #[allow(
+        dead_code,
+        reason = "the TX stream uses it; the no_std fixture compiles the tree without it"
+    )]
+    TxChainReset = 23,
 }
 
 impl Gpo {

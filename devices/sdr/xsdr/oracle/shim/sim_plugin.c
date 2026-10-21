@@ -19,6 +19,7 @@
 #include "device/device.h"
 #include "device/device_ids.h"
 #include "hw/lms7002m/lms7002m.h"
+#include "ipblks/streams/streams_api.h"
 #include "dm_dev.h"
 
 // Implemented in src/lib.rs. Returns 0 or a negative errno.
@@ -203,6 +204,14 @@ static int sim_recv_dma_release(lldev_t dev, subdev_t subdev, stream_t channel, 
     (void)channel;
     (void)buffer;
     return 0;
+}
+
+// A stream option libusdr's public API does not reach, such as the TX stream's "mute"
+// (the uSDR shim's pattern).
+int xsdr_oracle_stream_option_set(void* stream, const char* name, long long value)
+{
+    stream_handle_t* h = (stream_handle_t*)stream;
+    return h->ops->option_set(h, name, value);
 }
 
 static lowlevel_ops_t s_sim_ops = {

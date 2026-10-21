@@ -23,7 +23,7 @@ mod sim_bus;
 use std::time::Duration;
 
 use sim_bus::SimBus;
-use xsdr::{Device, Error, RxChannels, TxChannels, TxTelemetry};
+use xsdr::{Device, Error, RxChannels, StreamSync, TxChannels, TxMute, TxTelemetry};
 use xsdr_oracle::{Oracle, SendStat};
 use xsdr_sim::{MmcmFault, Op, SimBoard, TxPacket, Variant};
 
@@ -71,6 +71,47 @@ enum Call {
     Fault(MmcmFault),
     /// A `LimeLight` phase override.
     Override(Phase, u16),
+    /// The TX stream's `"mute"` option.
+    Mute(TxMute),
+    /// The TX stream's `"chmap"` option.
+    Chmap(TxChannels),
+    /// Start TX, then sync with this type.
+    StartTxWith(StreamSync),
+    /// Sync RX with this type, then start it.
+    StartRxWith(StreamSync),
+}
+
+/// libusdr's sync type for `sync`.
+fn sync_type(sync: StreamSync) -> &'static core::ffi::CStr {
+    match sync {
+        StreamSync::None => c"none",
+        StreamSync::All => c"all",
+        StreamSync::Any => c"any",
+        StreamSync::RxActivity => c"rx",
+        StreamSync::TxActivity => c"tx",
+        StreamSync::OnePps => c"1pps",
+        StreamSync::GeneratedSysref => c"sysref+gen",
+        other => panic!("no libusdr sync type for {other:?}"),
+    }
+}
+
+/// libusdr's mute mask.
+const fn mute_bits(mute: TxMute) -> u8 {
+    match mute {
+        TxMute::Neither => 0,
+        TxMute::A => 1,
+        TxMute::B => 2,
+        TxMute::Both => 3,
+    }
+}
+
+/// libusdr's channel map for `channels` (`s_xsdr_chmap`: `a` 0, `b` 1).
+const fn chmap(channels: TxChannels) -> &'static [u8] {
+    match channels {
+        TxChannels::A => &[0],
+        TxChannels::B => &[1],
+        TxChannels::Both => &[0, 1],
+    }
 }
 
 /// Which phase override (`/dm/sdr/0/{tx,rx}/phase_ovr*`).
@@ -213,6 +254,18 @@ fn libusdr(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, Vec<Op>, Vec<TxPac
                     // SAFETY: the phase overrides take their value as a number.
                     status(unsafe { oracle.set_uint(phase.path(), value.into()) })
                 }
+                Call::Mute(mute) => status(oracle.set_tx_mute(mute_bits(mute))),
+                Call::Chmap(channels) => status(oracle.set_tx_chmap(chmap(channels))),
+                Call::StartTxWith(sync) => status(
+                    oracle
+                        .start_tx_stream()
+                        .and_then(|()| oracle.sync_tx_stream(sync_type(sync))),
+                ),
+                Call::StartRxWith(sync) => status(
+                    oracle
+                        .sync_rx_stream(sync_type(sync))
+                        .and_then(|()| oracle.start_rx_stream()),
+                ),
             }
         })
         .collect();
@@ -300,6 +353,10 @@ fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, Vec<Op>, Vec<TxPacket>
                     Phase::Rx => device.set_rx_phase_override(value),
                     Phase::ApplyTx => device.apply_tx_phase_override(value),
                 }),
+                Call::Mute(mute) => status(device.set_tx_stream_mute(mute)),
+                Call::Chmap(channels) => status(device.set_tx_stream_channels(channels)),
+                Call::StartTxWith(sync) => status(device.start_tx_stream_with(sync)),
+                Call::StartRxWith(sync) => status(device.start_rx_stream_with(sync)),
             }
         })
         .collect();
@@ -981,6 +1038,140 @@ fn rx_or_shared_mmcm_gateware_transmits_like_libusdr() {
                 Call::CreateRx(RxChannels::A, 1024),
                 Call::StopTx,
                 Call::Rate(20_000_000),
+                Call::StopRx,
+            ],
+        );
+    }
+}
+
+/// An XSDR with a TX MMCM and the extended TX front end.
+fn extended() -> SimBoard {
+    SimBoard::new(Variant::Xsdr)
+        .with_hwid(TX_MMCM | 0x08)
+        .with_gateware_build(TX_GATEWARE)
+}
+
+#[test]
+fn the_extended_tx_core_streams_like_libusdr() {
+    // Its front end reset, unmuted and mapped; sends announced through registers 28 to 31,
+    // the unchanged ones skipped; its mute and map options at its front end.
+    for channels in [TxChannels::A, TxChannels::B, TxChannels::Both] {
+        let (outcomes, _) = compare(
+            extended,
+            &[
+                Call::Rate(10_000_000),
+                Call::CreateTx(channels, 1024),
+                Call::StartTx,
+                Call::Send(1024, None),
+                Call::Send(1024, None),
+                Call::Send(512, Some(0x7fff_ffff_ffff)),
+                Call::Mute(TxMute::Both),
+                Call::Mute(TxMute::Neither),
+                Call::Chmap(channels),
+                Call::StopTx,
+            ],
+        );
+        assert!(
+            outcomes.iter().all(|(status, _)| *status == 0),
+            "{channels:?}: {outcomes:?}"
+        );
+    }
+    compare(
+        extended,
+        &[
+            Call::Rate(10_000_000),
+            Call::CreateRx(RxChannels::A, 1024),
+            Call::CreateTx(TxChannels::A, 1024),
+            Call::Chmap(TxChannels::B),
+            Call::StartTx,
+            Call::Send(1024, None),
+            Call::StopTx,
+            Call::StopRx,
+        ],
+    );
+}
+
+#[test]
+fn the_original_cores_mute_and_map_options_match_libusdr() {
+    for channels in [TxChannels::A, TxChannels::B, TxChannels::Both] {
+        let other = match channels {
+            TxChannels::A => TxChannels::B,
+            TxChannels::B => TxChannels::A,
+            TxChannels::Both => TxChannels::Both,
+        };
+        compare(
+            xsdr,
+            &[
+                Call::Rate(10_000_000),
+                Call::CreateTx(channels, 512),
+                Call::Mute(TxMute::Both),
+                Call::Chmap(other),
+                Call::StartTx,
+                Call::Send(512, None),
+                Call::Mute(TxMute::Neither),
+                Call::Chmap(channels),
+                Call::Mute(TxMute::A),
+                Call::Chmap(other),
+                Call::StopTx,
+            ],
+        );
+    }
+}
+
+#[test]
+fn a_send_longer_than_a_packet_goes_as_several_like_libusdr() {
+    // 1000 samples on a 256-sample packet: three full packets and one of 232, timed from
+    // the first's time; a send "now" sends each "now".
+    let calls = |channels| {
+        [
+            Call::Rate(10_000_000),
+            Call::CreateTx(channels, 256),
+            Call::StartTx,
+            Call::Send(1000, Some(5000)),
+            Call::Send(1000, None),
+            Call::StopTx,
+        ]
+    };
+    let (outcomes, _) = compare(xsdr, &calls(TxChannels::A));
+    assert!(
+        outcomes.iter().all(|(status, _)| *status == 0),
+        "{outcomes:?}"
+    );
+    // Two channels: the same operations and packet times, not the same samples. libusdr
+    // moves each channel's host pointer on by half a packet per split (its `host_off`
+    // counts one channel's wire bytes, then divides by the channels), so its later packets
+    // repeat samples; xsdr sends each channel's samples in order (whitelisted).
+    let (expected, reference, theirs) = libusdr(xsdr(), &calls(TxChannels::Both));
+    let (actual, trace, ours) = rsl(xsdr(), &calls(TxChannels::Both));
+    assert_eq!(actual, expected, "each step's outcome");
+    assert_eq!(trace, reference, "every operation");
+    let times = |packets: &[TxPacket]| packets.iter().map(|packet| packet.time).collect::<Vec<_>>();
+    assert_eq!(times(&ours), times(&theirs), "every packet's time");
+    assert_ne!(ours, theirs, "libusdr's later packets repeat samples");
+    assert_eq!(ours[0], theirs[0], "the first packet is the same");
+}
+
+#[test]
+fn starts_on_each_sync_type_match_libusdr() {
+    for sync in [
+        StreamSync::None,
+        StreamSync::All,
+        StreamSync::Any,
+        StreamSync::RxActivity,
+        StreamSync::TxActivity,
+        StreamSync::OnePps,
+        StreamSync::GeneratedSysref,
+    ] {
+        compare(
+            xsdr,
+            &[
+                Call::Rate(10_000_000),
+                Call::CreateRx(RxChannels::A, 1024),
+                Call::StartRxWith(sync),
+                Call::CreateTx(TxChannels::A, 1024),
+                Call::StartTxWith(sync),
+                Call::Send(1024, None),
+                Call::StopTx,
                 Call::StopRx,
             ],
         );

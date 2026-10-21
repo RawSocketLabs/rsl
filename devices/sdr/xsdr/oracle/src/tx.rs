@@ -1,8 +1,8 @@
 //! libusdr's TX stream on the simulated XSDR: create, start, sync, send with its
-//! statistics, stop and destroy, and the sim plugin's TX buffer callbacks. As the uSDR
-//! oracle's (`devices/sdr/usdr/oracle/src/tx.rs`), for one board.
+//! statistics, the streams' options, stop and destroy, and the sim plugin's TX buffer
+//! callbacks. As the uSDR oracle's (`devices/sdr/usdr/oracle/src/tx.rs`), for one board.
 
-use std::ffi::{CStr, c_int, c_uint, c_void};
+use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use std::ptr::{self, NonNull};
 use std::slice;
 use std::sync::PoisonError;
@@ -18,6 +18,7 @@ use super::{
 const EBUSY: c_int = 16;
 
 unsafe extern "C" {
+    fn xsdr_oracle_stream_option_set(stream: Stream, name: *const c_char, value: i64) -> c_int;
     fn usdr_dms_send_stat(
         stream: Stream,
         stream_buffs: *mut *const c_void,
@@ -203,6 +204,56 @@ impl Oracle {
             .unwrap_or_else(PoisonError::into_inner)
             .as_mut()
             .expect("invariant: a board is installed while an oracle is open"))
+    }
+
+    /// Sets the TX stream's `"mute"` option (`_sfetrx4_option_set`): bit 0 lane A, bit 1
+    /// lane B.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no TX stream.
+    pub fn set_tx_mute(&mut self, mute: u8) -> Result<(), i32> {
+        let stream = self.tx.ok_or(-EINVAL)?;
+        Self::stream_option(stream, c"mute", mute.into())
+    }
+
+    /// Sets the TX stream's `"chmap"` option (`_sfetrx4_option_set`): `map` gives each
+    /// channel of the stream its physical channel number; the rest of libusdr's 64-entry
+    /// `channel_info_t` is unmapped (255), as `usdr_channel_info_map_default` leaves it.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no TX stream or more than 64
+    /// entries.
+    pub fn set_tx_chmap(&mut self, map: &[u8]) -> Result<(), i32> {
+        let stream = self.tx.ok_or(-EINVAL)?;
+        let mut info = [u8::MAX; 64];
+        info.get_mut(..map.len())
+            .ok_or(-EINVAL)?
+            .copy_from_slice(map);
+        // The option reads the value as a `const channel_info_t *` during the call, while
+        // `info` lives.
+        Self::stream_option(stream, c"chmap", info.as_ptr() as i64)
+    }
+
+    /// Sets the RX stream's `"ready"` option (`usdr_dms_set_ready`).
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned; `-EINVAL` with no RX stream.
+    pub fn set_rx_ready(&mut self) -> Result<(), i32> {
+        let stream = self.stream.ok_or(-EINVAL)?;
+        Self::stream_option(stream, c"ready", 1)
+    }
+
+    /// Sets a stream option on `stream`.
+    fn stream_option(stream: NonNull<c_void>, name: &CStr, value: i64) -> Result<(), i32> {
+        // SAFETY: `stream` is a live stream handle and `name` NUL-terminated; the options
+        // set here take `value` as a number, or ("chmap") as a pointer its caller keeps
+        // alive for the call.
+        let errno = unsafe { xsdr_oracle_stream_option_set(stream.as_ptr(), name.as_ptr(), value) };
+        resume_callback_panic();
+        if errno == 0 { Ok(()) } else { Err(errno) }
     }
 
     /// Runs a stream operation on the TX stream.

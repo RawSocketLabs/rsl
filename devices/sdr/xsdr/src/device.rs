@@ -10,10 +10,12 @@ mod frontend;
 mod link;
 mod quality;
 mod stream;
+mod stream_options;
 mod tx_stream;
 
 pub use controls::{IqCorrection, LmlRxMode, TxGenerator};
 pub use stream::{RxChannels, RxPacket};
+pub use stream_options::{StreamSync, TxMute};
 pub use tx_stream::{TxChannels, TxTelemetry};
 
 use hal::{Sequence, run_sequence};
