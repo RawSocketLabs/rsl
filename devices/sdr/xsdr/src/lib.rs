@@ -20,8 +20,8 @@
 //! format conversions `sdr-formats`'s) with the TX MMCM, the TX phase calibration,
 //! its phase overrides and the TX quality check, and the close ([`Device::close`], or on
 //! drop); the probe brings up every board the connector admits, as libusdr does. Not yet
-//! ported: the sSDR variants (identified, then refused) and the RF calibrations. The LMS7002M's register values, chip
-//! operations and control code are `lms7002m`'s. See `PORTING.md` beside this crate.
+//! ported: the sSDR variants (identified, then refused) and the RF calibrations. The
+//! LMS7002M's register values, chip operations and control code are `lms7002m`'s. See `PORTING.md` beside this crate.
 //!
 //! # The XSDR board
 //!

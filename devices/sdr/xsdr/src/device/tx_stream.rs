@@ -222,11 +222,13 @@ impl Device {
     ///
     /// Before any bus access: [`Error::AlreadyStreaming`] with a TX stream;
     /// [`Error::UnsupportedFormat`] for a wire the core does not take (libusdr refuses the
-    /// original core's `ci12` after streaming up), a real wire or host (libusdr
-    /// byte-copies a real host onto the complex wire) or a host with no converter to the
-    /// wire; [`Error::NoSampleRate`] with a TX MMCM; [`Error::TxClockOutOfRange`];
-    /// [`Error::UnsupportedPacketSize`] for 0, or on the extended core past one burst. After the map: [`Error::DoublePumpedMimo`]
-    /// for both channels on a double-pumped link. Then streaming up's errors,
+    /// original core's `ci12` after streaming up), a real wire (libusdr streams `i16`
+    /// and `i12` on the extended core, one lane, but what that lane drives is not shown,
+    /// so it is not offered), a real host (libusdr byte-copies it onto the complex wire)
+    /// or a host with no converter to the wire; [`Error::NoSampleRate`] with a TX MMCM;
+    /// [`Error::TxClockOutOfRange`]; [`Error::UnsupportedPacketSize`] for 0, or on the
+    /// extended core past one burst. After the map: [`Error::DoublePumpedMimo`] for both
+    /// channels on a double-pumped link. Then streaming up's errors,
     /// [`Error::LinkCalibration`], [`Error::TxClockUnlocked`],
     /// [`Error::OutdatedGateware`], [`Error::UnsupportedPacketSize`] for a packet past the
     /// TX core's FIFO (after the sync unit is stopped, as libusdr checks it),
