@@ -35,6 +35,13 @@ pub(crate) enum Gpo {
     /// external GPIOs to 3.3V".
     IoVoltage = 8,
 
+    /// The USB clock's enable (`IGPO_USB_CLK_EN`), which `xsdr_usbclk` sets for testing.
+    #[allow(
+        dead_code,
+        reason = "the device's diagnostics use it; the no_std fixture compiles the tree without it"
+    )]
+    UsbClock = 16,
+
     /// The LMS7002M's external LDOs (`IGPO_LDOLMS_EN`): 1 enables them.
     LmsLdo = 17,
 

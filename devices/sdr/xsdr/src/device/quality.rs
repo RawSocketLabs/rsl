@@ -34,7 +34,7 @@ use crate::portable::fpga::{REG_CFG_PHY_0, RxPhyBank, TxPhy};
 use crate::portable::step::Step;
 
 /// Samples a capture holds per channel (`CAPTURE_SIZE`).
-const CAPTURE_SIZE: usize = 128;
+pub(super) const CAPTURE_SIZE: usize = 128;
 /// Captures averaged (`1 << acc`).
 const CAPTURES: u32 = 1 << 8;
 /// The averaged sums' shift back to 12 bits (`4 + acc`).
@@ -59,7 +59,8 @@ impl Device {
         self.tx_generator(true, false)?;
         self.loop_baseband()?;
         for attempt in 0..ATTEMPTS {
-            if f64::from(tx_score(&self.capture()?)) < GOOD_SCORE || !fix {
+            let [a, _] = self.capture_both()?;
+            if f64::from(tx_score(&a)) < GOOD_SCORE || !fix {
                 break;
             }
             let lml = self.control.lml();
@@ -114,7 +115,7 @@ impl Device {
     /// `xsdr_capture_rxiq`: 256 captures of both channels' 128 samples, each started and
     /// stopped, then read word by word (A's, then B's); each sample's I and Q averaged
     /// and packed back as 12-bit fields, A's words first.
-    fn capture(&mut self) -> Result<[u32; CAPTURE_SIZE], Error> {
+    pub(super) fn capture_both(&mut self) -> Result<[[u32; CAPTURE_SIZE]; 2], Error> {
         let mut sums = [[[0_i32; 2]; CAPTURE_SIZE]; 2];
         for _ in 0..CAPTURES {
             self.capture_control(1)?;
@@ -133,9 +134,8 @@ impl Device {
                 }
             }
         }
-        let [a, _] = sums;
         let field = |sum: i32| u32::from_ne_bytes((sum >> CAPTURE_SHIFT).to_ne_bytes()) & 0xfff;
-        Ok(a.map(|[i, q]| field(i) | field(q) << 12))
+        Ok(sums.map(|channel| channel.map(|[i, q]| field(i) | field(q) << 12)))
     }
 
     /// `xsdr_phy_capture_start(d, value)`.
