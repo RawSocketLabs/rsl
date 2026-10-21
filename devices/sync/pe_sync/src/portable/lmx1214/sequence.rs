@@ -108,6 +108,7 @@ mod tests {
                 hz: 550_000_000,
                 format: AuxFormat::Lvds,
             },
+            precision: false,
         })
         .expect("libusdr's plan");
         let mut sequence = configure(TARGET, &plan);

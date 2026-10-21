@@ -8,16 +8,22 @@
 //!
 //! - [`reg`]: addresses and value types;
 //! - [`plan`]: the solver (`lmx2820_solver`) and the register list a tune writes;
-//! - [`sequence`]: `lmx2820_create`, `lmx2820_tune` and `lmx2820_read_status` on the
-//!   `Sequence` seam.
+//! - [`sequence`]: `lmx2820_create`, `lmx2820_tune`, `lmx2820_instant_calibration_init` and
+//!   `lmx2820_read_status` on the `Sequence` seam;
+//! - [`controls`]: `lmx2820_tune_instcal` and `lmx2820_sync`.
 //!
-//! Not ported: SYSREF (`lmx2820_sysref_chain_t`; `PE_SYNC` disables it, so its registers
-//! keep libusdr's defaults), instant calibration (`lmx2820_instant_calibration_init`,
-//! `lmx2820_tune_instcal`) and `lmx2820_sync`, none of which `PE_SYNC` calls.
+//! `PE_SYNC` tunes with SYSREF off and without instant calibration, and calls neither
+//! control; SYSREF, instant calibration and the controls are ported for parity, not
+//! reachable from `Device`.
 //!
 //! Only `PE_SYNC` uses the chip in libusdr, so it lives in this driver until a second one
 //! needs it (`devices/AGENTS.md`); it knows no board.
 
+#[allow(
+    dead_code,
+    reason = "ported for op-for-op parity; no libusdr PE_SYNC path calls it, and exposing it on `Device` awaits the owner"
+)]
+pub(crate) mod controls;
 pub(crate) mod plan;
 pub(crate) mod reg;
 pub(crate) mod sequence;

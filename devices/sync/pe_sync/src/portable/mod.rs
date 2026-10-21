@@ -21,3 +21,4 @@ pub(crate) mod status;
 #[cfg(test)]
 pub(crate) mod testing;
 pub(crate) mod ti_spi;
+pub(crate) mod ti_sync;

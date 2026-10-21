@@ -52,8 +52,10 @@ pub(crate) const fn read(target: SpiAddr, reg: u8) -> SequenceAction {
     access(target, reg, true, 0)
 }
 
-/// A read-modify-write of one register: read it, then write it back with `set` bits set
-/// and `clear` bits cleared (`lmx1214_reset_main_divider` and its siblings).
+/// A read-modify-write of one register: read it once, then write it back once per step,
+/// each with that step's `set` bits set and `clear` bits cleared in the value read
+/// (`lmx1214_reset_main_divider` and its siblings: one step; the `*_CLR` pulses of the
+/// SYSREF windowing: two; `lmx2820_sync`: three).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Modify {
     /// The chip, for failure reports.
@@ -62,14 +64,16 @@ pub(crate) struct Modify {
     target: SpiAddr,
     /// The register.
     reg: u8,
-    /// Bits to set.
-    set: u16,
-    /// Bits to clear.
-    clear: u16,
+    /// Each write's bits to set and to clear; the first `len` are used.
+    steps: [(u16, u16); 3],
+    /// How many writes follow the read.
+    len: usize,
     /// The value read, once read.
     read: Option<u16>,
-    /// Finished or failed.
-    done: bool,
+    /// Writes done.
+    written: usize,
+    /// An access failed.
+    failed: bool,
 }
 
 impl Modify {
@@ -81,26 +85,58 @@ impl Modify {
         set: u16,
         clear: u16,
     ) -> Self {
+        Self::steps(chip, target, reg, [(set, clear); 3], 1)
+    }
+
+    /// Writes register `reg` back with `bits` set, then with them cleared, both from the
+    /// value read.
+    pub(crate) const fn pulse(chip: &'static str, target: SpiAddr, reg: u8, bits: u16) -> Self {
+        Self::steps(chip, target, reg, [(bits, 0), (0, bits), (0, 0)], 2)
+    }
+
+    /// Writes register `reg` back with `bits` cleared, set, then cleared again, all from
+    /// the value read.
+    pub(crate) const fn cleared_pulse(
+        chip: &'static str,
+        target: SpiAddr,
+        reg: u8,
+        bits: u16,
+    ) -> Self {
+        Self::steps(chip, target, reg, [(0, bits), (bits, 0), (0, bits)], 3)
+    }
+
+    /// The first `len` of `steps` after one read.
+    const fn steps(
+        chip: &'static str,
+        target: SpiAddr,
+        reg: u8,
+        steps: [(u16, u16); 3],
+        len: usize,
+    ) -> Self {
         Self {
             chip,
             target,
             reg,
-            set,
-            clear,
+            steps,
+            len,
             read: None,
-            done: false,
+            written: 0,
+            failed: false,
         }
     }
 }
 
 impl Sequence for Modify {
     fn next(&self) -> Option<SequenceAction> {
-        if self.done {
+        if self.failed || self.written >= self.len {
             return None;
         }
         Some(match self.read {
             None => read(self.target, self.reg),
-            Some(value) => write(self.target, (self.reg, (value | self.set) & !self.clear)),
+            Some(value) => {
+                let (set, clear) = self.steps[self.written];
+                write(self.target, (self.reg, (value | set) & !clear))
+            }
         })
     }
 
@@ -108,10 +144,10 @@ impl Sequence for Modify {
         let Some(action) = self.next() else {
             return Ok(());
         };
-        let word = outcome(action, result, self.chip).inspect_err(|_| self.done = true)?;
+        let word = outcome(action, result, self.chip).inspect_err(|_| self.failed = true)?;
         match self.read {
             None => self.read = Some(value(word)),
-            Some(_) => self.done = true,
+            Some(_) => self.written += 1,
         }
         Ok(())
     }
@@ -140,6 +176,7 @@ const fn access(target: SpiAddr, reg: u8, read: bool, data: u16) -> SequenceActi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::portable::testing::{Exchange, drive};
 
     #[test]
     fn words_match_the_generated_macros() {
@@ -167,6 +204,21 @@ mod tests {
             value(0xdead_8000),
             0x8000,
             "only bits 15:0 are the register"
+        );
+    }
+
+    #[test]
+    fn a_pulse_writes_both_values_from_one_read() {
+        let mut pulse = Modify::pulse("LMX1204", SpiAddr(4), 0x0f, 1);
+        let (done, outcome) = drive(&mut pulse, |_| Ok(0x0380));
+        assert_eq!(outcome, Ok(()));
+        assert_eq!(
+            done,
+            [
+                Exchange::Spi(0x008f_0000),
+                Exchange::Spi(0x000f_0381),
+                Exchange::Spi(0x000f_0380),
+            ]
         );
     }
 }

@@ -1,16 +1,18 @@
 //! The LMX1204's plan: libusdr's `lmx1204_solver` (with `lmx1204_solver_prevalidate` and
-//! `lmx1204_get_delay_step_size`) without its precision mode, which `PE_SYNC` does not use
-//! (not ported), and the register list it writes after its reset.
+//! `lmx1204_get_delay_step_size`) and the register list it writes after its reset; and the
+//! registers the SYSREF delay reload and windowing write from the plan.
 //!
-//! The SYSREF outputs' individual delays stay at the defaults `lmx1204_create` sets
-//! (phase QCLK0, I = 7, Q = 0x78); libusdr's `lmx1204_init_sysrefout_ch_delay`, which would
-//! change them, is not ported.
+//! Each SYSREF output's delay is the request's: `lmx1204_create`'s defaults (phase QCLK0,
+//! I = 7, Q = 0x78, [`Delay::CREATE`]) unless set as `lmx1204_init_sysrefout_ch_delay`
+//! sets them before the solver, or changed after it ([`Plan::with_delays`]) for
+//! `lmx1204_reload_sysrefout_ch_delay`.
 
 use core::fmt;
 
-use bnb::{u2, u3, u4, u5, u7, u9, u10, u12};
+use bnb::{u2, u3, u4, u5, u6, u7, u9, u10, u12};
 
 use super::super::float::{abs, c_f64, c_u64, c_unsigned, ceil_log2_ratio};
+use super::super::ti_sync::delay_step;
 use super::reg::{
     Channels, ClockMux, DelayScale, Format, LogicClock, LogicDivider, LogicSysrefOutput, Mode,
     MuxOut, Outputs, Reg, StateMachineClock, Sysref, SysrefDelay, SysrefDivider, SysrefDrive,
@@ -39,9 +41,6 @@ const LOGIC_DIVIDER_MAX: u32 = 1023;
 const SYSREF_DIVIDER_MAX: u32 = 4095;
 /// How far a derived frequency may land from its request (`FREQ_EPS`), in Hz.
 const TOLERANCE_HZ: f64 = 1.0;
-/// The delays `lmx1204_create` gives every SYSREF output: phase QCLK0 (1), I = 7, and
-/// Q = 0x7F - I.
-const DELAY: (u8, u8, u8) = (1, 7, 0x7f - 7);
 
 /// Why the LMX1204 has no configuration for a request (libusdr's `-EINVAL` for each,
 /// before any bus access).
@@ -55,8 +54,9 @@ pub(crate) enum PlanError {
     LogicOutOfRange,
     /// SYSREFOUT is above its mode's limit.
     SysrefOutOfRange,
-    /// No divider or multiplier reaches CLKOUT within 1 Hz, or the state machine clock
-    /// cannot be divided down to 30 MHz.
+    /// No divider or multiplier reaches CLKOUT within 1 Hz (or, in precision mode, CLKIN is
+    /// not CLKOUT times it: libusdr's check, which only the 1:1 filter passes in multiplier
+    /// mode), or the state machine clock cannot be divided down to 30 MHz.
     Unreachable,
     /// No logic pre-divider and divider reach the logic clock.
     LogicUnreachable,
@@ -97,6 +97,36 @@ pub(crate) struct Channel {
     pub(crate) sysref: bool,
 }
 
+/// One SYSREF output's delay (`lmx1204_sysrefout_channel_delay_t`): the interpolator
+/// phase and its I and Q steps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Delay {
+    /// The interpolator phase (`SYSREFOUTn_DELAY_PHASE`).
+    pub(crate) phase: u2,
+    /// The I step (`SYSREFOUTn_DELAY_I`).
+    pub(crate) i: u7,
+    /// The Q step (`SYSREFOUTn_DELAY_Q`); TI pairs it with I to sum to 0x7F.
+    pub(crate) q: u7,
+}
+
+impl Delay {
+    /// The delay `lmx1204_create` gives every output "according to TICS Pro": phase QCLK0
+    /// (1), I = 7, Q = 0x7F - I.
+    pub(crate) const CREATE: Self = Self {
+        phase: u2::new(1),
+        i: u7::new(7),
+        q: u7::new(0x7f - 7),
+    };
+
+    /// This output's delay with the previous output's Q (R18 to R21).
+    fn after(self, previous: Self) -> SysrefDelay {
+        SysrefDelay::new()
+            .with_delay_i(self.i)
+            .with_delay_phase(self.phase)
+            .with_previous_q(previous.q)
+    }
+}
+
 /// What `lmx1204_solver` is asked for: the fields of `lmx1204_state_t` a board sets.
 /// libusdr's frequencies other than CLKIN and SYSREFREQ are `double`s; they are whole here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,6 +154,12 @@ pub(crate) struct Request {
     pub(crate) logic_clock_format: Format,
     /// LOGISYSREFOUT's format (`logisysrefout_fmt`).
     pub(crate) logic_sysref_format: Format,
+    /// Each SYSREF output's delay, channels 0 to 3, then the logic channel
+    /// (`sysref_indiv_ch_delay`).
+    pub(crate) delays: [Delay; 5],
+    /// Precision mode (`prec_mode`): CLKOUT and the logic clock must divide CLKIN exactly,
+    /// not within 1 Hz.
+    pub(crate) precision: bool,
 }
 
 /// A plan: the mode and ratio, the state machine clock, the logic clock and SYSREF.
@@ -155,6 +191,10 @@ pub(crate) struct Plan {
 
 impl Plan {
     /// Plans `request` (`lmx1204_solver`).
+    #[expect(
+        clippy::float_cmp,
+        reason = "libusdr's precision mode compares doubles exactly"
+    )]
     pub(crate) fn solve(request: &Request) -> Result<Self, PlanError> {
         let clkin = request.clkin_hz;
         let clkout = request.clkout_hz;
@@ -187,6 +227,10 @@ impl Plan {
         if abs(reached - c_f64(clkout)) > TOLERANCE_HZ {
             return Err(PlanError::Unreachable);
         }
+        // `st->clkin != st->clkout * mult_div`, in doubles, whatever the mode.
+        if request.precision && c_f64(clkin) != c_f64(clkout) * f64::from(ratio) {
+            return Err(PlanError::Unreachable);
+        }
         let (state_machine_pre, state_machine_log2) = if mode == Mode::Multiplier {
             state_machine_clock(clkin)?
         } else {
@@ -194,7 +238,7 @@ impl Plan {
         };
         let logic = request.channels[4];
         let (logic_pre, logic_divider) = if logic.enabled && logic.clock {
-            logic_clock(clkin, request.logic_hz)?
+            logic_clock(clkin, request.logic_hz, request.precision)?
         } else {
             (0, 0)
         };
@@ -239,14 +283,10 @@ impl Plan {
 
     /// The registers `lmx1204_solver` writes after its reset, in its order, ending with R0,
     /// whose write starts the multiplier's calibration.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one entry per register libusdr writes, in its order"
-    )]
     pub(crate) fn registers(&self) -> [(u8, u16); 28] {
         let raw = |reg: Reg, value| (u8::from(reg), value);
         let request = &self.request;
-        let bypass = self.logic_pre == 1 && self.logic_divider == 0;
+        let bypass = self.logic_bypassed();
         let multiplies = self.multiplies();
         let channels = request.channels;
         let [ch0, ch1, ch2, ch3, logic] = channels;
@@ -257,11 +297,7 @@ impl Plan {
                 .fold(0u8, |bits, channel| bits << 1 | u8::from(pick(channel)))
         };
         let scale = u2::new(self.delay_scale);
-        let (phase, delay_i, delay_q) = DELAY;
-        let delay = SysrefDelay::new()
-            .with_delay_i(u7::new(delay_i))
-            .with_delay_phase(u2::new(phase))
-            .with_previous_q(u7::new(delay_q));
+        let [r22, r21, r20, r19, r18, r17] = self.delay_registers();
         let ratio = u8::try_from(if multiplies {
             self.ratio
         } else {
@@ -298,35 +334,19 @@ impl Plan {
                 .with_scale3(scale)
                 .with_scale2(scale)
                 .entry(),
-            DelayScale::new()
-                .with_scale1(scale)
-                .with_scale0(scale)
-                .with_delay_divider(u3::new(self.delay_divider))
-                .with_logic_q(u7::new(delay_q))
-                .entry(),
-            raw(Reg::LogicSysrefDelay, delay.into()),
-            raw(Reg::SysrefDelay3, delay.into()),
-            raw(Reg::SysrefDelay2, delay.into()),
-            raw(Reg::SysrefDelay1, delay.into()),
-            SysrefMode::new()
-                .with_delay_i(u7::new(delay_i))
-                .with_delay_phase(u2::new(phase))
-                .with_mode(request.sysref_mode)
-                .entry(),
+            r22,
+            r21,
+            r20,
+            r19,
+            r18,
+            r17,
             SysrefDivider::new()
                 .with_pulses(u4::new(1))
                 .with_divider(u12::from_raw(low_u16(self.sysref_divider)))
                 .entry(),
-            Sysref::new()
-                .with_pre_divider_log2(u2::from_raw(low_u8(self.sysref_pre_log2)))
-                .with_reserved(u2::new(3))
-                .with_enabled(request.sysref)
-                .entry(),
-            raw(Reg::DelayStepSize, delay_step_size(request.clkin_hz)),
-            LogicDivider::new()
-                .with_bypass(bypass)
-                .with_divider(u10::from_raw(low_u16(self.logic_divider)))
-                .entry(),
+            self.sysref(0),
+            self.delay_step(),
+            self.logic_divider(false),
             LogicClock::new()
                 .with_pre_divider(u3::new(self.logic_pre))
                 .with_reserved(true)
@@ -359,6 +379,76 @@ impl Plan {
             // Reset cleared last: the write that starts the multiplier's calibration.
             raw(Reg::Control, 0),
         ]
+    }
+
+    /// The same plan with the SYSREF outputs delayed by `delays` (channels 0 to 3, then
+    /// the logic channel), as `lmx1204_init_sysrefout_ch_delay` changes the state before
+    /// `lmx1204_reload_sysrefout_ch_delay`.
+    #[allow(
+        dead_code,
+        reason = "the windowing's, which no libusdr PE_SYNC path calls (see `windowing`)"
+    )]
+    pub(crate) const fn with_delays(mut self, delays: [Delay; 5]) -> Self {
+        self.request.delays = delays;
+        self
+    }
+
+    /// R22 down to R17: the delay generators' clock division and scale, each output's
+    /// delay and the SYSREF mode (`lmx1204_reload_sysrefout_ch_delay`'s list, which the
+    /// solver's repeats).
+    pub(crate) fn delay_registers(&self) -> [(u8, u16); 6] {
+        let raw = |reg: Reg, value: SysrefDelay| (u8::from(reg), value.into());
+        let scale = u2::new(self.delay_scale);
+        let [ch0, ch1, ch2, ch3, logic] = self.request.delays;
+        [
+            DelayScale::new()
+                .with_scale1(scale)
+                .with_scale0(scale)
+                .with_delay_divider(u3::new(self.delay_divider))
+                .with_logic_q(logic.q)
+                .entry(),
+            raw(Reg::LogicSysrefDelay, logic.after(ch3)),
+            raw(Reg::SysrefDelay3, ch3.after(ch2)),
+            raw(Reg::SysrefDelay2, ch2.after(ch1)),
+            raw(Reg::SysrefDelay1, ch1.after(ch0)),
+            SysrefMode::new()
+                .with_delay_i(ch0.i)
+                .with_delay_phase(ch0.phase)
+                .with_mode(self.request.sysref_mode)
+                .entry(),
+        ]
+    }
+
+    /// R9 as the plan sets it, with the dividers' synchronization on or off (`SYNC_EN`):
+    /// off in the solver's registers and after the windowing, on before the SYSREF it
+    /// captures.
+    pub(crate) fn logic_divider(&self, sync: bool) -> (u8, u16) {
+        LogicDivider::new()
+            .with_sync(sync)
+            .with_bypass(self.logic_bypassed())
+            .with_divider(u10::from_raw(low_u16(self.logic_divider)))
+            .entry()
+    }
+
+    /// R15 as the plan sets it, with SYSREFREQ delayed by `delay` steps (0 in the solver's
+    /// registers; the capture's centring delay after a windowing).
+    pub(crate) fn sysref(&self, delay: u8) -> (u8, u16) {
+        Sysref::new()
+            .with_pre_divider_log2(u2::from_raw(low_u8(self.sysref_pre_log2)))
+            .with_reserved(u2::new(3))
+            .with_enabled(self.request.sysref)
+            .with_request_delay(u6::from_raw(delay))
+            .entry()
+    }
+
+    /// R13: the SYSREFREQ delay step size for CLKIN (`lmx1204_get_delay_step_size`).
+    pub(crate) fn delay_step(&self) -> (u8, u16) {
+        (Reg::DelayStepSize.into(), delay_step(self.request.clkin_hz))
+    }
+
+    /// The logic divider is bypassed: CLKIN itself through a pre-divider of 1.
+    fn logic_bypassed(&self) -> bool {
+        self.logic_pre == 1 && self.logic_divider == 0
     }
 }
 
@@ -414,8 +504,12 @@ fn state_machine_clock(clkin: u64) -> Result<(u8, u8), PlanError> {
 
 /// The logic clock's pre-divider and divider (0 when bypassed): CLKIN itself through a
 /// pre-divider of 1, or the first of 2 and 4 (from the one that brings CLKIN to 3.2 GHz)
-/// whose nearest divider lands within 1 Hz.
-fn logic_clock(clkin: u64, logic_hz: u64) -> Result<(u8, u32), PlanError> {
+/// whose nearest divider lands within 1 Hz (in precision mode, exactly).
+#[expect(
+    clippy::float_cmp,
+    reason = "libusdr's precision mode compares doubles exactly"
+)]
+fn logic_clock(clkin: u64, logic_hz: u64, precision: bool) -> Result<(u8, u32), PlanError> {
     if logic_hz == clkin {
         return Ok((1, 0));
     }
@@ -432,6 +526,10 @@ fn logic_clock(clkin: u64, logic_hz: u64) -> Result<(u8, u32), PlanError> {
         }
         let reached = c_f64(clkin) / pre_f / f64::from(divider);
         if abs(c_f64(logic_hz) - reached) > TOLERANCE_HZ {
+            continue;
+        }
+        // `st->clkin != st->logiclkout * div_pre * div`, in doubles.
+        if precision && c_f64(clkin) != c_f64(logic_hz) * pre_f * f64::from(divider) {
             continue;
         }
         let pre = u8::try_from(pre).map_err(|_| PlanError::LogicUnreachable)?;
@@ -496,22 +594,6 @@ fn sysref(request: &Request) -> Result<(u8, u8, u32, u32), PlanError> {
     Ok((delay_divider, delay_scale, pre, divider))
 }
 
-/// `SYSREFREQ_DELAY_STEPSIZE` for CLKIN (`lmx1204_get_delay_step_size`): the narrowest
-/// step whose range holds it, later ranges winning where they overlap.
-fn delay_step_size(clkin: u64) -> u16 {
-    let mut step = 0;
-    if clkin > 2_400_000_000 && clkin <= 4_700_000_000 {
-        step = 1;
-    }
-    if clkin > 3_100_000_000 && clkin <= 5_700_000_000 {
-        step = 2;
-    }
-    if clkin > 4_500_000_000 && clkin <= 12_800_000_000 {
-        step = 3;
-    }
-    step
-}
-
 /// The C's narrowing of an `unsigned` into a `uint16_t` field: the low 16 bits.
 const fn low_u16(value: u32) -> u16 {
     let [lo, hi, ..] = value.to_le_bytes();
@@ -548,6 +630,8 @@ mod tests {
         logic_hz: 125_000_000,
         logic_clock_format: Format::Lvds,
         logic_sysref_format: Format::Lvds,
+        delays: [Delay::CREATE; 5],
+        precision: false,
     };
 
     #[test]

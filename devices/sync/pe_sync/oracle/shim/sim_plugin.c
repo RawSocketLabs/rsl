@@ -142,27 +142,56 @@ static void sim_attach(struct sim_dev* d)
     d->ll.ops = &s_sim_ops;
 }
 
-// lmx2820_tune on SPI bus `bus`, SYSREF off (zeroed): solver, registers, lock wait.
-int pe_sync_oracle_lmx2820_tune(unsigned bus, uint64_t osc_in, unsigned mash_order,
-                                    unsigned force_mult, uint64_t rfouta, uint64_t rfoutb)
+// The windowing steps a chip session may run after its solver, in this order (bit n of
+// `windowing`): the LMX1204's SYSREF delay reload (bit 0), then *_sysref_windowing_beforesync,
+// _capture and _aftersync (bits 1 to 3). The first failure ends the session.
+enum { RSL_RELOAD_DELAYS = 1, RSL_BEFORE_SYNC = 2, RSL_CAPTURE = 4, RSL_AFTER_SYNC = 8 };
+
+// One LMX2820 session's inputs: lmx2820_sysref_chain_t's fields, then which calls run.
+struct rsl_lmx2820_session {
+    uint64_t osc_in, rfouta, rfoutb, srout, retune_a, retune_b;
+    unsigned bus, mash_order, force_mult;
+    unsigned sysref_enabled, master_mode, cont_pulse, pulse_cnt, delay_ctrl, srreq_fmt;
+    // lmx2820_instant_calibration_init instead of lmx2820_tune; then lmx2820_tune_instcal
+    // to retune_a/retune_b; then lmx2820_sync.
+    unsigned instant, retune, sync;
+};
+
+// An LMX2820 on SPI bus `bus`, its SYSREF chain set as `s` says: lmx2820_tune (solver,
+// registers, lock wait) or lmx2820_instant_calibration_init, then, as asked and while each
+// succeeds, lmx2820_tune_instcal and lmx2820_sync.
+int pe_sync_oracle_lmx2820_session(const struct rsl_lmx2820_session* s)
 {
     struct sim_dev d;
     sim_attach(&d);
     lmx2820_state_t st;
     memset(&st, 0, sizeof(st));
     st.dev = &d.ll;
-    st.lsaddr = bus;
-    return lmx2820_tune(&st, osc_in, mash_order, force_mult, rfouta, rfoutb);
+    st.lsaddr = s->bus;
+    lmx2820_sysref_chain_t* sr = &st.lmx2820_sysref_chain;
+    sr->enabled = s->sysref_enabled != 0;
+    sr->master_mode = s->master_mode != 0;
+    sr->cont_pulse = s->cont_pulse != 0;
+    sr->pulse_cnt = (uint8_t)s->pulse_cnt;
+    sr->delay_ctrl = (uint8_t)s->delay_ctrl;
+    sr->srreq_fmt = (uint8_t)s->srreq_fmt;
+    sr->srout = s->srout;
+    int res = s->instant
+        ? lmx2820_instant_calibration_init(&st, s->osc_in, s->mash_order, s->force_mult)
+        : lmx2820_tune(&st, s->osc_in, s->mash_order, s->force_mult, s->rfouta, s->rfoutb);
+    res = res || !s->retune ? res : lmx2820_tune_instcal(&st, s->retune_a, s->retune_b);
+    return res || !s->sync ? res : lmx2820_sync(&st);
 }
 
 // lmx1214_solver's arguments; `outputs` holds out_en[n] in bit n.
 struct rsl_lmx1214_request {
     uint64_t in, out;
-    unsigned outputs, aux_enable, aux_fmt;
+    unsigned outputs, aux_enable, aux_fmt, prec_mode, windowing;
     double aux_freq;
 };
 
-// lmx1214_solver on SPI bus 5, writing its registers, without precision mode.
+// lmx1214_solver on SPI bus 5, writing its registers; then, while each succeeds, the
+// windowing steps `windowing` asks for.
 int pe_sync_oracle_lmx1214_solver(const struct rsl_lmx1214_request* r)
 {
     struct sim_dev d;
@@ -179,21 +208,40 @@ int pe_sync_oracle_lmx1214_solver(const struct rsl_lmx1214_request* r)
     aux.freq = r->aux_freq;
     aux.enable = r->aux_enable != 0;
     aux.fmt = (uint8_t)r->aux_fmt;
-    return lmx1214_solver(&st, r->in, r->out, en, &aux, false, false);
+    int res = lmx1214_solver(&st, r->in, r->out, en, &aux, r->prec_mode != 0, false);
+    res = res || !(r->windowing & RSL_BEFORE_SYNC) ? res : lmx1214_sysref_windowing_beforesync(&st);
+    res = res || !(r->windowing & RSL_CAPTURE) ? res : lmx1214_sysref_windowing_capture(&st);
+    return res || !(r->windowing & RSL_AFTER_SYNC) ? res : lmx1214_sysref_windowing_aftersync(&st);
 }
 
+// One SYSREF output's delay, as lmx1204_init_sysrefout_ch_delay sets it.
+struct rsl_lmx1204_delay {
+    unsigned phase, i, q;
+};
+
 // The lmx1204_state_t fields a board sets; the masks hold channel n (4: logic) in bit n.
+// `delays` are each output's before the solver, `reload` the ones the delay reload writes.
 struct rsl_lmx1204_request {
     uint64_t clkin, sysrefreq;
     unsigned filter_mode, sysref_mode, sysref_en, ch_en, clkout_en, sysrefout_en;
-    unsigned logiclkout_fmt, logisysrefout_fmt;
+    unsigned logiclkout_fmt, logisysrefout_fmt, prec_mode, windowing;
     double clkout, sysrefout, logiclkout;
+    struct rsl_lmx1204_delay delays[LMX1204_CH_LOGIC + 1], reload[LMX1204_CH_LOGIC + 1];
 };
 
-// lmx1204_solver on SPI bus 4, writing its registers, without precision mode; then, if it
-// succeeded, lmx1204_wait_pll_lock(.., 1000000) as pe_sync waits. The state starts as
-// lmx1204_create leaves it: zeroed but for every output's SYSREF delay (phase QCLK0 = 1,
-// I = 7, Q = 0x7f - 7).
+// Sets every output's SYSREF delay, as lmx1204_init_sysrefout_ch_delay does.
+static void rsl_lmx1204_delays(lmx1204_state_t* st, const struct rsl_lmx1204_delay* delays)
+{
+    for (unsigned ch = 0; ch <= LMX1204_CH_LOGIC; ch++) {
+        lmx1204_init_sysrefout_ch_delay(st, ch, (uint8_t)delays[ch].phase,
+                                        (uint8_t)delays[ch].i, (uint8_t)delays[ch].q);
+    }
+}
+
+// lmx1204_solver on SPI bus 4, writing its registers; then, if it succeeded,
+// lmx1204_wait_pll_lock(.., 1000000) as pe_sync waits, and, while each succeeds, the
+// windowing steps `windowing` asks for. The state starts as lmx1204_create leaves it, with
+// `delays` for the SYSREF outputs.
 int pe_sync_oracle_lmx1204_solver(const struct rsl_lmx1204_request* r)
 {
     struct sim_dev d;
@@ -202,11 +250,8 @@ int pe_sync_oracle_lmx1204_solver(const struct rsl_lmx1204_request* r)
     memset(&st, 0, sizeof(st));
     st.dev = &d.ll;
     st.lsaddr = 4;
+    rsl_lmx1204_delays(&st, r->delays);
     for (unsigned i = 0; i <= LMX1204_CH_LOGIC; i++) {
-        lmx1204_sysrefout_channel_delay_t* delay = &st.sysref_indiv_ch_delay[i];
-        delay->phase = 1;
-        delay->i = 7;
-        delay->q = 0x7f - delay->i;
         st.ch_en[i] = (r->ch_en >> i) & 1;
         st.clkout_en[i] = (r->clkout_en >> i) & 1;
         st.sysrefout_en[i] = (r->sysrefout_en >> i) & 1;
@@ -221,8 +266,15 @@ int pe_sync_oracle_lmx1204_solver(const struct rsl_lmx1204_request* r)
     st.logiclkout = r->logiclkout;
     st.logiclkout_fmt = (uint8_t)r->logiclkout_fmt;
     st.logisysrefout_fmt = (uint8_t)r->logisysrefout_fmt;
-    int res = lmx1204_solver(&st, false, false);
-    return res ? res : lmx1204_wait_pll_lock(&st, 1000000);
+    int res = lmx1204_solver(&st, r->prec_mode != 0, false);
+    res = res ? res : lmx1204_wait_pll_lock(&st, 1000000);
+    if (!res && (r->windowing & RSL_RELOAD_DELAYS)) {
+        rsl_lmx1204_delays(&st, r->reload);
+        res = lmx1204_reload_sysrefout_ch_delay(&st);
+    }
+    res = res || !(r->windowing & RSL_BEFORE_SYNC) ? res : lmx1204_sysref_windowing_beforesync(&st);
+    res = res || !(r->windowing & RSL_CAPTURE) ? res : lmx1204_sysref_windowing_capture(&st);
+    return res || !(r->windowing & RSL_AFTER_SYNC) ? res : lmx1204_sysref_windowing_aftersync(&st);
 }
 
 static const struct lowlevel_plugin s_sim_plugin = { sim_info_str, sim_discovery, sim_create };

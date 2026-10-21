@@ -53,17 +53,17 @@ pub(crate) enum Reg {
     InstantNumeratorHigh = 0x2c,
     /// Its lower 16 bits (`INSTCAL_PLL_NUM_L`). `R45`.
     InstantNumeratorLow = 0x2d,
-    /// SYSREF mode, its input format and pre-divider. `R64`.
+    /// See [`Sysref`]. `R64`.
     Sysref = 0x40,
-    /// SYSREF divider. `R65`.
+    /// See [`SysrefDivider`]. `R65`.
     SysrefDivider = 0x41,
-    /// SYSREF delay adjustment, DACs 1 and 2. `R66`.
+    /// See [`SysrefDelay`]. `R66`.
     SysrefDelay = 0x42,
-    /// SYSREF delay adjustment, DACs 3 and 4, and the pulse count. `R67`.
+    /// See [`SysrefPulses`]. `R67`.
     SysrefPulses = 0x43,
     /// The PSYNC pin's input format and enable. `R68`.
     PhaseSyncInput = 0x44,
-    /// The SYSREF output buffer. `R69`.
+    /// See [`SysrefOutput`]. `R69`.
     SysrefOutput = 0x45,
     /// See [`LockStatus`]. `R74`.
     LockStatus = 0x4a,
@@ -488,8 +488,101 @@ pub(crate) enum OutputSource {
     VcoDoubler = 2,
 }
 
+/// SYSREF's mode, input format and pre-divider. `R64`: libusdr writes `R64_RESERVED_0`
+/// (bits 15:10) 0 with SYSREF on, where the YAML says 0x10 ("0x10 by doc"), and leaves
+/// `SYSREF_REPEAT_NS` and `R64_RESERVED_1` at 0.
+#[bitfield(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Sysref {
+    /// The SRREQ input's format, or 2 in master mode. `SYSREF_INP_FMT`, bits 9:8.
+    #[bits(8..=9)]
+    input_format: u2,
+    /// The pre-divider: 1 for /2, 2 for /4, 4 for /8. `SYSREF_DIV_PRE`, bits 7:5.
+    #[bits(5..=7)]
+    pre_divider: u3,
+    /// Pulsed rather than continuous. `SYSREF_PULSE`, bit 3.
+    #[bits(3..=3)]
+    pulsed: bool,
+    /// SYSREF on. `SYSREF_EN`, bit 2.
+    #[bits(2..=2)]
+    enabled: bool,
+    /// Repeater rather than master mode. `SYSREF_REPEAT`, bit 1.
+    #[bits(1..=1)]
+    repeater: bool,
+}
+impl Register for Sysref {
+    type Map = Reg;
+    const ADDR: Reg = Reg::Sysref;
+}
+
+/// The SYSREF divider. `R65`.
+#[bitfield(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SysrefDivider {
+    /// The divider less 2 (2 to 2049). `SYSREF_DIV`, bits 10:0.
+    #[bits(0..=10)]
+    divider_less_two: u11,
+}
+impl Register for SysrefDivider {
+    type Map = Reg;
+    const ADDR: Reg = Reg::SysrefDivider;
+}
+
+/// SYSREF's delay, DACs 1 and 2. `R66`.
+#[bitfield(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SysrefDelay {
+    /// `JESD_DAC2_CTRL`, bits 11:6.
+    #[bits(6..=11)]
+    dac2: u6,
+    /// `JESD_DAC1_CTRL`, bits 5:0.
+    #[bits(0..=5)]
+    dac1: u6,
+}
+impl Register for SysrefDelay {
+    type Map = Reg;
+    const ADDR: Reg = Reg::SysrefDelay;
+}
+
+/// SYSREF's delay, DACs 3 and 4, and its pulse count. `R67`.
+#[bitfield(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SysrefPulses {
+    /// Pulses per request in pulsed mode. `SYSREF_PULSE_CNT`, bits 15:12.
+    #[bits(12..=15)]
+    count: u4,
+    /// `JESD_DAC4_CTRL`, bits 11:6.
+    #[bits(6..=11)]
+    dac4: u6,
+    /// `JESD_DAC3_CTRL`, bits 5:0.
+    #[bits(0..=5)]
+    dac3: u6,
+}
+impl Register for SysrefPulses {
+    type Map = Reg;
+    const ADDR: Reg = Reg::SysrefPulses;
+}
+
+/// The SYSREF output buffer. `R69`.
+///
+/// Base: `R69_RESERVED_1` (bits 3:0) = 1, as the YAML says.
+#[bitfield(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SysrefOutput {
+    /// SROUT powered down. `SROUT_PD`, bit 4.
+    #[bits(4..=4)]
+    powered_down: bool,
+    /// Reserved, programmed 1. `R69_RESERVED_1`, bits 3:0.
+    #[bits(0..=3)]
+    reserved: u4,
+}
+impl Register for SysrefOutput {
+    type Map = Reg;
+    const ADDR: Reg = Reg::SysrefOutput;
+}
+
 /// The SYSREF registers as libusdr programs them with SYSREF off, in its write order
-/// (`lmx2820_tune_internal`'s defaults; SYSREF itself is not ported): R69 with the SYSREF
+/// (`lmx2820_tune_internal`'s defaults): R69 with the SYSREF
 /// output powered down (`SROUT_PD`) and its reserved bits 3:0 at 1; R68 all clear; R67 and
 /// R66 with no delay (`JESD_DAC1_CTRL` = 63, the others 0) and no pulses; R65 with
 /// `SYSREF_DIV` = 1; R64 with SYSREF disabled, pre-divider 8 (`SYSREF_DIV_PRE` = 4) and its
