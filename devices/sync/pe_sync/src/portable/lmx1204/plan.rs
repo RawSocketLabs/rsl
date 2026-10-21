@@ -54,6 +54,8 @@ pub(crate) enum PlanError {
     LogicOutOfRange,
     /// SYSREFOUT is above its mode's limit.
     SysrefOutOfRange,
+    /// With SYSREF on, an enabled channel's delay steps do not pair up (`I + Q != 0x7F`).
+    UnpairedDelay,
     /// No divider or multiplier reaches CLKOUT within 1 Hz (or, in precision mode, CLKIN is
     /// not CLKOUT times it: libusdr's check, which only the 1:1 filter passes in multiplier
     /// mode), or the state machine clock cannot be divided down to 30 MHz.
@@ -73,6 +75,7 @@ impl PlanError {
             Self::ClockOutOutOfRange => "CLKOUT out of range",
             Self::LogicOutOfRange => "logic clock out of range",
             Self::SysrefOutOfRange => "SYSREF output out of range",
+            Self::UnpairedDelay => "a SYSREF delay's I and Q steps do not sum to 0x7F",
             Self::Unreachable => "no divider or multiplier reaches CLKOUT",
             Self::LogicUnreachable => "no divider reaches the logic clock",
             Self::SysrefUnreachable => "no divider reaches the SYSREF output",
@@ -478,6 +481,17 @@ fn validate(request: &Request, mode: Mode) -> Result<(), PlanError> {
         };
         if limit.is_some_and(|limit| request.sysref_out_hz > limit) {
             return Err(PlanError::SysrefOutOfRange);
+        }
+        // Every phase is valid (`u2`); an enabled channel's I and Q must sum to 0x7F.
+        let unpaired = request
+            .channels
+            .iter()
+            .zip(request.delays)
+            .any(|(channel, delay)| {
+                channel.enabled && u16::from(delay.i.value()) + u16::from(delay.q.value()) != 0x7f
+            });
+        if unpaired {
+            return Err(PlanError::UnpairedDelay);
         }
     }
     Ok(())

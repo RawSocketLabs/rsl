@@ -152,7 +152,8 @@ fn lmx2820_tunes_match_libusdr_across_references_orders_and_outputs() {
                             out_b_hz: b,
                             sysref: None,
                         };
-                        solved += u32::from(compare_lmx2820(&request, Lmx2820Then::default()));
+                        let reached = compare_lmx2820(&request, Lmx2820Then::default());
+                        solved += u32::from(reached > Reached::Refused);
                     }
                 }
             }
@@ -176,9 +177,20 @@ struct Lmx2820Then {
     sync: bool,
 }
 
+/// How far an LMX2820 session got in pe-sync (and so, compared, in libusdr).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Reached {
+    /// The tune (or set-up) was refused.
+    Refused,
+    /// The tune locked, but a later step was refused.
+    Tuned,
+    /// Every step succeeded.
+    Done,
+}
+
 /// Runs one LMX2820 session in both drivers on fresh boards and compares outcome and
-/// traffic; whether pe-sync's tune (or set-up) solved.
-fn compare_lmx2820(request: &Lmx2820Request, then: Lmx2820Then) -> bool {
+/// traffic; how far pe-sync got.
+fn compare_lmx2820(request: &Lmx2820Request, then: Lmx2820Then) -> Reached {
     let sysref = request.sysref;
     let (master_mode, srreq_fmt) = match sysref.map(|sysref| sysref.source) {
         Some(SysrefSource::Repeater(format)) => (0, format as u32),
@@ -214,7 +226,7 @@ fn compare_lmx2820(request: &Lmx2820Request, then: Lmx2820Then) -> bool {
     };
     let Ok(plan) = solved else {
         assert_same(&label, (c_result, board.trace()), (-EINVAL, &[]));
-        return false;
+        return Reached::Refused;
     };
     let mut sim = SimBus::new(SimBoard::new());
     let target = SpiAddr(2);
@@ -238,7 +250,11 @@ fn compare_lmx2820(request: &Lmx2820Request, then: Lmx2820Then) -> bool {
         (c_result, board.trace()),
         (result, sim.board().trace()),
     );
-    true
+    if result == 0 {
+        Reached::Done
+    } else {
+        Reached::Tuned
+    }
 }
 
 #[test]
@@ -264,7 +280,7 @@ fn lmx2820_sysref_chains_match_libusdr() {
         (10_000_000, 20_000_000_000, 20_000_000_000),
         (250_000_000, 2_500_000_000, 2_500_000_000),
     ];
-    let mut solved = 0;
+    let (mut solved, mut synced) = (0, 0);
     for (reference_hz, out_a_hz, out_b_hz) in tunes {
         for source in sources {
             for pulses in pulses {
@@ -287,17 +303,21 @@ fn lmx2820_sysref_chains_match_libusdr() {
                             sync: delay_step == 0,
                             ..Lmx2820Then::default()
                         };
-                        solved += u32::from(compare_lmx2820(&request, then));
+                        let reached = compare_lmx2820(&request, then);
+                        solved += u32::from(reached > Reached::Refused);
+                        synced += u32::from(then.sync && reached == Reached::Done);
                     }
                 }
             }
         }
     }
-    // 3600 solve when written; the floor keeps it from testing refusals only.
+    // 3600 solve and 360 phase-synced sessions complete when written; the floors keep it
+    // from testing refusals only.
     assert!(
         solved > 3000,
         "the sweep reaches SYSREF's successes: {solved}"
     );
+    assert!(synced > 300, "the sweep reaches the phase sync: {synced}");
 }
 
 #[test]
@@ -316,7 +336,7 @@ fn lmx2820_instant_calibration_and_retunes_match_libusdr() {
         (7_000_000_001, 7_000_000_001),
         (1_000_000_000, 300_000_000),
     ];
-    let mut solved = 0;
+    let (mut solved, mut completed) = (0, 0);
     for reference_hz in [
         10_000_000,
         25_000_000,
@@ -345,15 +365,22 @@ fn lmx2820_instant_calibration_and_retunes_match_libusdr() {
                         retune: Some(retune),
                         sync: true,
                     };
-                    solved += u32::from(compare_lmx2820(&request, then));
+                    let reached = compare_lmx2820(&request, then);
+                    solved += u32::from(reached > Reached::Refused);
+                    completed += u32::from(reached == Reached::Done);
                 }
             }
         }
     }
-    // 250 set-ups solve when written; the floor keeps it from testing refusals only.
+    // 250 set-ups solve and 198 sessions retune and sync when written; the floors keep it
+    // from testing refusals only.
     assert!(
         solved > 200,
         "the sweep reaches the set-up's successes: {solved}"
+    );
+    assert!(
+        completed > 150,
+        "the sweep reaches the retunes: {completed}"
     );
 }
 
@@ -752,7 +779,9 @@ fn delay(phase: u8, i: u8, q: u8) -> Delay {
 fn lmx1204_sysref_delays_and_windowing_match_libusdr() {
     // Per-output delays set before the solver and reloaded after it, then the SYSREF
     // windowing armed and disarmed, over CLKINs in every delay step band and at their
-    // edges, with SYSREF on and off and the logic divider bypassed and used.
+    // edges, with SYSREF on and off and the logic divider bypassed and used. An enabled
+    // channel whose I and Q do not sum to 0x7F is refused with SYSREF on; a disabled one is
+    // not checked, and the reload checks none.
     let custom = [
         delay(0, 0, 0x7f),
         delay(1, 0x7f, 0),
@@ -767,11 +796,26 @@ fn lmx1204_sysref_delays_and_windowing_match_libusdr() {
         delay(2, 0x33, 0x44),
         delay(0, 0x55, 0x66),
     ];
+    let unpaired = [
+        Delay::CREATE,
+        delay(1, 0x11, 0x22),
+        Delay::CREATE,
+        Delay::CREATE,
+        Delay::CREATE,
+    ];
     let all = Channel {
         enabled: true,
         clock: true,
         sysref: true,
     };
+    let mut ch1_off = [all; 5];
+    ch1_off[1] = Channel::default();
+    let cases = [
+        ([all; 5], [Delay::CREATE; 5], reloaded),
+        ([all; 5], custom, custom),
+        ([all; 5], unpaired, reloaded),
+        (ch1_off, unpaired, reloaded),
+    ];
     let mut solved = 0;
     for clkin in [
         800_000_000,
@@ -790,14 +834,14 @@ fn lmx1204_sysref_delays_and_windowing_match_libusdr() {
             (clkin / 2, 100_000_000),
         ] {
             for (sysref, sysref_out_hz) in [(true, 3_125_000), (false, 0)] {
-                for (delays, reload) in [([Delay::CREATE; 5], reloaded), (custom, custom)] {
+                for (channels, delays, reload) in cases {
                     let request = Lmx1204Request {
                         clkin_hz: clkin,
                         sysref_request_hz: 0,
                         filter: false,
                         sysref_mode: SysrefModeCode::Continuous,
                         sysref,
-                        channels: [all; 5],
+                        channels,
                         clkout_hz: clkout,
                         sysref_out_hz,
                         logic_hz,
@@ -807,13 +851,22 @@ fn lmx1204_sysref_delays_and_windowing_match_libusdr() {
                         precision: false,
                     };
                     let windowing = RELOAD_DELAYS | BEFORE_SYNC | AFTER_SYNC;
-                    let masks = (0b1_1111, 0b1_1111, 0b1_1111);
+                    let mask = |pick: fn(&Channel) -> bool| {
+                        (0..).zip(channels).fold(0, |mask, (bit, channel)| {
+                            mask | u32::from(pick(&channel)) << bit
+                        })
+                    };
+                    let masks = (
+                        mask(|channel| channel.enabled),
+                        mask(|channel| channel.clock),
+                        mask(|channel| channel.sysref),
+                    );
                     solved +=
                         u32::from(compare_lmx1204_session(&request, masks, windowing, reload));
                 }
             }
         }
     }
-    // 40 solve when written; the floor keeps it from testing refusals only.
-    assert!(solved > 30, "the sweep reaches the windowing: {solved}");
+    // 71 solve when written; the floor keeps it from testing refusals only.
+    assert!(solved > 50, "the sweep reaches the windowing: {solved}");
 }
