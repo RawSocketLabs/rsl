@@ -32,6 +32,39 @@ pub(crate) enum Gpo {
 
     /// The receive PGA's gain code (`IGPO_BANK_PGA_GAIN`).
     PgaGain = 4,
+
+    /// Which ADC channels the DSP and PHY settings that follow reach
+    /// (`IGPO_BANK_ADC_CHMSK`, commented `[5:4] -- rb_selector; [3:0] -- set_mask`):
+    /// libusdr writes [`ALL_CHANNELS`] before each such setting.
+    ChannelMask = 5,
+
+    /// The LVDS PHY's control (`IGPO_BANK_ADC_PHY_CTL_0`): see [`PHY_CLOCK_LOAD`].
+    PhyControl = 6,
+
+    /// The DSP's second mixer (`IGPO_BANK_ADC_DSP_MIX2`): 3 after a rate change, 0 when
+    /// the NCO is set.
+    DspMix = 9,
+
+    /// The NCO's frequency word, least significant byte (`IGPO_BANK_ADC_NCO_0`); bytes 1
+    /// to 3 follow in banks 11 to 13.
+    Nco0 = 10,
+
+    /// The NCO word's second byte (`IGPO_BANK_ADC_NCO_1`).
+    Nco1 = 11,
+
+    /// The NCO word's third byte (`IGPO_BANK_ADC_NCO_2`).
+    Nco2 = 12,
+
+    /// The NCO word's most significant byte (`IGPO_BANK_ADC_NCO_3`).
+    Nco3 = 13,
+
+    /// The DSP chain's reset (`IGPO_BANK_ADC_DSPCHAIN_RST`): libusdr pulses it to 1 and
+    /// back to 0.
+    DspReset = 14,
+
+    /// The FIR gearbox's microcode port (`IGPO_BANK_ADC_DSPCHAIN_PRG`), a byte per write
+    /// (`fgearbox_load_fir`).
+    FirProgram = 15,
 }
 
 impl Gpo {
@@ -53,3 +86,14 @@ pub(crate) const FIFO_RESET: u8 = 0xf0;
 
 /// [`Gpo::PgaLatch`]'s value while libusdr latches a new gain: all four latch bits.
 pub(crate) const PGA_LATCH: u8 = 0x0f;
+
+/// [`Gpo::ChannelMask`] selecting all four ADC channels, readback selector 0.
+pub(crate) const ALL_CHANNELS: u8 = 0x0f;
+
+/// [`Gpo::PhyControl`]'s clock-delay load (`1 << PHY_LVDS_CLK_LD_OFF`), with the delay tap
+/// in bits 4:0.
+pub(crate) const PHY_CLOCK_LOAD: u8 = 0x80;
+
+/// The general-purpose input word holding the LMK04832's status (`dev_gpi_get32` of
+/// `IGPI_BANK_LMK_STAT`, bank 7: register `16 + 7 / 4`); libusdr reads and logs it.
+pub(crate) const CLOCK_STATUS: FpgaAccess = FpgaAccess::Read { reg: 17 };

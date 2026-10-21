@@ -2220,6 +2220,7 @@ dependencies = [
  "hal",
  "lsdr-sim",
  "sdr-frontend",
+ "sdr-gearbox",
  "thiserror 2.0.21",
 ]
 

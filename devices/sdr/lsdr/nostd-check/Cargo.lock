@@ -51,6 +51,7 @@ version = "0.0.0"
 dependencies = [
  "bitsandbytes",
  "hal",
+ "sdr-gearbox",
 ]
 
 [[package]]
@@ -85,6 +86,10 @@ checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "sdr-gearbox"
+version = "0.0.0"
 
 [[package]]
 name = "serde_core"
