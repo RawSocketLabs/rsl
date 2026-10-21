@@ -1,5 +1,6 @@
-//! A fixed list of actions as a sequence, for the straight-line steps libusdr returns from
-//! at the first failure (the NCO's writes).
+//! A fixed list of actions as a sequence that ends at its first failure. The NCO's writes
+//! use it; there libusdr ignores a failed second-mixer write and carries on, so ending
+//! there is a divergence (`PORTING.md`).
 
 use hal::{Sequence, SequenceAction, SequenceFailure};
 

@@ -12,7 +12,7 @@ use crate::frontend;
 use crate::lowlevel::Bus;
 use crate::portable::adc_power::AdcPower;
 use crate::portable::fpga::{self, DEAD, LIVENESS};
-use crate::portable::lmk04832::{self, ClockPlan};
+use crate::portable::lmk04832::ClockPlan;
 use crate::portable::nco::{phase_increment, select_channels, set_nco};
 use crate::portable::pga::{PgaGain, SetPga};
 use crate::portable::probes::{Fitted, Probes};
@@ -176,11 +176,11 @@ impl Device {
     /// # Errors
     ///
     /// [`Error::UnsupportedSampleRate`] when the ADC rate is outside the Si549's 200 kHz
-    /// to 800 MHz, before any access, or when the LMK04832 has no plan, after the gearbox
-    /// is loaded; [`Error::ChipId`] when the Si549 reads another device type, before it
-    /// is written; [`Error::Bus`] when an access fails. A failure ends the rate, except
-    /// that one in its last writes still takes the DSP reset's 10 µs wait, as libusdr's
-    /// does.
+    /// to 800 MHz, before any access; [`Error::ClockPlan`] when the LMK04832 has no plan,
+    /// after the gearbox is loaded; [`Error::ChipId`] when the Si549 reads another device
+    /// type, before it is written; [`Error::Bus`] when an access fails. A failure ends the
+    /// rate, except that one in its last writes still takes the DSP reset's 10 µs wait, as
+    /// libusdr's does.
     pub fn set_sample_rate(&mut self, rate: u32) -> Result<(), Error> {
         let unsupported = |chip| Error::UnsupportedSampleRate { rate, chip };
         let plan = RatePlan::new(rate);
@@ -189,7 +189,7 @@ impl Device {
         let oscillator = SetFrequency::new(LSDR_WIRING.oscillator, frequency);
         run(&mut *self.bus, &mut RatePrelude::new(plan, oscillator))?;
         let clock = if self.fitted.clock_generator {
-            Some(ClockPlan::new(rate, rate).map_err(|_| unsupported(lmk04832::NAME))?)
+            Some(ClockPlan::new(rate, rate).map_err(|source| Error::ClockPlan { rate, source })?)
         } else {
             None
         };
@@ -211,10 +211,11 @@ impl Device {
     ///
     /// # Errors
     ///
-    /// [`Error::FrontEnd`] when fe1005000 refuses the frequency (below 20 MHz or above 6 GHz) or a front-end
-    /// access fails, before the NCO; [`Error::NoSampleRate`] before any sample rate, after
-    /// the channel selection, as libusdr fails there; [`Error::Bus`] when an access fails,
-    /// which ends the setting (libusdr carries on past a failed mixer write).
+    /// [`Error::FrontEnd`] when fe1005000 refuses the frequency (below 20 MHz or above
+    /// 6 GHz) or a front-end access fails, before the NCO; [`Error::NoSampleRate`] before
+    /// any sample rate, after the channel selection, as libusdr fails there;
+    /// [`Error::Bus`] when an access fails, which ends the setting (libusdr carries on past
+    /// a failed mixer write: a divergence, `PORTING.md`).
     pub fn set_rx_frequency(&mut self, frequency: u64) -> Result<(), Error> {
         let mut offset = frequency;
         if let Some(FrontEnd::Fe1005000(board)) = &mut self.front_end {

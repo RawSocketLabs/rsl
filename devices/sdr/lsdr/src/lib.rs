@@ -36,6 +36,7 @@ mod portable;
 
 pub use device::{Device, OpenOptions, RxChannels};
 pub use error::{Access, Error};
+pub use portable::lmk04832::ClockPlanFailure;
 pub use portable::pga::PgaGain;
 pub use portable::probes::Fitted;
 pub use sdr_frontend::{Board as FrontEndBoard, Fe1005000Setting, FrontEndKind};
