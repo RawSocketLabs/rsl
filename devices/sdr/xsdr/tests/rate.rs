@@ -107,11 +107,11 @@ fn invalid_rates_and_unported_gateware_are_refused_before_any_access() {
             Err(Error::InvalidRate(_))
         ));
     }
-    let (mut rx_mmcm, other) = xsdr(TX_MMCM | 0x10);
+    let (mut duc_ddc, other) = xsdr(TX_MMCM | 0x04);
     let other_opened = other.board().trace().len();
     assert!(matches!(
-        rx_mmcm.set_sample_rate(1_000_000, 1_000_000),
-        Err(Error::UnsupportedGateware(0x30))
+        duc_ddc.set_sample_rate(1_000_000, 1_000_000),
+        Err(Error::UnsupportedGateware(0x24))
     ));
     assert_eq!(sim.board().trace().len(), opened);
     assert_eq!(other.board().trace().len(), other_opened);

@@ -68,8 +68,9 @@ pub enum Error {
     #[error("sample rate {0} is out of range")]
     InvalidRate(u32),
 
-    /// Gateware whose sample-rate path is not ported (HWID PHY bits, here): an RX or
-    /// shared MMCM, or an FPGA DUC/DDC. Refused before any bus access.
+    /// Gateware whose sample-rate path is not ported (HWID PHY bits, here): an FPGA
+    /// DUC/DDC, or for TX streams the extended TX front end. Refused before any bus
+    /// access.
     #[error("gateware PHY features {0:#04x} are not supported yet")]
     UnsupportedGateware(u8),
 
@@ -181,9 +182,10 @@ pub enum Error {
     #[error("the TX MMCM did not lock")]
     TxClockUnlocked,
 
-    /// A link the TX MMCM cannot be configured for, refused before any bus access: with TX
-    /// running, TX sample rates below about 6.35 MS/s, for which libusdr reads past its
-    /// 64-entry lock and filter table (`mmcm_rom`).
+    /// A link the TX PHY's MMCM cannot be configured for, refused before any bus access:
+    /// with TX running, TX sample rates below about 6.35 MS/s, and on gateware with an RX
+    /// or shared MMCM RX rates likewise, for which libusdr reads past its 64-entry lock
+    /// and filter table (`mmcm_rom`).
     #[error("the TX MMCM cannot be configured for this link")]
     TxClockOutOfRange,
 

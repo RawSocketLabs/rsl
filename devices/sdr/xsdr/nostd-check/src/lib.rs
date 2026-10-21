@@ -200,6 +200,7 @@ pub fn rate_unlocked(tx_mmcm: bool) -> Result<(usize, &'static str), &'static st
             tx_mmcm,
             rx_port1: true,
             separate_clkdiv: false,
+            rx_mmcm: false,
             xtrx: false,
         },
         I2cAddr::new(0, 0x60),
@@ -229,6 +230,7 @@ pub fn calibrate_link(tx_mmcm: bool) -> Result<(usize, &'static str), &'static s
             tx_mmcm,
             rx_port1: true,
             separate_clkdiv: false,
+            rx_mmcm: false,
             xtrx: false,
         },
         I2cAddr::new(0, 0x60),
@@ -249,16 +251,18 @@ pub fn calibrate_link(tx_mmcm: bool) -> Result<(usize, &'static str), &'static s
 pub fn tx_clock_fits(rate: u32) -> Result<bool, &'static str> {
     let mut control = control()?;
     control.set_running([true; 2], [true; 2]);
-    Ok(SetSampleRate::tx_clock_fits(
+    Ok(SetSampleRate::clock_fits(
         &control,
         RateState::default(),
         Gateware {
             tx_mmcm: true,
             rx_port1: true,
             separate_clkdiv: false,
+            rx_mmcm: false,
             xtrx: false,
         },
         (rate, rate),
+        false,
     ))
 }
 
@@ -274,6 +278,7 @@ pub fn calibrate_tx_link() -> Result<(usize, &'static str), &'static str> {
             tx_mmcm: true,
             rx_port1: true,
             separate_clkdiv: false,
+            rx_mmcm: false,
             xtrx: false,
         },
         I2cAddr::new(0, 0x60),

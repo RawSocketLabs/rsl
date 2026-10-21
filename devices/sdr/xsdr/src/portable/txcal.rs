@@ -685,6 +685,7 @@ impl TxCalibration {
                     tx_phase,
                     phase_offset: offset,
                     clock_reduce: self.clock_reduce,
+                    rx_master: false,
                 };
                 if let Ok(plan) = MmcmPlan::new(&link, call) {
                     Part::Mmcm(ConfigureMmcm::new(&plan))

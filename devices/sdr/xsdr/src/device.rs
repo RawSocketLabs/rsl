@@ -57,7 +57,7 @@ const PHY_SEPARATE_CLKDIV: u8 = 0x80;
 /// HWID PHY bit: `LimeLight` port 2 carries RX (`PHY_CFG_LML2_IS_RX`).
 const PHY_LML2_IS_RX: u8 = 0x40;
 /// The PHY bits whose rate paths are not ported (see [`Error::UnsupportedGateware`]).
-const PHY_UNPORTED: u8 = PHY_RX_MMCM | PHY_SINGLE_MMCM | PHY_DUC_DDC;
+const PHY_UNPORTED: u8 = PHY_DUC_DDC;
 
 /// An open LMS7 family board: an XSDR or an XTRX.
 pub struct Device {
@@ -241,9 +241,10 @@ impl Device {
     /// waited out. Above 72 MS/s on the first call the link is double-pumped; above
     /// 70 MS/s the I/O and core supplies are raised.
     ///
-    /// Supported gateware has a TX MMCM and no RX MMCM, shared MMCM or DUC/DDC (HWID PHY
-    /// bits). Without a TX MMCM libusdr, and so this, fails the calibration. With a TX
-    /// stream, the link calibration reprograms the TX MMCM for every phase it sweeps and
+    /// Supported gateware has a TX MMCM and no DUC/DDC (HWID PHY bits). Without a TX MMCM
+    /// libusdr, and so this, fails the calibration. With an RX or shared MMCM, the link
+    /// calibration reprograms the MMCM, RX its master, for every phase it sweeps while TX
+    /// does not run. With a TX stream, it reprograms it, TX its master, likewise and
     /// calibrates the TX phase too; between 53 and 60 MS/s of TX the core supply is
     /// raised; and after the self-tests, 50 ms later, the TX quality is checked through
     /// the baseband loopback and the TX processors' clock adjusted until it holds, then
@@ -253,9 +254,10 @@ impl Device {
     /// factors only DUC/DDC gateware sets, 0 here, and traps (SIGFPE); this divides by the
     /// board's, 1, and sets the filters.
     ///
-    /// Divergence: with a TX stream on gateware with a TX MMCM, a rate whose link the TX
-    /// MMCM cannot take (TX below about 6.35 MS/s), where libusdr reads past its MMCM
-    /// table, is refused before any bus access.
+    /// Divergence: on gateware with a TX MMCM, a rate whose link the MMCM cannot take
+    /// with a TX stream (TX below about 6.35 MS/s), or without one on gateware with an RX
+    /// or shared MMCM (RX likewise), where libusdr reads past its MMCM table, is refused
+    /// before any bus access.
     ///
     /// # Errors
     ///
@@ -274,9 +276,9 @@ impl Device {
         }
         let gateware = self.gateware()?;
         let tx_running = self.control.tx_running().contains(&true);
-        if tx_running
-            && gateware.tx_mmcm
-            && !SetSampleRate::tx_clock_fits(&self.control, self.rate, gateware, (rx, tx))
+        if gateware.tx_mmcm
+            && (tx_running || gateware.rx_mmcm)
+            && !SetSampleRate::clock_fits(&self.control, self.rate, gateware, (rx, tx), !tx_running)
         {
             return Err(Error::TxClockOutOfRange);
         }
@@ -342,8 +344,7 @@ impl Device {
     ///
     /// # Errors
     ///
-    /// [`Error::UnsupportedGateware`] for an RX or shared MMCM or a DUC/DDC, whose paths
-    /// are not ported.
+    /// [`Error::UnsupportedGateware`] for a DUC/DDC, whose path is not ported.
     fn gateware(&self) -> Result<Gateware, Error> {
         let [.., phy] = self.hwid.to_be_bytes();
         if phy & PHY_UNPORTED != 0 {
@@ -353,6 +354,7 @@ impl Device {
             tx_mmcm: phy & PHY_TX_MMCM != 0,
             rx_port1: phy & PHY_LML2_IS_RX == 0,
             separate_clkdiv: phy & PHY_SEPARATE_CLKDIV != 0,
+            rx_mmcm: phy & (PHY_RX_MMCM | PHY_SINGLE_MMCM) != 0,
             xtrx: self.variant == Variant::Xtrx,
         })
     }

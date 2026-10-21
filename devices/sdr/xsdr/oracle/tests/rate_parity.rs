@@ -6,9 +6,12 @@
 //! PHY reads an error-free link and its LMS7002M answers the VCO comparators from the
 //! 26 MHz reference (`xsdr-sim`, `lms7002m-sim`).
 //!
-//! Whitelisted divergence: gateware with an RX or shared MMCM or a DUC/DDC is refused by
-//! xsdr before any bus access, where libusdr configures it
-//! (`gateware_xsdr_does_not_port_is_refused_before_any_access`).
+//! Whitelisted divergence: gateware with a DUC/DDC is refused by xsdr before any bus
+//! access, where libusdr configures it
+//! (`gateware_xsdr_does_not_port_is_refused_before_any_access`). Not run against libusdr,
+//! which reads past its MMCM table there: rates whose link the MMCM cannot take with RX
+//! as its master, on gateware with an RX or shared MMCM; xsdr refuses them before any bus
+//! access (`low_rates_an_rx_master_mmcm_cannot_take_are_refused_before_any_access`).
 
 #[path = "../../tests/common/sim_bus.rs"]
 mod sim_bus;
@@ -303,8 +306,66 @@ fn rx_on_lml_port_2_matches_libusdr() {
 }
 
 #[test]
+fn gateware_with_an_rx_or_shared_mmcm_clocks_the_rx_calibration_like_libusdr() {
+    // RX alone: every phase swept reconfigures the MMCM with RX as its master.
+    for phy in [0x10, 0x01, 0x11, 0x90, 0x50] {
+        for rate in [10_000_000, 30_720_000, 61_440_000] {
+            assert_same(
+                TX_MMCM | phy,
+                &[Call::PowerUp, Call::Rate(rate), Call::Rx(1_500_000_000)],
+                &format!("PHY {phy:#04x} at {rate} S/s"),
+            );
+        }
+    }
+    let (_, ops) = libusdr(
+        SimBoard::new(Variant::Xsdr).with_hwid(TX_MMCM | 0x10),
+        &[Call::PowerUp, Call::Rate(10_000_000)],
+    );
+    let held = Op::RegWrite {
+        addr: 57,
+        value: 2 << 24 | 1,
+    };
+    assert!(
+        ops.iter().filter(|op| **op == held).count() > 1,
+        "libusdr holds the MMCM in reset as RX's for each phase"
+    );
+    // A dirty link: the retries widen the MMCM's divider.
+    let results = assert_same_on(
+        &|| {
+            SimBoard::new(Variant::Xsdr)
+                .with_hwid(TX_MMCM | 0x10)
+                .with_rx_phy_reads([], 1)
+        },
+        &[Call::PowerUp, Call::Rate(10_000_000)],
+        "RX MMCM, a dirty link",
+    );
+    assert_eq!(results[1], 0, "a warning, not a failure");
+    // An RX MMCM without a TX MMCM: libusdr's calibration has no MMCM path, as without
+    // either.
+    let results = assert_same(
+        0x0030_0010,
+        &[Call::PowerUp, Call::Rate(10_000_000)],
+        "RX MMCM alone",
+    );
+    assert_eq!(results[1], -ERANGE);
+}
+
+#[test]
+fn low_rates_an_rx_master_mmcm_cannot_take_are_refused_before_any_access() {
+    let sim = SimBus::new(SimBoard::new(Variant::Xsdr).with_hwid(TX_MMCM | 0x10));
+    let mut device = Device::open(sim.clone()).expect("opens");
+    device.power_up().expect("powers up");
+    let before = sim.board().trace().len();
+    assert!(matches!(
+        device.set_sample_rate(1_000_000, 1_000_000),
+        Err(Error::TxClockOutOfRange)
+    ));
+    assert_eq!(sim.board().trace().len(), before, "nothing driven");
+}
+
+#[test]
 fn gateware_xsdr_does_not_port_is_refused_before_any_access() {
-    for phy in [0x10, 0x01, 0x04] {
+    for phy in [0x04, 0x14] {
         let sim = SimBus::new(SimBoard::new(Variant::Xsdr).with_hwid(TX_MMCM | phy));
         let mut device = Device::open(sim.clone()).expect("opens");
         device.power_up().expect("powers up");

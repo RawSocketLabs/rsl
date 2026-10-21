@@ -1,8 +1,10 @@
-//! The TX MMCM, which clocks the `LimeLight` link's FPGA side on gateware with a TX MMCM:
-//! libusdr's `xsdr_configure_lml_mmcm_tx` (`device/m2_lm7_1/xsdr_ctrl.c`) with TX as the
-//! master, its configuration written over the MMCM's dynamic reconfiguration port by
-//! `mmcm_init_raw` (`ipblks/xlnx_mmcm.c`), each DRP access served by `m2_lm7_1` itself as
-//! TX PHY port traffic (`xsdr_override_drp`).
+//! The TX PHY's MMCM, which clocks the `LimeLight` link's FPGA side on gateware with a TX
+//! MMCM: libusdr's `xsdr_configure_lml_mmcm_tx` (`device/m2_lm7_1/xsdr_ctrl.c`) with TX
+//! as the master, or, on gateware with an RX or shared MMCM, RX while TX does not run; its
+//! configuration written over the MMCM's dynamic reconfiguration port by `mmcm_init_raw`
+//! (`ipblks/xlnx_mmcm.c`), each DRP access served by `m2_lm7_1` itself as TX PHY port
+//! traffic (`xsdr_override_drp`): both masters reach the one MMCM there, told apart by its
+//! control's select bit.
 //!
 //! [`MmcmPlan`] is the configuration: the VCO divider for the link's I/O clock, each
 //! output's high and low counts, phase and delay, and the feedback divider, which also
@@ -11,11 +13,11 @@
 //! the lock and filter settings (each a DRP read, then a write keeping the fields libusdr
 //! keeps), the TX I/Q lane selection, the reset released and the lock awaited.
 //!
-//! libusdr reads `mmcm_rom` past its end when the feedback divider exceeds 63, at TX rates
+//! libusdr reads `mmcm_rom` past its end when the feedback divider exceeds 63, at rates
 //! below about 6.35 MS/s, and writes a port's counts before refusing a later port's;
 //! [`MmcmPlan::new`] refuses both configurations instead, before anything is written.
-//! On the XSDR, whose gateware has no RX or shared MMCM, libusdr's RX-master calls return
-//! before any access, so only TX-master configurations exist here.
+//! On gateware without an RX or shared MMCM, libusdr's RX-master calls return before any
+//! access, and the rate path makes none.
 
 use core::time::Duration;
 
@@ -171,6 +173,9 @@ pub(crate) struct MmcmCall {
 
     /// The retries' VCO divider steps so far, 0 to 2 (`g_clk_reduce`).
     pub(crate) clock_reduce: u8,
+
+    /// RX is the master (`rx_master`): its clock, not TX's, sets the I/O clock.
+    pub(crate) rx_master: bool,
 }
 
 /// The link facts the configuration depends on: the clocks the rate left, the `LimeLight`
@@ -256,10 +261,14 @@ pub(crate) struct MmcmPlan {
 
     /// The TX I/Q lane selection written after the outputs.
     iq_select: u32,
+
+    /// The MMCM control's master select (`mmcm_ctrl_sel`): 4 for TX, 0 for RX.
+    select: u32,
 }
 
 impl MmcmPlan {
-    /// `xsdr_configure_lml_mmcm_tx(d, false, rx_phase, tx_phase, phase_offset)` on `link`.
+    /// `xsdr_configure_lml_mmcm_tx(d, rx_master, rx_phase, tx_phase, phase_offset)` on
+    /// `link`.
     ///
     /// # Errors
     ///
@@ -274,17 +283,24 @@ impl MmcmPlan {
             separate_clkdiv,
             overrides,
         } = *link;
-        let nomul = !double_pump && (lml.tx_siso_ddr || clocks.tx_tsp_div > 1);
-        let tx_mclk = clocks
+        let (siso_ddr, tsp_div, converter_div, lml_div) = if call.rx_master {
+            let rx = (lml.rx_siso_ddr, clocks.rx_tsp_div);
+            (rx.0, rx.1, clocks.rx_converter_div, lml.rx_div)
+        } else {
+            let tx = (lml.tx_siso_ddr, clocks.tx_tsp_div);
+            (tx.0, tx.1, clocks.tx_converter_div, lml.tx_div)
+        };
+        let nomul = !double_pump && (siso_ddr || tsp_div > 1);
+        let master_clk = clocks
             .cgen
-            .checked_div(clocks.tx_converter_div)
-            .and_then(|hz| hz.checked_div(u32::from(lml.tx_div)))
+            .checked_div(converter_div)
+            .and_then(|hz| hz.checked_div(u32::from(lml_div)))
             .ok_or(MmcmRefusal)?;
         // Unsigned 32-bit arithmetic, as in C.
         let io_clk = if nomul {
-            tx_mclk
+            master_clk
         } else {
-            tx_mclk.wrapping_mul(2)
+            master_clk.wrapping_mul(2)
         };
         if io_clk == 0 {
             return Err(MmcmRefusal);
@@ -354,23 +370,35 @@ impl MmcmPlan {
         } else {
             0b1100
         };
-        Ok(Self { ports, iq_select })
+        let select = if call.rx_master { RX_MASTER } else { TX_MASTER };
+        Ok(Self {
+            ports,
+            iq_select,
+            select,
+        })
     }
 
-    /// Whether every configuration a link calibration on `link` can ask is one
-    /// [`Self::new`] accepts: the default phases, and any phase with each count of the RX
-    /// retries' steps and each offset the TX restore adds. The phases set only the outputs'
-    /// phase and delay, which fit for every phase swept.
-    pub(crate) fn fits(link: &MmcmLink) -> bool {
+    /// Whether every configuration a link calibration on `link` can ask with `rx_master`
+    /// as the master is one [`Self::new`] accepts: the default phases, and any phase with
+    /// each count of the RX retries' steps and, with TX the master, each offset the TX
+    /// restore adds. The phases set only the outputs' phase and delay, which fit for every
+    /// phase swept.
+    pub(crate) fn fits(link: &MmcmLink, rx_master: bool) -> bool {
         let steps = 0..=2;
-        Self::new(link, MmcmCall::default()).is_ok()
+        let offsets = if rx_master { 0..=0 } else { 0..=2 };
+        let default = MmcmCall {
+            rx_master,
+            ..MmcmCall::default()
+        };
+        Self::new(link, default).is_ok()
             && steps.clone().all(|clock_reduce| {
-                steps.clone().all(|phase_offset| {
+                offsets.clone().all(|phase_offset| {
                     let call = MmcmCall {
                         rx_phase: 1,
-                        tx_phase: 1,
+                        tx_phase: u16::from(!rx_master),
                         phase_offset,
                         clock_reduce,
+                        rx_master,
                     };
                     Self::new(link, call).is_ok()
                 })
@@ -480,6 +508,8 @@ const DRP_POLLS: u16 = 1000;
 const LOCK_POLLS: u8 = 100;
 /// The TX MMCM control: TX master (`mmcm_ctrl_sel` 4).
 const TX_MASTER: u32 = 4;
+/// RX master (`mmcm_ctrl_sel` 0).
+const RX_MASTER: u32 = 0;
 /// The control's reset bit.
 const MMCM_RESET: u32 = 1;
 /// The status's busy flag.
@@ -550,6 +580,9 @@ pub(crate) struct ConfigureMmcm {
     /// The I/Q lane selection.
     iq_select: u32,
 
+    /// The control's master select.
+    select: u32,
+
     /// The last DRP read's data.
     read: u16,
 
@@ -566,6 +599,7 @@ impl ConfigureMmcm {
         Self {
             program: plan.program(),
             iq_select: plan.iq_select,
+            select: plan.select,
             read: 0,
             stage: Stage::Reset,
             failed: false,
@@ -625,14 +659,14 @@ impl Sequence for ConfigureMmcm {
         let wait = SequenceAction::Sleep(Duration::from_micros(10));
         let status = SequenceAction::Fpga(FpgaAccess::Read { reg: REG_CFG_PHY_1 });
         Some(match self.stage {
-            Stage::Reset => write(TxPhy::MmcmControl.word(TX_MASTER | MMCM_RESET)),
+            Stage::Reset => write(TxPhy::MmcmControl.word(self.select | MMCM_RESET)),
             Stage::ReleaseWait | Stage::ResetWait | Stage::PollWait { .. } | Stage::LockWait(_) => {
                 wait
             }
             Stage::Command { op, read } => write(self.command(op, read)),
             Stage::Poll { .. } | Stage::Lock(_) => status,
             Stage::IqSelect => write(TxPhy::IqSelect.word(self.iq_select)),
-            Stage::Release => write(TxPhy::MmcmControl.word(TX_MASTER)),
+            Stage::Release => write(TxPhy::MmcmControl.word(self.select)),
             Stage::Done(_) => return None,
         })
     }
@@ -843,16 +877,19 @@ mod tests {
 
     #[test]
     fn a_link_fits_only_if_every_retry_and_offset_does() {
-        assert!(MmcmPlan::fits(&link(320_000_000, 4, 8, 4)));
-        assert!(!MmcmPlan::fits(&link(128_000_000, 4, 32, 16)), "1 MS/s");
+        assert!(MmcmPlan::fits(&link(320_000_000, 4, 8, 4), false));
+        assert!(
+            !MmcmPlan::fits(&link(128_000_000, 4, 32, 16), false),
+            "1 MS/s"
+        );
         // Double-pumped at 40 MHz MCLK: ceil(1600 / 80) = 20, doubled feedback 40; four
         // more steps give 48, still in the table. At 25 MHz: 32 doubled is 64, past it.
         let pumped = |mclk: u32| MmcmLink {
             double_pump: true,
             ..link(mclk, 1, 1, 1)
         };
-        assert!(MmcmPlan::fits(&pumped(40_000_000)));
-        assert!(!MmcmPlan::fits(&pumped(25_000_000)));
+        assert!(MmcmPlan::fits(&pumped(40_000_000), false));
+        assert!(!MmcmPlan::fits(&pumped(25_000_000), false));
     }
 
     #[test]
@@ -878,6 +915,7 @@ mod tests {
             tx_phase: 2,
             phase_offset: 3,
             clock_reduce: 0,
+            rx_master: false,
         };
         let plan = MmcmPlan::new(&link, call).expect("configurable");
         assert_eq!((plan.ports[PORT_6].phase, plan.ports[PORT_6].delay), (1, 0));
@@ -911,6 +949,7 @@ mod tests {
             tx_phase: 3,
             phase_offset: 5,
             clock_reduce: 2,
+            rx_master: false,
         };
         let plan = MmcmPlan::new(&link, call).expect("configurable");
         assert_eq!(plan.ports[PORT_FB], Port::doubled(24), "mul: feedback 48");

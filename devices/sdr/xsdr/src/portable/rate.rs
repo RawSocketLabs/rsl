@@ -1,5 +1,5 @@
-//! Setting an XSDR's sample rate: libusdr's `xsdr_set_samplerate_ex`
-//! (`device/m2_lm7_1/xsdr_ctrl.c`) on gateware with a TX MMCM and no RX MMCM or DUC/DDC.
+//! Setting an XSDR's or XTRX's sample rate: libusdr's `xsdr_set_samplerate_ex`
+//! (`device/m2_lm7_1/xsdr_ctrl.c`) on gateware without a DUC/DDC.
 //!
 //! The AFE comes on (first time only), the LMS7002M's rate is set
 //! (`lms7002m_samplerate`, in `lms7002m`'s control code), the `LimeLight` receive
@@ -12,7 +12,8 @@
 //!
 //! With TX running, the TX MMCM clocks the link and is reprogrammed for every RX phase
 //! swept (`mmcm`), the core supply is raised for TX rates from 53 to 60 MS/s, and the TX
-//! phase is calibrated after the RX one (`txcal`).
+//! phase is calibrated after the RX one (`txcal`). Without, on gateware with an RX or
+//! shared MMCM, the MMCM is reprogrammed with RX as its master likewise.
 
 use hal::{
     FpgaAccess, I2cAddr, IndexedRegister, RegisterAccess, Sequence, SequenceAction, SequenceFailure,
@@ -87,6 +88,11 @@ pub(crate) struct Gateware {
 
     /// The TX MMCM has a separate `CLKDIV` output (`PHY_CFG_SEP_CLKDIV_MSK`).
     pub(crate) separate_clkdiv: bool,
+
+    /// An RX or shared MMCM (`PHY_CFG_RX_MMCM`, `PHY_CFG_SINGLE_MMCM`): with a TX MMCM,
+    /// the link calibration configures the MMCM with RX as the master while TX does not
+    /// run.
+    pub(crate) rx_mmcm: bool,
 
     /// The board is an XTRX (libusdr's `!new_rev`): the link calibration raises only the
     /// I/O supply, above 50 MS/s, and never the core supply.
@@ -395,15 +401,17 @@ impl SetSampleRate {
         rate
     }
 
-    /// Whether setting `rx` and `tx` with TX running leaves a link the TX MMCM can be
-    /// configured for on every CGEN pass libusdr may lock ([`MmcmPlan::fits`]), before any
-    /// bus access: the link calibration reprograms it for every phase it sweeps. A pass
-    /// the LMS7002M refuses fails the rate before any calibration, so it fits.
-    pub(crate) fn tx_clock_fits(
+    /// Whether setting `rx` and `tx` leaves a link the MMCM can be configured for with
+    /// `rx_master` (RX, or TX) as the master on every CGEN pass libusdr may lock
+    /// ([`MmcmPlan::fits`]), before any bus access: the link calibration reprograms it for
+    /// every phase it sweeps. A pass the LMS7002M refuses fails the rate before any
+    /// calibration, so it fits.
+    pub(crate) fn clock_fits(
         control: &Control,
         state: RateState,
         gateware: Gateware,
         (rx, tx): (u32, u32),
+        rx_master: bool,
     ) -> bool {
         let pumped = state.double_pump || (!state.afe_active && (rx > SISO_RATE || tx > SISO_RATE));
         let mut request =
@@ -411,13 +419,14 @@ impl SetSampleRate {
         request.flags = Self::rate_flags(pumped);
         (0..).map_while(|pass| request.plan(pass)).all(|plan| {
             plan.map_or(true, |(clocks, lml)| {
-                MmcmPlan::fits(&MmcmLink {
+                let link = MmcmLink {
                     clocks,
                     lml,
                     double_pump: pumped,
                     separate_clkdiv: gateware.separate_clkdiv,
                     overrides: state.overrides,
-                })
+                };
+                MmcmPlan::fits(&link, rx_master)
             })
         })
     }
@@ -688,6 +697,7 @@ impl SetSampleRate {
         let call = MmcmCall {
             rx_phase,
             clock_reduce: self.sweep.clock_reduce,
+            rx_master: !self.tx,
             ..MmcmCall::default()
         };
         match MmcmPlan::new(&self.mmcm_link(), call) {
@@ -709,11 +719,10 @@ impl SetSampleRate {
         }
     }
 
-    /// The link's clock before the sweep: with TX running the TX MMCM at its default
-    /// phases (libusdr's RX-master call returns at once without an RX MMCM), then the
-    /// `LimeLight` reset.
+    /// The link's clock before the sweep: the MMCM at its default phases when the
+    /// calibration clocks it ([`Self::mmcm_clocked`]), then the `LimeLight` reset.
     fn link_clock(&mut self) {
-        if self.tx {
+        if self.mmcm_clocked() {
             self.configure_mmcm(Stage::Mmcm, 0);
             return;
         }
@@ -726,8 +735,8 @@ impl SetSampleRate {
         self.step(stage, Step::i2c(write, lp8758::NAME));
     }
 
-    /// The calibration with a TX MMCM: RX streamed up unless it runs (the RX MMCM, which
-    /// this gateware lacks, would be configured next), then the `LimeLight` reset.
+    /// The calibration with a TX MMCM: RX streamed up unless it runs, then the link's
+    /// clock and the `LimeLight` reset.
     fn calibrate(&mut self) {
         if self.control.rx_running().contains(&true) {
             self.link_clock();
@@ -804,7 +813,7 @@ impl SetSampleRate {
     /// The probe's next step, or its verdict.
     fn probe_advance(&mut self) {
         let next = match self.sweep.probe {
-            Probe::Lead if self.tx => Probe::Mmcm,
+            Probe::Lead if self.mmcm_clocked() => Probe::Mmcm,
             Probe::Lead | Probe::Mmcm => {
                 if let Some(error) = self.mmcm_failure() {
                     self.stage = Stage::Done(Err(error));
@@ -918,14 +927,22 @@ impl SetSampleRate {
             self.after_rx_calibration();
             return;
         }
-        // The best-effort probe: no lead wait; the TX MMCM first with TX running.
+        // The best-effort probe: no lead wait; the MMCM first when the calibration clocks
+        // it.
         sweep.phase = 0;
-        sweep.probe = if self.tx {
+        self.sweep.probe = if self.mmcm_clocked() {
             Probe::Mmcm
         } else {
             Probe::FifoReset
         };
         self.probe_step();
+    }
+
+    /// Whether the calibration reconfigures the MMCM per RX phase: with TX running, as
+    /// TX's; otherwise on gateware with an RX or shared MMCM, as RX's (libusdr's RX-master
+    /// calls return at once without one).
+    const fn mmcm_clocked(&self) -> bool {
+        self.tx || self.gateware.rx_mmcm
     }
 
     /// After the best-effort probe: done when clean, else the next retry.

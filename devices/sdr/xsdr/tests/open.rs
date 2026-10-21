@@ -293,5 +293,9 @@ fn a_dropped_device_closes_the_board_as_close_does() {
     device.power_up().expect("its RFIC powers up");
     let opened = sim.board().trace().len();
     drop(device);
-    assert_eq!(sim.board().trace()[opened..], closed, "the same close, once");
+    assert_eq!(
+        sim.board().trace()[opened..],
+        closed,
+        "the same close, once"
+    );
 }

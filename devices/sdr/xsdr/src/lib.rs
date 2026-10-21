@@ -17,8 +17,9 @@
 //! [`Device::send`]; the stream engine's registers are `sdr-stream`'s, shared with the
 //! uSDR) with the TX MMCM, the TX phase calibration and the TX quality check, and the
 //! close ([`Device::close`]); the probe brings up every board the connector admits, as
-//! libusdr does. Not yet ported: the sSDR variants (identified, then refused), gateware with an RX or shared MMCM, a DUC/DDC or the
-//! extended TX front end, and the RF calibrations. The LMS7002M's register values,
+//! libusdr does; gateware with an RX or shared MMCM too. Not yet ported: the sSDR
+//! variants (identified, then refused), gateware with a DUC/DDC or the extended TX front
+//! end, and the RF calibrations. The LMS7002M's register values,
 //! chip operations and control code are `lms7002m`'s. See `PORTING.md` beside this crate.
 //!
 //! # The XSDR board
