@@ -1,5 +1,6 @@
 //! TI `ADS42LBx9` dual-channel ADC: the SPI frames and registers libusdr's
-//! `hw/ads42lbx9/ads42lbx9.c` uses at open and close.
+//! `hw/ads42lbx9/ads42lbx9.c` uses at open, in the sample rate's normal mode
+//! ([`normal_mode`]) and at close.
 //!
 //! The datasheet is not vendored; addresses and bits are libusdr's (`enum ads42lbx9`,
 //! `MAKE_CTRL`). Frame, as `ads42lbx9_wr`/`_rd` build the SPI word: bit 15 set for a read,
@@ -27,6 +28,19 @@ pub(crate) enum Reg {
     /// The register `ads42lbx9_reset_and_check` reads to find the chip; see
     /// [`is_present`]. `REG_HF0`.
     Hf0 = 0x0d,
+
+    /// The test-pattern generator, channel B's pattern in bits 7:4 and A's in 3:0; 0 is
+    /// libusdr's `TP_NORMAL`, conversion data. `REG_CP_GEN`.
+    PatternGenerator = 0x0f,
+
+    /// LVDS output options. `REG_LVDS_OPTS`.
+    LvdsOptions = 0x14,
+
+    /// Channel A's QDR output setting. `REG_QDR_CHA`.
+    QdrChannelA = 0x17,
+
+    /// Channel B's QDR output setting. `REG_QDR_CHB`.
+    QdrChannelB = 0x18,
 }
 
 /// Powers the chip and its channels down, and resets it. `REG_PWR_CONTROL`, as libusdr's
@@ -79,7 +93,12 @@ pub(crate) fn read(target: SpiAddr, reg: Reg) -> FpgaAccess {
 
 /// The SPI exchange writing `value` to the ADC at `target` (`ads42lbx9_wr`).
 pub(crate) fn write<R: Register<Map = Reg>>(target: SpiAddr, value: R) -> FpgaAccess {
-    let (reg, data) = value.entry();
+    write_entry(target, value.entry())
+}
+
+/// The SPI exchange writing the `(register, byte)` `entry` to the ADC at `target`
+/// (`ads42lbx9_wr`).
+pub(crate) fn write_entry(target: SpiAddr, (reg, data): (Reg, u8)) -> FpgaAccess {
     let addr = u8::from(reg);
     FpgaAccess::Spi {
         target,
@@ -87,6 +106,22 @@ pub(crate) fn write<R: Register<Map = Reg>>(target: SpiAddr, value: R) -> FpgaAc
         reg: addr.into(),
         write: true,
     }
+}
+
+/// The writes `ads42lbx9_set_normal` issues, in its order (`ads42lbx9_set_generic`, then
+/// the pattern generator off): power control 0x0C (bits 3 and 2, which libusdr sets and
+/// does not name; the source's own comment drops the per-channel bits), plus the chip's
+/// power-down (0x20) unless `any_channel`; channel A's QDR setting 0x8A, B's 0x0A, the LVDS
+/// options 12, conversion data. The datasheet is not vendored; the values are libusdr's.
+pub(crate) const fn normal_mode(any_channel: bool) -> [(Reg, u8); 5] {
+    let power = if any_channel { 0x0c } else { 0x0c | 0x20 };
+    [
+        (Reg::PowerControl, power),
+        (Reg::QdrChannelA, 0x80 | 0x5 << 1),
+        (Reg::QdrChannelB, 0x5 << 1),
+        (Reg::LvdsOptions, 12),
+        (Reg::PatternGenerator, 0),
+    ]
 }
 
 /// Whether a [`Reg::Hf0`] read shows an `ADS42LBx9`: `ads42lbx9_reset_and_check` accepts
@@ -120,6 +155,18 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn normal_mode_is_libusdrs_words_and_powers_a_chip_without_channels_down() {
+        let words = |any| {
+            normal_mode(any).map(|entry| match write_entry(SpiAddr(0), entry) {
+                FpgaAccess::Spi { word, .. } => word,
+                other => panic!("an SPI exchange: {other:?}"),
+            })
+        };
+        assert_eq!(words(true), [0x080c, 0x178a, 0x180a, 0x140c, 0x0f00]);
+        assert_eq!(words(false)[0], 0x082c);
     }
 
     #[test]

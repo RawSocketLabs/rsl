@@ -85,6 +85,7 @@ dependencies = [
  "bitsandbytes",
  "hal",
  "sdr-frontend",
+ "sdr-gearbox",
  "thiserror",
 ]
 
@@ -160,6 +161,10 @@ dependencies = [
  "lmk05318",
  "thiserror",
 ]
+
+[[package]]
+name = "sdr-gearbox"
+version = "0.0.0"
 
 [[package]]
 name = "serde_core"
