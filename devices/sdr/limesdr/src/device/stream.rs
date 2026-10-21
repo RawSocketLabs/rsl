@@ -30,7 +30,12 @@ pub struct RxPacket {
     /// sync last reset it, zero samples filled in for lost ones included.
     pub time: u64,
 
-    /// Whole packets lost since the stream was created, as libusdr counts them.
+    /// Whole packets lost since the stream was created, as libusdr counts them (wrapping):
+    /// a gap between bursts' times adds its whole packets. A stream sync resets the
+    /// gateware's time but not the stream's last burst, so the first burst after a stop
+    /// and start counts as a gap of nearly 2^64 samples: as in libusdr, this count jumps by
+    /// about 2^64 over the packet size, and that receive delivers the samples held from
+    /// before the restart, then zeroes, with a time near 2^64.
     pub lost_packets: u64,
 }
 
@@ -69,11 +74,8 @@ impl Device {
         if self.rx_stream.is_some() {
             return Err(Error::AlreadyStreaming);
         }
-        let bursts = rx_bursts(samples_per_packet);
-        let deframer = RxDeframer::new(samples_per_packet, bursts);
-        if samples_per_packet == 0 || bursts.checked_mul(BURST_BYTES).is_none() {
-            return Err(Error::UnsupportedPacketSize(samples_per_packet));
-        }
+        let deframer = RxDeframer::new(samples_per_packet, rx_bursts(samples_per_packet))
+            .ok_or(Error::UnsupportedPacketSize(samples_per_packet))?;
         self.prepare_streaming()?;
         let block_bytes = deframer.block_bytes();
         self.port
@@ -224,7 +226,8 @@ impl Device {
     /// than the stream's block holds or a count not a multiple of 4;
     /// [`Error::UnsupportedTimestamp`] for a time at or after 2^63, which libusdr would
     /// take for none. Then [`Error::Timeout`] when no buffer frees in time, or
-    /// [`Error::Stream`] for another transport failure or a buffer shorter than the block.
+    /// [`Error::Stream`] for another transport failure or a buffer shorter than the block,
+    /// which is then not committed.
     pub fn send(
         &mut self,
         samples: &[[i16; 2]],
@@ -246,20 +249,18 @@ impl Device {
             return Err(Error::UnsupportedTimestamp(time));
         }
         let needed = tx_frame_bytes(samples.len());
-        let mut written = 0;
+        let mut written = None;
         self.port
             .tx_stream_send(timeout, time, &mut |buffer| {
-                let Some(out) = buffer.get_mut(..needed) else {
-                    return 0;
-                };
-                written = frame_tx(samples, time, out);
+                let out = buffer.get_mut(..needed)?;
+                written = Some(frame_tx(samples, time, out));
                 written
             })
             .map_err(|error| match error {
                 BusError::Timeout => Error::Timeout,
                 other => Error::Stream(other),
             })?;
-        if written != needed {
+        if written.is_none() {
             return Err(Error::Stream(BusError::Unsupported(
                 "TX buffer shorter than the block",
             )));

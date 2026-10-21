@@ -209,7 +209,7 @@ pub fn frame_and_receive() -> Result<(usize, u64), &'static str> {
     if SAMPLES % TX_SAMPLE_MULTIPLE != 0 {
         return Err("TX multiple");
     }
-    let mut deframer = RxDeframer::new(SAMPLES, rx_bursts(SAMPLES));
+    let mut deframer = RxDeframer::new(SAMPLES, rx_bursts(SAMPLES)).ok_or("RX stream")?;
     if deframer.block_bytes() as usize != BLOCK {
         return Err("RX block");
     }

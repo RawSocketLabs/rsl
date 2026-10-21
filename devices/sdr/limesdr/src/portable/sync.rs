@@ -78,7 +78,8 @@ impl StreamSync {
     /// the timestamp reset (after the check libusdr's debug build makes, `#ifndef NDEBUG`,
     /// that streaming is stopped), the channel-A TX DC DACs set and the DC correctors
     /// enabled for the running paths, SISO SDR on channel 0, then streaming started and
-    /// the TX packet-loss and sample-count clears pulsed (`5 << 1`, bits 1 and 3).
+    /// bits 1 and 3 of the clears pulsed (`5 << 1`: `TXPCT_LOSS_CLR` and a bit the source
+    /// does not name).
     pub(crate) fn setup(control: &Control) -> Self {
         let chip = control.chip();
         let reset = fpga::CLEAR_TX_LOSS | fpga::CLEAR_SAMPLES;

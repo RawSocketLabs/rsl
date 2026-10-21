@@ -323,7 +323,7 @@ fn tx_packet_sizes_are_checked_like_libusdr() {
 }
 
 #[test]
-fn both_streams_after_a_rate_and_repeated_syncs_match_libusdr() {
+fn both_streams_with_repeated_syncs_match_libusdr() {
     let calls = [
         Call::Stop,
         Call::CreateRx(2040),
