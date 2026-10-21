@@ -10,11 +10,11 @@ rust-version.workspace = true
 
 [dependencies]
 bnb.workspace = true
-hal.workspace = true
+hal = { workspace = true, optional = true }
 
 [features]
 ## The chip's blocking bus traffic over `hal`'s `Bus` (`driver`).
-std = ["hal/std"]
+std = ["dep:hal", "hal/std"]
 
 [lints]
 workspace = true

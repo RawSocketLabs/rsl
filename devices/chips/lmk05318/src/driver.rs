@@ -67,7 +67,7 @@ impl fmt::Display for Error {
             Self::ChipId { expected, found } => {
                 write!(f, "{NAME} reports ID {found:#x}, expected {expected:#x}")
             }
-            Self::ClockPlan(error) => error.fmt(f),
+            Self::ClockPlan(_) => write!(f, "no {NAME} clock plan for the request"),
             Self::Unlocked(pll) => write!(f, "{pll} did not lock"),
         }
     }
