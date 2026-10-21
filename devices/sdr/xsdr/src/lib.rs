@@ -47,8 +47,8 @@ mod portable;
 mod trim_dac;
 
 pub use device::{
-    Device, IqCorrection, LmlRxMode, RxChannels, RxPacket, StreamSync, TxChannels, TxGenerator,
-    TxMute, TxTelemetry,
+    ClockReadings, Device, IqCorrection, LmlRxMode, RxCapture, RxChannels, RxPacket, RxPhyDelay,
+    StreamSync, TxChannels, TxGenerator, TxMute, TxTelemetry,
 };
 pub use error::{Access, Error};
 pub use lms7002m::Mac;

@@ -226,6 +226,11 @@ pub enum Error {
     #[error("phase override {0} is past 512")]
     InvalidPhase(u16),
 
+    /// An RX PHY delay above 31, which libusdr masks to five bits, refused before any bus
+    /// access.
+    #[error("RX PHY delay {0} is past 31")]
+    InvalidDelay(u8),
+
     /// A TX time past the TX core's 47 bits.
     #[error("TX time {0} is past the TX core's 47 bits")]
     UnsupportedTimestamp(u64),
