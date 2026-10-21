@@ -122,8 +122,9 @@ impl Device {
     /// # Errors
     ///
     /// Before any bus access: [`Error::AlreadyStreaming`] with a stream;
-    /// [`Error::UnsupportedGateware`] as for [`Self::set_sample_rate`]; with a TX stream,
-    /// [`Error::TxClockOutOfRange`] as for [`Self::create_tx_stream`]. After the map:
+    /// [`Error::TxClockOutOfRange`] as for [`Self::create_tx_stream`] with a TX stream,
+    /// and on gateware with an RX or shared MMCM for RX's link (the default rate's
+    /// included). After the map:
     /// [`Error::DoublePumpedMimo`] for both channels on a double-pumped link. Then a
     /// sample rate's or streaming up's errors, [`Error::LinkCalibration`],
     /// [`Error::ChipMissing`] for an RX DMA engine that reads dead,
