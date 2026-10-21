@@ -6,21 +6,23 @@
 > facts.
 
 A pure-Rust port of libusdr's LMS7 family, its board simulator and the libusdr reference
-oracle. The driver covers XSDR identification, supply bring-up and the front-end probe at
-open with every board libusdr brings up there (`sdr-frontend`'s, shared with the uSDR
-and LSDr), RFIC power-up, sample rate (on gateware with a TX MMCM), RX/TX LO tuning (FDD
-and TDD), gains, baseband bandwidths, explicit paths with the RF loopback, the baseband
-NCOs, the DC and I/Q corrections, the TX generator and mute, the baseband and digital
-loopbacks, the RX and TX streams (`ci16` on channel A, B or both) with the TX MMCM, the
-TX phase calibration and the TX quality check, and close; see
-[PORTING.md](PORTING.md) for done,
-divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
+oracle. The driver covers XSDR and XTRX identification and supply bring-up (the XTRX's
+two PMICs and reference-trim DAC), the XSDR's front-end probe at open with every board
+libusdr brings up there, with or without an `fe=` hint, and those boards' controls
+(`sdr-frontend`'s, shared with the uSDR and LSDr), RFIC power-up, sample rate (on gateware
+with a TX MMCM, an RX or shared MMCM too, and a DUC/DDC), RX/TX LO tuning (FDD and TDD),
+gains, baseband bandwidths, explicit paths with the RF loopback, the baseband NCOs, the
+DC and I/Q corrections, the TX generator and mute, the baseband and digital loopbacks, the
+RX and TX streams (`ci16` on channel A, B or both; the original or extended TX core) with
+their sync modes and options, the TX MMCM, the TX phase calibration and its overrides,
+the TX quality check, the link's debug controls, the board's readings, and close (also on
+drop); see [PORTING.md](PORTING.md) for done, divergences and remaining. Boards: LMS7002M RFIC, LP8758 PMIC(s), and per variant an XTRX
 reference-trim DAC (DAC80501 or MCP4725) or, on sSDR, an LMS8001 up/down-converter and AT24
 secure EEPROM. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `hal`, `lp8758`, `lms7002m`, `sdr-frontend` (`../frontend`, the front-end board probe and bring-ups), `sdr-stream` (`../stream`, the stream engine) and `sdr-cal` (`../cal`, the quality check's tone fit) |
+| `.` | `xsdr` (unpublished, root workspace member) | The driver, on `hal`, `lp8758`, `lms7002m`, `sdr-frontend` (`../frontend`, the front-end board probe, bring-ups and controls), `sdr-stream` (`../stream`, the stream engine), `sdr-cal` (`../cal`, the quality check's tone fit) and `sdr-gearbox` (`../gearbox`, the DUC/DDC's FIR microcode) |
 | `sim/` | `xsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, LMS7002M SPI register file, I2C chips, the front-end boards on the M.2 connector (`sdr-frontend-sim`, `../frontend/sim`, shared with `usdr-sim`), the RX stream engine, TX core and sync unit (`sdr-stream-sim`, `../stream/sim`, likewise shared), the TX PHY port with its MMCM and A/B-I/Q tables and the RX PHY capture, virtual clock, op trace |
 | `oracle/` | `xsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_lm7_1` driving `sim` through `oracle/shim/sim_plugin.c`, its RX and TX streams' buffers included, with libusdr's division traps caught (`set_uint_trapping`) |
 | `nostd-check/` | `xsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `usdr`'s; `scripts/ci/portable.py xsdr` holds its dependencies to the driver's |
@@ -39,11 +41,14 @@ pattern instead of sharing it; a shared harness is extracted later, once both ar
 
 Mirrors `usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
 
-- `src/device.rs`: `Device`, the public API: `open` (identification, then the XSDR's
-  supplies), `power_up`, `set_sample_rate`, `set_rx_frequency`, `set_tx_frequency`,
-  `set_gain`, `set_bandwidth` and `close`, with the other RF and baseband controls
-  (paths, TDD, NCOs, corrections, generator, loopbacks) in `src/device/controls.rs`,
-  each one libusdr device-manager path. It owns the bus (`Box<dyn Bus>`), the LMS7002M
+- `src/device.rs`: `Device`, the public API: `open` and `open_with` (identification, then
+  the variant's supplies), `power_up`, `set_sample_rate`, `set_rx_frequency`,
+  `set_tx_frequency`, `set_gain`, `set_bandwidth` and `close` (also on drop), with the
+  other RF and baseband controls (paths, TDD, NCOs, corrections, generator, loopbacks) in
+  `src/device/controls.rs`, the front ends' controls and oscillator trim in
+  `frontend.rs`, the phase overrides and the quality check on its own in `link.rs`, the
+  streams' options in `stream_options.rs` and the debug controls and readings in
+  `diagnostics.rs`, each one libusdr device-manager path. It owns the bus (`Box<dyn Bus>`), the LMS7002M
   control state (`lms7002m::ctrl::Control`, its chip cache zeroed until a power-up
   creates it) and the board's rate and LO state, and runs the portable sequences and
   control operations with `hal`'s blocking `run_sequence`, keeping the state an
@@ -56,27 +61,32 @@ Mirrors `usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
   (`RxChannels`) and the RF side stay here. Blocking code over the bus, as the uSDR's
   `board/stream.rs`.
 - `src/device/tx_stream.rs`: the TX stream (`create_tx_stream`, `start_tx_stream`,
-  `send`, `stop_tx_stream`), as the RX stream's, on the original TX core (`sdr-stream`'s
-  words); `src/device/quality.rs`: the TX quality check a rate runs while TX streams,
-  host-side (its fit is `sdr-cal`'s floating-point arithmetic).
-- `src/board.rs`: the XSDR's wiring and setpoints (`XSDR_SUPPLIES`, `XSDR_LMS`,
-  `REFERENCE_HZ`), each citing the libusdr call it reproduces.
+  `send`, `stop_tx_stream`), as the RX stream's, on the original or extended TX core
+  (`sdr-stream`'s words); `src/device/quality.rs`: the TX quality check a rate runs while
+  TX streams, host-side (its fit is `sdr-cal`'s floating-point arithmetic).
+- `src/board.rs`: the XSDR's and XTRX's wiring and setpoints (`XSDR_SUPPLIES`,
+  `XTRX_SUPPLIES`, `XSDR_LMS`, `XTRX_LMS`, `REFERENCE_HZ`, `PMIC`), each citing the
+  libusdr call it reproduces.
 - `src/portable/`: hand-written sans-I/O `Sequence` machines (`IdentityRead`, `Supplies`,
-  `PowerUp`, `SetSampleRate` in `rate`, `Close`, the TX MMCM's `ConfigureMmcm` in `mmcm`
-  and the TX phase calibration `TxCalibration` in `txcal`), the XSDR's control-code hooks
+  the XTRX's `XtrxSupplies` in `xtrx`, `PowerUp`, `SetSampleRate` in `rate`, `Close`, the
+  MMCM's `ConfigureMmcm` and `OverrideTxPhase` in `mmcm`, the TX phase calibration
+  `TxCalibration` in `txcal` and the DUC/DDC's `UpdateFeDsp` in `gearbox`), the XSDR's
+  control-code hooks
   (`frontend`: antenna switches, `LimeLight` maps, band tables), a one-action sequence
   (`step`) and the facts they need (`fpga`: GPO banks and bits, the HWID register, the RX
   PHY port, the TX PHY's registers, the TX MMCM power-down and delay). The LMS7002M's own operations and control
   code are `lms7002m`'s; how the family composes them (`xsdr_ctrl.c`) is here.
   Core only, no allocation; imports stay within the tree and the shared `no_std` crates
   (`nostd-check` compiles it unchanged).
+- `src/trim_dac.rs`: the XTRX's reference-trim DAC (DAC80501 or MCP4725), blocking, as
+  its 16-bit transfers do not fit the portable I2C actions.
 - `src/fe_probe.rs`: the front-end board probe at the end of open, `sdr-frontend`'s
-  with compatibility `m2a+e` and no hint (not the RFIC's own RF front end in
+  with compatibility `m2a+e` and the open's hint (not the RFIC's own RF front end in
   `portable/frontend`). Every board the connector admits comes up whole there, as on the
   uSDR (the `PCIe` front end, XMASS, `SuperSync`, `SimpleSync`, the breakout); `Device`
   keeps the `FrontEnd` and reports its kind (`Device::front_end`). fe4ch4007200, whose
   bring-up is not ported, cannot answer: its chips sit on I2C core 1, which the XSDR's
-  transports refuse. The boards' controls are not offered yet (`PORTING.md`).
+  transports refuse. The boards' controls are `src/device/frontend.rs`'s.
 - `src/lowlevel.rs`: `hal`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `xsdr-sim`; the oracle's parity tests include
   it with `#[path]`.
@@ -103,7 +113,7 @@ small, and then `PORTING.md` says so.
 | HWID 23:16 | Variant | libusdr path | Init talks to | Sim |
 |---|---|---|---|---|
 | `0x30` | XSDR | `new_rev`: `_xsdr_init_revx`, then front-end probe on I2C bus 1 | PMIC 0:0x60 (rev 0xe001) | Full: open, power-up, close |
-| `0x2e` | XTRX | `_xsdr_init_revo`; no front-end probe; power-up skips the LDO GPO | PMIC 1:0x60 then 0:0x60 (both 0xe001), DAC80501 0:0x4b (DEVID 0x0194/0x0195/0x2195) or MCP4725 0:0x62 | Full, revision 5 (DAC80501) only |
+| `0x2e` | XTRX | `_xsdr_init_revo`; no front-end probe; power-up skips the LDO GPO | PMIC 1:0x60 then 0:0x60 (both 0xe001), DAC80501 0:0x4b (DEVID 0x0194/0x0195/0x2195) or MCP4725 0:0x62 | Full; revision 4 as an absent DAC80501 (`without_trim_dac`), its MCP4725 the idle bus |
 | `0x31` | sSDR | `new_rev` + `ssdr`: also LMS8001 detection over the SPI mux, 5 tries | PMIC 0:0x60 (0xe001), LMS8001 (reg 0x000F = 0x4040) | Identified only: refused with `-EFAULT` (no LMS8001) |
 | `0x33` | sSDR Pro | as sSDR, plus AT24 serial at 0x58 | PMIC 0:0x60 (0xe302) | Identified only, as sSDR |
 | other | — | `-EINVAL`, unless `XSDR_FORCE` (then treated as XSDR-like `new_rev`) | nothing | Refusal tested |
@@ -149,6 +159,8 @@ Each is stated again, with its evidence, where it is encoded.
   MMCM that stops locking or one without a clock (fault injection, not a model).
 - `SimBoard::with_lms_comparator_failure` forces the VCO comparators to "fail" at one cap
   code (fault injection, not a model).
+- TX core: the original one, or with HWID PHY bit 0x08 (`with_hwid`) the extended one
+  (`sdr-stream-sim`'s `TxEngine::extended`, the uSDR sim's model, one burst per packet).
 - RX stream engine, TX core and sync unit: `sdr-stream-sim`'s models, the uSDR sim's,
   with their assumptions stated there (a counting pattern, channel B on lanes 2 and 3,
   blocks ready at once, no losses; TX packets played as soon as the core runs and the
@@ -180,7 +192,8 @@ Each is stated again, with its evidence, where it is encoded.
 - XTRX bus 1 PMIC answers only while GPO 0 bit 4 hands bus 1 to the FPGA (evidence: the
   "Take control of second I2C bus" / "Switch second I2C to gpio control" writes).
 - DAC80501 (XTRX revision 5): 16-bit registers, MSB first; `DEVID` 0x0195 (assumed; the
-  datasheet is not vendored).
+  datasheet is not vendored); `SimBoard::without_trim_dac` removes it (revision 4, whose
+  MCP4725 at 0x62 is not modelled: the idle bus).
 - LMS8001 (sSDR): absent; while selected, SPI reads all ones. AT24: absent.
 - Absent I2C devices read `0xff` per byte, as in `usdr-sim` (no NACK is reported by
   either transport). The XSDR front-end probe sees the idle bus as GPIO expanders, fails
@@ -239,8 +252,11 @@ loopbacks, TDD, NCO, correction and generator paths (`Device`'s `controls`), and
 with every packet's bytes; `oracle/tests/tx_stream_parity.rs` likewise for the TX
 stream (every packet the TX core played, every send's statistics), the TX MMCM and the
 TX phase calibration, scripted RX PHY reads driving its sweeps; and
-`oracle/tests/quality_parity.rs` for a rate while TX streams, up to libusdr's division
-trap in its quality check (`PORTING.md`).
+`oracle/tests/quality_parity.rs` for a rate while TX streams and the check on its own, up
+to libusdr's division trap (whole on DUC/DDC gateware); `oracle/tests/frontend_controls_parity.rs`
+for every `fe=` hint and front-end control; `oracle/tests/diagnostics_parity.rs` for the
+debug controls and readings, values included. The XTRX's session is compared whole in
+`open_parity.rs`, its rates, streams and readings in the files above.
 
 ## Verify
 
@@ -272,10 +288,11 @@ by a lock: one is open at a time per process.
   register map with defaults; neither is in the PIN subset.
 - sSDR/sSDR Pro: an LMS8001 model (SPI mux, `lms8001_create`, ID 0x4040) and AT24.
 - XTRX revision 4 (MCP4725 at 0x62) is not modelled.
-- The RX port's MMCM (via the DRP class, which the oracle refuses) must be modelled
-  before RX/shared-MMCM gateware; the TX port's is (`sim/src/tx_phy.rs`). Refusing the
-  TX links whose MMCM configuration libusdr reads past `mmcm_rom` for is pending owner
-  review (deferred; `PORTING.md`, divergences).
+- RX/shared-MMCM gateware drives the TX PHY port's one MMCM with RX as its master
+  (`sim/src/tx_phy.rs` models it); only `phyrxlml` reaches the RX port's DRP, which the
+  oracle refuses, and is not ported. Refusing the links whose MMCM configuration libusdr
+  reads past `mmcm_rom` for, TX or RX master, is pending owner review (deferred;
+  `PORTING.md`, divergences).
 - CI runs the detached oracle as the `xsdr-oracle` profile and the fixture as
   `xsdr-portable` (host only); a change to `xsdr` or to the shared crates it builds on
   (`sdr-frontend` included) selects both, a change to the vendored C (`devices/vendor`)
