@@ -2115,6 +2115,7 @@ dependencies = [
  "hal",
  "limesdr-sim",
  "lms7002m",
+ "sdr-formats",
  "thiserror 2.0.21",
 ]
 

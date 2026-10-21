@@ -65,6 +65,13 @@ unsafe extern "C" {
     ) -> c_int;
     fn limesdr_shim_fpga_info(out: *mut u16) -> c_int;
     fn limesdr_shim_create_errno() -> c_int;
+    fn limesdr_shim_stream_params(out: *mut c_uint) -> c_uint;
+    fn get_transform_fn(
+        from: *const c_char,
+        to: *const c_char,
+        inputs: c_uint,
+        outputs: c_uint,
+    ) -> TransformInfo;
     fn lms64c_fill_packet(
         cmd: u8,
         status: u8,
@@ -81,6 +88,45 @@ unsafe extern "C" {
         data: *mut u8,
         length: c_uint,
     ) -> c_int;
+}
+
+/// The transport stream setup libusdr's `create_limesdr_stream` asks for
+/// (`lowlevel_stream_params_t`'s fields it sets).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StreamParams {
+    /// `streamno`: 0 for RX, 1 for TX (`LIMESDR_RX`, `LIMESDR_TX`).
+    pub stream_number: u32,
+    /// `block_size`: bytes per transport buffer, headers included.
+    pub block_bytes: u32,
+    /// `buffer_count`.
+    pub buffers: u32,
+    /// `flags`: `LLSF_NEED_FDPOLL` or 0.
+    pub flags: u32,
+}
+
+/// libusdr's `transform_info_t`: the converter `get_transform_fn` selects and its size
+/// function.
+#[repr(C)]
+struct TransformInfo {
+    /// `cfunc`, null for no converter.
+    convert: *const c_void,
+    /// `sfunc`, null for no converter.
+    size: Option<unsafe extern "C" fn(c_uint, bool) -> c_uint>,
+}
+
+/// libusdr's `get_transform_fn(from, to, 1, 1)` size function at `bytes` (`sfunc(bytes,
+/// reverse)`): the converted size of `bytes` of `from`, or with `reverse` the `from`
+/// size that converts to `bytes` of `to`. `None` where libusdr has no converter.
+#[must_use]
+pub fn transform_size(from: &CStr, to: &CStr, bytes: u32, reverse: bool) -> Option<u32> {
+    // SAFETY: both names are NUL-terminated; the function only compares them.
+    let info = unsafe { get_transform_fn(from.as_ptr(), to.as_ptr(), 1, 1) };
+    let size = info.size?;
+    if info.convert.is_null() {
+        return None;
+    }
+    // SAFETY: a size function libusdr returned, called with plain values.
+    Some(unsafe { size(bytes, reverse) })
 }
 
 /// A `proto_lms64c_t`, aligned as the 32- and 16-bit stores and loads libusdr's builder and
@@ -326,6 +372,62 @@ impl Oracle {
             "invariant: the shim refuses every transport stream"
         );
         if errno == 0 { Ok(()) } else { Err(errno) }
+    }
+
+    /// Creates a stream in libusdr's data format `format` (`host@wire`, such as
+    /// `c"cf32@ci12"`), on `/ll/srx/0` if `rx`, else `/ll/stx/0`, with
+    /// `samples_per_packet` samples per packet, as [`Self::create_rx_stream`] does: the
+    /// shim refuses the transport's stream, so libusdr's success is `-EOPNOTSUPP`. Returns
+    /// libusdr's errno and the transport stream setup `create_limesdr_stream` asked for,
+    /// if it got that far.
+    ///
+    /// # Panics
+    ///
+    /// If libusdr created a stream, which the shim rules out, or asked for more than one
+    /// transport stream.
+    pub fn create_stream(
+        &mut self,
+        rx: bool,
+        format: &CStr,
+        samples_per_packet: u32,
+    ) -> (i32, Option<StreamParams>) {
+        let Some(dev) = self.dev else {
+            return (-EINVAL, None);
+        };
+        let mut words = [0; 4];
+        // SAFETY: `words` is valid for the four words the shim writes; this also clears
+        // its count of requests.
+        unsafe { limesdr_shim_stream_params(words.as_mut_ptr()) };
+        let path = if rx { c"/ll/srx/0" } else { c"/ll/stx/0" };
+        let mut stream: *mut c_void = ptr::null_mut();
+        // SAFETY: `dev` is open, the strings NUL-terminated and `stream` a valid
+        // out-pointer, written only when a stream is created.
+        let errno = unsafe {
+            usdr_dms_create(
+                dev.as_ptr(),
+                path.as_ptr(),
+                format.as_ptr(),
+                1,
+                samples_per_packet,
+                &raw mut stream,
+            )
+        };
+        resume_callback_panic();
+        assert!(
+            stream.is_null(),
+            "invariant: the shim refuses every transport stream"
+        );
+        // SAFETY: as above.
+        let requests = unsafe { limesdr_shim_stream_params(words.as_mut_ptr()) };
+        assert!(requests <= 1, "one transport stream per create");
+        let [stream_number, block_bytes, buffers, flags] = words;
+        let params = (requests == 1).then_some(StreamParams {
+            stream_number,
+            block_bytes,
+            buffers,
+            flags,
+        });
+        (errno, params)
     }
 
     /// Reads a libusdr device-manager value, such as `c"/dm/revision"`.
