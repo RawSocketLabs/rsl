@@ -9,7 +9,7 @@ const SCALE: f32 = 1.0 / 32767.0;
 /// formats hold two values in three bytes, the first value in byte 0 and the low nibble of
 /// byte 1, the second in the high nibble of byte 1 and byte 2. A 12-bit value is the top 12
 /// bits of a 16-bit one: unpacking shifts it up four bits, packing drops the low four bits
-/// (except a lone last value; see [the module docs](super)). Floats map ±32767 to ±1.0.
+/// (except a lone last value; see [the crate docs](crate)). Floats map ±32767 to ±1.0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum SampleFormat {

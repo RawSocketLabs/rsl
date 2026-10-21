@@ -178,8 +178,9 @@ Each layer calls only the ones below it.
   would be an orphan impl). Board code sleeps only through `Bus::sleep`. The uSDR has one
   I2C core; its transports refuse any `I2cAddr` core but 0.
 - `src/dsp/`: public `usdr::dsp`, libusdr's host sample conversions and channel
-  (de)interleaving (`xdsp/conv.c` generic kernels, core-only scalar code);
-  `oracle/tests/conv_parity.rs` checks every converter against the compiled C.
+  (de)interleaving (`xdsp/conv.c` generic kernels, core-only scalar code), the shared
+  `sdr-formats`'s (`../formats`, 2026-10-21, for the XSDR's and LimeSDR's streams)
+  re-exported; `oracle/tests/conv_parity.rs` checks every converter against the compiled C.
   `window`, `fftad`, `rtsa` and `fm` port FFT windowing, log-power averaging, the RTSA
   histogram and FM quadrature (`oracle/tests/{fft,rtsa_fm}_parity.rs`).
 - `src/dsp/{filter,trig,nco,sincos}.rs`: block FIR (`xdsp/filter.c`, `conv_filter.c` generic

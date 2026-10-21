@@ -205,6 +205,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdr-formats"
+version = "0.0.0"
+
+[[package]]
 name = "sdr-frontend"
 version = "0.0.0"
 dependencies = [
@@ -388,6 +392,7 @@ dependencies = [
  "lp8758",
  "num-complex",
  "sdr-cal",
+ "sdr-formats",
  "sdr-frontend",
  "sdr-gearbox",
  "sdr-stream",

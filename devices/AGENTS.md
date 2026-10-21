@@ -24,6 +24,7 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 | `sdr/frontend/` | `sdr-frontend`, `sdr-frontend-sim` (`sim/`) | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and every bring-up it runs on the uSDR, XSDR and LSDr (`pciefe`, `xmass`, `supersync`, `simplesync`, `exm2pe`, `fe1005000`) with the boards' controls, shared by those drivers (`no_std` core, blocking probe behind `std`); and the M.2 boards' register models the uSDR and XSDR sims share |
 | `sdr/stream/` | `sdr-stream`, `sdr-stream-sim` (`sim/`) | the FPGA stream engine the uSDR and LMS7 family gateware share at the same addresses (`ipblks/streams/`): its register sequences (`EngineSequence`: RX DMA and front end, sync unit, TX cores), RX burst arithmetic (`BurstPlan`) and both TX cores' announcements and status, `no_std`; and the RX engine, TX cores and sync unit models the uSDR and XSDR sims share |
 | `sdr/gearbox/` | `sdr-gearbox` | libusdr's FPGA FIR gearbox microcode (`ipblks/fgearbox.c`: each 7-series decimation and interpolation table), moved out of `usdr` when the XSDR's DUC/DDC gateware needed it; `no_std`, no dependencies |
+| `sdr/formats/` | `sdr-formats` | libusdr's host sample-format conversions (`xdsp/conv.c`: `get_transform_fn` and its generic kernels), moved out of `usdr` (which re-exports them as `usdr::dsp`) when the XSDR's and LimeSDR's streams needed them; `no_std`, no dependencies |
 | `sdr/cal/` | `sdr-cal` | libusdr's calibration mathematics (`cal/opt_func.c` integer searches, `cal/cal_filt.c` sinusoid fits), moved out of `usdr` (which re-exports it as `usdr::cal`) when the XSDR's TX quality check needed the fit; `std` (floating-point `sin`/`cos`) |
 | `sync/pe_sync/` | `pe-sync`, `pe-sync-sim`, `pe-sync-oracle`, `pe-sync-nostd-check` | the PE_SYNC clock-distribution board driver: libusdr's whole open and close |
 
@@ -62,7 +63,13 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   (`sdr-gearbox`, 2026-10-21): the FPGA FIR gearbox's microcode tables, `usdr`'s
   `portable/fir_tables.rs`, when the XSDR's DUC/DDC gateware needed them; the LSDr's
   sample rate loads them too, with five decimation tables only it uses (×3, ×5, ×6, ×64,
-  ×128). Each driver keeps its own loader, as their write targets and gaps differ.
+  ×128). Each driver keeps its own loader, as their write targets and gaps differ. The
+  fifth is `sdr/formats` (`sdr-formats`, 2026-10-21): libusdr's host sample-format
+  converters, `usdr`'s `dsp::{Converter, SampleFormat, ConversionError}` (re-exported
+  there), when the XSDR's streams took its other formats and the LimeSDR's stream setup
+  selects a converter; a crate of its own rather than a part of `sdr-stream`, whose engine
+  the LimeSDR does not run (skeptic review, recorded in `sdr/xsdr/PORTING.md`). Which
+  formats a stream offers, and its buffer element types, stay in each driver.
 - Code every kind's drivers share lives in `devices/hal` (`hal`): libusdr's
   `ls_op` seam (`Bus`, `BusError`, I2C/SPI addresses), the typed-register traits and the
   portable `Sequence` seam with its blocking executor. It is `no_std` (std items behind

@@ -1,0 +1,14 @@
+[package]
+name = "sdr-formats"
+version = "0.0.0"
+description = "libusdr's host sample-format conversions (xdsp/conv.c), shared by the pure-Rust uSDR, LMS7 family and LimeSDR drivers."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
