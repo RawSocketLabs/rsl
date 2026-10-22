@@ -4,7 +4,7 @@
 //!
 //! Every board the connector admits comes up whole in the shared crate, as libusdr brings
 //! it up: the `PCIe` front end, XMASS, `SuperSync`, `SimpleSync` and the M.2-to-`PCIe`
-//! breakout. fe4ch4007200, the one board the shared crate does not bring up, cannot come
+//! breakout. fe4ch4007200, whose bring-up the shared crate runs on the `LSDr`, cannot come
 //! up on the XSDR: its chips sit on I2C core 1, which the XSDR's transports refuse (one
 //! core, `rev_generic`), and the automatic probe reaches it only if the breakout fails.
 
