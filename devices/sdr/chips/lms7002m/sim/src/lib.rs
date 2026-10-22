@@ -18,17 +18,26 @@
 //!   the driver programmed; the model and its assumptions are in `vco.rs`. Without one
 //!   they read as stored, like any register.
 //! - Channel banking: the chip duplicates some registers per channel, selected by
-//!   `LML_0x0020` MAC bits; which ones is not in the vendored source, so the file is flat
-//!   and MAC writes are stored like any other register. libusdr selects the bank before
-//!   each comparator read and rewrites every register the read depends on first, so a
-//!   flat file reads the same there.
+//!   `LML_0x0020` MAC bits; which ones the vendored source does not list, so the file
+//!   reads flat and MAC writes are stored like any other register. libusdr selects the
+//!   bank before each comparator read and rewrites every register the read depends on
+//!   first, so a flat file reads the same there. The RF model ([`Loopback`]) keeps its
+//!   own per-bank copy of the pages libusdr writes bank by bank (`rf.rs`); reads never
+//!   see it.
+//! - The receive output's DC, which an FPGA's DC estimator measures: with a
+//!   [`Loopback`] ([`Lms7002m::with_loopback`]), [`Lms7002m::rx_mean`] follows the
+//!   synthesizers, mixers, test generator, corrections and RF loopback the driver
+//!   programmed; the model and its assumptions are in `rf.rs`. Without one it is 0.
 //! - Soft resets (`LML_0x0020` reset bits) do not clear the file: with no reset values to
 //!   restore, clearing would invent them. The reset pin does ([`Lms7002m::reset`]).
 #![forbid(unsafe_code)]
 
+mod rf;
 mod vco;
 
 use std::collections::BTreeMap;
+
+pub use rf::{AT_DC_HZ, Imbalance, Loopback};
 
 /// Bit 31 of an SPI word: a write (`wr_mask` in the YAML).
 const WRITE: u32 = 1 << 31;
@@ -37,6 +46,8 @@ const ADDR_MASK: u16 = 0x7fff;
 /// `LML_0x002F`: chip version (`VER`, bits 15:11), revision (`REV`, 10:6) and metal mask
 /// (`MASK`, 5:0).
 const VERSION: u16 = 0x002f;
+/// `LML_0x0020`, whose `MAC` field (bits 1:0) selects the banks writes reach.
+const MAC: u16 = 0x0020;
 /// `VER` 7 and `REV` 1, the only values `lms7002m_create` accepts (`hw/lms7002m/lms7002m.c`:
 /// `-ENODEV` otherwise).
 const VER_REV: u16 = 7 << 11 | 1 << 6;
@@ -56,6 +67,10 @@ pub struct Lms7002m {
     /// A cap code at which both comparators read "fail"
     /// ([`Lms7002m::with_comparator_failure`]).
     failing_cap: Option<u8>,
+    /// The per-channel pages as each bank holds them, for the RF model.
+    banks: rf::Banks,
+    /// The RF loop, if the board has one.
+    loopback: Option<Loopback>,
 }
 
 impl Lms7002m {
@@ -74,7 +89,39 @@ impl Lms7002m {
             version: VER_REV | u16::from(mask),
             reference: None,
             failing_cap: None,
+            banks: rf::Banks::default(),
+            loopback: None,
         }
+    }
+
+    /// The same chip with an RF loop from its transmitter to its receiver, which
+    /// [`Self::rx_mean`] follows. Needs a reference ([`Self::with_reference`]).
+    #[must_use]
+    pub fn with_loopback(mut self, loopback: Loopback) -> Self {
+        self.loopback = Some(loopback);
+        self
+    }
+
+    /// The mean of channel `channel`'s (0 is A) receive output at DC, I and Q in 12-bit
+    /// LSBs, as the registers now program the chip (see the crate docs): 0 without a
+    /// loop or a reference.
+    #[must_use]
+    pub fn rx_mean(&self, channel: usize) -> [f64; 2] {
+        let (Some(loopback), Some(reference), true) = (self.loopback, self.reference, channel < 2)
+        else {
+            return [0.0; 2];
+        };
+        let flat = |addr| self.reg(addr);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "references are far below 2^52 Hz, so exact"
+        )]
+        let view = rf::View {
+            flat: &flat,
+            banks: &self.banks,
+            reference: reference as f64,
+        };
+        view.rx_mean(channel, &loopback)
     }
 
     /// The same chip with its VCO comparators reading "fail" (`VCO_CMPLO` alone) whenever
@@ -115,6 +162,8 @@ impl Lms7002m {
         if addr != VERSION {
             self.regs.insert(addr, value);
         }
+        let mac = self.regs.get(&MAC).copied().unwrap_or(0) & 0b11;
+        self.banks.write(mac, addr, value);
     }
 
     /// A register as the chip reports it. Bit 15 of `addr` is ignored, as in
@@ -155,12 +204,90 @@ impl Lms7002m {
     /// which this model represents as unwritten (see the crate docs on reset values).
     pub fn reset(&mut self) {
         self.regs.clear();
+        self.banks.clear();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A chip with a loop whose receiver is offset by (10, -3) DAC steps, the RX
+    /// synthesizer running at 1 GHz and the TX one at 1 GHz plus `tx_offset_hz`, both
+    /// channels' RX DC correctors and corrections bypassed and their mixers off.
+    fn looped_chip(tx_offset_hz: u32) -> Lms7002m {
+        let mut chip = Lms7002m::new(0)
+            .with_reference(25_000_000)
+            .with_loopback(Loopback {
+                rx_dc_offset: [10.0, -3.0],
+                tx_lo_leakage: [40.0, 0.0],
+                gain: 0.5,
+                ..Loopback::default()
+            });
+        // CGEN 400 MHz: (31 + 1) * 25 MHz over 2 * (0 + 1); ADC 100 MHz.
+        chip.write(0x0088, 31 << 4);
+        chip.write(0x0089, 0);
+        // SXR (bank A) 1 GHz = 25 MHz * 80 / 2; SXT (bank B) from its fraction.
+        chip.write(0x0020, 1);
+        chip.write(0x011e, (80 - 4) << 4);
+        chip.write(0x011f, 1 << 6);
+        chip.write(0x0124, 1 << 4);
+        chip.write(0x0020, 2);
+        let fraction = u64::from(tx_offset_hz) * 2 * (1 << 20) / 25_000_000;
+        let high = u16::try_from(fraction >> 16).expect("4 bits");
+        chip.write(0x011e, (80 - 4) << 4 | high);
+        chip.write(0x011d, u16::try_from(fraction & 0xffff).expect("16 bits"));
+        chip.write(0x011f, 1 << 6);
+        chip.write(0x0124, 1 << 4);
+        chip.write(0x0020, 3);
+        chip.write(0x040c, 1 << 2 | 1 << 7 | 0b11);
+        chip
+    }
+
+    /// `value`'s low 11 bits, as a DC DAC takes it.
+    fn dac(value: i16) -> u16 {
+        u16::from_ne_bytes(value.to_ne_bytes()) & 0x7ff
+    }
+
+    #[test]
+    fn the_receivers_dc_offset_reads_until_its_dac_cancels_it() {
+        let mut chip = looped_chip(0);
+        assert_eq!(chip.rx_mean(0), [20.0, -6.0], "two 12-bit LSBs per step");
+        chip.write(0x05c7, dac(-10));
+        chip.write(0x05c8, dac(3));
+        assert_eq!(chip.rx_mean(0), [0.0, 0.0]);
+        assert_eq!(chip.rx_mean(1), [20.0, -6.0], "channel B has its own DACs");
+        chip.write(0x0020, 2);
+        chip.write(0x040c, 1 << 7 | 0b11);
+        assert_eq!(chip.rx_mean(1), [0.0, 0.0], "B's corrector removes its DC");
+        assert_eq!(chip.rx_mean(0), [0.0, 0.0], "A's DACs still cancel");
+        let mut unclocked = looped_chip(0);
+        unclocked.reference = None;
+        assert_eq!(unclocked.rx_mean(0), [0.0; 2], "no reference, no LO");
+    }
+
+    #[test]
+    fn the_tx_leakage_is_measured_only_through_the_loopback_at_the_mixed_offset() {
+        // TX 1 MHz above RX; the RX mixer down by 1 MHz brings the leakage to DC.
+        let mut chip = looped_chip(1_000_000);
+        chip.write(0x05c7, dac(-10));
+        chip.write(0x05c8, dac(3));
+        chip.write(0x0020, 1);
+        // 1 MHz of the 100 MHz ADC clock.
+        let word = (1_u64 << 32) / 100;
+        chip.write(0x0442, u16::try_from(word >> 16).expect("16 bits"));
+        chip.write(0x0443, u16::try_from(word & 0xffff).expect("16 bits"));
+        chip.write(0x040c, 1 << 2 | 1 << 13 | 0b11);
+        assert_eq!(chip.rx_mean(0), [0.0, 0.0], "the loop is open");
+        chip.write(0x0101, 1);
+        chip.write(0x010c, 1 << 6);
+        let [i, q] = chip.rx_mean(0);
+        // 40 steps of 1/1024, halved by the loop, in 12-bit LSBs: 40.
+        assert!((i - 40.0).abs() < 1e-6 && q.abs() < 1e-6, "{i} {q}");
+        chip.write(0x05c3, dac(-40));
+        let [i, _] = chip.rx_mean(0);
+        assert!(i.abs() < 1e-6, "the TX DAC cancels the leakage: {i}");
+    }
 
     #[test]
     fn version_reads_the_only_chip_libusdr_accepts() {
