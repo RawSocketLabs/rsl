@@ -276,9 +276,22 @@ impl Device {
     ///
     /// [`Error::Bus`].
     pub fn mute_tx(&mut self, channels: Mac) -> Result<(), Error> {
+        let mask = match channels {
+            Mac::None => 0,
+            Mac::A => 2,
+            Mac::B => 1,
+            Mac::Both => 3,
+        };
+        self.set_tx_mute(mask)
+    }
+
+    /// `xsdr_tx_antennat_port_cfg(d, mask)`: the mask stored (`dsp_txcfg`), then bit 1
+    /// mutes A and bit 0 B, A first.
+    pub(super) fn set_tx_mute(&mut self, mask: u8) -> Result<(), Error> {
+        self.tx_mute = mask;
         let mut calls = Vec::with_capacity(4);
-        for bank in [Mac::A, Mac::B] {
-            if channels == bank || channels == Mac::Both {
+        for (bank, bit) in [(Mac::A, 2), (Mac::B, 1)] {
+            if mask & bit != 0 {
                 calls.extend([
                     ChipCall::MacSet(bank),
                     ChipCall::TrfPath(TxPath::Mute, TxMode::Normal),
