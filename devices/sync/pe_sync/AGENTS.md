@@ -119,7 +119,8 @@ Each is stated again, with its evidence, where it is encoded.
   alone; reset bits have no side effects; a write reads back 0. Lock detect reads locked
   (LMX2820 `R74` `RB_LD` = 2, LMX1204 `R75` `RB_LD` = 2); temperatures keep their YAML
   defaults (logged only).
-- LMK05318B: 16-bit pointer, byte registers. Its YAML has no reset values, so all reset to
+- LMK05318B (`lmk05318-sim`, the model shared with the front ends' sims): 16-bit
+  pointer, byte registers. Its YAML has no reset values, so all reset to
   0 except identity bytes 0x0000-0x0003 = 10 0b 35 42 (what `lmk05318_create` requires)
   and `PLL1/PLL2_VM_INSIDE` (0x165, 0x16f bit 5); the sim makes those read-only (the YAML
   gives no access modes). `BAW_LOCK` (0x50 bit 7, "Lock Detect Status" in the YAML) is
@@ -162,7 +163,7 @@ besides the refused rate), sysref windowing, DAC trims, the external SPI.
 ```sh
 cargo fmt -p pe-sync -p pe-sync-sim -p lmk05318 --check
 cargo clippy -p pe-sync -p pe-sync-sim -p lmk05318 --all-targets -- -D warnings
-cargo test -p pe-sync -p pe-sync-sim -p lmk05318
+cargo test -p pe-sync -p pe-sync-sim -p lmk05318 -p lmk05318-sim
 cargo check -p lmk05318 --target thumbv7em-none-eabi
 python3 scripts/ci/portable.py pe-sync
 cargo fmt --manifest-path devices/sync/pe_sync/nostd-check/Cargo.toml -- --check

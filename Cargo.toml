@@ -24,8 +24,9 @@ members = [
     # LP8758 PMIC register values shared by the SDR drivers
     "devices/sdr/chips/lp8758",
     # LMK05318 network synchronizer register values and frequency plans, shared by the uSDR
-    # front ends and PE_SYNC
+    # front ends and PE_SYNC, and its model, shared by their simulators
     "devices/chips/lmk05318",
+    "devices/chips/lmk05318/sim",
     # libusdr's front-end board probe and the boards it brings up, shared by the SDR drivers,
     # and the boards' register models, shared by their simulators
     "devices/sdr/frontend",
@@ -131,6 +132,7 @@ sdr-formats = { path = "devices/sdr/formats", version = "0.0.0", default-feature
 usdr-sim = { path = "devices/sdr/usdr/sim" }
 usdr-pcie = { path = "devices/sdr/usdr/pcie" }
 lms7002m-sim = { path = "devices/sdr/chips/lms7002m/sim" }
+lmk05318-sim = { path = "devices/chips/lmk05318/sim" }
 sdr-frontend-sim = { path = "devices/sdr/frontend/sim" }
 sdr-stream-sim = { path = "devices/sdr/stream/sim" }
 xsdr-sim = { path = "devices/sdr/xsdr/sim" }

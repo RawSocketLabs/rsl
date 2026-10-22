@@ -1,0 +1,12 @@
+[package]
+name = "lmk05318-sim"
+version = "0.0.0"
+description = "Register-level LMK05318 model shared by the simulated boards that carry the chip (sdr-frontend-sim, pe-sync-sim)."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

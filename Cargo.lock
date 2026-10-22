@@ -2170,6 +2170,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "lmk05318-sim"
+version = "0.0.0"
+
+[[package]]
 name = "lms7002m"
 version = "0.0.0"
 dependencies = [
@@ -2654,6 +2658,7 @@ dependencies = [
 name = "pe-sync-sim"
 version = "0.0.0"
 dependencies = [
+ "lmk05318-sim",
  "thiserror 2.0.21",
 ]
 
@@ -3559,6 +3564,9 @@ dependencies = [
 [[package]]
 name = "sdr-frontend-sim"
 version = "0.0.0"
+dependencies = [
+ "lmk05318-sim",
+]
 
 [[package]]
 name = "sdr-gearbox"

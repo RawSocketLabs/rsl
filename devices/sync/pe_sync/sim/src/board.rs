@@ -6,9 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use crate::chips::{
-    I2cRegisters, SpiRegisters, lmk1d1208i, lmk05318, lmx1204, lmx1214, lmx2820, lp87524,
-};
+use lmk05318_sim::Lmk05318;
+
+use crate::chips::{I2cRegisters, SpiRegisters, lmk1d1208i, lmx1204, lmx1214, lmx2820, lp87524};
 use crate::trace::Op;
 
 /// FPGA register holding the general-purpose outputs (`REG_WR_GPO`): `dev_gpo_set` writes
@@ -112,7 +112,7 @@ pub struct SimBoard {
     /// The LO distribution buffer.
     lmx1214: SpiRegisters,
     /// The network synchronizer.
-    lmk05318: I2cRegisters,
+    lmk05318: Lmk05318,
     /// The `LCK` and `LRF` fan-out buffers.
     lmk1d1208i: [I2cRegisters; 2],
     /// The PMIC.
@@ -135,7 +135,7 @@ impl SimBoard {
             lmx2820: [lmx2820(), lmx2820()],
             lmx1204: lmx1204(),
             lmx1214: lmx1214(),
-            lmk05318: lmk05318(),
+            lmk05318: Lmk05318::new(),
             lmk1d1208i: [lmk1d1208i(), lmk1d1208i()],
             lp87524: lp87524(),
             absent: BTreeSet::new(),
@@ -190,16 +190,13 @@ impl SimBoard {
     pub fn i2c(&mut self, addr: I2cAddress, write: &[u8], read_len: usize) -> Vec<u8> {
         let chip = match addr {
             _ if self.absent.contains(&addr) => None,
-            I2C_LMK05318 => Some(&mut self.lmk05318),
-            I2C_LMK1D1208I_LCK => Some(&mut self.lmk1d1208i[0]),
-            I2C_LMK1D1208I_LRF => Some(&mut self.lmk1d1208i[1]),
-            I2C_LP87524 => Some(&mut self.lp87524),
+            I2C_LMK05318 => Some(self.lmk05318.transfer(write, read_len)),
+            I2C_LMK1D1208I_LCK => Some(self.lmk1d1208i[0].transfer(write, read_len)),
+            I2C_LMK1D1208I_LRF => Some(self.lmk1d1208i[1].transfer(write, read_len)),
+            I2C_LP87524 => Some(self.lp87524.transfer(write, read_len)),
             _ => None,
         };
-        let read = chip.map_or_else(
-            || vec![0xff; read_len],
-            |chip| chip.transfer(write, read_len),
-        );
+        let read = chip.unwrap_or_else(|| vec![0xff; read_len]);
         self.trace.push(Op::I2c {
             addr,
             write: write.to_vec(),
