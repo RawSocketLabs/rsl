@@ -9,7 +9,7 @@ use hal::Bus;
 use crate::board::{Board, Connector, FrontEndKind};
 use crate::error::Error;
 use crate::exm2pe::Exm2pe;
-use crate::fe4ch;
+use crate::fe4ch::Fe4ch4007200;
 use crate::fe1005000::Fe1005000;
 use crate::pciefe::Pciefe;
 use crate::selection::FrontEndSelection;
@@ -39,6 +39,9 @@ pub enum FrontEnd {
 
     /// The 100–5000 MHz front end (`ext_fe_100_5000_init`).
     Fe1005000(Fe1005000),
+
+    /// The four-channel 400–7200 MHz front end (`ext_fe_ch4_400_7200_init`).
+    Fe4ch4007200(Fe4ch4007200),
 }
 
 impl FrontEnd {
@@ -52,6 +55,7 @@ impl FrontEnd {
             Self::SuperSync(_) => Board::SuperSync,
             Self::SimpleSync(_) => Board::SimpleSync,
             Self::Fe1005000(_) => Board::Fe1005000,
+            Self::Fe4ch4007200(_) => Board::Fe4ch4007200,
         }
     }
 
@@ -67,6 +71,7 @@ impl FrontEnd {
             Self::SuperSync(_) => FrontEndKind::SuperSync,
             Self::SimpleSync(_) => FrontEndKind::SimpleSync,
             Self::Fe1005000(_) => FrontEndKind::Fe1005000,
+            Self::Fe4ch4007200(_) => FrontEndKind::Fe4ch4007200,
         }
     }
 
@@ -98,12 +103,7 @@ impl FrontEnd {
                 Some(Self::Exm2pe(Exm2pe::init(bus, options)?))
             }
             Board::Fe1005000 => Fe1005000::init(bus)?.map(Self::Fe1005000),
-            Board::Fe4ch4007200 => {
-                if fe4ch::detect(bus)? {
-                    return Err(Error::NotPorted(board));
-                }
-                None
-            }
+            Board::Fe4ch4007200 => Fe4ch4007200::init(bus)?.map(Self::Fe4ch4007200),
         })
     }
 }
@@ -125,9 +125,7 @@ impl Connector {
     ///
     /// # Errors
     ///
-    /// The hinted board's failure; [`Error::NotPorted`] when fe4ch4007200 answers, hinted
-    /// or not (libusdr would bring it up; no device this crate serves can reach it, its
-    /// chips sit on an I2C core only the sSDR has).
+    /// The hinted board's failure.
     pub fn probe(
         self,
         bus: &mut dyn Bus,
@@ -156,7 +154,7 @@ impl Connector {
             debug!("front-end probe skipped");
             None
         } else {
-            self.first_up(bus, selection, skipped)?
+            self.first_up(bus, selection, skipped)
         };
         if let Some(front_end) = &found {
             info!(board = front_end.board().name(), "front end detected");
@@ -165,27 +163,21 @@ impl Connector {
     }
 
     /// The automatic probe: the first board in libusdr's order that comes up.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::NotPorted`] for a board that answers but is not brought up: carrying on
-    /// would leave libusdr's path.
     fn first_up(
         self,
         bus: &mut dyn Bus,
         selection: &FrontEndSelection,
         skipped: &mut dyn FnMut(Board, &Error),
-    ) -> Result<Option<FrontEnd>, Error> {
+    ) -> Option<FrontEnd> {
         for board in Board::ALL {
             match self.try_board(bus, board, selection) {
-                Ok(Some(front_end)) => return Ok(Some(front_end)),
+                Ok(Some(front_end)) => return Some(front_end),
                 Ok(None) => {}
-                Err(error @ Error::NotPorted(_)) => return Err(error),
                 Err(error) => skipped(board, &error),
             }
         }
         debug!("no front end detected");
-        Ok(None)
+        None
     }
 
     /// Tries one board: `None` when the connector does not admit it or it is absent.
@@ -327,9 +319,9 @@ mod tests {
     }
 
     #[test]
-    fn a_fe4ch4007200_that_answers_stops_the_automatic_probe() {
-        /// Answers on I2C core 1 with fe4ch4007200's sensor ID, as a transport with a second
-        /// core and the board attached would.
+    fn a_fe4ch4007200_whose_expanders_fail_their_test_vectors_is_absent() {
+        /// Answers on I2C core 1 with fe4ch4007200's sensor ID, every other read idle-high,
+        /// as a transport with a second core and a board with dead expanders would.
         struct WithFe4ch;
 
         impl Bus for WithFe4ch {
@@ -354,10 +346,7 @@ mod tests {
         }
 
         let (found, skipped) = probe(Connector::Lsdr, &mut WithFe4ch, &FrontEndSelection::Auto);
-        assert!(
-            matches!(found, Err(Error::NotPorted(Board::Fe4ch4007200))),
-            "libusdr would bring the board up: {found:?}"
-        );
-        assert_eq!(skipped, [], "fe1005000 is absent, not failed");
+        assert_eq!(found.expect("an absent board is not an error"), None);
+        assert_eq!(skipped, [], "both boards are absent, not failed");
     }
 }

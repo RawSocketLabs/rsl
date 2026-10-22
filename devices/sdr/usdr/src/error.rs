@@ -428,10 +428,6 @@ impl From<sdr_frontend::Error> for Error {
             },
             sdr_frontend::Error::ClockPlan(error) => Self::ClockPlan(error),
             sdr_frontend::Error::ClockUnlocked(pll) => Self::ClockUnlocked(pll),
-            sdr_frontend::Error::NotPorted(board) => Self::FrontEnd {
-                board: board.name(),
-                reason: "its bring-up is not ported",
-            },
         }
     }
 }

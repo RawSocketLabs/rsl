@@ -6,7 +6,8 @@
 //!
 //! **Unstable; unpublished.** Ported: open with libusdr's front-end probe
 //! ([`Device::open`], with what it finds in [`Device::fitted`] and
-//! [`Device::front_end`]; the probe and fe1005000's bring-up are `sdr-frontend`'s), ADC
+//! [`Device::front_end`]; the probe and the fe1005000 and fe4ch4007200 bring-ups are
+//! `sdr-frontend`'s), ADC
 //! power ([`Device::set_power`]), the sample rate ([`Device::set_sample_rate`]: Si549
 //! frequency, FIR gearbox, LMK04832 layout, ADC normal mode, LVDS PHY), the receive
 //! frequency with its NCO ([`Device::set_rx_frequency`]), the receive PGA gain
@@ -15,7 +16,7 @@
 //! pinned revision as libusdr's does), fe1005000's debug-command controls
 //! ([`Device::configure_fe1005000`]) and close ([`Device::close`]). Not yet ported:
 //! fe1005000's other device-level controls (gains with a front end, `/dm/sdr/0/fe/*`),
-//! fe4ch4007200's bring-up, `/dm/stat`'s PHY sweep and the debug paths. See `PORTING.md`
+//! fe4ch4007200's controls, `/dm/stat`'s PHY sweep and the debug paths. See `PORTING.md`
 //! beside this crate.
 //!
 //! # The board

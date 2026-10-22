@@ -88,8 +88,7 @@ impl Device {
     ///
     /// [`Error::DeadLink`] when the status register reads all ones, before anything is
     /// driven; [`Error::Bus`] when an access fails, the liveness read included (libusdr
-    /// ignores that read's failure and carries on); [`Error::FrontEndNotPorted`] when
-    /// fe4ch4007200 answers, whose bring-up is not ported. A missing chip is not an error:
+    /// ignores that read's failure and carries on). A missing chip is not an error:
     /// see [`Self::fitted`]; a front end that fails to come up is logged and skipped, as
     /// libusdr does.
     pub fn open(bus: impl Bus + 'static, options: OpenOptions) -> Result<Self, Error> {

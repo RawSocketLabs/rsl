@@ -1,5 +1,5 @@
-//! TMP114 temperature sensor, as the front-end boards carry it: XMASS revision 1a's two,
-//! whose readings libusdr only logs.
+//! TMP114 temperature sensor, as the front-end boards carry it: XMASS revision 1a's two
+//! and fe4ch4007200's, whose readings (and fe4ch4007200's unique ID) libusdr only logs.
 //!
 //! # What it does
 //!
@@ -23,6 +23,9 @@ use crate::error::{BusContext, Error};
 enum Reg {
     /// The latest temperature, signed, 1/128 °C per count (`TMP114_Temp_Result`).
     Temperature = 0x00,
+
+    /// The first of the three unique-ID words (`TMP114_Unique_ID1`).
+    UniqueId1 = 0x08,
 
     /// Device and revision (`TMP114_Device_ID`).
     DeviceId = 0x0b,
@@ -66,9 +69,23 @@ impl Tmp114 {
         Ok(f32::from(i16::from_be_bytes(raw.to_be_bytes())) / 128.0)
     }
 
+    /// Reads the 48-bit unique ID, first word most significant (`tmp114_uid_get`).
+    pub(crate) fn unique_id(self, bus: &mut dyn Bus) -> Result<u64, Error> {
+        let mut id = 0;
+        for word in 0..3 {
+            let reg = u8::from(Reg::UniqueId1) + word;
+            id = id << 16 | u64::from(self.read_at(bus, reg)?);
+        }
+        Ok(id)
+    }
+
     /// Reads one 16-bit register, MSB first (`tmp114_reg_get`).
     fn read(self, bus: &mut dyn Bus, reg: Reg) -> Result<u16, Error> {
-        let reg = u8::from(reg);
+        self.read_at(bus, reg.into())
+    }
+
+    /// Reads the 16-bit register at `reg`, MSB first.
+    fn read_at(self, bus: &mut dyn Bus, reg: u8) -> Result<u16, Error> {
         let mut raw = [0; 2];
         bus.i2c(self.dev, &[reg], &mut raw)
             .reading(Self::NAME, reg)?;

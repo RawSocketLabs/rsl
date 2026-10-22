@@ -117,6 +117,9 @@ pub enum FrontEndKind {
 
     /// The 100–5000 MHz front end.
     Fe1005000,
+
+    /// The four-channel 400–7200 MHz front end.
+    Fe4ch4007200,
 }
 
 #[cfg(test)]
