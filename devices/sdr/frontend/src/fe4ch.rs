@@ -6,7 +6,9 @@
 //! device, last. The board's chips sit on FPGA I2C core 1 (buses 0 and 1): a TMP114
 //! sensor, four TCA6424A expanders and a `DACx0501`. A device with one I2C core refuses
 //! the first of those transfers in its transport (the uSDR's do, with `-EINVAL`), which
-//! libusdr reports as a failed board; the `LSDr` oracle's transport passes core 1 through.
+//! libusdr reports as a failed board. So the bring-up below runs only on a transport that
+//! passes core 1: no device this crate serves declares a second core (the `LSDr` declares
+//! one, `DNLL_I2C_COUNT` 1), and only the `LSDr` oracle's shim and sim bus pass it.
 //!
 //! The bring-up checks the sensor's ID, writes a test vector to every expander's outputs
 //! and reads it back, makes the expanders' pins outputs, drives them from the default
@@ -209,7 +211,7 @@ impl Fe4ch4007200 {
         }
 
         for expander in [U114, U110] {
-            make_outputs(bus, expander)?;
+            expander.make_outputs(bus)?;
         }
         let mut board = Self {
             gps: true,
@@ -219,7 +221,7 @@ impl Fe4ch4007200 {
         };
         board.update(bus)?;
         for expander in [U300, U301] {
-            make_outputs(bus, expander)?;
+            expander.make_outputs(bus)?;
         }
 
         match DAC.init(bus)? {
@@ -319,13 +321,6 @@ impl Fe4ch4007200 {
         }
         Ok(())
     }
-}
-
-/// Makes every pin of `expander` an output: its first two configuration ports, then the
-/// third.
-fn make_outputs(bus: &mut dyn Bus, expander: Tca6424a) -> Result<(), Error> {
-    expander.write16(bus, Reg::Config0, 0)?;
-    expander.write8(bus, Reg::Config0, 2, 0)
 }
 
 #[cfg(test)]
