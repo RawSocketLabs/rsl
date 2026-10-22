@@ -6,7 +6,10 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::chips::{Ads42lbx9, Fe1005000, I2cChip, Lmk04832, ROOM, Si549, Tmp108, Tps6594};
+use crate::chips::{
+    Ads42lbx9, Fe4ch4007200, Fe4ch4007200Fit, Fe1005000, I2cChip, Lmk04832, ROOM, Si549, Tmp108,
+    Tps6594,
+};
 use crate::trace::Op;
 
 /// FPGA register 0: the general-purpose outputs on write (`dev_gpo_set` writes
@@ -132,6 +135,9 @@ pub struct SimBoard {
     /// fe1005000 on the front-end connector, if attached; see
     /// [`SimBoard::with_fe1005000`].
     fe1005000: Option<Fe1005000>,
+    /// fe4ch4007200 on the front-end connector's I2C core 1, if attached; see
+    /// [`SimBoard::with_fe4ch4007200`].
+    fe4ch4007200: Option<Fe4ch4007200>,
     /// Virtual time, advanced only by [`SimBoard::sleep_us`].
     now_us: u64,
     /// Every operation performed, in order.
@@ -152,6 +158,7 @@ impl SimBoard {
             oscillator: Si549::new(),
             sensor: Tmp108::new(ROOM),
             fe1005000: None,
+            fe4ch4007200: None,
             now_us: 0,
             trace: Vec::new(),
         }
@@ -172,6 +179,16 @@ impl SimBoard {
     #[must_use]
     pub fn with_fe1005000(mut self) -> Self {
         self.fe1005000 = Some(Fe1005000::new());
+        self
+    }
+
+    /// The same board with fe4ch4007200 on its front-end connector, as `fit` says: a TMP114
+    /// sensor, a `DACx0501` and four TCA6424A expanders on I2C core 1
+    /// (`chips::fe4ch4007200` states the model's assumptions). Without it, as by default,
+    /// core 1 reads the idle bus.
+    #[must_use]
+    pub fn with_fe4ch4007200(mut self, fit: Fe4ch4007200Fit) -> Self {
+        self.fe4ch4007200 = Some(Fe4ch4007200::new(fit));
         self
     }
 
@@ -238,6 +255,9 @@ impl SimBoard {
     /// idle-high bus, `0xff` per byte.
     pub fn i2c(&mut self, addr: I2cAddress, write: &[u8], read_len: usize) -> Vec<u8> {
         let chip: Option<&mut dyn I2cChip> = match addr {
+            I2cAddress { core: 1, bus, addr } => {
+                self.fe4ch4007200.as_mut().and_then(|fe| fe.chip(bus, addr))
+            }
             I2C_TPS6594 => Some(&mut self.pmic),
             I2C_SI549 => Some(&mut self.oscillator),
             I2C_TMP108 => Some(&mut self.sensor),
@@ -307,6 +327,19 @@ impl SimBoard {
     #[must_use]
     pub fn fe1005000_expander_reg(&self, reg: u8) -> Option<u8> {
         self.fe1005000.as_ref().map(|fe| fe.expander_reg(reg))
+    }
+
+    /// Register `reg` of fe4ch4007200's expander `index` (0 U114, 1 U110, 2 U300, 3 U301),
+    /// or `None` without the board or that expander.
+    #[must_use]
+    pub fn fe4ch4007200_expander_reg(&self, index: usize, reg: u8) -> Option<u8> {
+        self.fe4ch4007200.as_ref()?.expander_reg(index, reg)
+    }
+
+    /// fe4ch4007200's DAC register `reg`, or `None` without the board or its DAC.
+    #[must_use]
+    pub fn fe4ch4007200_dac_reg(&self, reg: u8) -> Option<u16> {
+        self.fe4ch4007200.as_ref()?.dac_reg(reg)
     }
 
     /// Register `addr` of fe1005000's LO `lo` (0 the first, 1 the second), once written;

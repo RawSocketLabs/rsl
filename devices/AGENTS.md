@@ -16,12 +16,12 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 | `vendor/` | none | `libusdr/`, the vendored libusdr C subset every oracle compiles (one tree, one PIN), and `vendor.sh`, its refresh script |
 | `sdr/usdr/` | `usdr`, `usdr-sim`, `usdr-pcie`, `usdr-oracle`, `usdr-nostd-check` | the uSDR driver (unpublished until parity), its board simulator, its PCIe driver interface, the libusdr parity oracle (own workspace: compiles the vendored C) and its `no_std` portable-tree witness |
 | `sdr/xsdr/` | `xsdr`, `xsdr-sim`, `xsdr-oracle`, `xsdr-nostd-check` | the LMS7 family driver: XSDR and XTRX open (the XSDR's front-end probe, hints and boards' controls), RFIC power-up, sample rate on every gateware variant, LO tuning, gains, bandwidths, paths and loopbacks, NCOs, corrections, the RX and TX streams with their options, the link's calibration, overrides and debug controls, and close; oracle and witness as above |
-| `sdr/lsdr/` | `lsdr`, `lsdr-sim`, `lsdr-oracle`, `lsdr-nostd-check` | the LSDr (receive-only ADC board) driver: open with its front-end probe and fe1005000's bring-up, ADC power, sample rate, receive frequency and NCO, PGA gain, temperature, the RX stream's create (which libusdr fails at the pin) and close |
+| `sdr/lsdr/` | `lsdr`, `lsdr-sim`, `lsdr-oracle`, `lsdr-nostd-check` | the LSDr (receive-only ADC board) driver: open with its front-end probe and the fe1005000 and fe4ch4007200 bring-ups, ADC power, sample rate, receive frequency and NCO, PGA gain, temperature, the RX stream's create (which libusdr fails at the pin) and close |
 | `sdr/limesdr/` | `limesdr`, `limesdr-sim`, `limesdr-oracle`, `limesdr-nostd-check` | the LimeSDR-mini driver: open over its LMS64C control channel, power-up, sample rate, LO tuning, gains, bandwidths, stream preparation, a stream's setup in libusdr's formats and close; no FT601 transport yet |
 | `sdr/rtlsdr/` | `rtlsdr`, `rtlsdr-sim` | the clean-room RTL2832U RTL-SDR driver (no oracle: every value from `PROVENANCE.md`): its control seam with a usbfs port, R820T2 register maths from the register description, and the dongle simulator with the capture replay harness; the RTL2832U side awaits captures |
 | `sdr/chips/lms7002m/` | `lms7002m`, `lms7002m-sim` (`sim/`) | the LMS7002M register values and chip sequences (`no_std`), and the LMS7002M model the XSDR and LimeSDR sims share |
 | `sdr/chips/lp8758/` | `lp8758` | the LP8758 PMIC register values (`no_std`) |
-| `sdr/frontend/` | `sdr-frontend`, `sdr-frontend-sim` (`sim/`) | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and every bring-up it runs on the uSDR, XSDR and LSDr (`pciefe`, `xmass`, `supersync`, `simplesync`, `exm2pe`, `fe1005000`) with the boards' controls, shared by those drivers (`no_std` core, blocking probe behind `std`); and the M.2 boards' register models the uSDR and XSDR sims share |
+| `sdr/frontend/` | `sdr-frontend`, `sdr-frontend-sim` (`sim/`) | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and every bring-up it runs on the uSDR, XSDR and LSDr (`pciefe`, `xmass`, `supersync`, `simplesync`, `exm2pe`, `fe1005000`, `fe4ch4007200`) with the boards' controls, shared by those drivers (`no_std` core, blocking probe behind `std`); and the M.2 boards' register models the uSDR and XSDR sims share |
 | `sdr/stream/` | `sdr-stream`, `sdr-stream-sim` (`sim/`) | the FPGA stream engine the uSDR and LMS7 family gateware share at the same addresses (`ipblks/streams/`): its register sequences (`EngineSequence`: RX DMA and front end, sync unit, TX cores), RX burst arithmetic (`BurstPlan`) and both TX cores' announcements and status, `no_std`; and the RX engine, TX cores and sync unit models the uSDR and XSDR sims share |
 | `sdr/gearbox/` | `sdr-gearbox` | libusdr's FPGA FIR gearbox microcode (`ipblks/fgearbox.c`: each 7-series decimation and interpolation table), moved out of `usdr` when the XSDR's DUC/DDC gateware needed it; `no_std`, no dependencies |
 | `sdr/formats/` | `sdr-formats` | libusdr's host sample-format conversions (`xdsp/conv.c`: `get_transform_fn` and its generic kernels), moved out of `usdr` (which re-exports them as `usdr::dsp`) when the XSDR's and LimeSDR's streams needed them; `no_std`, no dependencies |
@@ -39,14 +39,14 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   `sdr/frontend` (`sdr-frontend`, 2026-10-13): libusdr's front-end probe
   (`device/device_fe.c`), every board's identification and every board's bring-up and
   controls the probe's drivers run (`pciefe`, `xmass`, `supersync`, `simplesync`,
-  `exm2pe`, `fe1005000`; 2026-10-18), run by the uSDR, XSDR and LSDr drivers whose
+  `exm2pe`, `fe1005000`; 2026-10-18; `fe4ch4007200`, 2026-10-21), run by the uSDR, XSDR and LSDr drivers whose
   libusdr probes their connector. `Connector::probe` brings the board up whole and hands
   the driver the `FrontEnd` libusdr keeps (`struct dev_fe`); the driver keeps it, offers
-  the controls its libusdr device offers, and re-exports the crate's types. A board whose
-  bring-up is not ported stops the probe (`Error::NotPorted`, fe4ch4007200 only). The
+  the controls its libusdr device offers, and re-exports the crate's types. The
   boards' register models live beside it (`sdr/frontend/sim`, `sdr-frontend-sim`), shared
   by the sims whose connector admits them (`usdr-sim`, `xsdr-sim`); a board only one
-  driver admits keeps its model in that driver's sim (fe1005000 in `lsdr-sim`).
+  driver admits or reaches keeps its model in that driver's sim (fe1005000 in
+  `lsdr-sim`; fe4ch4007200 too, on the I2C core 1 only that sim answers).
   The second is `sdr/stream` (`sdr-stream`, 2026-10-18), the stream engine's registers
   and burst arithmetic, moved out of `usdr` (which re-exports them where its board and
   `NativeUsb` found them) when the XSDR's RX streams needed them; which logical channel
