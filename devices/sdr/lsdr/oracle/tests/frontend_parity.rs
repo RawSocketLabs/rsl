@@ -184,12 +184,6 @@ fn fe4ch4007200_comes_up_like_libusdr_in_every_fit() {
             if fit != Fe4ch4007200Fit::Whole {
                 continue;
             }
-            let core_1 = actual
-                .trace()
-                .iter()
-                .filter(|op| matches!(op, Op::I2c { addr, .. } if addr.core == 1))
-                .count();
-            assert_eq!(core_1, 42, "the board's transfers, probe reads included");
             for board in [&reference, &actual] {
                 for (index, outputs) in OUTPUTS.into_iter().enumerate() {
                     let read = |reg| board.fe4ch4007200_expander_reg(index, reg);

@@ -131,8 +131,8 @@ board), `USDR_FE_TYPE` (front-end hint) or `USDR_DEBUG` (debug socket) is set
   900 MHz (LO2's then LO1's six MAX2871 words, then band 1 with the 2250 MHz IF on the
   expander's outputs, each exchange after its SPI-extension configuration write), then
   `GSR2` read for the log; fe4ch4007200 is not probed. With fe4ch4007200 attached
-  (`SimBoard::with_fe4ch4007200`) its sensor answers and its bring-up follows (42 I2C
-  transfers on core 1 and the 1PPS pin's GPIO write, whole fit).
+  (`SimBoard::with_fe4ch4007200`) its sensor answers and its bring-up follows on core 1
+  (whole fit).
 - **Power-up** (`/dm/power/en` = 1, `_lsdr_adc_activate(3)`): LDO4 on, 10 ms, GPO bank 2
   (`IGPO_BANK_CFG_ADC`) 0x03 (ADC reset), 0xf0, then 0x00. The Si549 output stays off:
   only `/dm/rate/master` (`si549_set_freq`) enables it.

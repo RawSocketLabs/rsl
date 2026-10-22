@@ -74,6 +74,12 @@ impl Tca6424a {
             .writing(Self::NAME, reg)
     }
 
+    /// Makes every pin an output: the first two configuration ports, then the third.
+    pub(crate) fn make_outputs(self, bus: &mut dyn Bus) -> Result<(), Error> {
+        self.write16(bus, Reg::Config0, 0)?;
+        self.write8(bus, Reg::Config0, 2, 0)
+    }
+
     /// Reads `reg`'s first two ports as libusdr sees them (`tca6424a_reg16_get`): the FPGA
     /// I2C core packs the bytes first-received-most-significant, which reaches libusdr's
     /// buffer little-endian, so port 0 lands in the low byte.
