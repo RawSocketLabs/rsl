@@ -2,7 +2,6 @@
 
 pub use hal::Access;
 use hal::SequenceFailure;
-use sdr_frontend::Board;
 
 use crate::lowlevel::BusError;
 use crate::portable::lmk04832::ClockPlanFailure;
@@ -71,11 +70,6 @@ pub enum Error {
     /// The call needs a front end that is not attached; libusdr's name for it.
     #[error("no {0} front end is attached")]
     FrontEndMissing(&'static str),
-
-    /// A front-end board answered whose bring-up this driver does not port (fe4ch4007200);
-    /// libusdr would bring it up. Open stops there.
-    #[error("the {} front end answered; its bring-up is not ported", .0.name())]
-    FrontEndNotPorted(Board),
 
     /// The Si549 refuses the ADC rate the sample rate implies (outside 200 kHz to 800 MHz,
     /// libusdr's `-ERANGE`), before any access.

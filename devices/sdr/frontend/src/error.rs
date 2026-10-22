@@ -4,8 +4,6 @@
 use hal::{Access, BusError, SequenceFailure};
 use lmk05318::plan::ClockPlanError;
 
-use crate::board::Board;
-
 /// A failed front-end probe or board access.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -79,11 +77,6 @@ pub enum Error {
         /// Why.
         reason: &'static str,
     },
-
-    /// A board answered whose bring-up this crate does not port; libusdr would bring it up.
-    /// The probe stops there, hinted or not.
-    #[error("the {} front end answered; its bring-up is not ported", .0.name())]
-    NotPorted(Board),
 }
 
 impl Error {

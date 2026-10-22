@@ -1,10 +1,9 @@
 //! The `LSDr`'s front-end probe (`usdr_device_m2_d09_4_ad45_2_initialize`'s
 //! `device_fe_probe` with compatibility `lsdr`), run by `sdr-frontend`.
 //!
-//! The connector admits fe1005000 (its XRA1405 over SPI 4) and fe4ch4007200 (its sensor
-//! and expanders on I2C core 1). fe1005000 comes up whole in the shared crate, as libusdr
-//! brings it up; fe4ch4007200's bring-up is not ported, so one that answers stops the open
-//! with [`Error::FrontEndNotPorted`] where libusdr would bring it up.
+//! The connector admits fe1005000 (its XRA1405 over SPI 4) and fe4ch4007200 (its sensor,
+//! expanders and DAC on I2C core 1). Either comes up whole in the shared crate, as libusdr
+//! brings it up.
 
 use sdr_frontend::{Connector, FrontEnd, FrontEndSelection};
 
@@ -17,12 +16,8 @@ use crate::lowlevel::Bus;
 ///
 /// # Errors
 ///
-/// [`Error::FrontEndNotPorted`] when fe4ch4007200 answers.
+/// None yet: probing automatically, a board that fails is skipped (`sdr-frontend`'s
+/// errors are kept for the hints, which are not offered).
 pub(crate) fn probe(bus: &mut dyn Bus) -> Result<Option<FrontEnd>, Error> {
-    Connector::Lsdr
-        .probe(bus, &FrontEndSelection::Auto)
-        .map_err(|error| match error {
-            sdr_frontend::Error::NotPorted(board) => Error::FrontEndNotPorted(board),
-            other => other.into(),
-        })
+    Ok(Connector::Lsdr.probe(bus, &FrontEndSelection::Auto)?)
 }
