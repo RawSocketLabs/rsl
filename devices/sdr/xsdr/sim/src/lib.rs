@@ -11,7 +11,9 @@
 //! ([`SimBoard::with_front_end`], `sdr-frontend-sim`'s models, shared with `usdr-sim`),
 //! the RX and TX stream engines and the sync unit ([`SimBoard::rx_next_block`],
 //! [`SimBoard::tx_grant`], `sdr-stream-sim`'s models, likewise shared), and the TX PHY port
-//! with its MMCM behind the DRP (`tx_phy.rs`).
+//! with its MMCM behind the DRP (`tx_phy.rs`), and the RX PHY's DC estimator
+//! (`dc_estimator.rs`) over the LMS7002M's RF loop ([`SimBoard::with_loopback`],
+//! `lms7002m-sim`'s model).
 //! sSDR variants are identified but carry no LMS8001, so libusdr refuses to open them.
 //! Each modelling assumption is stated, with its evidence, where it is encoded; see the
 //! family's `AGENTS.md` for the full list.
@@ -19,10 +21,12 @@
 
 mod board;
 mod chips;
+mod dc_estimator;
 mod trace;
 mod tx_phy;
 
 pub use board::{I2cAddress, SimBoard, SimError, Variant};
+pub use lms7002m_sim::{Imbalance, Loopback};
 pub use sdr_frontend_sim::FrontEnd;
 pub use sdr_stream_sim::{TxGrant, TxPacket};
 pub use trace::Op;
