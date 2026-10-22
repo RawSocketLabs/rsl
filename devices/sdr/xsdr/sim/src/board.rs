@@ -6,11 +6,12 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
-use lms7002m_sim::Lms7002m;
+use lms7002m_sim::{Lms7002m, Loopback};
 use sdr_frontend_sim::{FrontEnd, Model};
 use sdr_stream_sim::{RxEngine, SyncUnit, TxEngine, TxGrant, TxPacket};
 
 use crate::chips::{Dac80501, I2cChip, Lp8758};
+use crate::dc_estimator::DcEstimator;
 use crate::trace::Op;
 use crate::tx_phy::{MmcmFault, REG_CFG_PHY_1, TxPhy};
 
@@ -28,8 +29,8 @@ const REG_GPI_USR_ACCESS2: u32 = 16;
 /// rate path, the `LimeLight` LFSR checkers' error counters (`xsdr_phy_lfsr_mimo_state`).
 /// A sim choice: the link is error-free, so every read of the port returns 0, unless a test
 /// scripts the reads ([`SimBoard::with_rx_phy_reads`]); a read after selecting the capture
-/// bank returns a captured sample instead ([`RX_PHY_CAPTURE`]). The DC-estimator bank is not
-/// modelled.
+/// bank returns a captured sample instead ([`RX_PHY_CAPTURE`]), and one after selecting a
+/// DC-estimator word that word (`dc_estimator.rs`).
 const REG_CFG_PHY_0: u32 = 56;
 /// The RX PHY's capture bank (`PHY_REG_RXBANK_CAPTURE`): a read request's address selects
 /// channel B with bit 7, the sample with bits 6:0 (`xsdr_phy_capture_get_item`), and the
@@ -180,6 +181,8 @@ pub struct SimBoard {
     rx_phy_request: u32,
     /// The capture reads the generator's table oldest first ([`SimBoard::with_reversed_capture`]).
     capture_reversed: bool,
+    /// The RX PHY's DC estimator (`dc_estimator.rs`).
+    dc_estimator: DcEstimator,
     /// The RX stream engine (`sdr-stream-sim`'s, the uSDR sim's model): the same
     /// `ipblks/streams` cores at the same registers (`m2_lm7_1.c`'s `/ll/srx/0`,
     /// `/ll/rfe/0` and `/ll/sync/0` match `m2_lm6_1.c`'s), so the same assumptions hold,
@@ -225,6 +228,7 @@ impl SimBoard {
             rx_phy_after: 0,
             rx_phy_request: 0,
             capture_reversed: false,
+            dc_estimator: DcEstimator::default(),
             rx: RxEngine::default(),
             tx: TxEngine::default(),
             tx_phy: TxPhy::default(),
@@ -257,9 +261,16 @@ impl SimBoard {
     /// (`lms7002m-sim`'s fault injection), to drive libusdr's tuning error paths.
     #[must_use]
     pub fn with_lms_comparator_failure(mut self, cap: u8) -> Self {
-        self.lms = Lms7002m::new(LMS7_MASK)
-            .with_reference(LMS7_REFERENCE_HZ)
-            .with_comparator_failure(cap);
+        self.lms = self.lms.with_comparator_failure(cap);
+        self
+    }
+
+    /// The same board with an RF loop from its LMS7002M's transmitter to its receiver
+    /// (`lms7002m-sim`'s model), which the RX PHY's DC estimator measures; without one, as
+    /// by default, the estimator reads a silent receiver.
+    #[must_use]
+    pub fn with_loopback(mut self, loopback: Loopback) -> Self {
+        self.lms = self.lms.with_loopback(loopback);
         self
     }
 
@@ -354,6 +365,7 @@ impl SimBoard {
         }
         if addr == REG_CFG_PHY_0 {
             self.rx_phy_request = value;
+            self.dc_estimator.on_write(value, self.now_us);
         }
         self.play_tx();
         if addr == REG_GPO {
@@ -381,6 +393,9 @@ impl SimBoard {
     /// A read of the RX PHY port: a captured sample after a capture read request, else the
     /// script's next value or what follows it.
     fn rx_phy_read(&mut self) -> u32 {
+        if let Some(word) = self.dc_estimator.read(self.now_us, &self.lms) {
+            return word;
+        }
         let request = self.rx_phy_request;
         let capture_read = request >> 31 == 0 && (request >> 24 & 0x7f) == RX_PHY_CAPTURE;
         if capture_read {
