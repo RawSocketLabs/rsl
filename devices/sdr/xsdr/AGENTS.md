@@ -93,7 +93,7 @@ Mirrors `usdr` (`../usdr/AGENTS.md`), at the size this slice needs:
   `portable/frontend`). Every board the connector admits comes up whole there, as on the
   uSDR (the `PCIe` front end, XMASS, `SuperSync`, `SimpleSync`, the breakout); `Device`
   keeps the `FrontEnd` and reports its kind (`Device::front_end`). fe4ch4007200, whose
-  bring-up is not ported, cannot answer: its chips sit on I2C core 1, which the XSDR's
+  bring-up `sdr-frontend` runs on the LSDr, cannot answer here: its chips sit on I2C core 1, which the XSDR's
   transports refuse. The boards' controls are `src/device/frontend.rs`'s.
 - `src/lowlevel.rs`: `hal`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `xsdr-sim`; the oracle's parity tests include
