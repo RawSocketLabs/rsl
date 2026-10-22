@@ -119,6 +119,9 @@ struct RxChannel {
 /// One channel's transmit front end as libusdr caches it (`struct lms7002m_trf_cfg`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct TxChannel {
+    /// The band output.
+    path: TxPath,
+
     /// Pad loopback on.
     loopback: bool,
 
@@ -141,6 +144,7 @@ const RX_OFF: RxChannel = RxChannel {
 
 /// As [`RX_OFF`], for transmit.
 const TX_OFF: TxChannel = TxChannel {
+    path: TxPath::Mute,
     loopback: false,
     enabled: false,
     pad_loss: u5::MIN,
@@ -223,6 +227,25 @@ impl Lms7002m {
             tbb_gain: [baseband::TBB_GAIN_CREATED; 2],
             ..Self::new(target)
         }
+    }
+
+    /// Channel `channel`'s (0 is A, else B) receive LNA as last set (`rfe[i].path`).
+    #[must_use]
+    pub const fn rx_path(&self, channel: usize) -> RxPath {
+        self.rx[if channel == 0 { 0 } else { 1 }].path
+    }
+
+    /// Channel `channel`'s (0 is A, else B) transmit band as last set (`trf[i].path`).
+    #[must_use]
+    pub const fn tx_path(&self, channel: usize) -> TxPath {
+        self.tx[if channel == 0 { 0 } else { 1 }].path
+    }
+
+    /// Channel `channel`'s (0 is A, else B) cached TX amplifier gain correction
+    /// (`reg_tbb_gc_corr[i]`).
+    #[must_use]
+    pub const fn tbb_gain_correction(&self, channel: usize) -> i8 {
+        self.tbb_gain_correction[if channel == 0 { 0 } else { 1 }]
     }
 
     /// The banks later writes reach.
@@ -385,6 +408,7 @@ impl Lms7002m {
     pub fn trf_path(&mut self, path: TxPath, mode: TxMode) -> Result<Batch, NoChannel> {
         let selected = self.selected()?;
         for (channel, _) in self.tx.iter_mut().zip(selected).filter(|(_, on)| *on) {
+            channel.path = path;
             channel.enabled = mode != TxMode::Disable;
             channel.loopback = mode == TxMode::Loopback;
         }

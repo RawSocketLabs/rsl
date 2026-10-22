@@ -165,6 +165,36 @@ impl Control {
         self.tx_band_with(|band| band.names.iter().any(|n| n.eq_ignore_ascii_case(name)))
     }
 
+    /// `hertz` as `direction`'s NCO word, a 32-bit fraction of the converter clock (CGEN
+    /// over the ADC or DAC divider; `lms7002m_bb_translate`). Half the converter clock
+    /// gives 2³¹, which libusdr converts to `INT32_MIN`: reproduced.
+    ///
+    /// # Errors
+    ///
+    /// [`ControlError::NoRate`] before a sample rate set the converter clock (libusdr
+    /// divides by zero); [`ControlError::NcoOutOfRange`] beyond half of it.
+    pub fn nco_word(&self, direction: Direction, hertz: i32) -> Result<i32, ControlError> {
+        let divider = match direction {
+            Direction::Rx => self.clocks.rx_converter_div,
+            Direction::Tx => self.clocks.tx_converter_div,
+        };
+        let converter = self
+            .clocks
+            .cgen
+            .checked_div(divider)
+            .filter(|&clock| clock != 0)
+            .ok_or(ControlError::NoRate)?;
+        let relative = f64::from(hertz) / f64::from(converter);
+        if !(-0.5..=0.5).contains(&relative) {
+            return Err(ControlError::NcoOutOfRange);
+        }
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "libusdr's double-to-int32 conversion: within ±2^31, 2^31 wrapping"
+        )]
+        Ok((relative * NCO_SCALE) as i64 as i32)
+    }
+
     /// Sets a baseband NCO to `hertz` on `channels` (`lms7002m_bb_set_freq`): the
     /// frequency as a 32-bit fraction of the converter clock (CGEN over the ADC or DAC
     /// divider), stored per channel; when the direction runs, the banks selected and the
@@ -185,27 +215,10 @@ impl Control {
         if channels == Mac::None {
             return Operation::finished(&self, frontend, Err(ControlError::NoChannel));
         }
-        let divider = match direction {
-            Direction::Rx => self.clocks.rx_converter_div,
-            Direction::Tx => self.clocks.tx_converter_div,
+        let word = match self.nco_word(direction, hertz) {
+            Ok(word) => word,
+            Err(error) => return Operation::finished(&self, frontend, Err(error)),
         };
-        let Some(converter) = self
-            .clocks
-            .cgen
-            .checked_div(divider)
-            .filter(|&clock| clock != 0)
-        else {
-            return Operation::finished(&self, frontend, Err(ControlError::NoRate));
-        };
-        let relative = f64::from(hertz) / f64::from(converter);
-        if !(-0.5..=0.5).contains(&relative) {
-            return Operation::finished(&self, frontend, Err(ControlError::NcoOutOfRange));
-        }
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "libusdr's double-to-int32 conversion: within ±2^31, 2^31 wrapping"
-        )]
-        let word = (relative * NCO_SCALE) as i64 as i32;
         let (words, running, tsp) = match direction {
             Direction::Rx => (&mut self.rx_nco, self.rx_running, Tsp::Rx),
             Direction::Tx => (&mut self.tx_nco, self.tx_running, Tsp::Tx),

@@ -481,6 +481,33 @@ impl Control {
         (self.rx_lo, self.tx_lo)
     }
 
+    /// The reference clock in hertz (`fref`).
+    #[must_use]
+    pub const fn reference(&self) -> NonZeroU32 {
+        self.reference
+    }
+
+    /// The receive and transmit paths last selected (`rx_rfic_path`, `tx_rfic_path`).
+    #[must_use]
+    pub const fn routes(&self) -> (RxRoute, TxRoute) {
+        (self.rx_route, self.tx_route)
+    }
+
+    /// Each channel's TX pad loss as stored (`tx_loss`).
+    #[must_use]
+    pub const fn tx_loss(&self) -> [u8; 2] {
+        self.tx_loss
+    }
+
+    /// Each channel's `direction` NCO word, once set (`rx_dsp`, `tx_dsp`).
+    #[must_use]
+    pub const fn nco_words(&self, direction: Direction) -> [Option<i32>; 2] {
+        match direction {
+            Direction::Rx => self.rx_nco,
+            Direction::Tx => self.tx_nco,
+        }
+    }
+
     /// Sets a gain on both channels (`lms7002m_set_gain` with `LMS7_CH_AB`): both banks
     /// selected, then the stage written. Returns the operation and the gain libusdr
     /// reports as reached, in dB.
@@ -600,23 +627,34 @@ impl Control {
     }
 }
 
-/// `lms7002m_rbb_bandwidth` or `lms7002m_tbb_bandwidth`: the filter path, then its codes.
-fn push_bandwidth(calls: &mut Calls, direction: Direction, hertz: NonZeroU32) {
+/// `lms7002m_rbb_bandwidth` or `lms7002m_tbb_bandwidth` without loopback: the filter
+/// path for `hertz`, then its codes, on the selected banks.
+#[must_use]
+pub fn bandwidth_calls(direction: Direction, hertz: NonZeroU32) -> [ChipCall; 2] {
     match direction {
         Direction::Rx => {
             let path = rbb_filter(hertz.get());
             let params = LpfParams::rbb_default(hertz, path == RbbPath::LowBand);
-            calls
-                .push(ChipCall::RbbPath(path, crate::RbbMode::Normal))
-                .push(ChipCall::RbbLpf(params));
+            [
+                ChipCall::RbbPath(path, crate::RbbMode::Normal),
+                ChipCall::RbbLpf(params),
+            ]
         }
         Direction::Tx => {
             let path = tbb_filter(hertz.get());
             let params = LpfParams::tbb_default(hertz.get(), path == TbbPath::Ladder);
-            calls
-                .push(ChipCall::TbbPath(path, crate::TbbMode::Normal))
-                .push(ChipCall::TbbLpf(params));
+            [
+                ChipCall::TbbPath(path, crate::TbbMode::Normal),
+                ChipCall::TbbLpf(params),
+            ]
         }
+    }
+}
+
+/// [`bandwidth_calls`], queued.
+fn push_bandwidth(calls: &mut Calls, direction: Direction, hertz: NonZeroU32) {
+    for call in bandwidth_calls(direction, hertz) {
+        calls.push(call);
     }
 }
 
