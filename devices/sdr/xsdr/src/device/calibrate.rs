@@ -34,7 +34,9 @@ use std::time::Duration;
 use bnb::u3;
 use hal::FpgaAccess;
 use lms7002m::ctrl::{self, ChipCall, Direction, RfPath, RxRoute, TxRoute};
-use lms7002m::{DcDac, Mac, RxGainStage, RxPath, Synthesizer, Tsp, TspGenerator, TuneError};
+use lms7002m::{
+    Channel, DcDac, Mac, RxGainStage, RxPath, Synthesizer, Tsp, TspGenerator, TuneError,
+};
 use lms7002m::{TxGainStage, TxPath};
 use sdr_cal::search::{Axis, Limits, Objective2d, Search, Stage, best_2d};
 
@@ -135,7 +137,9 @@ pub struct RfCalibration {
     /// The TX DC DACs' I and Q.
     pub tx_lo: Option<[i32; 2]>,
 
-    /// The RX processor's phase code and gain balance (negative lowers Q, positive I).
+    /// The RX processor's phase code and gain balance (negative lowers Q, positive I);
+    /// `None` also when, without a TX stream, the search failed and the TX stream-down
+    /// after it hid the failure, as libusdr hides it.
     pub rx_iq: Option<[i32; 2]>,
 
     /// The TX processor's, likewise; `None` also when the test tone measured too weak,
@@ -265,9 +269,9 @@ impl Device {
             mute: self.tx_mute,
             routes: self.control.routes(),
             tx_loss: self.control.tx_loss(),
-            gain_correction: chip.tbb_gain_correction(index),
-            lna: chip.rx_path(index),
-            band: chip.tx_path(index),
+            gain_correction: chip.tbb_gain_correction(chip_channel(channel)),
+            lna: chip.rx_path(chip_channel(channel)),
+            band: chip.tx_path(chip_channel(channel)),
             lo: self.control.lo(),
             tx_running: self.control.tx_running().contains(&true),
         };
@@ -604,9 +608,9 @@ impl Device {
                 } else {
                     (full.wrapping_sub(value), full)
                 };
-                // `unsigned ig, qg`, kept in the registers' 11 bits.
-                let code =
-                    |gain: i32| u16::from_le_bytes([gain.to_le_bytes()[0], gain.to_le_bytes()[1]]);
+                // The searches keep the balance within −1024 to 1023, so both codes are
+                // 1023 to 2047.
+                let code = |gain: i32| u16::try_from(gain).expect("invariant: 11-bit gain code");
                 self.run_chip(&[select, ChipCall::TspGainCorrection(tsp, code(i), code(q))])
             }
             Corr::Frequency(value) => {
@@ -740,8 +744,13 @@ impl Device {
         self.run_control(op)?;
         self.set_tx_mute(saved.mute)?;
         self.run_chip(&[ChipCall::MacSet(channel)])?;
-        let index = channel_index(channel);
-        if self.control.chip().tbb_gain_correction(index) != saved.gain_correction {
+        // libusdr saves the correction as `uint8_t` and compares it with the `int8_t`
+        // cache, so a negative one never compares equal and is always rewritten: kept.
+        let current = self
+            .control
+            .chip()
+            .tbb_gain_correction(chip_channel(channel));
+        if saved.gain_correction < 0 || current != saved.gain_correction {
             self.run_chip(&[ChipCall::TbbGain(saved.gain_correction)])?;
         }
         let (rx_rate, tx_rate) = super::quality::host_rates(self.rate);
@@ -860,11 +869,14 @@ impl Objective2d for Objective<'_> {
 
     fn set(&mut self, _stage: usize, axis: Axis, value: i32) -> Result<(), Error> {
         let (direction, corr) = self.corr(axis, value);
-        self.device.set_corr(self.channel, direction, corr)
+        // `find_best_2d` ignores these calls' results and searches on: kept.
+        let _ = self.device.set_corr(self.channel, direction, corr);
+        Ok(())
     }
 
     fn evaluate(&mut self, stage: usize, axis: Axis, value: i32) -> Result<i32, Error> {
-        self.set(stage, axis, value)?;
+        let (direction, corr) = self.corr(axis, value);
+        self.device.set_corr(self.channel, direction, corr)?;
         // The TX LO search's last stage measures four times as long (`mulf`).
         let factor = if self.kind == Kind::TxLo && stage == 3 {
             4
@@ -874,6 +886,15 @@ impl Objective2d for Objective<'_> {
         let log_duration = self.log_duration.wrapping_mul(factor);
         self.device
             .measure(channel_index(self.channel), log_duration)
+    }
+}
+
+/// The chip's channel `channel` names (A for anything but B).
+fn chip_channel(channel: Mac) -> Channel {
+    if channel == Mac::B {
+        Channel::B
+    } else {
+        Channel::A
     }
 }
 

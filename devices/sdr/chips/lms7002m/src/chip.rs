@@ -97,6 +97,26 @@ impl TxPath {
     }
 }
 
+/// One of the chip's two channels, whose front ends and processors are cached apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Channel {
+    /// Channel A (`MAC` 1).
+    A,
+
+    /// Channel B (`MAC` 2).
+    B,
+}
+
+impl Channel {
+    /// The channel's index in libusdr's per-channel arrays.
+    const fn index(self) -> usize {
+        match self {
+            Self::A => 0,
+            Self::B => 1,
+        }
+    }
+}
+
 /// An operation on banked registers found no channel selected (`MAC` = none); libusdr
 /// returns `-EINVAL` and writes nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -229,23 +249,22 @@ impl Lms7002m {
         }
     }
 
-    /// Channel `channel`'s (0 is A, else B) receive LNA as last set (`rfe[i].path`).
+    /// `channel`'s receive LNA as last set (`rfe[i].path`).
     #[must_use]
-    pub const fn rx_path(&self, channel: usize) -> RxPath {
-        self.rx[if channel == 0 { 0 } else { 1 }].path
+    pub const fn rx_path(&self, channel: Channel) -> RxPath {
+        self.rx[channel.index()].path
     }
 
-    /// Channel `channel`'s (0 is A, else B) transmit band as last set (`trf[i].path`).
+    /// `channel`'s transmit band as last set (`trf[i].path`).
     #[must_use]
-    pub const fn tx_path(&self, channel: usize) -> TxPath {
-        self.tx[if channel == 0 { 0 } else { 1 }].path
+    pub const fn tx_path(&self, channel: Channel) -> TxPath {
+        self.tx[channel.index()].path
     }
 
-    /// Channel `channel`'s (0 is A, else B) cached TX amplifier gain correction
-    /// (`reg_tbb_gc_corr[i]`).
+    /// `channel`'s cached TX amplifier gain correction (`reg_tbb_gc_corr[i]`).
     #[must_use]
-    pub const fn tbb_gain_correction(&self, channel: usize) -> i8 {
-        self.tbb_gain_correction[if channel == 0 { 0 } else { 1 }]
+    pub const fn tbb_gain_correction(&self, channel: Channel) -> i8 {
+        self.tbb_gain_correction[channel.index()]
     }
 
     /// The banks later writes reach.

@@ -39,6 +39,11 @@ fn a_calibration_before_any_rate_or_of_no_one_channel_is_refused_before_any_acce
         device.calibrate(Mac::A, ALL),
         Err(Error::NoSampleRate)
     ));
+    assert_eq!(
+        sim.board().trace().len(),
+        before,
+        "refused before any access"
+    );
     device
         .set_sample_rate(10_000_000, 10_000_000)
         .expect("rate");
