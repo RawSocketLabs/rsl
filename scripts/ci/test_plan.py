@@ -44,13 +44,15 @@ def fixture():
         HAL: Package("hal", set()),
         LP8758: Package("lp8758", {BNB, HAL}),
         LMK05318: Package("lmk05318", {BNB}),
+        f"{LMK05318}/sim": Package("lmk05318-sim", set()),
+        f"{FRONTEND}/sim": Package("sdr-frontend-sim", {f"{LMK05318}/sim"}),
         FRONTEND: Package("sdr-frontend", {BNB, LMK05318, HAL}),
         STREAM: Package("sdr-stream", {BNB, HAL}),
         f"{STREAM}/sim": Package("sdr-stream-sim", set()),
         "transports/usb": Package("usb", set()),
         "devices/sdr/usdr": Package("usdr", {BNB, FRONTEND, LMK05318, HAL, LP8758, STREAM,
                                                  "transports/usb", "devices/sdr/usdr/sim"}),
-        "devices/sdr/usdr/sim": Package("usdr-sim", {f"{STREAM}/sim"}),
+        "devices/sdr/usdr/sim": Package("usdr-sim", {f"{STREAM}/sim", f"{FRONTEND}/sim"}),
         USDR_ORACLE: Package("usdr-oracle", {"devices/sdr/usdr", "devices/sdr/usdr/sim"}, False),
         USDR_PORTABLE: Package("usdr-nostd-check", {BNB, USDR, HAL, LP8758, STREAM}, False),
         LMS7002M: Package("lms7002m", {BNB, HAL}),
@@ -58,7 +60,7 @@ def fixture():
         XSDR: Package("xsdr", {FRONTEND, LMS7002M, HAL, LP8758, STREAM, "devices/sdr/xsdr/sim"}),
         XSDR_PORTABLE: Package("xsdr-nostd-check", {XSDR, LMS7002M, HAL, LP8758}, False),
         "devices/sdr/xsdr/sim": Package("xsdr-sim", {"devices/sdr/chips/lms7002m/sim",
-                                                     f"{STREAM}/sim"}),
+                                                     f"{STREAM}/sim", f"{FRONTEND}/sim"}),
         XSDR_ORACLE: Package("xsdr-oracle", {XSDR, "devices/sdr/xsdr/sim", USDR_ORACLE},
                              False),
         LSDR: Package("lsdr", {BNB, FRONTEND, HAL, "devices/sdr/lsdr/sim"}),
@@ -66,7 +68,7 @@ def fixture():
         "devices/sdr/lsdr/sim": Package("lsdr-sim", set()),
         LSDR_ORACLE: Package("lsdr-oracle", {LSDR, "devices/sdr/lsdr/sim", USDR_ORACLE},
                              False),
-        "devices/sync/pe_sync/sim": Package("pe-sync-sim", set()),
+        "devices/sync/pe_sync/sim": Package("pe-sync-sim", {f"{LMK05318}/sim"}),
         PE_SYNC: Package("pe-sync", {BNB, LMK05318, HAL, "devices/sync/pe_sync/sim"}),
         PE_SYNC_PORTABLE: Package("pe-sync-nostd-check", {PE_SYNC, BNB, LMK05318, HAL},
                                   False),
@@ -417,6 +419,14 @@ class SelectionTests(unittest.TestCase):
         self.assertIn("xsdr-oracle", plan["profiles"])
         self.assertNotIn("lsdr-oracle", plan["profiles"])
         self.assertNotIn("usdr-oracle", plan["profiles"])
+
+    def test_shared_lmk05318_model_selects_both_kinds_of_board_and_their_oracles(self):
+        plan = planned([f"{LMK05318}/sim/src/lib.rs"])
+        self.assertEqual(plan["packages"],
+                         ["lmk05318-sim", "pe-sync", "pe-sync-sim", "sdr-frontend-sim", "usdr",
+                          "usdr-sim", "xsdr", "xsdr-sim"])
+        for oracle in ("pe-sync-oracle", "usdr-oracle", "xsdr-oracle"):
+            self.assertIn(oracle, plan["profiles"])
 
     def test_limesdr_driver_changes_rerun_its_oracle_and_fixture_not_the_other_families(self):
         plan = planned([f"{LIMESDR}/src/portable/open.rs"])

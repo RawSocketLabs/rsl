@@ -73,6 +73,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "lmk05318-sim"
+version = "0.0.0"
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -111,6 +115,7 @@ dependencies = [
 name = "pe-sync-sim"
 version = "0.0.0"
 dependencies = [
+ "lmk05318-sim",
  "thiserror",
 ]
 

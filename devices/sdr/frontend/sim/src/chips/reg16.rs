@@ -1,5 +1,4 @@
-//! A 16-bit-address, 8-bit-data I2C register file (the LMK5C33216 clock synchronizer, and
-//! the LMK05318's storage).
+//! A 16-bit-address, 8-bit-data I2C register file (the LMK5C33216 clock synchronizer).
 
 use super::I2cChip;
 

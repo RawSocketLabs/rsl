@@ -9,6 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+lmk05318-sim.workspace = true
 thiserror.workspace = true
 
 [lints]

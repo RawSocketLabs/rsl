@@ -1,4 +1,4 @@
-//! The register file shared by the I2C parts (LMK05318, LMK1D1208I, LP87524): byte-wide
+//! The register file shared by the I2C parts (LMK1D1208I, LP87524): byte-wide
 //! registers behind a register pointer of one or two bytes, sent MSB first, that
 //! auto-increments past each byte written or read.
 //!
