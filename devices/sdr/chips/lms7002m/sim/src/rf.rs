@@ -42,7 +42,10 @@
 //!   encoding `xsdr` already assumes); the receive output is reported in 12-bit LSBs,
 //!   2048 to full scale (libusdr's `xsdr_rfe_pwrdc_get` divides by 2048).
 //! - Correction stages act as `I' = gI·I` and `Q' = gQ·(Q + t·I)`, with `gI`, `gQ` the
-//!   gain codes over 2047 and `t` the phase code over 2048, applied after the transmit
+//!   gain codes over 2047 (a code never written counts as 2047, unity, standing in for
+//!   the reset value the source does not give, as `usdr-sim`'s unwritten correction terms
+//!   pass the signal; libusdr's TX I/Q calibration enables the gain stage without
+//!   writing its codes when no stream ran) and `t` the phase code over 2048, applied after the transmit
 //!   mixer and before the receive one, so they can cancel an image as the calibration
 //!   presumes. The transmit chain is the generator, the mixer, the correction, the DC
 //!   DAC, the analog imbalance, then the LO leakage; the receive chain the analog
@@ -267,7 +270,12 @@ impl View<'_> {
         let reg = |addr| self.banks.reg(channel, addr);
         let config = reg(tsp.config);
         let (gain_i, gain_q) = if config & GAIN_BYPASS == 0 {
-            let code = |addr| f64::from(reg(addr) & 0x7ff) / 2047.0;
+            // An unwritten code passes the signal unchanged; see the module docs.
+            let code = |addr| {
+                self.banks.regs[channel]
+                    .get(&addr)
+                    .map_or(1.0, |&value| f64::from(value & 0x7ff) / 2047.0)
+            };
             (code(tsp.gain_i), code(tsp.gain_q))
         } else {
             (1.0, 1.0)
