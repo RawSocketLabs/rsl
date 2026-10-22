@@ -607,6 +607,25 @@ impl Oracle {
         if errno == 0 { Ok(value) } else { Err(errno) }
     }
 
+    /// The RF calibration's results as libusdr keeps them (`/dm/sdr/0/calibrate` read:
+    /// `dev_m2_lm7_1_calibrate_get` returns a pointer to the device's `cal_data`, which
+    /// `xsdr_calibrate` fills): RX LO I and Q, TX LO I and Q, then the RX and TX I/Q
+    /// imbalance slots.
+    ///
+    /// # Errors
+    ///
+    /// The negative errno libusdr returned.
+    pub fn calibration_results(&mut self) -> Result<[i32; 8], i32> {
+        let address = self.get_uint(c"/dm/sdr/0/calibrate")?;
+        let data = usize::try_from(address).map_err(|_| -EINVAL)? as *const [i32; 8];
+        if data.is_null() {
+            return Err(-EINVAL);
+        }
+        // SAFETY: the handler returns the address of the open device's `int cal_data[8]`,
+        // which lives as long as the device and is not written while no call runs.
+        Ok(unsafe { data.read_unaligned() })
+    }
+
     /// Creates an RX stream on `/ll/srx/0` in `ci16` (`usdr_dms_create_ex`, no flags) on the
     /// channels in `channels`, libusdr's mask of channel numbers (1 for `a`, 2 for `b`, 3
     /// for both), with `samples_per_packet` samples per packet.

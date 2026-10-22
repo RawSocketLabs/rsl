@@ -5,6 +5,7 @@
 use std::fmt;
 use std::time::Duration;
 
+mod calibrate;
 mod controls;
 mod diagnostics;
 mod format;
@@ -15,6 +16,7 @@ mod stream;
 mod stream_options;
 mod tx_stream;
 
+pub use calibrate::{Calibrations, RfCalibration};
 pub use controls::{IqCorrection, LmlRxMode, TxGenerator};
 pub use diagnostics::{ClockReadings, RxCapture, RxPhyDelay};
 pub use format::{HostSample, WireFormat};
@@ -114,6 +116,13 @@ pub struct Device {
     /// The TX stream, once created.
     tx_stream: Option<tx_stream::TxStream>,
 
+    /// The TX mutes last set (`dsp_txcfg`): bit 1 mutes A, bit 0 B.
+    tx_mute: u8,
+
+    /// Measurements a DC reading takes the best of (`meas_cnt + 1`): 1 until a
+    /// calibration sets 2.
+    measurements: u8,
+
     /// The board has been closed, by [`Device::close`] or on drop.
     closed: bool,
 }
@@ -189,6 +198,8 @@ impl Device {
             hw_channels: [2; 2],
             rx_stream: None,
             tx_stream: None,
+            tx_mute: 0,
+            measurements: 1,
             closed: false,
         })
     }

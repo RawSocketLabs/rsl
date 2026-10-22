@@ -96,6 +96,15 @@ pub(crate) enum RxPhyBank {
         reason = "the host-side quality check uses it; the no_std fixture compiles the tree without it"
     )]
     Capture = 5,
+
+    /// The DC estimator (`PHY_REG_RXBANK_DC_EST`): written, address 0 holds (1) or runs
+    /// (0) it and address 1 sets its accumulation; a read request selects the generation
+    /// (0) or a channel's I or Q (4 to 7).
+    #[allow(
+        dead_code,
+        reason = "the host-side RF calibration uses it; the no_std fixture compiles the tree without it"
+    )]
+    DcEstimator = 6,
 }
 
 impl RxPhyBank {

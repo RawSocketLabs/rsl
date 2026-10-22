@@ -168,7 +168,7 @@ impl Device {
 /// The RX and TX rates before the FPGA's DSP chains: the LMS7002M's rates (`s_rxrate`,
 /// `s_txrate`) divided by the chains' factors as last loaded, or (no DUC/DDC, where libusdr
 /// divides by 0 and traps) by 1.
-fn host_rates(state: RateState) -> (u32, u32) {
+pub(super) fn host_rates(state: RateState) -> (u32, u32) {
     let divide = |rate: u32, factor: u32| rate.checked_div(factor).unwrap_or(rate);
     (
         divide(state.rx, state.rx_decimation),

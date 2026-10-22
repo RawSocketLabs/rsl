@@ -275,6 +275,16 @@ pub enum Error {
     /// names of the boards that would do.
     #[error("no {0} front end is attached")]
     FrontEndMissing(&'static str),
+
+    /// The RX PHY's DC estimator finished no measurement in 8000 polls 500 µs apart:
+    /// libusdr's `-EAGAIN`.
+    #[error("the DC estimator produced no measurement")]
+    EstimatorStalled,
+
+    /// The RF calibration's test tone measured below −70 dB of full scale at its loudest:
+    /// libusdr's `-ENAVAIL` ("Signal is too low to perform calibration").
+    #[error("the calibration's test signal is too weak")]
+    WeakCalibrationSignal,
 }
 
 /// A failed portable register sequence, with the register or chip it names.
