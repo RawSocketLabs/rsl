@@ -36,9 +36,9 @@ mod vco;
 
 pub use batch::{BATCH_CAPACITY, Batch};
 pub use chip::{
-    BistCheck, CgenTune, DcDac, LmlConfig, LmlMap, Lms7002m, LpfParams, NoChannel, RbbMode,
-    RbbPath, RxGainStage, RxMode, SxxTune, Synthesizer, TbbMode, TbbPath, Tsp, TspGenerator,
-    TuneError, TxGainStage, TxMode, TxPath,
+    BistCheck, CgenTune, Channel, DcDac, LmlConfig, LmlMap, Lms7002m, LpfParams, NoChannel,
+    RbbMode, RbbPath, RxGainStage, RxMode, SxxTune, Synthesizer, TbbMode, TbbPath, Tsp,
+    TspGenerator, TuneError, TxGainStage, TxMode, TxPath,
 };
 pub use create::{Create, ResetPlan};
 pub use reg::Reg;

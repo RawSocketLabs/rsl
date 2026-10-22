@@ -21,7 +21,7 @@ mod sim_bus;
 use core::ffi::CStr;
 
 use sim_bus::SimBus;
-use xsdr::{Calibrations, Device, Error, Mac, RfCalibration, TxRoute};
+use xsdr::{Calibrations, Device, Error, Gain, Mac, RfCalibration, TxChannels, TxRoute};
 use xsdr_oracle::Oracle;
 use xsdr_sim::{Imbalance, Loopback, Op, SimBoard, Variant};
 
@@ -35,6 +35,8 @@ const ERANGE: i32 = 34;
 const ENAVAIL: i32 = 119;
 /// An XSDR with a TX MMCM and a DUC/DDC.
 const DUC_DDC: u32 = 0x0030_0024;
+/// A gateware build libusdr streams TX from (`MINIM_FWID_COMPAT`).
+const TX_GATEWARE: u32 = 0xd2b1_0c09;
 /// An XSDR with a TX MMCM only.
 const TX_MMCM: u32 = 0x0030_0020;
 
@@ -84,6 +86,10 @@ enum Call {
     Tx(u32),
     /// `/dm/sdr/0/tx/path`.
     TxPath(TxRoute),
+    /// `/dm/sdr/0/tx/gain/vga1`.
+    TxPga(i32),
+    /// A TX stream on channel A, 64 samples per packet.
+    CreateTx,
     /// `/dm/sdr/0/calibrate` with libusdr's flags.
     Calibrate(u64),
     /// `/dm/sdr/0/rx/dccorr` read.
@@ -149,6 +155,12 @@ fn libusdr(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, bool, Vec<Op>) {
             Call::Tx(hz) => set(&mut oracle, c"/dm/sdr/0/tx/frequency", hz.into()),
             Call::TxPath(route) => set(&mut oracle, c"/dm/sdr/0/tx/path", tx_code(route)),
             Call::Calibrate(flags) => set(&mut oracle, c"/dm/sdr/0/calibrate", flags),
+            Call::TxPga(value) => set(
+                &mut oracle,
+                c"/dm/sdr/0/tx/gain/vga1",
+                u64::from_ne_bytes(i64::from(value).to_ne_bytes()),
+            ),
+            Call::CreateTx => oracle.create_tx_stream(1, 64).map(|()| false),
             Call::DcLevel => {
                 // `*ov = out`: the int sign-extended; its low half is the int.
                 let level = oracle.get_uint(c"/dm/sdr/0/rx/dccorr").map(|word| {
@@ -197,6 +209,8 @@ fn rsl(board: SimBoard, calls: &[Call]) -> (Vec<Outcome>, Vec<Op>) {
             Call::Rx(hz) => done(device.set_rx_frequency(hz)),
             Call::Tx(hz) => done(device.set_tx_frequency(hz)),
             Call::TxPath(route) => done(device.set_tx_path(route)),
+            Call::TxPga(value) => done(device.set_gain(Gain::TxPga, value).map(|_| ())),
+            Call::CreateTx => done(device.create_tx_stream(TxChannels::A, 64)),
             Call::Calibrate(flags) => {
                 let (channel, wanted) = calibrations(flags);
                 match device.calibrate(channel, wanted) {
@@ -284,9 +298,11 @@ fn each_calibration_alone_matches_libusdr_and_finds_the_loops_offsets() {
         calls.extend([Call::Calibrate(flags), Call::DcLevel]);
         let outcomes = assert_same(looped, &calls, name);
         let found = outcomes[setup().len()];
+        // Characterization: the codes libusdr's searches reached over `LOOP` at the vendored
+        // PIN (xsdr matches them above). The RX LO's are within a step of the offset
+        // (12.3, -7.6) they cancel; the TX LO's cancel the leakage (83.4, -51.2) as the TX
+        // imbalance skews it.
         match flags {
-            // The DAC codes cancelling the loop's (12.3, -7.6) and, through the TX
-            // imbalance, (83.4, -51.2).
             RX_LO => assert_eq!(found, Outcome::Lo([-12, 7, 0, 0])),
             TX_LO => assert_eq!(found, Outcome::Lo([0, 0, -82, 53])),
             _ => assert_eq!(found, Outcome::Lo([0; 4])),
@@ -361,4 +377,41 @@ fn off_duc_ddc_gateware_libusdr_traps_in_the_restore_where_xsdr_divides_by_one()
     let (_, trapped, _) = libusdr(board(), &calls);
     assert!(!trapped);
     assert_same(board, &calls, "TX MMCM only, kept");
+}
+
+#[test]
+fn a_running_tx_stream_a_missing_lo_and_a_negative_tx_gain_match_libusdr() {
+    let streaming = || looped().with_gateware_build(TX_GATEWARE);
+    let mut calls = setup();
+    calls.extend([Call::CreateTx, Call::Calibrate(ALL)]);
+    let outcomes = assert_same(streaming, &calls, "TX streaming");
+    assert!(
+        outcomes[..calls.len() - 1]
+            .iter()
+            .all(|o| *o == Outcome::Errno(0)),
+        "TX streaming: setup ran: {outcomes:?}"
+    );
+
+    // No RX LO: the TX calibrations set the RX filter to 1 MHz and disable SXR after.
+    let mut calls = setup();
+    calls.retain(|call| !matches!(call, Call::Rx(_)));
+    calls.push(Call::Calibrate(TX_LO | TX_IQ));
+    assert_same(looped, &calls, "no RX LO");
+
+    // No TX LO: the RX I/Q calibration tunes SXT for its tone, then disables it.
+    let mut calls = setup();
+    calls.retain(|call| !matches!(call, Call::Tx(_)));
+    calls.push(Call::Calibrate(RX_IQ));
+    assert_same(looped, &calls, "no TX LO");
+
+    // A negative TX gain correction, which libusdr's restore always rewrites.
+    let mut calls = setup();
+    calls.extend([Call::TxPga(-5), Call::Calibrate(RX_LO)]);
+    let outcomes = assert_same(looped, &calls, "negative TX PGA");
+    assert!(
+        outcomes[..calls.len() - 1]
+            .iter()
+            .all(|o| *o == Outcome::Errno(0)),
+        "negative TX PGA: setup ran: {outcomes:?}"
+    );
 }
