@@ -19,7 +19,7 @@ generator. libusdr declares no TX channel and no DAC (`max_hw_tx_chans` 0,
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `lsdr` (unpublished, root workspace member) | The driver, on `hal`, `bnb`, `sdr-frontend` (`../frontend`, the front-end probe and bring-ups) `sdr-gearbox` (`../gearbox`, the FIR gearbox tables) and `sdr-stream` (`../stream`, the RX stream engine's sequences) |
-| `sim/` | `lsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers/GPO, ADS42LBx9 and LMK04832 over SPI, TPS6594, Si549 and TMP108 over I2C, fe1005000 on the front-end connector's SPI, virtual clock, op trace |
+| `sim/` | `lsdr-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA registers/GPO, ADS42LBx9 and LMK04832 over SPI, TPS6594, Si549 and TMP108 over I2C, fe1005000 on the front-end connector's SPI and fe4ch4007200 on its I2C core 1, virtual clock, op trace |
 | `oracle/` | `lsdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `m2_da09_4_ad45_2` driving `sim` through `oracle/shim/sim_plugin.c` |
 | `nostd-check/` | `lsdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `xsdr`'s; `scripts/ci/portable.py lsdr` holds its dependencies to the driver's |
 
@@ -63,8 +63,8 @@ Mirrors `xsdr` (`../xsdr/AGENTS.md`), at the size this slice needs:
 - `src/frontend.rs`: the front-end probe at the end of open, `sdr-frontend`'s with
   compatibility `lsdr` and no hint: fe1005000's register-only XRA1405 check and, when it
   answers, its bring-up (the path tuned to 900 MHz, the status read); then fe4ch4007200's
-  sensor and expander reads on I2C core 1. fe4ch4007200's bring-up is not ported, so one
-  that answers fails open with `Error::FrontEndNotPorted`.
+  sensor and expander reads on I2C core 1 and, when its sensor answers, its bring-up
+  (expander test vectors, outputs and default settings, DAC, sensor reads).
 - `src/lowlevel.rs`: `hal`'s `Bus` seam, re-exported. `src/error.rs`: `Error`.
 - `tests/common/sim_bus.rs`: `Bus` over `lsdr-sim`; `oracle/tests/session_parity.rs`
   includes it with `#[path]`. Like the oracle shim, it passes every I2C core to the board.
@@ -130,7 +130,9 @@ board), `USDR_FE_TYPE` (front-end hint) or `USDR_DEBUG` (debug socket) is set
   With fe1005000 attached its check passes, and the bring-up follows: `tune_rf_path` to
   900 MHz (LO2's then LO1's six MAX2871 words, then band 1 with the 2250 MHz IF on the
   expander's outputs, each exchange after its SPI-extension configuration write), then
-  `GSR2` read for the log; fe4ch4007200 is not probed.
+  `GSR2` read for the log; fe4ch4007200 is not probed. With fe4ch4007200 attached
+  (`SimBoard::with_fe4ch4007200`) its sensor answers and its bring-up follows (42 I2C
+  transfers on core 1 and the 1PPS pin's GPIO write, whole fit).
 - **Power-up** (`/dm/power/en` = 1, `_lsdr_adc_activate(3)`): LDO4 on, 10 ms, GPO bank 2
   (`IGPO_BANK_CFG_ADC`) 0x03 (ADC reset), 0xf0, then 0x00. The Si549 output stays off:
   only `/dm/rate/master` (`si549_set_freq`) enables it.
@@ -181,6 +183,12 @@ Each is stated again, with its evidence, where it is encoded.
   front-end probe and the TMP108 (1:0x4b, `/dm/sensor/temp`) address it. It records the
   I2C core (libusdr's instance) of each transfer and answers on every core, as the shim
   passes it on: fe4ch4007200's probe addresses core 1 (an open item below).
+- fe4ch4007200 (`SimBoard::with_fe4ch4007200`, `sim/src/chips/fe4ch4007200.rs`, on core
+  1): the TMP114 and `DACx0501` as 16-bit registers behind a pointer byte, MSB first
+  (sensor ID 0x1114, a fixed unique ID, 25 °C; DAC ID 0x0195), and four TCA6424As as
+  byte registers whose pointer advances only with bit 7 set, outputs and directions
+  powering on as 0xFF; `Fe4ch4007200Fit` takes an expander or the DAC off the bus or
+  makes the DAC read ID 0. No datasheet is vendored; the frames are libusdr's.
 - fe1005000 (`SimBoard::with_fe1005000`, `sim/src/chips/fe1005000.rs`): the chip select
   last written to the SPI-extension configuration register (58) routes each exchange on
   SPI 4 (7 the XRA1405, 0 and 3 the MAX2871s, 2 the RFSA3713). The XRA1405 is plain
@@ -214,7 +222,8 @@ Not covered: `/dm/rate/master` (Si549 frequency, FIR gearbox, LMK layout and loc
 ADC normal mode, LVDS PHY), RX gain/PGA and NCO, `/dm/stat` PHY tap sweep, temperature,
 streams (`oracle/tests/rate_parity.rs` and `stream_parity.rs` compare the ported ones with
 live libusdr), front ends (`oracle/tests/frontend_parity.rs` compares fe1005000's bring-up
-with live libusdr on every fit, whole sessions, and its debug-command controls). `oracle/tests/identify.rs` covers family selection (`lsdr`, one RX
+with live libusdr on every fit, whole sessions, and its debug-command controls, and
+fe4ch4007200's in each of its fits). `oracle/tests/identify.rs` covers family selection (`lsdr`, one RX
 and zero TX channels), the LMK opt-in, an absent LMK, no front end and the dead link;
 `oracle/tests/power.rs` covers supply/reset ordering and the closed state. The driver is
 compared with live libusdr, not with these files: `oracle/tests/session_parity.rs` covers
@@ -276,8 +285,7 @@ by a lock: one is open at a time per process.
   declared, `-ENOENT`), and lsdr ports that failure; start, receive and stop have no
   libusdr reference. Streaming needs an owner decision and gateware evidence for a sync
   unit (`PORTING.md`).
-- fe4ch4007200 is not modelled (its bring-up is not ported either); the goldens
-  characterise an empty connector only, and fe1005000's model rests on libusdr's frames,
-  not on its chips' datasheets.
+- The goldens characterise an empty connector only; fe1005000's and fe4ch4007200's
+  models rest on libusdr's frames, not on their chips' datasheets.
 - The real SPI framing of 16/24-bit frames and the PCIe UUID path need gateware/kernel
   evidence.

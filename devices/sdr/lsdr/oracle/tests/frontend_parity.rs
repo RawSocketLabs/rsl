@@ -1,8 +1,10 @@
 //! lsdr's front-end bring-up at open against libusdr's, operation for operation, with
 //! fe1005000 on the connector (`lsdr-sim`'s model): the expander check over the
 //! SPI-extension core, the path tuned to 900 MHz (both LOs, the band switches) and the
-//! status read for the log; then its debug-command controls. Each scenario compares the
-//! whole session, open to close.
+//! status read for the log; then its debug-command controls. And with fe4ch4007200 on
+//! I2C core 1 in each fit: identification, the expanders' test vectors, outputs and
+//! default settings, the DAC and the sensor reads. Each scenario compares the whole
+//! session, open to close.
 //!
 //! No divergence is whitelisted.
 
@@ -13,7 +15,7 @@ use std::ffi::CStr;
 
 use lsdr::{Device, Fe1005000Setting, FrontEndKind, OpenOptions};
 use lsdr_oracle::Oracle;
-use lsdr_sim::{Op, SimBoard, Variant};
+use lsdr_sim::{Fe4ch4007200Fit, Op, SimBoard, Variant};
 use sim_bus::SimBus;
 
 /// The expander's output registers, `OCR1` and `OCR2`.
@@ -40,7 +42,17 @@ fn assert_sessions_match(
     connection: &CStr,
     options: OpenOptions,
 ) -> (SimBoard, SimBoard, Option<FrontEndKind>) {
-    let board = || SimBoard::new(variant).with_fe1005000();
+    assert_boards_match(variant, SimBoard::with_fe1005000, connection, options)
+}
+
+/// [`assert_sessions_match`] on `variant` with what `attach` puts on its connector.
+fn assert_boards_match(
+    variant: Variant,
+    attach: impl Fn(SimBoard) -> SimBoard,
+    connection: &CStr,
+    options: OpenOptions,
+) -> (SimBoard, SimBoard, Option<FrontEndKind>) {
+    let board = || attach(SimBoard::new(variant));
     let mut oracle = Oracle::open(board(), connection).expect("libusdr opens the board");
     oracle.set_power(true).expect("libusdr powers the ADCs");
     let reference = oracle.close();
@@ -138,4 +150,54 @@ fn fe1005000_commands_match_libusdr() {
     }
     assert_same_ops(reference.trace(), actual.trace(), "whole session");
     assert_eq!(actual.fe1005000_attenuation(), Some(127));
+}
+
+/// fe4ch4007200 in each fit, on both host fits. Whole, it comes up: test vectors written,
+/// read back and cleared, every pin an output, the default settings on the expanders, the
+/// DAC's gain set, the sensor's ID and temperature read. With a dead expander or a DAC
+/// reading ID 0 libusdr takes it for absent; with the DAC off the bus (an unknown ID)
+/// libusdr fails it and the probe skips it.
+#[test]
+fn fe4ch4007200_comes_up_like_libusdr_in_every_fit() {
+    // Outputs (registers 4 to 6) of U114, U110, U300 and U301 as `ext_fe_update_user`
+    // leaves them.
+    const OUTPUTS: [[u8; 3]; 4] = [
+        [0xff, 0x00, 0xff],
+        [0x0c, 0x55, 0xf0],
+        [0x00, 0x00, 0x93],
+        [0x00, 0x00, 0x93],
+    ];
+    for variant in [Variant::SingleAdc, Variant::DualAdcClockGen] {
+        for (fit, expected) in [
+            (Fe4ch4007200Fit::Whole, Some(FrontEndKind::Fe4ch4007200)),
+            (Fe4ch4007200Fit::DeadExpander, None),
+            (Fe4ch4007200Fit::WithoutDac, None),
+            (Fe4ch4007200Fit::SilentDac, None),
+        ] {
+            let (reference, actual, kind) = assert_boards_match(
+                variant,
+                |board| board.with_fe4ch4007200(fit),
+                c"",
+                OpenOptions::new(),
+            );
+            assert_eq!(kind, expected, "{variant:?} {fit:?}");
+            if fit != Fe4ch4007200Fit::Whole {
+                continue;
+            }
+            let core_1 = actual
+                .trace()
+                .iter()
+                .filter(|op| matches!(op, Op::I2c { addr, .. } if addr.core == 1))
+                .count();
+            assert_eq!(core_1, 42, "the board's transfers, probe reads included");
+            for board in [&reference, &actual] {
+                for (index, outputs) in OUTPUTS.into_iter().enumerate() {
+                    let read = |reg| board.fe4ch4007200_expander_reg(index, reg);
+                    assert_eq!([4, 5, 6].map(read), outputs.map(Some), "expander {index}");
+                    assert_eq!([12, 13, 14].map(read), [Some(0); 3], "expander {index}");
+                }
+                assert_eq!(board.fe4ch4007200_dac_reg(0x04), Some(0x0101), "DAC gain");
+            }
+        }
+    }
 }
