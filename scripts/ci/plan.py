@@ -83,7 +83,7 @@ PE_SYNC_PORTABLE = f"{PE_SYNC}/nostd-check"
 PORTABLE_FIXTURES = {USDR: USDR_PORTABLE, XSDR: XSDR_PORTABLE, LSDR: LSDR_PORTABLE,
                      LIMESDR: LIMESDR_PORTABLE, PE_SYNC: PE_SYNC_PORTABLE}
 # Retain former FFI roots so comparisons against pre-move revisions resolve their dependencies.
-DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
+DETACHED = (*FUZZ, NOSTD, BLADERF, "bindings/airspy", "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
             "usdr", "rust-dsdcc", USDR_ORACLE, USDR_PORTABLE, XSDR_ORACLE, XSDR_PORTABLE,
             LSDR_ORACLE, LSDR_PORTABLE,
             PE_SYNC_ORACLE, PE_SYNC_PORTABLE, LIMESDR_ORACLE, LIMESDR_PORTABLE,
@@ -103,7 +103,7 @@ PROSE_NAMES = {"README.md", "CHANGELOG.md", "DESIGN.md", "ROADMAP.md",
                "LICENSE-MIT", "LICENSE-APACHE"}
 PROFILES = {
     "workspace", "bnb", "socks", "network", "facades", "msrv", "no-std",
-    "public-api", "semver", "deny", "blessed", "usdr-ffi", "rust-dsdcc", "usdr-oracle", "rust-skills",
+    "public-api", "semver", "deny", "blessed", "airspy", "usdr-ffi", "rust-dsdcc", "usdr-oracle", "rust-skills",
     "package", "bladerf", "usdr-portable", "xsdr-portable", "xsdr-oracle", "lsdr-portable", "lsdr-oracle",
     "pe-sync-oracle", "pe-sync-portable", "limesdr-oracle", "limesdr-portable",
 }
@@ -369,7 +369,8 @@ def select(paths, old, new, *, full=False, release_members=(), full_reason="expl
     if "deps" in packages or full:
         profiles.add("blessed")
     profiles.update(new[root].name for root in roots
-                    if root in {"bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc", "usdr", "rust-dsdcc"})
+                    if root in {"bindings/airspy", "bindings/usdr", "bindings/dsdcc", "bindings/rust-dsdcc",
+                                "usdr", "rust-dsdcc"})
     if roots & {BLADERF, f"{BLADERF}/sys"}:
         profiles.add("bladerf")
     if USDR_ORACLE in roots:
