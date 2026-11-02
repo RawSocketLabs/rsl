@@ -43,7 +43,8 @@ JUNIT = "target/nextest/ci/junit.xml"
 WORKSPACE_PARTS = ("lint", "test", "extra")
 CACHE_PATHS = ["~/.cargo/registry/index", "~/.cargo/registry/cache", "~/.cargo/git/db", "target"]
 DETACHED_TARGETS = [
-    "codecs/bitsandbytes/bnb/nostd-check", "tools/rust-skills", "bindings/usdr", "bindings/dsdcc",
+    "codecs/bitsandbytes/bnb/nostd-check", "tools/rust-skills", "bindings/airspy", "bindings/usdr",
+    "bindings/dsdcc",
     "bindings/bladerf", "devices/sdr/usdr/oracle", "devices/sdr/usdr/nostd-check",
     "devices/sdr/xsdr/oracle", "devices/sdr/xsdr/nostd-check", "devices/sdr/lsdr/oracle",
     "devices/sdr/lsdr/nostd-check", "devices/sync/pe_sync/oracle", "devices/sync/pe_sync/nostd-check",

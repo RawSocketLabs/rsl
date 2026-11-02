@@ -130,8 +130,8 @@ def commands(profile, plan, bnb):
                 ["cargo", "clippy", *manifest, "--workspace", "--all-targets", "--", "-D", "warnings"],
                 ["cargo", "check", *manifest, "--workspace", "--all-targets"],
                 ["cargo", "test", *manifest, "-p", "bladerf", "--lib", "configure_module_"]]
-    if profile in {"usdr-ffi", "rust-dsdcc"}:
-        directory = {"usdr-ffi": "usdr", "rust-dsdcc": "dsdcc"}[profile]
+    if profile in {"airspy", "usdr-ffi", "rust-dsdcc"}:
+        directory = {"airspy": "airspy", "usdr-ffi": "usdr", "rust-dsdcc": "dsdcc"}[profile]
         return [["cargo", "check", "--manifest-path", f"bindings/{directory}/Cargo.toml"]]
     if profile in {"usdr-oracle", "xsdr-oracle", "lsdr-oracle", "pe-sync-oracle",
                    "limesdr-oracle"}:
