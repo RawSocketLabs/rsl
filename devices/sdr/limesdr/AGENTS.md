@@ -144,8 +144,9 @@ the vendored `lms64c_proto.c`. `limesdr` adopts the same mapping
   transport's `stream_initialize` sizes one buffer per direction to the block
   `stream_limesdr.c` asks for (stream 0 RX, 1 TX, the channel the stream number) and
   tells the board (`SimBoard::stream_open`), recording the parameters it was asked for
-  (stream number, block size, buffer count, flags), which `Oracle::setup_stream` returns; `recv_dma_wait` fills the RX buffer with the
-  board's next block or returns `-ETIMEDOUT`, `recv_dma_release` does nothing;
+  (stream number, block size, buffer count, flags), which `Oracle::setup_stream` returns;
+  `recv_dma_wait` fills the RX buffer with the board's next block or returns `-ETIMEDOUT`,
+  `recv_dma_release` does nothing;
   `send_dma_get` lends the TX buffer and `send_dma_commit` hands its bytes and the send's
   timestamp (top bit set: none) to the board. `u3_limesdr`'s own stream initialisation
   runs `limesdr_prepare_streaming` first. `stream_limesdr.c`'s framing is compiled
