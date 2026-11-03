@@ -9,7 +9,7 @@ A RawSocket Labs fork of [airspy-rs](https://github.com/adamgreig/airspy-rs)
   or a restart, once libairspy has joined its streaming threads. Upstream leaked
   it to the callback, which with `stop_rx` meant one leaked `Sender` per
   stop/start cycle.
-- `libc`/`num` pinned to their current majors instead of `"*"`.
+- Standard-library C types and `num-complex` replace `libc` and `num`.
 - Device-requiring tests are `#[ignore]`d.
 
 Requires libairspy at least 1.0.6 already built and installed on your system.
@@ -17,38 +17,20 @@ Requires libairspy at least 1.0.6 already built and installed on your system.
 Airspy and must run serially:
 `RUST_TEST_THREADS=1 cargo test -- --ignored`.
 
-Simple usage example:
+See the [crate-level documentation](src/lib.rs) for a complete capture example.
 
-```rust
-extern crate airspy;
-use airspy::{Airspy,IQ};
-use std::sync::mpsc;
+## Receive-only API migration
 
-// Open first available Airspy and configure for floating IQ samples,
-// 10Msps, 434MHz (can also set gains, AGC, RF bias etc).
-let mut dev = Airspy::new().unwrap();
-dev.set_sample_rate(0).unwrap();
-dev.set_freq(434000000).unwrap();
+Reception now accepts only `Sender<Vec<IQ<f32>>>`; remove the type argument
+from `start_rx`. `SampleType`, `Real`, integer sample formats, GPIO, register
+access, and flash declarations were removed. No compatibility aliases remain.
+Only the common C transfer prefix is read, preserving compatibility with both
+1.0.6 and newer layouts containing dropped samples. Errors retain their integer
+code through `Error::code()`. `num-complex` replaces the umbrella `num` crate.
 
-// Samples are sent back to us from the C thread by an MPSC channel
-let (tx, rx) = mpsc::channel();
+`FFIError` is now `Error`, with named native failures such as `Busy` and
+`InvalidParameter`, plus `Unknown(i32)` for future codes. Public items remain
+re-exported from the crate root; implementation is grouped into device, RX,
+library lifecycle, errors, and private FFI modules.
 
-// Begin receiving data. Need the type hint either here or when creating the
-// channel, which must match with the sample type selected earlier.
-dev.start_rx::<IQ<f32>>(tx).unwrap();
-
-// Blocking receive samples, stop after 10M. When the `rx` object goes out of
-// scope and is destroyed, the `tx` detects the hangup and tells libairspy to
-// stop data reception.
-let mut n_samples = 0usize;
-while dev.is_streaming() {
-    let samples = rx.recv().unwrap();
-    n_samples += samples.len() / 2;
-    println!("Got {} samples so far", n_samples);
-    if n_samples > 10_000_000 {
-        break;
-    }
-}
-```
-
-See `src/bin/rx.rs` for a complete example of usage.
+Use `LibVersion::get_version()` instead of the former `lib_version()` function.
