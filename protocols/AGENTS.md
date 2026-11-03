@@ -144,6 +144,7 @@ corpus name once compliance tracking is wired.
 | `link/arp` | link | 0.1.0 | functional (packet codec + rawsock injection) | `arp` (RFC 826) |
 | `system/netlink` | system | 0.1.0 | functional (route/generic codecs, blocking transport, typed WireGuard API) | `netlink` (Linux UAPI) |
 | `session/socks` | session | 0.1.0 | dev (SOCKS5 codecs, blocking/Tokio CONNECT clients and servers) | `socks` (RFC 1928/1929) |
+| `application/rtltcp` | application | 0.1.0 | functional (greeting + command codec, blocking client) | — (no RFC) |
 | `application/{tftp,smb,nbt,ssh,http,…}` | — | — | planned | — |
 
 The roadmap of protocols-to-come lives here, not as empty member dirs — a crate joins

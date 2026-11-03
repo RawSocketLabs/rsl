@@ -1,0 +1,25 @@
+[package]
+name = "rtltcp"
+version = "0.1.0"
+description = "rtl_tcp protocol codec (server greeting and client commands) on the bnb bit-aware codec, with an optional blocking client."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb = { workspace = true, features = ["std"] }
+# thiserror stays a DIRECT dep: its derive references `thiserror::__private` by name.
+thiserror = { workspace = true, optional = true }
+
+[features]
+# A blocking TCP client (`rtltcp::Client`) on std's `TcpStream`. Off by default: the codec
+# stays socket-free unless you opt in.
+client = ["dep:thiserror"]
+
+[[test]]
+name = "client"
+required-features = ["client"]
+
+[lints]
+workspace = true
