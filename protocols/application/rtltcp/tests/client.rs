@@ -7,7 +7,7 @@ mod client {
     use std::time::Duration;
 
     use bnb::{ErrorKind, StreamBitReader};
-    use rtltcp::{Client, ClientError, Command, Greeting, Opcode};
+    use rtltcp::{Client, ClientError, Command, Opcode, TunerInfo};
 
     const TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -36,7 +36,7 @@ mod client {
     }
 
     fn hello() -> Vec<u8> {
-        Greeting::new(1, 29).to_bytes().unwrap()
+        TunerInfo::new(1, 29).to_bytes().unwrap()
     }
 
     /// Hang up, then collect the commands the server received.
@@ -46,10 +46,10 @@ mod client {
     }
 
     #[test]
-    fn connect_reads_the_greeting_and_disables_nagle() {
+    fn connect_reads_the_tuner_info_and_disables_nagle() {
         let (addr, server) = spawn_server(hello(), Vec::new(), true);
         let client = Client::connect(addr.as_str(), TIMEOUT).unwrap();
-        assert_eq!(client.greeting(), Greeting::new(1, 29));
+        assert_eq!(client.tuner_info(), TunerInfo::new(1, 29));
         assert!(client.get_ref().nodelay().unwrap());
         shutdown(client, server);
     }

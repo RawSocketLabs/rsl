@@ -1,11 +1,11 @@
 //! Golden wire vectors: the byte-identity anchor for the greeting and every typed command.
 
 mod contract {
-    use rtltcp::{Command, Greeting, Opcode};
+    use rtltcp::{Command, Opcode, TunerInfo};
 
     #[test]
     fn greeting_is_magic_then_two_big_endian_words() {
-        let wire = Greeting::new(1, 29).to_bytes().unwrap();
+        let wire = TunerInfo::new(1, 29).to_bytes().unwrap();
         assert_eq!(
             wire,
             [

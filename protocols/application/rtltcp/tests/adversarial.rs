@@ -2,16 +2,16 @@
 //! clean error or a preserved value, never a panic.
 
 mod adversarial {
-    use rtltcp::{Command, Greeting, Opcode};
+    use rtltcp::{Command, Opcode, TunerInfo};
 
     #[test]
     fn truncated_greeting_is_a_clean_error() {
-        assert!(Greeting::decode_exact(b"RTL0\0\0\0\x05\0\0").is_err());
+        assert!(TunerInfo::decode_exact(b"RTL0\0\0\0\x05\0\0").is_err());
     }
 
     #[test]
     fn foreign_magic_is_a_bad_magic_error() {
-        let err = Greeting::decode_exact(b"HTTP/1.1 200").unwrap_err();
+        let err = TunerInfo::decode_exact(b"HTTP/1.1 200").unwrap_err();
         assert!(matches!(err.kind, bnb::ErrorKind::BadMagic { .. }), "{err}");
     }
 
@@ -35,7 +35,7 @@ mod adversarial {
             let wire: Vec<u8> = (0..len)
                 .map(|i| i.wrapping_mul(37).wrapping_add(11))
                 .collect();
-            let _ = Greeting::decode_exact(&wire);
+            let _ = TunerInfo::decode_exact(&wire);
             let _ = Command::decode_exact(&wire);
         }
     }

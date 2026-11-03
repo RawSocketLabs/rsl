@@ -11,7 +11,7 @@ use std::time::Duration;
 use bnb::{BitError, EncodeExt, StreamBitReader};
 use thiserror::Error;
 
-use crate::{Command, Greeting, Opcode};
+use crate::{Command, Opcode, TunerInfo};
 
 /// An error from the [`Client`].
 #[derive(Error, Debug)]
@@ -53,7 +53,7 @@ pub enum ClientError {
 #[derive(Debug)]
 pub struct Client {
     stream: TcpStream,
-    greeting: Greeting,
+    tuner_info: TunerInfo,
 }
 
 impl Client {
@@ -79,21 +79,21 @@ impl Client {
         Self::from_stream(stream)
     }
 
-    /// Read the greeting from an already-connected stream.
+    /// Read the greeting, and the [`TunerInfo`] it carries, from an already-connected stream.
     ///
     /// # Errors
     ///
     /// [`ClientError::Handshake`] when the greeting is incomplete or its magic is not `RTL0`.
     pub fn from_stream(stream: TcpStream) -> Result<Self, ClientError> {
         // Takes exactly the greeting's bytes, leaving the sample stream untouched.
-        let greeting = Greeting::decode(&mut StreamBitReader::new(&stream))?;
-        Ok(Self { stream, greeting })
+        let tuner_info = TunerInfo::decode(&mut StreamBitReader::new(&stream))?;
+        Ok(Self { stream, tuner_info })
     }
 
-    /// The greeting the server sent.
+    /// The tuner information the server reported in its greeting.
     #[must_use]
-    pub const fn greeting(&self) -> Greeting {
-        self.greeting
+    pub const fn tuner_info(&self) -> TunerInfo {
+        self.tuner_info
     }
 
     /// The underlying socket.

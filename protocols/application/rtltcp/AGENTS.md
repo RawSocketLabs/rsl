@@ -17,7 +17,8 @@ Deferred: a server half, async clients.
 
 ## Architecture
 
-- `greeting.rs` — `Greeting { tuner_type, gain_count }`, with `RTL0` as the `#[bin]` magic.
+- `tuner_info.rs` — `TunerInfo { tuner_type, gain_count }`, the greeting's payload, with `RTL0`
+  as the `#[bin]` magic.
 - `command.rs` — `Command { opcode, param }` and `Opcode`, a `BitEnum` with an `Other`
   catch-all. Typed constructors cover the opcodes libsdr drives; `Command::new` sends any.
 - `client.rs` — `Client` and `ClientError`. The greeting is decoded straight off the socket
@@ -33,7 +34,7 @@ the client reports as `ClientError::NotRtlTcp`.
 
 ## Testing
 
-- **`unit` / `component`** — inline in `greeting.rs` and `command.rs`.
+- **`unit` / `component`** — inline in `tuner_info.rs` and `command.rs`.
 - **`contract`** — `tests/contract.rs`: golden bytes for the greeting and every typed command.
 - **`adversarial`** — `tests/adversarial.rs`: truncation, foreign magic, unknown opcodes.
 - **`client`** — `tests/client.rs` (`--features client`): real loopback TCP against a scripted
