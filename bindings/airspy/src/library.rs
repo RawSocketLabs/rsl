@@ -1,4 +1,4 @@
-use crate::{ffi, Error, Result};
+use crate::ffi;
 
 /// Hold major, minor and revision version numbers of libairspy C library.
 pub struct LibVersion {
@@ -27,16 +27,6 @@ impl LibVersion {
     }
 }
 
-/// Initialise the Airspy library. Call once at application startup.
-pub fn init() -> Result<()> {
-    Error::check(unsafe { ffi::airspy_init() })
-}
-
-/// Deinitialise the Airspy library. Call once at application end.
-pub fn exit() -> Result<()> {
-    Error::check(unsafe { ffi::airspy_exit() })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -45,17 +35,5 @@ mod tests {
         let v = LibVersion::get_version();
         assert!(v.major == 1);
         assert!((v.minor, v.revision) >= (0, 6));
-    }
-
-    #[test]
-    fn test_init() {
-        assert!(init().is_ok());
-        let _ = exit();
-    }
-
-    #[test]
-    fn test_exit() {
-        let _ = init();
-        assert!(exit().is_ok());
     }
 }

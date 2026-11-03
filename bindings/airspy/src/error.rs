@@ -1,7 +1,7 @@
 use std::ffi::c_int;
 use thiserror::Error;
 
-/// A libairspy failure, retaining unknown native status codes.
+/// A native or receive-adapter failure, retaining unknown native status codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum Error {
     /// Invalid parameter.
@@ -34,6 +34,12 @@ pub enum Error {
     /// Unspecified libairspy failure.
     #[error("unspecified libairspy failure")]
     Other,
+    /// No samples arrived within the receive deadline.
+    #[error("receive timed out")]
+    Timeout,
+    /// The receive buffer filled; stop and restart reception to recover.
+    #[error("receive buffer overflow; restart reception")]
+    Overflow,
     /// A status not recognized by this wrapper.
     #[error("unknown libairspy error code {0}")]
     Unknown(c_int),
@@ -58,23 +64,6 @@ impl Error {
             -1003 => Err(Self::StreamingStopped),
             -9999 => Err(Self::Other),
             code => Err(Self::Unknown(code)),
-        }
-    }
-
-    /// Return the original native status code.
-    pub fn code(self) -> c_int {
-        match self {
-            Self::InvalidParameter => -2,
-            Self::NotFound => -5,
-            Self::Busy => -6,
-            Self::NoMemory => -11,
-            Self::Unsupported => -12,
-            Self::LibUsb => -1000,
-            Self::Thread => -1001,
-            Self::StreamingThread => -1002,
-            Self::StreamingStopped => -1003,
-            Self::Other => -9999,
-            Self::Unknown(code) => code,
         }
     }
 }
@@ -102,7 +91,6 @@ mod tests {
         ];
         for (code, error) in cases {
             assert_eq!(Error::check(code), Err(error));
-            assert_eq!(error.code(), code);
         }
     }
 }

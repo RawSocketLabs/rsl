@@ -36,8 +36,6 @@ pub struct airspy_transfer_t {
 #[link(name = "airspy")]
 extern "C" {
     pub fn airspy_lib_version(version: &mut airspy_lib_version_t);
-    pub fn airspy_init() -> c_int;
-    pub fn airspy_exit() -> c_int;
     pub fn airspy_open_sn(device: *mut *mut AirspyDevice, serial_number: u64) -> c_int;
     pub fn airspy_open(device: *mut *mut AirspyDevice) -> c_int;
     pub fn airspy_close(device: *mut AirspyDevice) -> c_int;

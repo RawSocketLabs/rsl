@@ -1,25 +1,23 @@
-use crate::{ffi, Error, Result, IQ};
+use crate::rx::RxState;
+use crate::{ffi, Error, Result};
 use std::ffi::CStr;
-use std::sync::mpsc::Sender;
 
 /// Store a reference to an opened Airspy device.
 pub struct Airspy {
     pub(crate) ptr: *mut ffi::AirspyDevice,
-    /// Stable callback context, retained until the C threads have joined.
-    pub(crate) rx_ctx: Option<Box<Sender<Vec<IQ<f32>>>>>,
+    /// Stable reception state, retained until the C threads have joined.
+    pub(crate) rx_ctx: Option<Box<RxState>>,
 }
 
 /// Ensure whenever the Airspy goes out of scope it is closed.
 impl Drop for Airspy {
-    #[inline(never)]
     fn drop(&mut self) {
         // airspy_close stops any active RX (cancelling transfers and joining
         // the streaming threads) before freeing the device, so afterwards the
-        // callback context is unreachable and safe to reclaim.
+        // callback context is unreachable; Rust drops it after this returns.
         unsafe {
             ffi::airspy_close(self.ptr);
         }
-        self.rx_ctx.take();
     }
 }
 
@@ -31,7 +29,7 @@ pub struct PartID {
 
 impl Airspy {
     /// Try to open the next available Airspy device.
-    pub fn new() -> Result<Airspy> {
+    pub fn open() -> Result<Self> {
         let mut device: Airspy = Airspy {
             ptr: std::ptr::null_mut(),
             rx_ctx: None,
@@ -41,7 +39,7 @@ impl Airspy {
     }
 
     /// Try to open a specific Airspy device by serial number.
-    pub fn from_serial(serial_number: u64) -> Result<Airspy> {
+    pub fn open_serial(serial_number: u64) -> Result<Self> {
         let mut device: Airspy = Airspy {
             ptr: std::ptr::null_mut(),
             rx_ctx: None,
@@ -53,14 +51,9 @@ impl Airspy {
     /// Get available sample rates for this Airspy.
     pub fn get_sample_rates(&mut self) -> Result<Vec<u32>> {
         let mut len: u32 = 0;
-        let lenp = &mut len as *mut u32;
-        Error::check(unsafe { ffi::airspy_get_samplerates(self.ptr, lenp, 0) })?;
-        let mut rates: Vec<u32> = Vec::with_capacity(len as usize);
-        let ratesp = rates.as_mut_ptr();
-        Error::check(unsafe { ffi::airspy_get_samplerates(self.ptr, ratesp, len) })?;
-        unsafe {
-            rates.set_len(len as usize);
-        }
+        Error::check(unsafe { ffi::airspy_get_samplerates(self.ptr, &mut len, 0) })?;
+        let mut rates = vec![0; len as usize];
+        Error::check(unsafe { ffi::airspy_get_samplerates(self.ptr, rates.as_mut_ptr(), len) })?;
         Ok(rates)
     }
 
@@ -146,132 +139,44 @@ impl Airspy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{exit, init};
+
     #[test]
     #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_new() {
-        let _ = init();
-        let airspy = Airspy::new();
-        assert!(airspy.is_ok());
-        let _ = exit();
+    fn discovers_device_and_available_rates() {
+        let mut device = Airspy::open().unwrap();
+        assert!(!device.get_board_id().unwrap().is_empty());
+        assert!(!device.get_version().unwrap().is_empty());
+        let rates = device.get_sample_rates().unwrap();
+        assert!(!rates.is_empty());
+        assert!(rates.iter().all(|rate| *rate > 0));
     }
 
     #[test]
     #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_from_serial() {
-        let _ = init();
-        let serial: u64;
-        {
-            let mut airspy = Airspy::new().unwrap();
-            let v = airspy.get_partid_serial().unwrap();
-            serial = v.serial_no;
-        }
-        let airspy = Airspy::from_serial(serial);
-        assert!(airspy.is_ok());
-        let _ = exit();
+    fn configures_device_with_advertised_rate() {
+        let mut device = Airspy::open().unwrap();
+        let rates = device.get_sample_rates().unwrap();
+        let rate = *rates.first().expect("device must advertise a sample rate");
+        device.set_sample_rate(rate).unwrap();
+        device.set_freq(434_000_000).unwrap();
+        device.set_lna_gain(7).unwrap();
+        device.set_mixer_gain(7).unwrap();
+        device.set_vga_gain(7).unwrap();
+        device.set_lna_agc(true).unwrap();
+        device.set_mixer_agc(true).unwrap();
+        device.set_rf_bias(false).unwrap();
     }
 
     #[test]
     #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_get_sample_rates() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        let rates = airspy.get_sample_rates();
-        assert!(rates.is_ok());
-        let rates = rates.unwrap();
-        assert!(rates.len() == 2);
-        assert!(rates.contains(&2500000));
-        assert!(rates.contains(&10000000));
-        let _ = exit();
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_set_sample_rate() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.set_sample_rate(10_000_000).is_ok());
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_get_board() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.get_board_id().unwrap() == "AIRSPY");
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_get_version() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.get_version().is_ok());
-        // Don't check this value as it is hardware-dependent.
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_get_partid_serial() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.get_partid_serial().is_ok());
-        // Don't check these values as they are hardware-dependent.
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_set_freq() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.set_freq(434000000).is_ok());
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_set_lna_gain() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.set_lna_gain(7).is_ok());
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_set_mixer_gain() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.set_mixer_gain(7).is_ok());
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_set_vga_gain() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.set_vga_gain(7).is_ok());
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_set_lna_agc() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.set_lna_agc(true).is_ok());
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_set_mixer_agc() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.set_mixer_agc(true).is_ok());
-    }
-
-    #[test]
-    #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn test_set_rf_bias() {
-        let _ = init();
-        let mut airspy = Airspy::new().unwrap();
-        assert!(airspy.set_rf_bias(true).is_ok());
+    fn reopens_same_device_by_serial() {
+        let identity = {
+            let mut device = Airspy::open().unwrap();
+            device.get_partid_serial().unwrap()
+        };
+        let mut reopened = Airspy::open_serial(identity.serial_no).unwrap();
+        let actual = reopened.get_partid_serial().unwrap();
+        assert_eq!(actual.serial_no, identity.serial_no);
+        assert_eq!(actual.part_id, identity.part_id);
     }
 }

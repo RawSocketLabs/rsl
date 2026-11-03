@@ -15,14 +15,12 @@
 //!
 //! ```no_run
 //! use airspy::Airspy;
+//! use num_complex::Complex;
 //! use std::fs::File;
 //! use std::io::{BufWriter, Write};
-//! use std::sync::mpsc;
-//! use std::time::Duration;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! airspy::init()?;
-//! let mut dev = Airspy::new()?;
+//! let mut dev = Airspy::open()?;
 //! dev.set_sample_rate(10_000_000)?;
 //! dev.set_freq(434_000_000)?;
 //! dev.set_lna_agc(false)?;
@@ -32,13 +30,13 @@
 //! dev.set_vga_gain(0)?;
 //!
 //! let mut output = BufWriter::new(File::create("airspy.iq")?);
-//! let (tx, rx) = mpsc::channel();
-//! dev.start_rx(tx)?;
+//! let mut samples = vec![Complex::default(); 65_536];
+//! dev.start_rx()?;
 //! let mut count = 0;
 //! while count < 50_000_000 {
-//!     let samples = rx.recv_timeout(Duration::from_secs(5))?;
-//!     count += samples.len();
-//!     for sample in samples {
+//!     let received = dev.receive(&mut samples, 5_000)?;
+//!     count += received;
+//!     for sample in &samples[..received] {
 //!         output.write_all(&sample.re.to_le_bytes())?;
 //!         output.write_all(&sample.im.to_le_bytes())?;
 //!     }
@@ -57,5 +55,4 @@ mod rx;
 
 pub use device::{Airspy, PartID};
 pub use error::{Error, Result};
-pub use library::{exit, init, LibVersion};
-pub use rx::IQ;
+pub use library::LibVersion;
