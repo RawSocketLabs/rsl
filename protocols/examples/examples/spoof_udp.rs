@@ -5,36 +5,50 @@
 //! unprivileged; the raw send needs `CAP_NET_RAW`). **Authorized testing only.**
 #![allow(clippy::print_stdout)]
 
-use ip::{Ip, Ipv4Header};
-use rawsock::{NetworkSocket, ProtocolExt, RawIo, capabilities};
-use std::net::Ipv4Addr;
-use udp::Udp;
-
+// rawsock's socket backends are Linux-only; elsewhere the example builds as a stub.
+#[cfg(not(target_os = "linux"))]
 fn main() {
-    let forged_src = Ipv4Addr::new(10, 0, 0, 99); // impersonate this host
-    let target = Ipv4Addr::new(10, 0, 0, 2);
+    println!("spoof_udp needs Linux: rawsock's socket backends are Linux-only");
+}
 
-    // Ip(Udp(payload)) with a forged source address; the IP layer fills length + both checksums.
-    let packet = Ip::new(
-        Ipv4Header::datagram(forged_src, target, 17, 0), // 17 = UDP
-        Udp::new(40000, 53, b"spoofed".to_vec()),
-    );
-    let bytes = packet.encode();
+#[cfg(target_os = "linux")]
+fn main() {
+    linux::main();
+}
 
-    println!(
-        "forged IPv4+UDP  {forged_src} -> {target}  ({} bytes)",
-        bytes.len()
-    );
-    println!("  {bytes:02x?}");
+#[cfg(target_os = "linux")]
+mod linux {
+    use ip::{Ip, Ipv4Header};
+    use rawsock::{NetworkSocket, ProtocolExt, RawIo, capabilities};
+    use std::net::Ipv4Addr;
+    use udp::Udp;
 
-    if capabilities().network {
-        let mut sock = NetworkSocket::open().expect("open raw L3 socket");
-        sock.connect(target).expect("connect");
-        match sock.send_raw(&bytes) {
-            Ok(n) => println!("sent {n} bytes via a raw L3 socket \u{2713}"),
-            Err(e) => println!("send failed: {e}"),
+    pub(crate) fn main() {
+        let forged_src = Ipv4Addr::new(10, 0, 0, 99); // impersonate this host
+        let target = Ipv4Addr::new(10, 0, 0, 2);
+
+        // Ip(Udp(payload)) with a forged source address; the IP layer fills length + both checksums.
+        let packet = Ip::new(
+            Ipv4Header::datagram(forged_src, target, 17, 0), // 17 = UDP
+            Udp::new(40000, 53, b"spoofed".to_vec()),
+        );
+        let bytes = packet.encode();
+
+        println!(
+            "forged IPv4+UDP  {forged_src} -> {target}  ({} bytes)",
+            bytes.len()
+        );
+        println!("  {bytes:02x?}");
+
+        if capabilities().network {
+            let mut sock = NetworkSocket::open().expect("open raw L3 socket");
+            sock.connect(target).expect("connect");
+            match sock.send_raw(&bytes) {
+                Ok(n) => println!("sent {n} bytes via a raw L3 socket \u{2713}"),
+                Err(e) => println!("send failed: {e}"),
+            }
+        } else {
+            println!("(no CAP_NET_RAW \u{2014} composed only; run with the capability to inject)");
         }
-    } else {
-        println!("(no CAP_NET_RAW \u{2014} composed only; run with the capability to inject)");
     }
 }
