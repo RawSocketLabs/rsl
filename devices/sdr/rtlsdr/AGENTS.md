@@ -14,7 +14,8 @@ Nothing here is hardware-qualified.
 Target licence MIT OR Apache-2.0. Never open, read, grep, search for or quote any GPL
 RTL-SDR source or anything derived from one: librtlsdr/osmocom rtl-sdr and forks, the
 Linux kernel's rtl28xxu/rtl2832/r820t/e4000/fc001x drivers, rtl-sdr-rs, pyrtlsdr
-internals, SDR++/gqrx code. Recollection of those sources is not evidence. Every register
+internals, SDR++/gqrx code, and `protocols/application/rtltcp` (its reference was derived
+from rtl_tcp's source). Recollection of those sources is not evidence. Every register
 address, value, request code, identifier and sequence must have a ledger row with an
 admissible source (classes in PROVENANCE.md); every such constant carries a `prov: <ID>`
 doc tag. A value you lack is a GAP row and a `Pending` placeholder that refuses at runtime,

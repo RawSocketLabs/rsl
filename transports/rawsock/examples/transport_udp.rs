@@ -8,30 +8,44 @@
 //! (default `127.0.0.1:9`, the discard port).
 #![allow(clippy::print_stdout)]
 
-use rawsock::{RawIo, TransportSocket};
-use std::net::{SocketAddr, SocketAddrV4, ToSocketAddrs};
-
+// rawsock's socket backends are Linux-only; elsewhere the example builds as a stub.
+#[cfg(not(target_os = "linux"))]
 fn main() {
-    let target = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "127.0.0.1:9".to_owned());
-    let Some(addr) = resolve_v4(&target) else {
-        println!("could not resolve {target} to an IPv4 address");
-        return;
-    };
-
-    let mut sock = TransportSocket::udp().expect("open UDP socket");
-    sock.connect(addr).expect("connect");
-    match sock.send_raw(b"rawsock transport_udp") {
-        Ok(n) => println!("sent {n} bytes to {addr} (kernel added UDP/IP/link) \u{2713}"),
-        Err(e) => println!("send to {addr} failed: {e}"),
-    }
+    println!("transport_udp needs Linux: rawsock's socket backends are Linux-only");
 }
 
-/// Resolve `host:port` and return the first IPv4 address, or `None` if there is none.
-fn resolve_v4(target: &str) -> Option<SocketAddrV4> {
-    target.to_socket_addrs().ok()?.find_map(|a| match a {
-        SocketAddr::V4(v4) => Some(v4),
-        SocketAddr::V6(_) => None,
-    })
+#[cfg(target_os = "linux")]
+fn main() {
+    linux::main();
+}
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use rawsock::{RawIo, TransportSocket};
+    use std::net::{SocketAddr, SocketAddrV4, ToSocketAddrs};
+
+    pub(crate) fn main() {
+        let target = std::env::args()
+            .nth(1)
+            .unwrap_or_else(|| "127.0.0.1:9".to_owned());
+        let Some(addr) = resolve_v4(&target) else {
+            println!("could not resolve {target} to an IPv4 address");
+            return;
+        };
+
+        let mut sock = TransportSocket::udp().expect("open UDP socket");
+        sock.connect(addr).expect("connect");
+        match sock.send_raw(b"rawsock transport_udp") {
+            Ok(n) => println!("sent {n} bytes to {addr} (kernel added UDP/IP/link) \u{2713}"),
+            Err(e) => println!("send to {addr} failed: {e}"),
+        }
+    }
+
+    /// Resolve `host:port` and return the first IPv4 address, or `None` if there is none.
+    fn resolve_v4(target: &str) -> Option<SocketAddrV4> {
+        target.to_socket_addrs().ok()?.find_map(|a| match a {
+            SocketAddr::V4(v4) => Some(v4),
+            SocketAddr::V6(_) => None,
+        })
+    }
 }
