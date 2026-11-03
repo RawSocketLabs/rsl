@@ -8,7 +8,7 @@ use std::io::{self, ErrorKind, Read};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-use bnb::{BitEncode, BitError, EncodeExt, StreamBitReader};
+use bnb::{BitError, EncodeExt, StreamBitReader};
 use thiserror::Error;
 
 use crate::{Command, Greeting, Opcode};
@@ -95,15 +95,14 @@ impl Client {
     /// [`ClientError::Handshake`] when the greeting is incomplete and
     /// [`ClientError::NotRtlTcp`] when its magic is not `RTL0`.
     pub fn from_stream(stream: TcpStream) -> Result<Self, ClientError> {
-        // A forward-only reader takes exactly the greeting's bytes off the socket, leaving
-        // the sample stream behind it untouched.
-        let mut reader = StreamBitReader::with_layout(&stream, <Greeting as BitEncode>::LAYOUT);
-        let greeting = Greeting::decode(&mut reader).map_err(|e| match e.kind {
-            bnb::ErrorKind::BadMagic { found, .. } => ClientError::NotRtlTcp {
-                magic: u32::try_from(found).unwrap_or_default().to_be_bytes(),
-            },
-            _ => ClientError::Handshake(e),
-        })?;
+        // Takes exactly the greeting's bytes, leaving the sample stream untouched.
+        let greeting =
+            Greeting::decode(&mut StreamBitReader::new(&stream)).map_err(|e| match e.kind {
+                bnb::ErrorKind::BadMagic { found, .. } => ClientError::NotRtlTcp {
+                    magic: u32::try_from(found).unwrap_or_default().to_be_bytes(),
+                },
+                _ => ClientError::Handshake(e),
+            })?;
         Ok(Self { stream, greeting })
     }
 
