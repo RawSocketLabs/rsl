@@ -17,7 +17,7 @@ Deferred: a server half, async clients.
 
 ## Architecture
 
-- `greeting.rs` — `Greeting { magic, tuner_type, gain_count }`.
+- `greeting.rs` — `Greeting { tuner_type, gain_count }`, with `RTL0` as the `#[bin]` magic.
 - `command.rs` — `Command { opcode, param }` and `Opcode`, a `BitEnum` with an `Other`
   catch-all. Typed constructors cover the opcodes libsdr drives; `Command::new` sends any.
 - `client.rs` — `Client` and `ClientError`. The greeting is read with a plain `read_exact`
@@ -26,8 +26,9 @@ Deferred: a server half, async clients.
 
 ## The dual-use rule here
 
-The parser accepts any magic (`Greeting::has_magic` reports it) and any opcode (preserved
-as `Opcode::Other`). Only the client's handshake refuses a non-`RTL0` server.
+The parser accepts any opcode (preserved as `Opcode::Other`). The greeting's `RTL0` is a
+codec constant rather than a field, so decoding any other magic fails with `BadMagic`, which
+the client reports as `ClientError::NotRtlTcp`.
 
 ## Testing
 

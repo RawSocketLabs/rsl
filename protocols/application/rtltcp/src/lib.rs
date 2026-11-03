@@ -5,16 +5,16 @@
 //! open, while the client sends 5-byte [`Command`]s on the same socket. Everything framed is
 //! big-endian.
 //!
-//! Dual-use: the parser accepts any greeting magic and any opcode (unknown opcodes are
-//! preserved as [`Opcode::Other`]); only the optional [`Client`] refuses a server whose
-//! greeting is not `RTL0`.
+//! The greeting's `RTL0` magic is a codec constant, so a greeting with any other magic
+//! does not decode. Opcodes stay dual-use: unknown values are preserved as
+//! [`Opcode::Other`].
 //!
 //! ```
 //! use rtltcp::{Command, Greeting, Opcode};
 //!
 //! let greeting = Greeting::decode_exact(b"RTL0\0\0\0\x05\0\0\0\x1d").unwrap();
-//! assert!(greeting.has_magic());
 //! assert_eq!(greeting.gain_count, 29);
+//! assert!(Greeting::decode_exact(b"NOPE\0\0\0\x05\0\0\0\x1d").is_err());
 //!
 //! let tune = Command::set_center_frequency(462_562_500);
 //! assert_eq!(tune.opcode, Opcode::SetCenterFrequency);

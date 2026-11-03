@@ -101,12 +101,15 @@ impl Client {
         stream
             .read_exact(&mut wire)
             .map_err(ClientError::Handshake)?;
-        let greeting = Greeting::decode_exact(&wire)?;
-        if !greeting.has_magic() {
-            return Err(ClientError::NotRtlTcp {
-                magic: greeting.magic,
-            });
-        }
+        let greeting = Greeting::decode_exact(&wire).map_err(|e| match e.kind {
+            bnb::ErrorKind::BadMagic { .. } => {
+                let [a, b, c, d, ..] = wire;
+                ClientError::NotRtlTcp {
+                    magic: [a, b, c, d],
+                }
+            }
+            _ => ClientError::Codec(e),
+        })?;
         Ok(Self { stream, greeting })
     }
 

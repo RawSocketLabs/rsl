@@ -10,11 +10,9 @@ mod adversarial {
     }
 
     #[test]
-    fn foreign_magic_decodes_and_is_reported() {
-        let greeting = Greeting::decode_exact(b"HTTP/1.1 200").unwrap();
-        assert!(!greeting.has_magic());
-        assert_eq!(&greeting.magic, b"HTTP");
-        assert_eq!(greeting.to_bytes().unwrap(), b"HTTP/1.1 200");
+    fn foreign_magic_is_a_bad_magic_error() {
+        let err = Greeting::decode_exact(b"HTTP/1.1 200").unwrap_err();
+        assert!(matches!(err.kind, bnb::ErrorKind::BadMagic { .. }), "{err}");
     }
 
     #[test]
