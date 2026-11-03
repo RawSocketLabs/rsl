@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::ffi::{c_int, c_void};
 use std::slice;
 use std::sync::{Condvar, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Fixed sample capacity; about 26 ms at 10 Msps.
 const RX_CAPACITY: usize = 262_144;
@@ -51,17 +51,16 @@ impl RxState {
         result
     }
 
-    /// Copy available samples, waiting up to the deadline when empty.
+    /// Copy available samples, waiting up to the timeout when empty.
     fn receive(&self, samples: &mut [Complex<f32>], timeout_ms: u32) -> Result<usize> {
         if samples.is_empty() {
             return Err(Error::InvalidParameter);
         }
-        let deadline = Instant::now() + Duration::from_millis(timeout_ms.into());
+        let timeout = Duration::from_millis(timeout_ms.into());
         let buffer = self.buffer.lock().map_err(|_| Error::Thread)?;
-        let remaining = deadline.saturating_duration_since(Instant::now());
         let (mut buffer, _) = self
             .ready
-            .wait_timeout_while(buffer, remaining, |buffer| {
+            .wait_timeout_while(buffer, timeout, |buffer| {
                 buffer.samples.is_empty() && !buffer.overflow
             })
             .map_err(|_| Error::Thread)?;
