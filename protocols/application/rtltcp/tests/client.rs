@@ -1,12 +1,12 @@
 //! The blocking client end to end over real loopback TCP, against a scripted server thread.
 
 mod client {
-    use std::io::{ErrorKind, Read, Write};
+    use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread::{self, JoinHandle};
     use std::time::Duration;
 
-    use bnb::{ErrorKind as CodecErrorKind, StreamBitReader};
+    use bnb::{ErrorKind, StreamBitReader};
     use rtltcp::{Client, ClientError, Command, Greeting, Opcode};
 
     const TIMEOUT: Duration = Duration::from_secs(2);
@@ -59,7 +59,7 @@ mod client {
         let (addr, server) = spawn_server(b"NOPE\0\0\0\0\0\0\0\0".to_vec(), Vec::new(), false);
         let err = Client::connect(addr.as_str(), TIMEOUT).unwrap_err();
         assert!(
-            matches!(&err, ClientError::Greeting(e) if matches!(e.kind, CodecErrorKind::BadMagic { .. })),
+            matches!(&err, ClientError::Handshake(e) if matches!(e.kind, ErrorKind::BadMagic { .. })),
             "{err}"
         );
         server.join().unwrap();
@@ -69,7 +69,7 @@ mod client {
     fn a_short_greeting_is_a_handshake_error() {
         let (addr, server) = spawn_server(b"RTL0\0\0".to_vec(), Vec::new(), false);
         let err = Client::connect(addr.as_str(), TIMEOUT).unwrap_err();
-        assert!(matches!(err, ClientError::Greeting(_)), "{err}");
+        assert!(matches!(err, ClientError::Handshake(_)), "{err}");
         server.join().unwrap();
     }
 
@@ -80,7 +80,7 @@ mod client {
             .local_addr()
             .unwrap();
         let err = Client::connect(addr, TIMEOUT).unwrap_err();
-        assert!(matches!(err, ClientError::Io(_)), "{err}");
+        assert!(matches!(err, ClientError::Connect(_)), "{err}");
     }
 
     #[test]
@@ -118,7 +118,7 @@ mod client {
         let mut client = Client::connect(addr.as_str(), TIMEOUT).unwrap();
         let mut buf = [0u8; 8];
         let err = client.read_exact(&mut buf).unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::UnexpectedEof, "{err}");
+        assert!(matches!(err, ClientError::Closed), "{err}");
         shutdown(client, server);
     }
 
@@ -173,6 +173,6 @@ mod client {
         let mut peek = [0u8; 1];
         assert_eq!(client.get_ref().peek(&mut peek).unwrap(), 0);
         let err = client.drain_buffered().unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::UnexpectedEof, "{err}");
+        assert!(matches!(err, ClientError::Closed), "{err}");
     }
 }
