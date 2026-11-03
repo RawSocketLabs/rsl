@@ -18,9 +18,6 @@ pub struct Greeting {
 }
 
 impl Greeting {
-    /// Encoded length in bytes, magic included.
-    pub const LEN: usize = 12;
-
     /// A greeting reporting `tuner_type` and `gain_count`.
     #[must_use]
     pub const fn new(tuner_type: u32, gain_count: u32) -> Self {
@@ -43,7 +40,6 @@ mod component {
         let greeting = Greeting::decode_exact(&wire).unwrap();
         assert_eq!(greeting, Greeting::new(5, 29));
         assert_eq!(greeting.to_bytes().unwrap(), wire);
-        assert_eq!(wire.len(), Greeting::LEN);
     }
 
     #[test]

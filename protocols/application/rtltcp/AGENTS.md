@@ -20,9 +20,10 @@ Deferred: a server half, async clients.
 - `greeting.rs` — `Greeting { tuner_type, gain_count }`, with `RTL0` as the `#[bin]` magic.
 - `command.rs` — `Command { opcode, param }` and `Opcode`, a `BitEnum` with an `Other`
   catch-all. Typed constructors cover the opcodes libsdr drives; `Command::new` sends any.
-- `client.rs` — `Client` and `ClientError`. The greeting is read with a plain `read_exact`
-  and decoded, **not** through bnb's `MessageStream`: its read-ahead would buffer sample
-  bytes that the raw stream reads must see.
+- `client.rs` — `Client` and `ClientError`. The greeting is decoded straight off the socket
+  through a `StreamBitReader`, which reads exactly the message's bytes, **not** through
+  bnb's `MessageStream`, whose read-ahead would buffer sample bytes the raw stream reads
+  must see. Commands go out with `EncodeExt::encode`.
 
 ## The dual-use rule here
 

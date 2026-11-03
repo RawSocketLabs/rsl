@@ -51,9 +51,6 @@ pub struct Command {
 }
 
 impl Command {
-    /// Encoded length in bytes.
-    pub const LEN: usize = 5;
-
     /// Any opcode with any parameter (no validation).
     #[must_use]
     pub const fn new(opcode: Opcode, param: u32) -> Self {
@@ -129,6 +126,5 @@ mod component {
         let command = Command::decode_exact(&wire).unwrap();
         assert_eq!(command, Command::set_sample_rate(2_048_000));
         assert_eq!(command.to_bytes().unwrap(), wire);
-        assert_eq!(wire.len(), Command::LEN);
     }
 }

@@ -16,7 +16,7 @@ mod contract {
 
     #[test]
     fn typed_commands_encode_opcode_then_big_endian_param() {
-        let cases: [(Command, [u8; Command::LEN]); 8] = [
+        let cases: [(Command, [u8; 5]); 8] = [
             (
                 Command::set_center_frequency(462_562_500),
                 [0x01, 0x1b, 0x92, 0x24, 0xc4],

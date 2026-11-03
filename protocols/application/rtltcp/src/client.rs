@@ -4,10 +4,11 @@
 //! raw interleaved CU8 sample stream into caller buffers. It applies no device policy (gain,
 //! settle windows, sample conversion); that belongs to the caller.
 
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, ErrorKind, Read};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
+use bnb::{BitEncode, BitError, EncodeExt, StreamBitReader};
 use thiserror::Error;
 
 use crate::{Command, Greeting, Opcode};
@@ -30,7 +31,7 @@ pub enum ClientError {
     Connect(#[source] io::Error),
     /// The server sent no complete greeting.
     #[error("no greeting from server: {0}")]
-    Handshake(#[source] io::Error),
+    Handshake(#[source] BitError),
     /// The server's greeting magic is not `RTL0`.
     #[error("not an rtl_tcp server (expected magic RTL0, got {magic:02x?})")]
     NotRtlTcp {
@@ -42,9 +43,9 @@ pub enum ClientError {
     Command {
         /// The opcode being sent.
         opcode: Opcode,
-        /// The transport error.
+        /// The encode or transport error.
         #[source]
-        source: io::Error,
+        source: BitError,
     },
     /// Discarding stream bytes failed.
     #[error("drain failed: {0}")]
@@ -55,9 +56,6 @@ pub enum ClientError {
     /// The server closed the connection.
     #[error("server closed the connection")]
     Closed,
-    /// A wire encode/decode error from the `bnb` codec.
-    #[error("codec error: {0}")]
-    Codec(#[from] bnb::BitError),
 }
 
 /// A connected `rtl_tcp` client.
@@ -96,19 +94,15 @@ impl Client {
     ///
     /// [`ClientError::Handshake`] when the greeting is incomplete and
     /// [`ClientError::NotRtlTcp`] when its magic is not `RTL0`.
-    pub fn from_stream(mut stream: TcpStream) -> Result<Self, ClientError> {
-        let mut wire = [0u8; Greeting::LEN];
-        stream
-            .read_exact(&mut wire)
-            .map_err(ClientError::Handshake)?;
-        let greeting = Greeting::decode_exact(&wire).map_err(|e| match e.kind {
-            bnb::ErrorKind::BadMagic { .. } => {
-                let [a, b, c, d, ..] = wire;
-                ClientError::NotRtlTcp {
-                    magic: [a, b, c, d],
-                }
-            }
-            _ => ClientError::Codec(e),
+    pub fn from_stream(stream: TcpStream) -> Result<Self, ClientError> {
+        // A forward-only reader takes exactly the greeting's bytes off the socket, leaving
+        // the sample stream behind it untouched.
+        let mut reader = StreamBitReader::with_layout(&stream, <Greeting as BitEncode>::LAYOUT);
+        let greeting = Greeting::decode(&mut reader).map_err(|e| match e.kind {
+            bnb::ErrorKind::BadMagic { found, .. } => ClientError::NotRtlTcp {
+                magic: u32::try_from(found).unwrap_or_default().to_be_bytes(),
+            },
+            _ => ClientError::Handshake(e),
         })?;
         Ok(Self { stream, greeting })
     }
@@ -131,9 +125,8 @@ impl Client {
     ///
     /// [`ClientError::Command`] when the write fails.
     pub fn send(&mut self, command: Command) -> Result<(), ClientError> {
-        let wire = command.to_bytes()?;
-        self.stream
-            .write_all(&wire)
+        command
+            .encode(&mut self.stream)
             .map_err(|source| ClientError::Command {
                 opcode: command.opcode,
                 source,
