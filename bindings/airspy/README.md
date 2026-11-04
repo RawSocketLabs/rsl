@@ -53,6 +53,9 @@ discards the status; `stop()` returns it.
   `board_name()`, `get_version()` is `firmware_version()`, and `set_freq()` is
   `set_frequency()`. `get_partid_serial()` is `identity()`, returning
   `Identity { part_id, serial }` (was `PartID { part_id, serial_no }`).
+- Frequencies and sample rates are `FrequencyHz` and `SampleRateSps` (from the
+  workspace's `rfus`, re-exported here), so `"434 MHz".parse()` works; both
+  were bare `u32` before.
 - `Error` is `#[non_exhaustive]`; `Overflow` carries `dropped` and no longer
   ends the session.
 - Removed with no aliases: `SampleType`, `Real`, `IQ` (use

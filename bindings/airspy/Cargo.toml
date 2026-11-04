@@ -17,6 +17,7 @@ publish = false
 [dependencies]
 num-complex = { workspace = true }
 thiserror = { workspace = true }
+rfus = { path = "../../types/rfus", version = "0.1.0" }
 
 [lints]
 workspace = true

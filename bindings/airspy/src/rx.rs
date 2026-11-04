@@ -440,7 +440,8 @@ mod tests {
         for _ in 0..2 {
             let mut rx = device.start_rx().unwrap();
             assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
-            rx.set_frequency(100_000_000).unwrap();
+            rx.set_frequency(rfus::FrequencyHz::new(100_000_000))
+                .unwrap();
             assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
             rx.stop().unwrap();
         }

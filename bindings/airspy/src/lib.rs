@@ -15,7 +15,7 @@
 //! as little-endian `f32` pairs to `airspy.iq`.
 //!
 //! ```no_run
-//! use airspy::{Airspy, Error};
+//! use airspy::{Airspy, Error, SampleRateSps};
 //! use num_complex::Complex;
 //! use std::fs::File;
 //! use std::io::{BufWriter, Write};
@@ -23,8 +23,8 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut dev = Airspy::open()?;
-//! dev.set_sample_rate(10_000_000)?;
-//! dev.set_frequency(434_000_000)?;
+//! dev.set_sample_rate(SampleRateSps::new(10_000_000))?;
+//! dev.set_frequency("434 MHz".parse()?)?;
 //! dev.set_lna_agc(false)?;
 //! dev.set_mixer_agc(false)?;
 //! dev.set_lna_gain(0)?;
@@ -69,4 +69,5 @@ mod rx;
 pub use device::{Airspy, Identity};
 pub use error::{Error, Result};
 pub use library::LibVersion;
+pub use rfus::{FrequencyHz, SampleRateSps};
 pub use rx::Receiver;

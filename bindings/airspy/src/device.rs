@@ -1,4 +1,5 @@
 use crate::{Error, Result, ffi};
+use rfus::SampleRateSps;
 use std::ffi::{CStr, c_int};
 use std::fmt;
 use std::ptr::{self, NonNull};
@@ -97,7 +98,7 @@ impl Airspy {
     /// # Errors
     ///
     /// libairspy's status if either query fails.
-    pub fn sample_rates(&mut self) -> Result<Vec<u32>> {
+    pub fn sample_rates(&mut self) -> Result<Vec<SampleRateSps>> {
         let mut count: u32 = 0;
         // SAFETY: with `len == 0`, libairspy writes only the count, to `count`.
         Error::check(unsafe { ffi::airspy_get_samplerates(self.handle(), &raw mut count, 0) })?;
@@ -110,7 +111,7 @@ impl Airspy {
         Error::check(unsafe {
             ffi::airspy_get_samplerates(self.handle(), rates.as_mut_ptr(), count)
         })?;
-        Ok(rates)
+        Ok(rates.into_iter().map(SampleRateSps::new).collect())
     }
 
     /// Set this Airspy's sample rate to a specific rate.
@@ -119,7 +120,7 @@ impl Airspy {
     ///
     /// [`Error::InvalidParameter`] if the device does not advertise
     /// `target_rate`; otherwise libairspy's status.
-    pub fn set_sample_rate(&mut self, target_rate: u32) -> Result<()> {
+    pub fn set_sample_rate(&mut self, target_rate: SampleRateSps) -> Result<()> {
         let index = self
             .sample_rates()?
             .iter()
@@ -182,42 +183,56 @@ impl Airspy {
 }
 
 /// The tuning setters, which stay valid while streaming, so [`Airspy`] and
-/// [`Receiver`](crate::Receiver) share them. Expands inside an impl that has `handle()`.
+/// [`Receiver`](crate::Receiver) share them. Expands inside any impl with a
+/// `handle(&mut self) -> &mut ffi::AirspyDevice`; every other path is `$crate`.
 macro_rules! tuning_setters {
     () => {
-        /// Set centre frequency in Hz (24 MHz to 1.75 GHz).
-        pub fn set_frequency(&mut self, freq: u32) -> Result<()> {
-            Error::check(ffi::airspy_set_freq(self.handle(), freq))
+        /// Set the centre frequency (24 MHz to 1.75 GHz).
+        ///
+        /// libairspy takes whole hertz as a `u32`, so a frequency above
+        /// `u32::MAX` Hz is [`Error::InvalidParameter`] before any call.
+        pub fn set_frequency(&mut self, freq: $crate::FrequencyHz) -> $crate::Result<()> {
+            let hz = u32::try_from(freq.hz()).map_err(|_| $crate::Error::InvalidParameter)?;
+            $crate::Error::check($crate::ffi::airspy_set_freq(self.handle(), hz))
         }
 
         /// Set the LNA gain step index, 0 to 14; libairspy clamps larger values.
-        pub fn set_lna_gain(&mut self, gain: u8) -> Result<()> {
-            Error::check(ffi::airspy_set_lna_gain(self.handle(), gain))
+        pub fn set_lna_gain(&mut self, gain: u8) -> $crate::Result<()> {
+            $crate::Error::check($crate::ffi::airspy_set_lna_gain(self.handle(), gain))
         }
 
         /// Set the mixer gain step index, 0 to 15; libairspy clamps larger values.
-        pub fn set_mixer_gain(&mut self, gain: u8) -> Result<()> {
-            Error::check(ffi::airspy_set_mixer_gain(self.handle(), gain))
+        pub fn set_mixer_gain(&mut self, gain: u8) -> $crate::Result<()> {
+            $crate::Error::check($crate::ffi::airspy_set_mixer_gain(self.handle(), gain))
         }
 
         /// Set the VGA gain step index, 0 to 15; libairspy clamps larger values.
-        pub fn set_vga_gain(&mut self, gain: u8) -> Result<()> {
-            Error::check(ffi::airspy_set_vga_gain(self.handle(), gain))
+        pub fn set_vga_gain(&mut self, gain: u8) -> $crate::Result<()> {
+            $crate::Error::check($crate::ffi::airspy_set_vga_gain(self.handle(), gain))
         }
 
         /// Enable or disable the LNA AGC.
-        pub fn set_lna_agc(&mut self, enable: bool) -> Result<()> {
-            Error::check(ffi::airspy_set_lna_agc(self.handle(), u8::from(enable)))
+        pub fn set_lna_agc(&mut self, enable: bool) -> $crate::Result<()> {
+            $crate::Error::check($crate::ffi::airspy_set_lna_agc(
+                self.handle(),
+                u8::from(enable),
+            ))
         }
 
         /// Enable or disable the mixer AGC.
-        pub fn set_mixer_agc(&mut self, enable: bool) -> Result<()> {
-            Error::check(ffi::airspy_set_mixer_agc(self.handle(), u8::from(enable)))
+        pub fn set_mixer_agc(&mut self, enable: bool) -> $crate::Result<()> {
+            $crate::Error::check($crate::ffi::airspy_set_mixer_agc(
+                self.handle(),
+                u8::from(enable),
+            ))
         }
 
         /// Enable or disable the RF bias voltage.
-        pub fn set_rf_bias(&mut self, enable: bool) -> Result<()> {
-            Error::check(ffi::airspy_set_rf_bias(self.handle(), u8::from(enable)))
+        pub fn set_rf_bias(&mut self, enable: bool) -> $crate::Result<()> {
+            $crate::Error::check($crate::ffi::airspy_set_rf_bias(
+                self.handle(),
+                u8::from(enable),
+            ))
         }
     };
 }
@@ -235,6 +250,7 @@ impl Airspy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rfus::FrequencyHz;
 
     #[test]
     fn device_moves_between_threads() {
@@ -250,7 +266,7 @@ mod tests {
         assert_ne!(device.firmware_version().unwrap(), "");
         let rates = device.sample_rates().unwrap();
         assert_ne!(rates.len(), 0);
-        assert!(rates.iter().all(|rate| *rate > 0));
+        assert!(rates.iter().all(|rate| rate.sps() > 0));
     }
 
     #[test]
@@ -260,7 +276,7 @@ mod tests {
         let rates = device.sample_rates().unwrap();
         let rate = *rates.first().expect("device must advertise a sample rate");
         device.set_sample_rate(rate).unwrap();
-        device.set_frequency(434_000_000).unwrap();
+        device.set_frequency(FrequencyHz::new(434_000_000)).unwrap();
         device.set_lna_gain(7).unwrap();
         device.set_mixer_gain(7).unwrap();
         device.set_vga_gain(7).unwrap();
