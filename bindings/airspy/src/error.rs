@@ -4,6 +4,7 @@ use thiserror::Error;
 
 /// A native or receive-adapter failure, retaining unknown native status codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Invalid parameter.
     #[error("invalid parameter")]

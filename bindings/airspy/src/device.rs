@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// Firmware version buffer size; libairspy's own limit is smaller.
 const VERSION_LEN: u8 = u8::MAX;
 
-/// Store a reference to an opened Airspy device.
+/// An open Airspy device.
 pub struct Airspy {
     /// Live libairspy handle: set only by a successful open, closed only in
     /// `Drop`.
@@ -20,8 +20,10 @@ pub struct Airspy {
 impl Drop for Airspy {
     fn drop(&mut self) {
         // SAFETY: `ptr` is live (field invariant) and unused after this.
-        // airspy_close stops RX and joins the streaming threads before freeing
-        // the device, so the callback context Rust drops next is unreachable.
+        // airspy_close runs airspy_stop_rx, which joins the streaming threads
+        // before the device is freed, so the callback context Rust drops next
+        // is unreachable. Released libairspy (1.0.6 to 1.0.10) skips that join
+        // if a USB failure already ended the stream: a library limitation.
         unsafe {
             ffi::airspy_close(self.ptr.as_ptr());
         }
@@ -83,6 +85,10 @@ impl Airspy {
         let mut count: u32 = 0;
         // SAFETY: with `len == 0`, libairspy writes only the count, to `count`.
         Error::check(unsafe { ffi::airspy_get_samplerates(self.handle(), &raw mut count, 0) })?;
+        // An empty `rates` would hand libairspy a dangling pointer to write to.
+        if count == 0 {
+            return Ok(Vec::new());
+        }
         let mut rates = vec![0; count as usize];
         // SAFETY: `rates` holds exactly `count` writable elements.
         Error::check(unsafe {
@@ -107,7 +113,7 @@ impl Airspy {
         Error::check(ffi::airspy_set_samplerate(self.handle(), index))
     }
 
-    /// Read the board's name from libairspy's board table.
+    /// Read the board's name as libairspy reports it, such as `AIRSPY`.
     ///
     /// # Errors
     ///
@@ -116,8 +122,8 @@ impl Airspy {
         let mut id: u8 = 0;
         Error::check(ffi::airspy_board_id_read(self.handle(), &mut id))?;
         let name = ffi::airspy_board_id_name(id.into());
-        // SAFETY: libairspy returns a NUL-terminated entry of its static name
-        // table for every id.
+        // SAFETY: airspy_board_id_name returns a string literal for every id,
+        // including unknown ones.
         let name: &'static CStr = unsafe { CStr::from_ptr(name) };
         Ok(name.to_str().unwrap_or("unknown"))
     }
@@ -170,17 +176,17 @@ impl Airspy {
         Error::check(ffi::airspy_set_freq(self.handle(), freq))
     }
 
-    /// Set the LNA gain step index; libairspy clamps out-of-range values.
+    /// Set the LNA gain step index, 0 to 14; libairspy clamps larger values.
     pub fn set_lna_gain(&mut self, gain: u8) -> Result<()> {
         Error::check(ffi::airspy_set_lna_gain(self.handle(), gain))
     }
 
-    /// Set the mixer gain step index; libairspy clamps out-of-range values.
+    /// Set the mixer gain step index, 0 to 15; libairspy clamps larger values.
     pub fn set_mixer_gain(&mut self, gain: u8) -> Result<()> {
         Error::check(ffi::airspy_set_mixer_gain(self.handle(), gain))
     }
 
-    /// Set the VGA gain step index; libairspy clamps out-of-range values.
+    /// Set the VGA gain step index, 0 to 15; libairspy clamps larger values.
     pub fn set_vga_gain(&mut self, gain: u8) -> Result<()> {
         Error::check(ffi::airspy_set_vga_gain(self.handle(), gain))
     }

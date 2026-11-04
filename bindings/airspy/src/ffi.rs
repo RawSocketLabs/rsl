@@ -81,16 +81,18 @@ pub(crate) const RX_CONTINUE: c_int = 0;
 pub(crate) const RX_STOP: c_int = 1;
 
 // SAFETY: every signature matches airspy.h for libairspy 1.0.6 and later.
-// The `safe` items need only a live handle, which `&mut AirspyDevice`
-// guarantees (`Airspy::handle` is its sole source). libairspy validates or
-// clamps their value arguments and writes only to the out-parameters it is
-// given.
+// The `safe` items need only a live handle. `AirspyDevice` is never
+// constructed, and `Airspy::handle` is the only source of a
+// `&mut AirspyDevice`, so every such reference names a live handle. Their
+// value arguments only reach USB control requests or are clamped (the gains),
+// never index host memory, and libairspy writes only to the out-parameters
+// it is given.
 #[link(name = "airspy")]
 unsafe extern "C" {
     pub(crate) safe fn airspy_lib_version(version: &mut airspy_lib_version_t);
     pub(crate) safe fn airspy_open(device: &mut *mut AirspyDevice) -> c_int;
     pub(crate) safe fn airspy_open_sn(device: &mut *mut AirspyDevice, serial_number: u64) -> c_int;
-    /// Stops RX, joins the streaming threads, then frees `device`.
+    /// Runs `airspy_stop_rx` (see its caveat), then frees `device`.
     ///
     /// Callers must pass a live handle and never use it again.
     pub(crate) fn airspy_close(device: *mut AirspyDevice) -> c_int;
@@ -114,7 +116,11 @@ unsafe extern "C" {
         callback: unsafe extern "C" fn(*mut airspy_transfer_t) -> c_int,
         rx_ctx: *mut c_void,
     ) -> c_int;
-    /// Joins the streaming threads before returning, whatever it reports.
+    /// Joins the streaming threads before returning, whatever it reports,
+    /// unless libairspy already ended the stream itself after a USB failure:
+    /// releases 1.0.6 to 1.0.10 then skip the join (fixed on libairspy's
+    /// master). A callback's stop return does not trigger this; it only sets
+    /// `stop_requested`.
     pub(crate) safe fn airspy_stop_rx(device: &mut AirspyDevice) -> c_int;
     pub(crate) safe fn airspy_is_streaming(device: &mut AirspyDevice) -> c_int;
     pub(crate) safe fn airspy_board_id_read(device: &mut AirspyDevice, value: &mut u8) -> c_int;
@@ -141,7 +147,6 @@ unsafe extern "C" {
     pub(crate) safe fn airspy_set_lna_agc(device: &mut AirspyDevice, value: u8) -> c_int;
     pub(crate) safe fn airspy_set_mixer_agc(device: &mut AirspyDevice, value: u8) -> c_int;
     pub(crate) safe fn airspy_set_rf_bias(device: &mut AirspyDevice, value: u8) -> c_int;
-    /// Returns a NUL-terminated entry of a static name table for any id,
-    /// including unknown ones.
+    /// Returns a string literal for any id, including unknown ones.
     pub(crate) safe fn airspy_board_id_name(board_id: c_int) -> *const c_char;
 }

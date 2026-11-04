@@ -1,6 +1,6 @@
 use crate::ffi;
 
-/// Hold major, minor and revision version numbers of libairspy C library.
+/// The libairspy C library version: major, minor and revision.
 ///
 /// Ordered by major, then minor, then revision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

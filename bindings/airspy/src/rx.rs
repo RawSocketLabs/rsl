@@ -124,8 +124,8 @@ impl Airspy {
     /// # Errors
     ///
     /// libairspy's status if the previous session fails to stop, the sample
-    /// type is rejected, or streaming fails to start; any threads a failed
-    /// start created are joined before returning.
+    /// type is rejected, or streaming fails to start. A failed start is
+    /// stopped again on a best-effort basis.
     pub fn start_rx(&mut self) -> Result<()> {
         if self.rx_ctx.is_some() {
             self.stop_rx()?;
@@ -178,8 +178,9 @@ impl Airspy {
     /// libairspy's status; the session is released either way.
     pub fn stop_rx(&mut self) -> Result<()> {
         let result = Error::check(ffi::airspy_stop_rx(self.handle()));
-        // libairspy joins the callback threads even when it reports failure,
-        // so nothing can still read the state released here.
+        // airspy_stop_rx joins the callback threads even when it reports
+        // failure, so nothing can still read the state released here. The one
+        // exception is libairspy's own: see `ffi::airspy_stop_rx`.
         self.rx_ctx.take();
         result
     }
@@ -195,6 +196,7 @@ mod tests {
     use super::*;
     use std::ptr;
     use std::thread;
+    use std::time::Instant;
 
     #[test]
     fn callback_copies_samples_and_preserves_remainder() {
@@ -209,10 +211,11 @@ mod tests {
         // SAFETY: `transfer`, `input` and `state` outlive the call.
         assert_eq!(unsafe { rx_cb(&raw mut transfer) }, ffi::RX_CONTINUE);
         input[0].re = 99.0;
-        assert_eq!(input[0].re, 99.0);
         let mut first = [Complex::default(); 1];
         assert_eq!(state.receive(&mut first, 0), Ok(1));
         assert_eq!(first[0], Complex::new(1.0_f32, -2.0));
+        // The overwrite after the callback did not reach the copy.
+        assert_ne!(first[0], input[0]);
         let mut remaining = [Complex::new(9.0, 9.0); 3];
         assert_eq!(state.receive(&mut remaining, 0), Ok(1));
         assert_eq!(
@@ -256,7 +259,10 @@ mod tests {
                 assert_eq!(state.push(&full), Err(Error::Overflow));
             });
             let mut output = [Complex::default()];
+            let start = Instant::now();
             assert_eq!(state.receive(&mut output, 5_000), Err(Error::Overflow));
+            // Without the wake-up, receive only returns at its deadline.
+            assert!(start.elapsed() < Duration::from_secs(4));
         });
     }
 
@@ -290,7 +296,9 @@ mod tests {
         thread::scope(|scope| {
             scope.spawn(|| state.push(&[Complex::new(1.0, 2.0)]).unwrap());
             let mut output = [Complex::default()];
+            let start = Instant::now();
             assert_eq!(state.receive(&mut output, 5_000), Ok(1));
+            assert!(start.elapsed() < Duration::from_secs(4));
             assert_eq!(output[0], Complex::new(1.0_f32, 2.0));
         });
     }
