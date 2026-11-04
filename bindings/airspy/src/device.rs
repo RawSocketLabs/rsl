@@ -71,10 +71,11 @@ impl Airspy {
     }
 
     /// Get the Airspy board type.
-    pub fn get_board_id(&mut self) -> Result<&str> {
+    pub fn get_board_id(&mut self) -> Result<&'static str> {
         let mut id: u8 = 0;
         Error::check(unsafe { ffi::airspy_board_id_read(self.ptr, &mut id as *mut u8) })?;
-        let cstr = unsafe { CStr::from_ptr(ffi::airspy_board_id_name(id.into())) };
+        // libairspy returns a pointer into its static name table.
+        let cstr: &'static CStr = unsafe { CStr::from_ptr(ffi::airspy_board_id_name(id.into())) };
         Ok(cstr.to_str().unwrap_or("unknown"))
     }
 
