@@ -1,8 +1,7 @@
-use crate::rx::{Receiver, RxState};
 use crate::{Error, Result, ffi};
 use std::ffi::{CStr, c_int};
+use std::fmt;
 use std::ptr::{self, NonNull};
-use std::sync::Arc;
 
 /// Firmware version buffer size; libairspy's own limit is smaller.
 const VERSION_LEN: u8 = u8::MAX;
@@ -12,24 +11,31 @@ pub struct Airspy {
     /// Live libairspy handle: set only by a successful open, closed only in
     /// `Drop`.
     ptr: NonNull<ffi::AirspyDevice>,
-    /// Stable reception state, retained until the C threads have joined.
-    pub(crate) rx_ctx: Option<Arc<RxState>>,
+    /// Whether libairspy has a session running; only a forgotten
+    /// [`Receiver`](crate::Receiver) leaves it set while no Receiver exists.
+    pub(crate) session_active: bool,
+}
+
+impl fmt::Debug for Airspy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Airspy").finish_non_exhaustive()
+    }
 }
 
 // SAFETY: libairspy handles are not tied to the thread that opened them, and
 // every call goes through `&mut self`, so moving the device between threads
-// never makes two calls race. The callback state is an `Arc<RxState>`, which is
-// `Send + Sync`. `Airspy` stays `!Sync`.
+// never makes two calls race. The callback state lives in the
+// `Receiver`. `Airspy` stays `!Sync`.
 unsafe impl Send for Airspy {}
 
 /// Ensure whenever the Airspy goes out of scope it is closed.
 impl Drop for Airspy {
     fn drop(&mut self) {
-        // SAFETY: `ptr` is live (field invariant) and unused after this.
-        // airspy_close runs airspy_stop_rx, which joins the streaming threads
-        // before the device is freed, so the callback context Rust drops next
-        // is unreachable. Released libairspy (1.0.6 to 1.0.10) skips that join
-        // if a USB failure already ended the stream: a library limitation.
+        // SAFETY: `ptr` is live (field invariant) and unused after this. No
+        // Receiver can outlive the borrow, so only a forgotten one's session
+        // can still run; airspy_close stops and joins it (with the caveats on
+        // `ffi::airspy_stop_rx`) before freeing the device, and its state was
+        // leaked, so the callbacks never see freed memory.
         unsafe {
             ffi::airspy_close(self.ptr.as_ptr());
         }
@@ -73,7 +79,10 @@ impl Airspy {
         Error::check(open(&mut device))?;
         // libairspy reports success only alongside a handle.
         let ptr = NonNull::new(device).ok_or(Error::Other)?;
-        Ok(Self { ptr, rx_ctx: None })
+        Ok(Self {
+            ptr,
+            session_active: false,
+        })
     }
 
     /// Borrow the live handle for a libairspy call.
@@ -173,7 +182,7 @@ impl Airspy {
 }
 
 /// The tuning setters, which stay valid while streaming, so [`Airspy`] and
-/// [`Receiver`] share them. Expands inside an impl that has `handle()`.
+/// [`Receiver`](crate::Receiver) share them. Expands inside an impl that has `handle()`.
 macro_rules! tuning_setters {
     () => {
         /// Set centre frequency in Hz (24 MHz to 1.75 GHz).
@@ -212,6 +221,7 @@ macro_rules! tuning_setters {
         }
     };
 }
+pub(crate) use tuning_setters;
 
 /// Tuning: each setter forwards one value and returns libairspy's status.
 #[expect(
@@ -219,15 +229,6 @@ macro_rules! tuning_setters {
     reason = "each returns libairspy's status unchanged; Error documents the variants"
 )]
 impl Airspy {
-    tuning_setters!();
-}
-
-/// Tuning while streaming, identical to [`Airspy`]'s.
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "each returns libairspy's status unchanged; Error documents the variants"
-)]
-impl Receiver<'_> {
     tuning_setters!();
 }
 

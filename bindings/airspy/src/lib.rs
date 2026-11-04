@@ -6,7 +6,8 @@
 //!
 //! Requires libairspy 1.0.6 or later. Each received element is one complex
 //! sample. [`Airspy::start_rx`] returns a [`Receiver`]; stopping or dropping it
-//! joins the callback threads, and dropping the device also stops reception.
+//! joins the callback threads. If a Receiver is `mem::forget`-ed, the next
+//! `start_rx` or dropping the device stops its session instead.
 //!
 //! # Capture to a file
 //!
@@ -14,7 +15,7 @@
 //! as little-endian `f32` pairs to `airspy.iq`.
 //!
 //! ```no_run
-//! use airspy::Airspy;
+//! use airspy::{Airspy, Error};
 //! use num_complex::Complex;
 //! use std::fs::File;
 //! use std::io::{BufWriter, Write};
@@ -35,7 +36,15 @@
 //! let mut rx = dev.start_rx()?;
 //! let mut count = 0;
 //! while count < 50_000_000 {
-//!     let received = rx.receive(&mut samples, Duration::from_secs(5))?;
+//!     let received = match rx.receive(&mut samples, Duration::from_secs(5)) {
+//!         Ok(received) => received,
+//!         // Recoverable: the stream resumes after the gap.
+//!         Err(Error::Overflow { dropped }) => {
+//!             eprintln!("dropped {dropped} samples");
+//!             continue;
+//!         }
+//!         Err(error) => return Err(error.into()),
+//!     };
 //!     count += received;
 //!     for sample in &samples[..received] {
 //!         output.write_all(&sample.re.to_le_bytes())?;

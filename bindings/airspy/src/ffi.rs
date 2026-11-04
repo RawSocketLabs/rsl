@@ -111,6 +111,12 @@ unsafe extern "C" {
     ///
     /// Callers must keep whatever `rx_ctx` points to alive and valid for
     /// `callback` until `airspy_stop_rx` or `airspy_close` has returned.
+    ///
+    /// In releases 1.0.6 to 1.0.10, if submitting the USB transfers or
+    /// creating a thread fails, it returns with `streaming` set but threads
+    /// missing, and the next stop or close joins a thread that was never
+    /// created. That is undefined behaviour inside libairspy, and no caller
+    /// can avoid it; libairspy's master joins only threads it started.
     pub(crate) fn airspy_start_rx(
         device: &mut AirspyDevice,
         callback: unsafe extern "C" fn(*mut airspy_transfer_t) -> c_int,
@@ -119,8 +125,9 @@ unsafe extern "C" {
     /// Joins the streaming threads before returning, whatever it reports,
     /// unless libairspy already ended the stream itself after a USB failure:
     /// releases 1.0.6 to 1.0.10 then skip the join (fixed on libairspy's
-    /// master). A callback's stop return does not trigger this; it only sets
-    /// `stop_requested`.
+    /// master). In those releases a callback's stop return does not trigger
+    /// this, because it only sets `stop_requested`; master clears `streaming`
+    /// instead, which is harmless there because its stop always joins.
     pub(crate) safe fn airspy_stop_rx(device: &mut AirspyDevice) -> c_int;
     pub(crate) safe fn airspy_is_streaming(device: &mut AirspyDevice) -> c_int;
     pub(crate) safe fn airspy_board_id_read(device: &mut AirspyDevice, value: &mut u8) -> c_int;

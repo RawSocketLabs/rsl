@@ -1,7 +1,9 @@
+use crate::device::tuning_setters;
 use crate::{Airspy, Error, Result, ffi};
 use num_complex::Complex;
 use std::collections::VecDeque;
 use std::ffi::{c_int, c_void};
+use std::fmt;
 use std::mem;
 use std::slice;
 use std::sync::{Arc, Condvar, Mutex};
@@ -116,8 +118,9 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
     // interleaved f32 pairs, which is the layout of `Complex<f32>`
     // (`repr(C)`); libairspy keeps them valid until this call returns.
     let samples = unsafe { slice::from_raw_parts(transfer.samples.cast::<Complex<f32>>(), count) };
-    // SAFETY: `ctx` is the RxState start_rx registered; `Airspy::rx_ctx` keeps
-    // it alive until stop/close has joined this thread. It is only shared.
+    // SAFETY: `ctx` is the RxState start_rx registered. Its Receiver keeps it
+    // alive until stop/close has joined this thread, and a forgotten Receiver
+    // leaks it. It is only shared.
     let state = unsafe { &*transfer.ctx.cast::<RxState>() };
     // Only a poisoned lock fails here; a full buffer counts the batch as dropped.
     match state.push(samples) {
@@ -131,10 +134,19 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
 /// Dropping it stops reception and discards the status; call
 /// [`Receiver::stop`] to see it. The tuning setters stay available while
 /// streaming; changing the sample rate needs a stop and a restart.
+#[must_use = "dropping the Receiver stops reception"]
 pub struct Receiver<'a> {
     device: &'a mut Airspy,
-    /// This session's buffer; `device.rx_ctx` holds the owning reference.
+    /// This session's buffer, owned here alone. It is released only after
+    /// stop or Drop has joined the callback threads; `mem::forget` leaks it,
+    /// which keeps the still-running callbacks sound.
     state: Arc<RxState>,
+}
+
+impl fmt::Debug for Receiver<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Receiver").finish_non_exhaustive()
+    }
 }
 
 impl Airspy {
@@ -144,10 +156,11 @@ impl Airspy {
     ///
     /// libairspy's status if a forgotten session fails to stop, the sample
     /// type is rejected, or streaming fails to start. A failed start is
-    /// stopped again on a best-effort basis.
+    /// stopped again on a best-effort basis; see `ffi::airspy_start_rx` for
+    /// the libairspy 1.0.6 to 1.0.10 crash this cannot prevent.
     pub fn start_rx(&mut self) -> Result<Receiver<'_>> {
         // Only a `mem::forget`-ed Receiver leaves a session running.
-        if self.rx_ctx.is_some() {
+        if self.session_active {
             self.stop_session()?;
         }
         Error::check(ffi::airspy_set_sample_type(
@@ -158,11 +171,11 @@ impl Airspy {
         // An Arc, because moving a Box asserts unique access and would
         // invalidate the pointer libairspy's threads read through.
         let ctx = Arc::as_ptr(&state).cast_mut().cast::<c_void>();
-        // Stored before starting: callbacks may run before start_rx returns.
-        self.rx_ctx = Some(Arc::clone(&state));
-        // SAFETY: rx_cb only reads `ctx` as `&RxState`, and `rx_ctx` keeps that
-        // RxState alive until stop_session or close has joined the callback
-        // threads.
+        // Set before starting, so a failed start is still stopped.
+        self.session_active = true;
+        // SAFETY: rx_cb only reads `ctx` as `&RxState`. `state` outlives the
+        // callback threads: a failed start joins them below while `state` is
+        // still held, and a Receiver releases it only after joining them.
         if let Err(error) = Error::check(unsafe { ffi::airspy_start_rx(self.handle(), rx_cb, ctx) })
         {
             // Join threads created before a partial startup failure.
@@ -175,14 +188,14 @@ impl Airspy {
         })
     }
 
-    /// Stop reception and join callbacks before releasing buffered samples.
+    /// Stop reception and join the callback threads.
+    ///
+    /// `airspy_stop_rx` joins them even when it reports failure, so afterwards
+    /// nothing reads the session's state. The exceptions are libairspy's own:
+    /// see `ffi::airspy_stop_rx`.
     fn stop_session(&mut self) -> Result<()> {
-        let result = Error::check(ffi::airspy_stop_rx(self.handle()));
-        // airspy_stop_rx joins the callback threads even when it reports
-        // failure, so nothing can still read the state released here. The one
-        // exception is libairspy's own: see `ffi::airspy_stop_rx`.
-        self.rx_ctx.take();
-        result
+        self.session_active = false;
+        Error::check(ffi::airspy_stop_rx(self.handle()))
     }
 }
 
@@ -194,7 +207,9 @@ impl Receiver<'_> {
     /// deadline. Mutex contention and copying are not bounded by this timeout.
     /// If the buffer filled, the samples queued before the gap arrive first,
     /// then one `Overflow` reports how many were dropped, then streaming
-    /// resumes.
+    /// resumes. Batches arriving while that backlog drains are dropped too, so
+    /// the gap lasts until the backlog is read; draining promptly keeps it
+    /// short.
     /// A native stop without notification is observed as a timeout after draining
     /// queued samples. This reports adapter overflow, not USB-level sample loss.
     ///
@@ -208,7 +223,8 @@ impl Receiver<'_> {
         self.state.receive(samples, timeout)
     }
 
-    /// Stop reception, join the callback threads and release the device.
+    /// Stop reception, join the callback threads and end the borrow of the
+    /// device.
     ///
     /// # Errors
     ///
@@ -218,8 +234,11 @@ impl Receiver<'_> {
         self.device.stop_session()
     }
 
-    /// Check whether libairspy is still streaming; false after a USB failure
-    /// ended the stream.
+    /// Check whether libairspy is still streaming.
+    ///
+    /// False after a USB failure ended the stream. After the callback asked to
+    /// stop (only on a poisoned lock), releases 1.0.6 to 1.0.10 still report
+    /// true until `stop`; libairspy's master reports false.
     pub fn is_streaming(&mut self) -> bool {
         ffi::airspy_is_streaming(self.handle()) == ffi::AIRSPY_TRUE
     }
@@ -230,10 +249,19 @@ impl Receiver<'_> {
     }
 }
 
+/// Tuning while streaming, identical to [`Airspy`]'s.
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "each returns libairspy's status unchanged; Error documents the variants"
+)]
+impl Receiver<'_> {
+    tuning_setters!();
+}
+
 /// Stop the session if `stop` did not.
 impl Drop for Receiver<'_> {
     fn drop(&mut self) {
-        if self.device.rx_ctx.is_some() {
+        if self.device.session_active {
             let _ = self.device.stop_session();
         }
     }
@@ -319,6 +347,26 @@ mod tests {
     }
 
     #[test]
+    fn overflow_waits_until_the_whole_backlog_is_read() {
+        let state = RxState::new();
+        state.push(&vec![Complex::default(); RX_CAPACITY]).unwrap();
+        state.push(&[Complex::default()]).unwrap();
+        let mut half = vec![Complex::default(); RX_CAPACITY / 2];
+        assert_eq!(
+            state.receive(&mut half, Duration::ZERO),
+            Ok(RX_CAPACITY / 2)
+        );
+        assert_eq!(
+            state.receive(&mut half, Duration::ZERO),
+            Ok(RX_CAPACITY / 2)
+        );
+        assert_eq!(
+            state.receive(&mut half, Duration::ZERO),
+            Err(Error::Overflow { dropped: 1 })
+        );
+    }
+
+    #[test]
     fn empty_receive_times_out_without_modifying_output() {
         let state = RxState::new();
         let mut output = [Complex::new(9.0, 9.0)];
@@ -397,7 +445,7 @@ mod tests {
             rx.stop().unwrap();
         }
         // A forgotten receiver's session ends when the next one starts.
-        std::mem::forget(device.start_rx().unwrap());
+        mem::forget(device.start_rx().unwrap());
         let mut rx = device.start_rx().unwrap();
         assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
     }

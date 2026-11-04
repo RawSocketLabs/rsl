@@ -30,6 +30,8 @@ discards the status; `stop()` returns it.
 - Reception buffers at most 262,144 IQ samples (2 MiB, about 26 ms at 10 Msps).
   If it fills, later batches are dropped: `receive` first returns the samples
   queued before the gap, then `Error::Overflow { dropped }` once, then resumes.
+  Batches arriving while that backlog drains are dropped too, so read
+  promptly to keep the gap short.
   It detects the adapter filling, not USB-level sample loss.
 - `Error::Timeout` means no samples arrived within the empty-buffer wait;
   `Duration::ZERO` polls. The timeout does not bound mutex contention or
