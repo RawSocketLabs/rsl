@@ -78,13 +78,13 @@ impl Airspy {
     ///
     /// This rate must be in the available rates or an error is returned.
     pub fn set_sample_rate(&mut self, target_rate: u32) -> Result<()> {
-        let rates = self.get_sample_rates()?;
-        for (idx, rate) in rates.iter().enumerate() {
-            if *rate == target_rate {
-                return Error::check(ffi::airspy_set_samplerate(self.handle(), idx as u32));
-            }
-        }
-        Err(Error::InvalidParameter)
+        let index = self
+            .get_sample_rates()?
+            .iter()
+            .zip(0u32..)
+            .find_map(|(&rate, index)| (rate == target_rate).then_some(index))
+            .ok_or(Error::InvalidParameter)?;
+        Error::check(ffi::airspy_set_samplerate(self.handle(), index))
     }
 
     /// Get the Airspy board type.
@@ -121,7 +121,7 @@ impl Airspy {
         ))?;
         Ok(PartID {
             part_id: v.part_id,
-            serial_no: (v.serial_no[2] as u64) << 32 | v.serial_no[3] as u64,
+            serial_no: (u64::from(v.serial_no[2]) << 32) | u64::from(v.serial_no[3]),
         })
     }
 

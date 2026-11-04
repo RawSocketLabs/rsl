@@ -90,21 +90,17 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
     let Some(transfer) = (unsafe { transfer.as_ref() }) else {
         return ffi::RX_STOP;
     };
-    if transfer.sample_count <= 0 {
-        return ffi::RX_CONTINUE;
-    }
+    let count = match usize::try_from(transfer.sample_count) {
+        Ok(0) | Err(_) => return ffi::RX_CONTINUE,
+        Ok(count) => count,
+    };
     if transfer.samples.is_null() || transfer.ctx.is_null() {
         return ffi::RX_STOP;
     }
-    // SAFETY: start_rx selected float IQ, so `samples` holds `sample_count`
+    // SAFETY: start_rx selected float IQ, so `samples` holds `count`
     // interleaved f32 pairs, which is the layout of `Complex<f32>`
     // (`repr(C)`); libairspy keeps them valid until this call returns.
-    let samples = unsafe {
-        slice::from_raw_parts(
-            transfer.samples.cast::<Complex<f32>>(),
-            transfer.sample_count as usize,
-        )
-    };
+    let samples = unsafe { slice::from_raw_parts(transfer.samples.cast::<Complex<f32>>(), count) };
     // SAFETY: `ctx` is the RxState start_rx registered; `Airspy::rx_ctx` keeps
     // it alive until stop/close has joined this thread. It is only shared.
     let state = unsafe { &*transfer.ctx.cast::<RxState>() };
