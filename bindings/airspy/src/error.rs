@@ -39,9 +39,13 @@ pub enum Error {
     /// No samples arrived within the receive deadline.
     #[error("receive timed out")]
     Timeout,
-    /// The receive buffer filled; stop and restart reception to recover.
-    #[error("receive buffer overflow; restart reception")]
-    Overflow,
+    /// The receive buffer filled and `dropped` samples were lost at this
+    /// point in the stream; reception continues.
+    #[error("receive buffer overflowed; {dropped} samples dropped")]
+    Overflow {
+        /// Number of IQ samples lost in this gap.
+        dropped: u64,
+    },
     /// A status not recognized by this wrapper.
     #[error("unknown libairspy error code {0}")]
     Unknown(c_int),

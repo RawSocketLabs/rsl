@@ -28,9 +28,9 @@ needs `stop()` and a restart. Dropping the `Receiver` stops reception and
 discards the status; `stop()` returns it.
 
 - Reception buffers at most 262,144 IQ samples (2 MiB, about 26 ms at 10 Msps).
-  Consume promptly: `Error::Overflow` stops callback delivery and persists until
-  stop/restart, and queued samples are not returned after it. It detects the
-  adapter filling, not USB-level sample loss.
+  If it fills, later batches are dropped: `receive` first returns the samples
+  queued before the gap, then `Error::Overflow { dropped }` once, then resumes.
+  It detects the adapter filling, not USB-level sample loss.
 - `Error::Timeout` means no samples arrived within the empty-buffer wait;
   `Duration::ZERO` polls. The timeout does not bound mutex contention or
   copying. A native stop without notification can also appear as a timeout.
@@ -51,7 +51,8 @@ discards the status; `stop()` returns it.
   `board_name()`, `get_version()` is `firmware_version()`, and `set_freq()` is
   `set_frequency()`. `get_partid_serial()` is `identity()`, returning
   `Identity { part_id, serial }` (was `PartID { part_id, serial_no }`).
-- `Error` is `#[non_exhaustive]`.
+- `Error` is `#[non_exhaustive]`; `Overflow` carries `dropped` and no longer
+  ends the session.
 - Removed with no aliases: `SampleType`, `Real`, `IQ` (use
   `num_complex::Complex<f32>`), integer sample formats, GPIO, register access,
   flash declarations, and the `rx` binary.

@@ -2,6 +2,7 @@ use crate::{Airspy, Error, Result, ffi};
 use num_complex::Complex;
 use std::collections::VecDeque;
 use std::ffi::{c_int, c_void};
+use std::mem;
 use std::slice;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
@@ -9,10 +10,11 @@ use std::time::Duration;
 /// Fixed sample capacity; about 26 ms at 10 Msps.
 const RX_CAPACITY: usize = 262_144;
 
-/// Samples awaiting delivery, plus a terminal overflow indication.
+/// Samples awaiting delivery, plus the size of a gap not yet reported.
 struct Buffer {
     samples: VecDeque<Complex<f32>>,
-    overflow: bool,
+    /// Samples dropped since the queued ones; reported once they are drained.
+    dropped: u64,
 }
 
 impl Buffer {
@@ -20,18 +22,20 @@ impl Buffer {
     fn new() -> Self {
         Self {
             samples: VecDeque::with_capacity(RX_CAPACITY),
-            overflow: false,
+            dropped: 0,
         }
     }
 
-    /// Append a callback batch, or latch overflow if it does not fit.
-    fn push(&mut self, samples: &[Complex<f32>]) -> Result<()> {
-        if self.overflow || samples.len() > RX_CAPACITY - self.samples.len() {
-            self.overflow = true;
-            return Err(Error::Overflow);
+    /// Append a callback batch, or count it as dropped if it does not fit.
+    ///
+    /// Once a batch is dropped, later ones are too until `receive` reports the
+    /// gap, so each gap sits at exactly one place in the delivered stream.
+    fn push(&mut self, samples: &[Complex<f32>]) {
+        if self.dropped > 0 || samples.len() > RX_CAPACITY - self.samples.len() {
+            self.dropped = self.dropped.saturating_add(samples.len() as u64);
+            return;
         }
         self.samples.extend(samples.iter().copied());
-        Ok(())
     }
 }
 
@@ -55,9 +59,9 @@ impl RxState {
         let result = self
             .buffer
             .lock()
-            .map_err(|_| Error::Thread)
-            .and_then(|mut buffer| buffer.push(samples));
-        // Wake a waiting receive for samples and for overflow alike.
+            .map(|mut buffer| buffer.push(samples))
+            .map_err(|_| Error::Thread);
+        // Wake a waiting receive for samples and for a gap alike.
         self.ready.notify_one();
         result
     }
@@ -71,20 +75,21 @@ impl RxState {
         let (mut buffer, _) = self
             .ready
             .wait_timeout_while(buffer, timeout, |buffer| {
-                buffer.samples.is_empty() && !buffer.overflow
+                buffer.samples.is_empty() && buffer.dropped == 0
             })
             .map_err(|_| Error::Thread)?;
-        if buffer.overflow {
-            return Err(Error::Overflow);
-        }
-        if buffer.samples.is_empty() {
-            return Err(Error::Timeout);
-        }
         let count = samples.len().min(buffer.samples.len());
-        for (out, sample) in samples.iter_mut().zip(buffer.samples.drain(..count)) {
-            *out = sample;
+        if count > 0 {
+            for (out, sample) in samples.iter_mut().zip(buffer.samples.drain(..count)) {
+                *out = sample;
+            }
+            return Ok(count);
         }
-        Ok(count)
+        // Queued samples come first, so the gap is reported where it happened.
+        match mem::take(&mut buffer.dropped) {
+            0 => Err(Error::Timeout),
+            dropped => Err(Error::Overflow { dropped }),
+        }
     }
 }
 
@@ -114,6 +119,7 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
     // SAFETY: `ctx` is the RxState start_rx registered; `Airspy::rx_ctx` keeps
     // it alive until stop/close has joined this thread. It is only shared.
     let state = unsafe { &*transfer.ctx.cast::<RxState>() };
+    // Only a poisoned lock fails here; a full buffer counts the batch as dropped.
     match state.push(samples) {
         Ok(()) => ffi::RX_CONTINUE,
         Err(_) => ffi::RX_STOP,
@@ -186,7 +192,9 @@ impl Receiver<'_> {
     /// The unused tail is untouched. An empty output is invalid. Zero timeout
     /// polls buffered samples; otherwise `timeout` sets the empty-buffer wait
     /// deadline. Mutex contention and copying are not bounded by this timeout.
-    /// Overflow takes precedence over queued samples and persists until restart.
+    /// If the buffer filled, the samples queued before the gap arrive first,
+    /// then one `Overflow` reports how many were dropped, then streaming
+    /// resumes.
     /// A native stop without notification is observed as a timeout after draining
     /// queued samples. This reports adapter overflow, not USB-level sample loss.
     ///
@@ -194,7 +202,7 @@ impl Receiver<'_> {
     ///
     /// - [`Error::InvalidParameter`] if `samples` is empty.
     /// - [`Error::Timeout`] if nothing arrived within `timeout`.
-    /// - [`Error::Overflow`] once the buffer has overflowed, until restart.
+    /// - [`Error::Overflow`] once per gap, after the samples queued before it.
     /// - [`Error::Thread`] if the buffer lock is poisoned.
     pub fn receive(&mut self, samples: &mut [Complex<f32>], timeout: Duration) -> Result<usize> {
         self.state.receive(samples, timeout)
@@ -210,8 +218,8 @@ impl Receiver<'_> {
         self.device.stop_session()
     }
 
-    /// Check whether libairspy is still streaming; false after an overflow or
-    /// a USB failure ended the stream.
+    /// Check whether libairspy is still streaming; false after a USB failure
+    /// ended the stream.
     pub fn is_streaming(&mut self) -> bool {
         ffi::airspy_is_streaming(self.handle()) == ffi::AIRSPY_TRUE
     }
@@ -295,15 +303,16 @@ mod tests {
     #[test]
     fn overflow_wakes_a_waiting_receive() {
         let state = RxState::new();
-        // Built up front so the producer only latches overflow (Miri is slow).
+        // Built up front so the producer only counts the drop (Miri is slow).
         let full = vec![Complex::default(); RX_CAPACITY + 1];
         thread::scope(|scope| {
-            scope.spawn(|| {
-                assert_eq!(state.push(&full), Err(Error::Overflow));
-            });
+            scope.spawn(|| state.push(&full).unwrap());
             let mut output = [Complex::default()];
             let start = Instant::now();
-            assert_eq!(state.receive(&mut output, TIMEOUT), Err(Error::Overflow));
+            let gap = Error::Overflow {
+                dropped: RX_CAPACITY as u64 + 1,
+            };
+            assert_eq!(state.receive(&mut output, TIMEOUT), Err(gap));
             // Without the wake-up, receive only returns at its deadline.
             assert!(start.elapsed() < Duration::from_secs(4));
         });
@@ -325,21 +334,24 @@ mod tests {
     }
 
     #[test]
-    fn overflow_is_terminal_even_with_queued_samples() {
+    fn overflow_reports_the_gap_after_queued_samples_then_resumes() {
         let state = RxState::new();
-        state.push(&vec![Complex::default(); RX_CAPACITY]).unwrap();
-        assert_eq!(state.push(&[Complex::default()]), Err(Error::Overflow));
+        let before = Complex::new(1.0_f32, 0.0);
+        state.push(&vec![before; RX_CAPACITY]).unwrap();
+        state.push(&[Complex::default(); 3]).unwrap();
+        let mut output = vec![Complex::default(); RX_CAPACITY];
+        assert_eq!(state.receive(&mut output, Duration::ZERO), Ok(RX_CAPACITY));
+        assert!(output.iter().all(|sample| *sample == before));
+        // Still inside the gap: dropped even though there is room now.
+        state.push(&[Complex::default()]).unwrap();
         assert_eq!(
-            state.receive(&mut [Complex::default()], Duration::ZERO),
-            Err(Error::Overflow)
+            state.receive(&mut output, Duration::ZERO),
+            Err(Error::Overflow { dropped: 4 })
         );
-        assert_eq!(state.push(&[]), Err(Error::Overflow));
-        let fresh = RxState::new();
-        fresh.push(&[Complex::new(1.0, 2.0)]).unwrap();
-        assert_eq!(
-            fresh.receive(&mut [Complex::default()], Duration::ZERO),
-            Ok(1)
-        );
+        let after = Complex::new(2.0_f32, 0.0);
+        state.push(&[after]).unwrap();
+        assert_eq!(state.receive(&mut output, Duration::ZERO), Ok(1));
+        assert_eq!(output[0], after);
     }
 
     #[test]
