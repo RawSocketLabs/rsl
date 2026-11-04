@@ -105,7 +105,7 @@ unsafe extern "C" {
         buffer: *mut u32,
         len: u32,
     ) -> c_int;
-    /// Takes an index into the supported rates, or a rate in hertz.
+    /// Takes an index into the supported rates; 1.0.6 accepts nothing else.
     pub(crate) safe fn airspy_set_samplerate(device: &mut AirspyDevice, samplerate: u32) -> c_int;
     /// Calls `callback` from libairspy's threads with `rx_ctx` until stopped.
     ///
