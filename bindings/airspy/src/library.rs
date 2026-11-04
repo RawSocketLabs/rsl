@@ -11,8 +11,8 @@ pub struct LibVersion {
 }
 
 impl LibVersion {
-    /// Fetch the current version of libairspy C library.
-    pub fn get_version() -> Self {
+    /// Fetch the version of the libairspy C library this process linked.
+    pub fn linked() -> Self {
         let mut v = ffi::airspy_lib_version_t {
             major_version: 0,
             minor_version: 0,
@@ -33,7 +33,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_lib_version() {
-        let v = LibVersion::get_version();
+        let v = LibVersion::linked();
         assert_eq!(v.major, 1);
         let oldest = LibVersion {
             major: 1,

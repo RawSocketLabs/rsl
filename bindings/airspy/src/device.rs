@@ -28,11 +28,11 @@ impl Drop for Airspy {
     }
 }
 
-/// Hold an Airspy's part ID and serial number.
+/// An Airspy board's part ID and serial number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PartID {
+pub struct Identity {
     pub part_id: [u32; 2],
-    pub serial_no: u64,
+    pub serial: u64,
 }
 
 impl Airspy {
@@ -63,7 +63,7 @@ impl Airspy {
     }
 
     /// Get available sample rates for this Airspy.
-    pub fn get_sample_rates(&mut self) -> Result<Vec<u32>> {
+    pub fn sample_rates(&mut self) -> Result<Vec<u32>> {
         let mut count: u32 = 0;
         // SAFETY: with `len == 0`, libairspy writes only the count, to `count`.
         Error::check(unsafe { ffi::airspy_get_samplerates(self.handle(), &mut count, 0) })?;
@@ -80,7 +80,7 @@ impl Airspy {
     /// This rate must be in the available rates or an error is returned.
     pub fn set_sample_rate(&mut self, target_rate: u32) -> Result<()> {
         let index = self
-            .get_sample_rates()?
+            .sample_rates()?
             .iter()
             .zip(0u32..)
             .find_map(|(&rate, index)| (rate == target_rate).then_some(index))
@@ -88,8 +88,8 @@ impl Airspy {
         Error::check(ffi::airspy_set_samplerate(self.handle(), index))
     }
 
-    /// Get the Airspy board type.
-    pub fn get_board_id(&mut self) -> Result<&'static str> {
+    /// Read the board's name from libairspy's board table.
+    pub fn board_name(&mut self) -> Result<&'static str> {
         let mut id: u8 = 0;
         Error::check(ffi::airspy_board_id_read(self.handle(), &mut id))?;
         let name = ffi::airspy_board_id_name(id.into());
@@ -99,8 +99,8 @@ impl Airspy {
         Ok(name.to_str().unwrap_or("unknown"))
     }
 
-    /// Get the Airspy firmware version number.
-    pub fn get_version(&mut self) -> Result<String> {
+    /// Read the firmware version string.
+    pub fn firmware_version(&mut self) -> Result<String> {
         let mut buf = [0u8; VERSION_LEN as usize];
         // SAFETY: `buf` holds exactly `VERSION_LEN` writable bytes.
         Error::check(unsafe {
@@ -110,8 +110,8 @@ impl Airspy {
         Ok(version.to_string_lossy().into_owned())
     }
 
-    /// Get the Airspy part ID and serial number.
-    pub fn get_partid_serial(&mut self) -> Result<PartID> {
+    /// Read the board's part ID and serial number.
+    pub fn identity(&mut self) -> Result<Identity> {
         let mut v = ffi::airspy_read_partid_serialno_t {
             part_id: [0u32; 2],
             serial_no: [0u32; 4],
@@ -120,14 +120,14 @@ impl Airspy {
             self.handle(),
             &mut v,
         ))?;
-        Ok(PartID {
+        Ok(Identity {
             part_id: v.part_id,
-            serial_no: (u64::from(v.serial_no[2]) << 32) | u64::from(v.serial_no[3]),
+            serial: (u64::from(v.serial_no[2]) << 32) | u64::from(v.serial_no[3]),
         })
     }
 
     /// Set centre frequency in Hz (24 MHz to 1.75 GHz).
-    pub fn set_freq(&mut self, freq: u32) -> Result<()> {
+    pub fn set_frequency(&mut self, freq: u32) -> Result<()> {
         Error::check(ffi::airspy_set_freq(self.handle(), freq))
     }
 
@@ -170,9 +170,9 @@ mod tests {
     #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
     fn discovers_device_and_available_rates() {
         let mut device = Airspy::open().unwrap();
-        assert!(!device.get_board_id().unwrap().is_empty());
-        assert!(!device.get_version().unwrap().is_empty());
-        let rates = device.get_sample_rates().unwrap();
+        assert!(!device.board_name().unwrap().is_empty());
+        assert!(!device.firmware_version().unwrap().is_empty());
+        let rates = device.sample_rates().unwrap();
         assert!(!rates.is_empty());
         assert!(rates.iter().all(|rate| *rate > 0));
     }
@@ -181,10 +181,10 @@ mod tests {
     #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
     fn configures_device_with_advertised_rate() {
         let mut device = Airspy::open().unwrap();
-        let rates = device.get_sample_rates().unwrap();
+        let rates = device.sample_rates().unwrap();
         let rate = *rates.first().expect("device must advertise a sample rate");
         device.set_sample_rate(rate).unwrap();
-        device.set_freq(434_000_000).unwrap();
+        device.set_frequency(434_000_000).unwrap();
         device.set_lna_gain(7).unwrap();
         device.set_mixer_gain(7).unwrap();
         device.set_vga_gain(7).unwrap();
@@ -198,10 +198,10 @@ mod tests {
     fn reopens_same_device_by_serial() {
         let identity = {
             let mut device = Airspy::open().unwrap();
-            device.get_partid_serial().unwrap()
+            device.identity().unwrap()
         };
-        let mut reopened = Airspy::open_serial(identity.serial_no).unwrap();
-        let actual = reopened.get_partid_serial().unwrap();
+        let mut reopened = Airspy::open_serial(identity.serial).unwrap();
+        let actual = reopened.identity().unwrap();
         assert_eq!(actual, identity);
     }
 }

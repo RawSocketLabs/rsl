@@ -40,7 +40,10 @@ after `stop_rx()`, `receive` returns `Error::StreamingStopped`.
 - `start_rx()` takes no arguments; read samples with `receive` (above).
 - `FFIError` is `Error`, with named native failures (`Busy`,
   `InvalidParameter`, ...) and `Unknown(i32)` for unrecognized codes.
-- `lib_version()` is `LibVersion::get_version()`.
+- `lib_version()` is `LibVersion::linked()`.
+- Getters drop `get_`: `sample_rates()`, `board_name()`, `firmware_version()`,
+  and `identity()`, which returns `Identity { part_id, serial }` (was
+  `get_partid_serial()` returning `PartID`). `set_freq()` is `set_frequency()`.
 - Removed with no aliases: `SampleType`, `Real`, `IQ` (use
   `num_complex::Complex<f32>`), integer sample formats, GPIO, register access,
   flash declarations, and the `rx` binary.

@@ -22,7 +22,7 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut dev = Airspy::open()?;
 //! dev.set_sample_rate(10_000_000)?;
-//! dev.set_freq(434_000_000)?;
+//! dev.set_frequency(434_000_000)?;
 //! dev.set_lna_agc(false)?;
 //! dev.set_mixer_agc(false)?;
 //! dev.set_lna_gain(0)?;
@@ -53,6 +53,6 @@ mod ffi;
 mod library;
 mod rx;
 
-pub use device::{Airspy, PartID};
+pub use device::{Airspy, Identity};
 pub use error::{Error, Result};
 pub use library::LibVersion;
