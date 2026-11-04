@@ -5,8 +5,8 @@
 //! Receive floating-point IQ samples from an Airspy through libairspy.
 //!
 //! Requires libairspy 1.0.6 or later. Each received element is one complex
-//! sample. Call [`Airspy::stop_rx`] to join the callback threads before restarting;
-//! dropping the device also stops reception.
+//! sample. [`Airspy::start_rx`] returns a [`Receiver`]; stopping or dropping it
+//! joins the callback threads, and dropping the device also stops reception.
 //!
 //! # Capture to a file
 //!
@@ -32,17 +32,17 @@
 //!
 //! let mut output = BufWriter::new(File::create("airspy.iq")?);
 //! let mut samples = vec![Complex::default(); 65_536];
-//! dev.start_rx()?;
+//! let mut rx = dev.start_rx()?;
 //! let mut count = 0;
 //! while count < 50_000_000 {
-//!     let received = dev.receive(&mut samples, Duration::from_secs(5))?;
+//!     let received = rx.receive(&mut samples, Duration::from_secs(5))?;
 //!     count += received;
 //!     for sample in &samples[..received] {
 //!         output.write_all(&sample.re.to_le_bytes())?;
 //!         output.write_all(&sample.im.to_le_bytes())?;
 //!     }
 //! }
-//! dev.stop_rx()?;
+//! rx.stop()?;
 //! output.flush()?;
 //! # Ok(())
 //! # }
@@ -57,3 +57,4 @@ mod rx;
 pub use device::{Airspy, Identity};
 pub use error::{Error, Result};
 pub use library::LibVersion;
+pub use rx::Receiver;

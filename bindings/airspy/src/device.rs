@@ -1,4 +1,4 @@
-use crate::rx::RxState;
+use crate::rx::{Receiver, RxState};
 use crate::{Error, Result, ffi};
 use std::ffi::{CStr, c_int};
 use std::ptr::{self, NonNull};
@@ -172,46 +172,63 @@ impl Airspy {
     }
 }
 
+/// The tuning setters, which stay valid while streaming, so [`Airspy`] and
+/// [`Receiver`] share them. Expands inside an impl that has `handle()`.
+macro_rules! tuning_setters {
+    () => {
+        /// Set centre frequency in Hz (24 MHz to 1.75 GHz).
+        pub fn set_frequency(&mut self, freq: u32) -> Result<()> {
+            Error::check(ffi::airspy_set_freq(self.handle(), freq))
+        }
+
+        /// Set the LNA gain step index, 0 to 14; libairspy clamps larger values.
+        pub fn set_lna_gain(&mut self, gain: u8) -> Result<()> {
+            Error::check(ffi::airspy_set_lna_gain(self.handle(), gain))
+        }
+
+        /// Set the mixer gain step index, 0 to 15; libairspy clamps larger values.
+        pub fn set_mixer_gain(&mut self, gain: u8) -> Result<()> {
+            Error::check(ffi::airspy_set_mixer_gain(self.handle(), gain))
+        }
+
+        /// Set the VGA gain step index, 0 to 15; libairspy clamps larger values.
+        pub fn set_vga_gain(&mut self, gain: u8) -> Result<()> {
+            Error::check(ffi::airspy_set_vga_gain(self.handle(), gain))
+        }
+
+        /// Enable or disable the LNA AGC.
+        pub fn set_lna_agc(&mut self, enable: bool) -> Result<()> {
+            Error::check(ffi::airspy_set_lna_agc(self.handle(), u8::from(enable)))
+        }
+
+        /// Enable or disable the mixer AGC.
+        pub fn set_mixer_agc(&mut self, enable: bool) -> Result<()> {
+            Error::check(ffi::airspy_set_mixer_agc(self.handle(), u8::from(enable)))
+        }
+
+        /// Enable or disable the RF bias voltage.
+        pub fn set_rf_bias(&mut self, enable: bool) -> Result<()> {
+            Error::check(ffi::airspy_set_rf_bias(self.handle(), u8::from(enable)))
+        }
+    };
+}
+
 /// Tuning: each setter forwards one value and returns libairspy's status.
 #[expect(
     clippy::missing_errors_doc,
     reason = "each returns libairspy's status unchanged; Error documents the variants"
 )]
 impl Airspy {
-    /// Set centre frequency in Hz (24 MHz to 1.75 GHz).
-    pub fn set_frequency(&mut self, freq: u32) -> Result<()> {
-        Error::check(ffi::airspy_set_freq(self.handle(), freq))
-    }
+    tuning_setters!();
+}
 
-    /// Set the LNA gain step index, 0 to 14; libairspy clamps larger values.
-    pub fn set_lna_gain(&mut self, gain: u8) -> Result<()> {
-        Error::check(ffi::airspy_set_lna_gain(self.handle(), gain))
-    }
-
-    /// Set the mixer gain step index, 0 to 15; libairspy clamps larger values.
-    pub fn set_mixer_gain(&mut self, gain: u8) -> Result<()> {
-        Error::check(ffi::airspy_set_mixer_gain(self.handle(), gain))
-    }
-
-    /// Set the VGA gain step index, 0 to 15; libairspy clamps larger values.
-    pub fn set_vga_gain(&mut self, gain: u8) -> Result<()> {
-        Error::check(ffi::airspy_set_vga_gain(self.handle(), gain))
-    }
-
-    /// Enable or disable the LNA AGC.
-    pub fn set_lna_agc(&mut self, enable: bool) -> Result<()> {
-        Error::check(ffi::airspy_set_lna_agc(self.handle(), u8::from(enable)))
-    }
-
-    /// Enable or disable the mixer AGC.
-    pub fn set_mixer_agc(&mut self, enable: bool) -> Result<()> {
-        Error::check(ffi::airspy_set_mixer_agc(self.handle(), u8::from(enable)))
-    }
-
-    /// Enable or disable the RF bias voltage.
-    pub fn set_rf_bias(&mut self, enable: bool) -> Result<()> {
-        Error::check(ffi::airspy_set_rf_bias(self.handle(), u8::from(enable)))
-    }
+/// Tuning while streaming, identical to [`Airspy`]'s.
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "each returns libairspy's status unchanged; Error documents the variants"
+)]
+impl Receiver<'_> {
+    tuning_setters!();
 }
 
 #[cfg(test)]

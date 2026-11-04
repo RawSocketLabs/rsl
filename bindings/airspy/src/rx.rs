@@ -120,19 +120,29 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
     }
 }
 
+/// An active reception session, borrowing its device until it stops.
+///
+/// Dropping it stops reception and discards the status; call
+/// [`Receiver::stop`] to see it. The tuning setters stay available while
+/// streaming; changing the sample rate needs a stop and a restart.
+pub struct Receiver<'a> {
+    device: &'a mut Airspy,
+    /// This session's buffer; `device.rx_ctx` holds the owning reference.
+    state: Arc<RxState>,
+}
+
 impl Airspy {
     /// Start float IQ reception with a fresh 262,144-sample private buffer.
     ///
-    /// Calling this again synchronously stops the previous session first.
-    ///
     /// # Errors
     ///
-    /// libairspy's status if the previous session fails to stop, the sample
+    /// libairspy's status if a forgotten session fails to stop, the sample
     /// type is rejected, or streaming fails to start. A failed start is
     /// stopped again on a best-effort basis.
-    pub fn start_rx(&mut self) -> Result<()> {
+    pub fn start_rx(&mut self) -> Result<Receiver<'_>> {
+        // Only a `mem::forget`-ed Receiver leaves a session running.
         if self.rx_ctx.is_some() {
-            self.stop_rx()?;
+            self.stop_session()?;
         }
         Error::check(ffi::airspy_set_sample_type(
             self.handle(),
@@ -143,17 +153,34 @@ impl Airspy {
         // invalidate the pointer libairspy's threads read through.
         let ctx = Arc::as_ptr(&state).cast_mut().cast::<c_void>();
         // Stored before starting: callbacks may run before start_rx returns.
-        self.rx_ctx = Some(state);
+        self.rx_ctx = Some(Arc::clone(&state));
         // SAFETY: rx_cb only reads `ctx` as `&RxState`, and `rx_ctx` keeps that
-        // RxState alive until stop_rx or close has joined the callback threads.
-        let result = Error::check(unsafe { ffi::airspy_start_rx(self.handle(), rx_cb, ctx) });
-        if result.is_err() {
+        // RxState alive until stop_session or close has joined the callback
+        // threads.
+        if let Err(error) = Error::check(unsafe { ffi::airspy_start_rx(self.handle(), rx_cb, ctx) })
+        {
             // Join threads created before a partial startup failure.
-            let _ = self.stop_rx();
+            let _ = self.stop_session();
+            return Err(error);
         }
-        result
+        Ok(Receiver {
+            device: self,
+            state,
+        })
     }
 
+    /// Stop reception and join callbacks before releasing buffered samples.
+    fn stop_session(&mut self) -> Result<()> {
+        let result = Error::check(ffi::airspy_stop_rx(self.handle()));
+        // airspy_stop_rx joins the callback threads even when it reports
+        // failure, so nothing can still read the state released here. The one
+        // exception is libairspy's own: see `ffi::airspy_stop_rx`.
+        self.rx_ctx.take();
+        result
+    }
+}
+
+impl Receiver<'_> {
     /// Receive up to `samples.len()` IQ pairs, returning the number written.
     ///
     /// The unused tail is untouched. An empty output is invalid. Zero timeout
@@ -165,33 +192,42 @@ impl Airspy {
     ///
     /// # Errors
     ///
-    /// - [`Error::StreamingStopped`] before `start_rx` or after `stop_rx`.
     /// - [`Error::InvalidParameter`] if `samples` is empty.
     /// - [`Error::Timeout`] if nothing arrived within `timeout`.
     /// - [`Error::Overflow`] once the buffer has overflowed, until restart.
     /// - [`Error::Thread`] if the buffer lock is poisoned.
     pub fn receive(&mut self, samples: &mut [Complex<f32>], timeout: Duration) -> Result<usize> {
-        let state = self.rx_ctx.as_ref().ok_or(Error::StreamingStopped)?;
-        state.receive(samples, timeout)
+        self.state.receive(samples, timeout)
     }
 
-    /// Stop reception and join callbacks before releasing buffered samples.
+    /// Stop reception, join the callback threads and release the device.
     ///
     /// # Errors
     ///
     /// libairspy's status; the session is released either way.
-    pub fn stop_rx(&mut self) -> Result<()> {
-        let result = Error::check(ffi::airspy_stop_rx(self.handle()));
-        // airspy_stop_rx joins the callback threads even when it reports
-        // failure, so nothing can still read the state released here. The one
-        // exception is libairspy's own: see `ffi::airspy_stop_rx`.
-        self.rx_ctx.take();
-        result
+    pub fn stop(self) -> Result<()> {
+        // Drop then finds no session and does nothing.
+        self.device.stop_session()
     }
 
-    /// Check if the Airspy is currently streaming.
+    /// Check whether libairspy is still streaming; false after an overflow or
+    /// a USB failure ended the stream.
     pub fn is_streaming(&mut self) -> bool {
         ffi::airspy_is_streaming(self.handle()) == ffi::AIRSPY_TRUE
+    }
+
+    /// Borrow the device's live handle, for the shared tuning setters.
+    pub(crate) fn handle(&mut self) -> &mut ffi::AirspyDevice {
+        self.device.handle()
+    }
+}
+
+/// Stop the session if `stop` did not.
+impl Drop for Receiver<'_> {
+    fn drop(&mut self) {
+        if self.device.rx_ctx.is_some() {
+            let _ = self.device.stop_session();
+        }
     }
 }
 
@@ -341,18 +377,16 @@ mod tests {
     fn stop_releases_state_and_allows_restart() {
         let mut device = Airspy::open().unwrap();
         let mut samples = [Complex::default(); 1024];
-        assert_eq!(
-            device.receive(&mut samples, Duration::ZERO),
-            Err(Error::StreamingStopped)
-        );
         for _ in 0..2 {
-            device.start_rx().unwrap();
-            assert!(device.receive(&mut samples, TIMEOUT).unwrap() > 0);
-            device.stop_rx().unwrap();
-            assert_eq!(
-                device.receive(&mut samples, Duration::ZERO),
-                Err(Error::StreamingStopped)
-            );
+            let mut rx = device.start_rx().unwrap();
+            assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
+            rx.set_frequency(100_000_000).unwrap();
+            assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
+            rx.stop().unwrap();
         }
+        // A forgotten receiver's session ends when the next one starts.
+        std::mem::forget(device.start_rx().unwrap());
+        let mut rx = device.start_rx().unwrap();
+        assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
     }
 }

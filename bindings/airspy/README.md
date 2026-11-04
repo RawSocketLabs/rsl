@@ -3,8 +3,9 @@
 A RawSocket Labs fork of [airspy-rs](https://github.com/adamgreig/airspy-rs)
 0.4.0 (MIT, Adam Greig). Changes from upstream:
 
-- `Airspy::stop_rx()` — upstream can only stop reception by hanging up the
-  sample channel, which leaves libairspy unable to start streaming again.
+- An explicit stop (`Receiver::stop`, or dropping the `Receiver`) — upstream
+  can only stop reception by hanging up the sample channel, which leaves
+  libairspy unable to start streaming again.
 - Caller-owned receive buffers replace the public sample channel.
 - Standard-library C types and `num-complex` replace `libc` and `num`.
 - Device-requiring tests are `#[ignore]`d.
@@ -18,10 +19,13 @@ See the [crate-level documentation](src/lib.rs) for a complete capture example.
 
 ## Receiving
 
-Call `start_rx()`, then `receive(&mut samples, timeout)` with a
-`num_complex::Complex<f32>` slice. The returned count is the filled prefix; the
-tail is untouched. An empty slice is `Error::InvalidParameter`; before start or
-after `stop_rx()`, `receive` returns `Error::StreamingStopped`.
+`start_rx()` returns a `Receiver` that borrows the device. Call
+`receive(&mut samples, timeout)` on it with a `num_complex::Complex<f32>` slice.
+The returned count is the filled prefix; the tail is untouched, and an empty
+slice is `Error::InvalidParameter`. The tuning setters (frequency, gains, AGC,
+RF bias) also work on the `Receiver` while streaming; a sample-rate change
+needs `stop()` and a restart. Dropping the `Receiver` stops reception and
+discards the status; `stop()` returns it.
 
 - Reception buffers at most 262,144 IQ samples (2 MiB, about 26 ms at 10 Msps).
   Consume promptly: `Error::Overflow` stops callback delivery and persists until
@@ -37,7 +41,9 @@ after `stop_rx()`, `receive` returns `Error::StreamingStopped`.
 
 - `Airspy::new()` / `from_serial()` are `Airspy::open()` / `open_serial(serial)`.
   The no-op `init()` and `exit()` are gone; opening and dropping manage lifetime.
-- `start_rx()` takes no arguments; read samples with `receive` (above).
+- `start_rx()` takes no arguments and returns a `Receiver`; `receive`,
+  `stop` and `is_streaming` live on it (above). `Airspy` is `Send`, and
+  `receive` takes a `Duration`.
 - `FFIError` is `Error`, with named native failures (`Busy`,
   `InvalidParameter`, ...) and `Unknown(i32)` for unrecognized codes.
 - `lib_version()` is `LibVersion::linked()`.
