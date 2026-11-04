@@ -120,6 +120,12 @@ impl Airspy {
     /// Start float IQ reception with a fresh 262,144-sample private buffer.
     ///
     /// Calling this again synchronously stops the previous session first.
+    ///
+    /// # Errors
+    ///
+    /// libairspy's status if the previous session fails to stop, the sample
+    /// type is rejected, or streaming fails to start; any threads a failed
+    /// start created are joined before returning.
     pub fn start_rx(&mut self) -> Result<()> {
         if self.rx_ctx.is_some() {
             self.stop_rx()?;
@@ -152,12 +158,24 @@ impl Airspy {
     /// Overflow takes precedence over queued samples and persists until restart.
     /// A native stop without notification is observed as a timeout after draining
     /// queued samples. This reports adapter overflow, not USB-level sample loss.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::StreamingStopped`] before `start_rx` or after `stop_rx`.
+    /// - [`Error::InvalidParameter`] if `samples` is empty.
+    /// - [`Error::Timeout`] if nothing arrived within `timeout_ms`.
+    /// - [`Error::Overflow`] once the buffer has overflowed, until restart.
+    /// - [`Error::Thread`] if the buffer lock is poisoned.
     pub fn receive(&mut self, samples: &mut [Complex<f32>], timeout_ms: u32) -> Result<usize> {
         let state = self.rx_ctx.as_ref().ok_or(Error::StreamingStopped)?;
         state.receive(samples, timeout_ms)
     }
 
     /// Stop reception and join callbacks before releasing buffered samples.
+    ///
+    /// # Errors
+    ///
+    /// libairspy's status; the session is released either way.
     pub fn stop_rx(&mut self) -> Result<()> {
         let result = Error::check(ffi::airspy_stop_rx(self.handle()));
         // libairspy joins the callback threads even when it reports failure,
@@ -189,7 +207,7 @@ mod tests {
             sample_count: 2,
         };
         // SAFETY: `transfer`, `input` and `state` outlive the call.
-        assert_eq!(unsafe { rx_cb(&mut transfer) }, ffi::RX_CONTINUE);
+        assert_eq!(unsafe { rx_cb(&raw mut transfer) }, ffi::RX_CONTINUE);
         input[0].re = 99.0;
         assert_eq!(input[0].re, 99.0);
         let mut first = [Complex::default(); 1];
@@ -219,13 +237,13 @@ mod tests {
             sample_count: 0,
         };
         // SAFETY: `transfer` and `state` outlive the call.
-        assert_eq!(unsafe { rx_cb(&mut transfer) }, ffi::RX_CONTINUE);
+        assert_eq!(unsafe { rx_cb(&raw mut transfer) }, ffi::RX_CONTINUE);
         transfer.sample_count = 1; // with null samples
         // SAFETY: as above; rx_cb rejects the null samples before reading.
-        assert_eq!(unsafe { rx_cb(&mut transfer) }, ffi::RX_STOP);
+        assert_eq!(unsafe { rx_cb(&raw mut transfer) }, ffi::RX_STOP);
         transfer.ctx = ptr::null_mut();
         // SAFETY: as above; rx_cb rejects the null ctx before reading.
-        assert_eq!(unsafe { rx_cb(&mut transfer) }, ffi::RX_STOP);
+        assert_eq!(unsafe { rx_cb(&raw mut transfer) }, ffi::RX_STOP);
     }
 
     #[test]

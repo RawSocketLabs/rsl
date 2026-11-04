@@ -5,13 +5,17 @@ use crate::ffi;
 /// Ordered by major, then minor, then revision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LibVersion {
+    /// Major version; this crate supports 1.
     pub major: u32,
+    /// Minor version.
     pub minor: u32,
+    /// Revision; 1.0.6 is the oldest supported release.
     pub revision: u32,
 }
 
 impl LibVersion {
     /// Fetch the version of the libairspy C library this process linked.
+    #[must_use]
     pub fn linked() -> Self {
         let mut v = ffi::airspy_lib_version_t {
             major_version: 0,

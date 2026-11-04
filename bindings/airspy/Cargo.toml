@@ -18,9 +18,19 @@ publish = false
 num-complex = "0.4"
 thiserror = "2"
 
+# Mirrors the root [workspace.lints] until this crate joins the workspace, plus
+# the FFI rule; replace with `[lints] workspace = true` then.
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
+unreachable_pub = "warn"
+missing_docs = "warn"
 
 [lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_inception = "allow"
+upper_case_acronyms = "allow"
+print_stdout = "warn"
+print_stderr = "warn"
 # Every remaining FFI call states the invariant it relies on.
 undocumented_unsafe_blocks = "warn"

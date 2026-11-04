@@ -31,17 +31,29 @@ impl Drop for Airspy {
 /// An Airspy board's part ID and serial number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Identity {
+    /// The two part ID words, as libairspy reports them.
     pub part_id: [u32; 2],
+    /// The 64-bit serial number `open_serial` accepts.
     pub serial: u64,
 }
 
 impl Airspy {
     /// Try to open the next available Airspy device.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if no unopened Airspy is attached; otherwise
+    /// libairspy's status.
     pub fn open() -> Result<Self> {
         Self::open_with(|device| ffi::airspy_open(device))
     }
 
     /// Try to open a specific Airspy device by serial number.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotFound`] if no unopened Airspy has that serial; otherwise
+    /// libairspy's status.
     pub fn open_serial(serial_number: u64) -> Result<Self> {
         Self::open_with(|device| ffi::airspy_open_sn(device, serial_number))
     }
@@ -63,10 +75,14 @@ impl Airspy {
     }
 
     /// Get available sample rates for this Airspy.
+    ///
+    /// # Errors
+    ///
+    /// libairspy's status if either query fails.
     pub fn sample_rates(&mut self) -> Result<Vec<u32>> {
         let mut count: u32 = 0;
         // SAFETY: with `len == 0`, libairspy writes only the count, to `count`.
-        Error::check(unsafe { ffi::airspy_get_samplerates(self.handle(), &mut count, 0) })?;
+        Error::check(unsafe { ffi::airspy_get_samplerates(self.handle(), &raw mut count, 0) })?;
         let mut rates = vec![0; count as usize];
         // SAFETY: `rates` holds exactly `count` writable elements.
         Error::check(unsafe {
@@ -77,7 +93,10 @@ impl Airspy {
 
     /// Set this Airspy's sample rate to a specific rate.
     ///
-    /// This rate must be in the available rates or an error is returned.
+    /// # Errors
+    ///
+    /// [`Error::InvalidParameter`] if the device does not advertise
+    /// `target_rate`; otherwise libairspy's status.
     pub fn set_sample_rate(&mut self, target_rate: u32) -> Result<()> {
         let index = self
             .sample_rates()?
@@ -89,6 +108,10 @@ impl Airspy {
     }
 
     /// Read the board's name from libairspy's board table.
+    ///
+    /// # Errors
+    ///
+    /// libairspy's status if the board ID read fails.
     pub fn board_name(&mut self) -> Result<&'static str> {
         let mut id: u8 = 0;
         Error::check(ffi::airspy_board_id_read(self.handle(), &mut id))?;
@@ -100,6 +123,11 @@ impl Airspy {
     }
 
     /// Read the firmware version string.
+    ///
+    /// # Errors
+    ///
+    /// libairspy's status, or [`Error::Other`] if the firmware string is not
+    /// NUL-terminated.
     pub fn firmware_version(&mut self) -> Result<String> {
         let mut buf = [0u8; VERSION_LEN as usize];
         // SAFETY: `buf` holds exactly `VERSION_LEN` writable bytes.
@@ -111,6 +139,10 @@ impl Airspy {
     }
 
     /// Read the board's part ID and serial number.
+    ///
+    /// # Errors
+    ///
+    /// libairspy's status if the read fails.
     pub fn identity(&mut self) -> Result<Identity> {
         let mut v = ffi::airspy_read_partid_serialno_t {
             part_id: [0u32; 2],
@@ -125,7 +157,14 @@ impl Airspy {
             serial: (u64::from(v.serial_no[2]) << 32) | u64::from(v.serial_no[3]),
         })
     }
+}
 
+/// Tuning: each setter forwards one value and returns libairspy's status.
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "each returns libairspy's status unchanged; Error documents the variants"
+)]
+impl Airspy {
     /// Set centre frequency in Hz (24 MHz to 1.75 GHz).
     pub fn set_frequency(&mut self, freq: u32) -> Result<()> {
         Error::check(ffi::airspy_set_freq(self.handle(), freq))
@@ -146,17 +185,17 @@ impl Airspy {
         Error::check(ffi::airspy_set_vga_gain(self.handle(), gain))
     }
 
-    /// Enable/disable LNA AGC
+    /// Enable or disable the LNA AGC.
     pub fn set_lna_agc(&mut self, enable: bool) -> Result<()> {
         Error::check(ffi::airspy_set_lna_agc(self.handle(), u8::from(enable)))
     }
 
-    /// Enable/disable mixer AGC
+    /// Enable or disable the mixer AGC.
     pub fn set_mixer_agc(&mut self, enable: bool) -> Result<()> {
         Error::check(ffi::airspy_set_mixer_agc(self.handle(), u8::from(enable)))
     }
 
-    /// Enable/disable RF bias voltage
+    /// Enable or disable the RF bias voltage.
     pub fn set_rf_bias(&mut self, enable: bool) -> Result<()> {
         Error::check(ffi::airspy_set_rf_bias(self.handle(), u8::from(enable)))
     }
@@ -170,10 +209,10 @@ mod tests {
     #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
     fn discovers_device_and_available_rates() {
         let mut device = Airspy::open().unwrap();
-        assert!(!device.board_name().unwrap().is_empty());
-        assert!(!device.firmware_version().unwrap().is_empty());
+        assert_ne!(device.board_name().unwrap(), "");
+        assert_ne!(device.firmware_version().unwrap(), "");
         let rates = device.sample_rates().unwrap();
-        assert!(!rates.is_empty());
+        assert_ne!(rates.len(), 0);
         assert!(rates.iter().all(|rate| *rate > 0));
     }
 
