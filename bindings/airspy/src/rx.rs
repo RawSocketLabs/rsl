@@ -3,7 +3,7 @@ use num_complex::Complex;
 use std::collections::VecDeque;
 use std::ffi::{c_int, c_void};
 use std::slice;
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 /// Fixed sample capacity; about 26 ms at 10 Msps.
@@ -98,7 +98,7 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
             transfer.sample_count as usize,
         )
     };
-    // The box stays alive until stop/close joins this callback's thread.
+    // The Arc stays alive until stop/close joins this callback's thread.
     let state = unsafe { &*transfer.ctx.cast::<RxState>() };
     i32::from(state.push(samples).is_err())
 }
@@ -112,8 +112,10 @@ impl Airspy {
             self.stop_rx()?;
         }
         Error::check(unsafe { ffi::airspy_set_sample_type(self.ptr, 0) })?;
-        let mut state = Box::new(RxState::new());
-        let ctx = (&mut *state as *mut RxState).cast::<c_void>();
+        let state = Arc::new(RxState::new());
+        // Shared ownership: a Box move would invalidate the pointer
+        // libairspy's threads read through.
+        let ctx = Arc::as_ptr(&state).cast_mut().cast::<c_void>();
         self.rx_ctx = Some(state);
         let result = Error::check(unsafe { ffi::airspy_start_rx(self.ptr, rx_cb, ctx) });
         if result.is_err() {
@@ -152,15 +154,16 @@ impl Airspy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ptr;
     use std::thread;
 
     #[test]
     fn callback_copies_samples_and_preserves_remainder() {
-        let mut state = Box::new(RxState::new());
+        let state = RxState::new();
         let mut input = [Complex::new(1.0_f32, -2.0), Complex::new(3.0, -4.0)];
         let mut transfer = ffi::airspy_transfer_t {
-            device: std::ptr::null_mut(),
-            ctx: (&mut *state as *mut RxState).cast(),
+            device: ptr::null_mut(),
+            ctx: ptr::from_ref(&state).cast_mut().cast(),
             samples: input.as_ptr().cast(),
             sample_count: 2,
         };

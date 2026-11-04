@@ -1,12 +1,13 @@
 use crate::rx::RxState;
 use crate::{ffi, Error, Result};
 use std::ffi::CStr;
+use std::sync::Arc;
 
 /// Store a reference to an opened Airspy device.
 pub struct Airspy {
     pub(crate) ptr: *mut ffi::AirspyDevice,
     /// Stable reception state, retained until the C threads have joined.
-    pub(crate) rx_ctx: Option<Box<RxState>>,
+    pub(crate) rx_ctx: Option<Arc<RxState>>,
 }
 
 /// Ensure whenever the Airspy goes out of scope it is closed.
