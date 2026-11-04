@@ -16,6 +16,12 @@ pub struct Airspy {
     pub(crate) rx_ctx: Option<Arc<RxState>>,
 }
 
+// SAFETY: libairspy handles are not tied to the thread that opened them, and
+// every call goes through `&mut self`, so moving the device between threads
+// never makes two calls race. The callback state is an `Arc<RxState>`, which is
+// `Send + Sync`. `Airspy` stays `!Sync`.
+unsafe impl Send for Airspy {}
+
 /// Ensure whenever the Airspy goes out of scope it is closed.
 impl Drop for Airspy {
     fn drop(&mut self) {
@@ -47,6 +53,7 @@ impl Airspy {
     /// [`Error::NotFound`] if no unopened Airspy is attached; otherwise
     /// libairspy's status.
     pub fn open() -> Result<Self> {
+        // A closure, because extern "C" fn items do not implement FnOnce.
         Self::open_with(|device| ffi::airspy_open(device))
     }
 
@@ -210,6 +217,12 @@ impl Airspy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn device_moves_between_threads() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Airspy>();
+    }
 
     #[test]
     #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]

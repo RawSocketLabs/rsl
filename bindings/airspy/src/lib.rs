@@ -18,6 +18,7 @@
 //! use num_complex::Complex;
 //! use std::fs::File;
 //! use std::io::{BufWriter, Write};
+//! use std::time::Duration;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut dev = Airspy::open()?;
@@ -34,7 +35,7 @@
 //! dev.start_rx()?;
 //! let mut count = 0;
 //! while count < 50_000_000 {
-//!     let received = dev.receive(&mut samples, 5_000)?;
+//!     let received = dev.receive(&mut samples, Duration::from_secs(5))?;
 //!     count += received;
 //!     for sample in &samples[..received] {
 //!         output.write_all(&sample.re.to_le_bytes())?;

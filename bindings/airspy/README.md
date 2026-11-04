@@ -18,7 +18,7 @@ See the [crate-level documentation](src/lib.rs) for a complete capture example.
 
 ## Receiving
 
-Call `start_rx()`, then `receive(&mut samples, timeout_ms)` with a
+Call `start_rx()`, then `receive(&mut samples, timeout)` with a
 `num_complex::Complex<f32>` slice. The returned count is the filled prefix; the
 tail is untouched. An empty slice is `Error::InvalidParameter`; before start or
 after `stop_rx()`, `receive` returns `Error::StreamingStopped`.
@@ -28,7 +28,7 @@ after `stop_rx()`, `receive` returns `Error::StreamingStopped`.
   stop/restart, and queued samples are not returned after it. It detects the
   adapter filling, not USB-level sample loss.
 - `Error::Timeout` means no samples arrived within the empty-buffer wait;
-  zero milliseconds polls. The timeout does not bound mutex contention or
+  `Duration::ZERO` polls. The timeout does not bound mutex contention or
   copying. A native stop without notification can also appear as a timeout.
 - Only the common C transfer prefix is read, so both 1.0.6 and newer layouts
   (with dropped-sample fields) work.

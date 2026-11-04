@@ -16,6 +16,14 @@ struct Buffer {
 }
 
 impl Buffer {
+    /// Allocate the full capacity up front, so `push` never reallocates.
+    fn new() -> Self {
+        Self {
+            samples: VecDeque::with_capacity(RX_CAPACITY),
+            overflow: false,
+        }
+    }
+
     /// Append a callback batch, or latch overflow if it does not fit.
     fn push(&mut self, samples: &[Complex<f32>]) -> Result<()> {
         if self.overflow || samples.len() > RX_CAPACITY - self.samples.len() {
@@ -37,10 +45,7 @@ impl RxState {
     /// Allocate the bounded sample storage before starting callbacks.
     fn new() -> Self {
         Self {
-            buffer: Mutex::new(Buffer {
-                samples: VecDeque::with_capacity(RX_CAPACITY),
-                overflow: false,
-            }),
+            buffer: Mutex::new(Buffer::new()),
             ready: Condvar::new(),
         }
     }
@@ -57,12 +62,11 @@ impl RxState {
         result
     }
 
-    /// Copy available samples, waiting up to the timeout when empty.
-    fn receive(&self, samples: &mut [Complex<f32>], timeout_ms: u32) -> Result<usize> {
+    /// Copy available samples, waiting up to `timeout` when empty.
+    fn receive(&self, samples: &mut [Complex<f32>], timeout: Duration) -> Result<usize> {
         if samples.is_empty() {
             return Err(Error::InvalidParameter);
         }
-        let timeout = Duration::from_millis(timeout_ms.into());
         let buffer = self.buffer.lock().map_err(|_| Error::Thread)?;
         let (mut buffer, _) = self
             .ready
@@ -135,8 +139,8 @@ impl Airspy {
             ffi::SampleType::Float32Iq,
         ))?;
         let state = Arc::new(RxState::new());
-        // Shared ownership: a Box move would invalidate the pointer
-        // libairspy's threads read through.
+        // An Arc, because moving a Box asserts unique access and would
+        // invalidate the pointer libairspy's threads read through.
         let ctx = Arc::as_ptr(&state).cast_mut().cast::<c_void>();
         // Stored before starting: callbacks may run before start_rx returns.
         self.rx_ctx = Some(state);
@@ -153,7 +157,7 @@ impl Airspy {
     /// Receive up to `samples.len()` IQ pairs, returning the number written.
     ///
     /// The unused tail is untouched. An empty output is invalid. Zero timeout
-    /// polls buffered samples; otherwise `timeout_ms` sets the empty-buffer wait
+    /// polls buffered samples; otherwise `timeout` sets the empty-buffer wait
     /// deadline. Mutex contention and copying are not bounded by this timeout.
     /// Overflow takes precedence over queued samples and persists until restart.
     /// A native stop without notification is observed as a timeout after draining
@@ -163,12 +167,12 @@ impl Airspy {
     ///
     /// - [`Error::StreamingStopped`] before `start_rx` or after `stop_rx`.
     /// - [`Error::InvalidParameter`] if `samples` is empty.
-    /// - [`Error::Timeout`] if nothing arrived within `timeout_ms`.
+    /// - [`Error::Timeout`] if nothing arrived within `timeout`.
     /// - [`Error::Overflow`] once the buffer has overflowed, until restart.
     /// - [`Error::Thread`] if the buffer lock is poisoned.
-    pub fn receive(&mut self, samples: &mut [Complex<f32>], timeout_ms: u32) -> Result<usize> {
+    pub fn receive(&mut self, samples: &mut [Complex<f32>], timeout: Duration) -> Result<usize> {
         let state = self.rx_ctx.as_ref().ok_or(Error::StreamingStopped)?;
-        state.receive(samples, timeout_ms)
+        state.receive(samples, timeout)
     }
 
     /// Stop reception and join callbacks before releasing buffered samples.
@@ -198,6 +202,9 @@ mod tests {
     use std::thread;
     use std::time::Instant;
 
+    /// Generous wait for cross-thread tests; they assert they finish far sooner.
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
     #[test]
     fn callback_copies_samples_and_preserves_remainder() {
         let state = RxState::new();
@@ -212,12 +219,12 @@ mod tests {
         assert_eq!(unsafe { rx_cb(&raw mut transfer) }, ffi::RX_CONTINUE);
         input[0].re = 99.0;
         let mut first = [Complex::default(); 1];
-        assert_eq!(state.receive(&mut first, 0), Ok(1));
+        assert_eq!(state.receive(&mut first, Duration::ZERO), Ok(1));
         assert_eq!(first[0], Complex::new(1.0_f32, -2.0));
         // The overwrite after the callback did not reach the copy.
         assert_ne!(first[0], input[0]);
         let mut remaining = [Complex::new(9.0, 9.0); 3];
-        assert_eq!(state.receive(&mut remaining, 0), Ok(1));
+        assert_eq!(state.receive(&mut remaining, Duration::ZERO), Ok(1));
         assert_eq!(
             remaining,
             [
@@ -260,7 +267,7 @@ mod tests {
             });
             let mut output = [Complex::default()];
             let start = Instant::now();
-            assert_eq!(state.receive(&mut output, 5_000), Err(Error::Overflow));
+            assert_eq!(state.receive(&mut output, TIMEOUT), Err(Error::Overflow));
             // Without the wake-up, receive only returns at its deadline.
             assert!(start.elapsed() < Duration::from_secs(4));
         });
@@ -270,9 +277,15 @@ mod tests {
     fn empty_receive_times_out_without_modifying_output() {
         let state = RxState::new();
         let mut output = [Complex::new(9.0, 9.0)];
-        assert_eq!(state.receive(&mut output, 0), Err(Error::Timeout));
+        assert_eq!(
+            state.receive(&mut output, Duration::ZERO),
+            Err(Error::Timeout)
+        );
         assert_eq!(output[0], Complex::new(9.0_f32, 9.0));
-        assert_eq!(state.receive(&mut [], 0), Err(Error::InvalidParameter));
+        assert_eq!(
+            state.receive(&mut [], Duration::ZERO),
+            Err(Error::InvalidParameter)
+        );
     }
 
     #[test]
@@ -281,13 +294,16 @@ mod tests {
         state.push(&vec![Complex::default(); RX_CAPACITY]).unwrap();
         assert_eq!(state.push(&[Complex::default()]), Err(Error::Overflow));
         assert_eq!(
-            state.receive(&mut [Complex::default()], 0),
+            state.receive(&mut [Complex::default()], Duration::ZERO),
             Err(Error::Overflow)
         );
         assert_eq!(state.push(&[]), Err(Error::Overflow));
         let fresh = RxState::new();
         fresh.push(&[Complex::new(1.0, 2.0)]).unwrap();
-        assert_eq!(fresh.receive(&mut [Complex::default()], 0), Ok(1));
+        assert_eq!(
+            fresh.receive(&mut [Complex::default()], Duration::ZERO),
+            Ok(1)
+        );
     }
 
     #[test]
@@ -297,7 +313,7 @@ mod tests {
             scope.spawn(|| state.push(&[Complex::new(1.0, 2.0)]).unwrap());
             let mut output = [Complex::default()];
             let start = Instant::now();
-            assert_eq!(state.receive(&mut output, 5_000), Ok(1));
+            assert_eq!(state.receive(&mut output, TIMEOUT), Ok(1));
             assert!(start.elapsed() < Duration::from_secs(4));
             assert_eq!(output[0], Complex::new(1.0_f32, 2.0));
         });
@@ -315,7 +331,7 @@ mod tests {
         });
         assert_eq!(state.push(&[Complex::default()]), Err(Error::Thread));
         assert_eq!(
-            state.receive(&mut [Complex::default()], 0),
+            state.receive(&mut [Complex::default()], Duration::ZERO),
             Err(Error::Thread)
         );
     }
@@ -326,15 +342,15 @@ mod tests {
         let mut device = Airspy::open().unwrap();
         let mut samples = [Complex::default(); 1024];
         assert_eq!(
-            device.receive(&mut samples, 0),
+            device.receive(&mut samples, Duration::ZERO),
             Err(Error::StreamingStopped)
         );
         for _ in 0..2 {
             device.start_rx().unwrap();
-            assert!(device.receive(&mut samples, 5_000).unwrap() > 0);
+            assert!(device.receive(&mut samples, TIMEOUT).unwrap() > 0);
             device.stop_rx().unwrap();
             assert_eq!(
-                device.receive(&mut samples, 0),
+                device.receive(&mut samples, Duration::ZERO),
                 Err(Error::StreamingStopped)
             );
         }
