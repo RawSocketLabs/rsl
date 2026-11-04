@@ -22,15 +22,17 @@ Deferred: a server half, async clients.
 - `command.rs` — `Command { opcode, param }` and `Opcode`, a `BitEnum` with an `Other`
   catch-all. Typed constructors cover the opcodes libsdr drives; `Command::new` sends any.
 - `client.rs` — `Client` and `ClientError`. The greeting is decoded straight off the socket
-  through a `StreamBitReader`, which reads exactly the message's bytes, **not** through
-  bnb's `MessageStream`, whose read-ahead would buffer sample bytes the raw stream reads
-  must see. Commands go out with `EncodeExt::encode`.
+  through a `StreamBitReader`, which reads exactly the message's bytes. bnb's `MessageStream`
+  is not used: the server sends one message (the greeting) and then only raw samples, and
+  never replies to a command, so there is no message stream to frame — the wrapper would only
+  add a buffer that the sample reads, `drain_buffered` and `discard` would all have to go
+  through. Commands go out with `EncodeExt::encode`.
 
 ## The dual-use rule here
 
 The parser accepts any opcode (preserved as `Opcode::Other`). The greeting's `RTL0` is a
 codec constant rather than a field, so decoding any other magic fails with `BadMagic`, which
-the client reports as `ClientError::NotRtlTcp`.
+the client reports as `ClientError::Handshake`.
 
 ## Testing
 
