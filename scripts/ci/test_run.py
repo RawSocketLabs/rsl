@@ -243,8 +243,7 @@ curl() {
         self.assertEqual(sequence, [["cargo", "package", "-p", "bitsandbytes", "-p", "bitsandbytes-macros", "--all-features"]])
 
     def test_ffi_profiles_check_the_relocated_manifests(self):
-        for profile, manifest in (("airspy", "bindings/airspy/Cargo.toml"),
-                                  ("usdr-ffi", "bindings/usdr/Cargo.toml"),
+        for profile, manifest in (("usdr-ffi", "bindings/usdr/Cargo.toml"),
                                   ("rust-dsdcc", "bindings/dsdcc/Cargo.toml")):
             with self.subTest(profile=profile):
                 sequence = commands(profile, planned(full=True), BNB_CONFIG)

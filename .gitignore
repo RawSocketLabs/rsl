@@ -1,5 +1,6 @@
 target/
 __pycache__/
+/bindings/airspy/Cargo.lock
 /bindings/usdr/Cargo.lock
 /bindings/dsdcc/Cargo.lock
 /codecs/bitsandbytes/bnb/nostd-check/Cargo.lock

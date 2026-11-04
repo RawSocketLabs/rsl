@@ -82,11 +82,12 @@ members = [
     "deps",
     # runnable dual-use protocol-stack examples (privileged injection)
     "protocols/examples",
-]
-# FFI crates (need a C++ toolchain + system libs) and the bnb/crypto fuzz and no_std helpers are excluded
-# from the default workspace build; each is built on its own in a dedicated CI job.
-exclude = [
+    # libairspy bindings; linking needs libairspy, which the CI image provides
     "bindings/airspy",
+]
+# The other FFI crates (need a C++ toolchain + system libs) and the bnb/crypto fuzz and no_std helpers
+# are excluded from the default workspace build; each is built on its own in a dedicated CI job.
+exclude = [
     "bindings/bladerf",
     "bindings/usdr",
     "bindings/dsdcc",

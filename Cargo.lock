@@ -62,6 +62,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "airspy"
+version = "0.5.0"
+dependencies = [
+ "num-complex",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "alloca"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

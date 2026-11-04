@@ -6,8 +6,8 @@
 **What this is.** The `rsl` monorepo: one Cargo workspace holding the public RawSocket Labs
 stack — the codec (`bitsandbytes`), raw-packet I/O (`rawsock`), cryptography (`crypto`),
 ASN.1/X.509/PKI (`pki/*`), compression (`compression`), error correction (`error-correction`),
-RF value types (`rfus`), the protocol crates (`protocols/*`), the facades (`rsl`, `deps`), and
-(excluded, FFI) `usdr-ffi`, `rust-dsdcc`, `bladerf` and `airspy`. Crates are **published independently** but developed
+RF value types (`rfus`), the protocol crates (`protocols/*`), the facades (`rsl`, `deps`), the
+libairspy bindings (`airspy`), and (excluded, FFI) `usdr-ffi`, `rust-dsdcc` and `bladerf`. Crates are **published independently** but developed
 **in lockstep** — inter-crate deps are `path` + `version`, so there's one `Cargo.lock` and no
 git-rev pinning.
 
@@ -26,7 +26,7 @@ One directory per domain group; each crate's own `AGENTS.md` holds its detail.
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `netlink`, `protocol-examples` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol; `examples/` holds the runnable injection examples |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `deps/` | `deps` | blessed external-dependency stack |
-| `bindings/` | `usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys`, `airspy` | **excluded** FFI workspaces (need native toolchains/libraries) |
+| `bindings/` | `airspy`; `usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys` | `airspy` is a workspace member (links libairspy, which the CI image provides); the rest are **excluded** FFI workspaces (need native toolchains/libraries) |
 | `tools/rust-skills/` | `xtask` (private) | independently versioned Rust engineering skills and adapters; not auto-activated |
 
 ## Standards (workspace-wide, in root config)
@@ -42,10 +42,11 @@ One directory per domain group; each crate's own `AGENTS.md` holds its detail.
   `publish = false` until the registry decision flips on.
 - **Commits** — Conventional Commits (commitlint). **No `Co-Authored-By:` trailer.**
 
-## FFI members (`usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys`, `airspy`)
+## FFI crates (`usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys`, `airspy`)
 
-Excluded from the default workspace build/CI (they need a C++ toolchain + system libs). Build
-them explicitly: `cargo build --manifest-path bindings/usdr/Cargo.toml`. `rust-dsdcc` links the external
+`usdr-ffi`, `rust-dsdcc` and `bladerf` (with `bladerf-sys`) are excluded workspaces; `airspy` is a
+root member (below). The excluded ones stay out of the default workspace build/CI (they need a
+C++ toolchain + system libs). Build them explicitly: `cargo build --manifest-path bindings/usdr/Cargo.toml`. `rust-dsdcc` links the external
 DSDcc library — its license governs distributed linked binaries.
 
 `bindings/bladerf/` retains its own workspace with the `bladerf-sys` member in
@@ -53,12 +54,13 @@ DSDcc library — its license governs distributed linked binaries.
 CI compiles all targets and runs only hardware-free configuration tests; the
 remaining device tests are opt-in and serial (`make -C bindings/bladerf test`).
 
-`bindings/airspy/` is a fork of the MIT `airspy-rs` 0.4.0 crate (versioned 0.5.0: `stop_rx`,
-caller-owned receive buffers, safe handle-only FFI; see its README). It links `libairspy`
-(≥ 1.0.6); `publish = false`, since the name belongs to upstream on crates.io. CI runs
-`cargo check` only — no `libairspy` in the image. Its hardware-free tests run locally with the
-library installed (`cargo test --manifest-path bindings/airspy/Cargo.toml`), or without it under
-Miri (`cargo +nightly miri test --manifest-path bindings/airspy/Cargo.toml -- rx:: error::`).
+`bindings/airspy/` is a fork of the MIT `airspy-rs` 0.4.0 crate (versioned 0.5.0: a
+`Receiver` session guard, caller-owned receive buffers, safe handle-only FFI; see its README).
+It is a workspace member and links `libairspy` (≥ 1.0.6), so building its tests — including
+`cargo test --workspace` — needs the library installed (Fedora `airspy-devel`, Debian/Ubuntu
+`libairspy-dev`); the CI image provides it. `publish = false`, since the name belongs to
+upstream on crates.io. Without the library, its hardware-free tests run under Miri
+(`cargo +nightly miri test -p airspy --lib -- rx:: error::`); device tests are `#[ignore]`d.
 
 ## Verify
 

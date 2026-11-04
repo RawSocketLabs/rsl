@@ -57,6 +57,9 @@
 //! # }
 //! ```
 
+// Beyond the workspace lints: every FFI call states the invariant it relies on.
+#![warn(clippy::undocumented_unsafe_blocks)]
+
 mod device;
 mod error;
 mod ffi;
