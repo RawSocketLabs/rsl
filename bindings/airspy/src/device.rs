@@ -1,11 +1,17 @@
 use crate::rx::RxState;
-use crate::{ffi, Error, Result};
-use std::ffi::CStr;
+use crate::{Error, Result, ffi};
+use std::ffi::{CStr, c_int};
+use std::ptr::{self, NonNull};
 use std::sync::Arc;
+
+/// Firmware version buffer size; libairspy's own limit is smaller.
+const VERSION_LEN: u8 = u8::MAX;
 
 /// Store a reference to an opened Airspy device.
 pub struct Airspy {
-    pub(crate) ptr: *mut ffi::AirspyDevice,
+    /// Live libairspy handle: set only by a successful open, closed only in
+    /// `Drop`.
+    ptr: NonNull<ffi::AirspyDevice>,
     /// Stable reception state, retained until the C threads have joined.
     pub(crate) rx_ctx: Option<Arc<RxState>>,
 }
@@ -13,11 +19,11 @@ pub struct Airspy {
 /// Ensure whenever the Airspy goes out of scope it is closed.
 impl Drop for Airspy {
     fn drop(&mut self) {
-        // airspy_close stops any active RX (cancelling transfers and joining
-        // the streaming threads) before freeing the device, so afterwards the
-        // callback context is unreachable; Rust drops it after this returns.
+        // SAFETY: `ptr` is live (field invariant) and unused after this.
+        // airspy_close stops RX and joins the streaming threads before freeing
+        // the device, so the callback context Rust drops next is unreachable.
         unsafe {
-            ffi::airspy_close(self.ptr);
+            ffi::airspy_close(self.ptr.as_ptr());
         }
     }
 }
@@ -31,30 +37,40 @@ pub struct PartID {
 impl Airspy {
     /// Try to open the next available Airspy device.
     pub fn open() -> Result<Self> {
-        let mut device: Airspy = Airspy {
-            ptr: std::ptr::null_mut(),
-            rx_ctx: None,
-        };
-        Error::check(unsafe { ffi::airspy_open(&mut device.ptr) })?;
-        Ok(device)
+        Self::open_with(|device| ffi::airspy_open(device))
     }
 
     /// Try to open a specific Airspy device by serial number.
     pub fn open_serial(serial_number: u64) -> Result<Self> {
-        let mut device: Airspy = Airspy {
-            ptr: std::ptr::null_mut(),
-            rx_ctx: None,
-        };
-        Error::check(unsafe { ffi::airspy_open_sn(&mut device.ptr, serial_number) })?;
-        Ok(device)
+        Self::open_with(|device| ffi::airspy_open_sn(device, serial_number))
+    }
+
+    /// Run a libairspy open call and take ownership of the handle it returns.
+    fn open_with(open: impl FnOnce(&mut *mut ffi::AirspyDevice) -> c_int) -> Result<Self> {
+        let mut device = ptr::null_mut();
+        Error::check(open(&mut device))?;
+        // libairspy reports success only alongside a handle.
+        let ptr = NonNull::new(device).ok_or(Error::Other)?;
+        Ok(Self { ptr, rx_ctx: None })
+    }
+
+    /// Borrow the live handle for a libairspy call.
+    pub(crate) fn handle(&mut self) -> &mut ffi::AirspyDevice {
+        // SAFETY: `ptr` is live (field invariant). The type is zero-sized and
+        // aligned to 1, so the borrow covers none of libairspy's bytes.
+        unsafe { self.ptr.as_mut() }
     }
 
     /// Get available sample rates for this Airspy.
     pub fn get_sample_rates(&mut self) -> Result<Vec<u32>> {
-        let mut len: u32 = 0;
-        Error::check(unsafe { ffi::airspy_get_samplerates(self.ptr, &mut len, 0) })?;
-        let mut rates = vec![0; len as usize];
-        Error::check(unsafe { ffi::airspy_get_samplerates(self.ptr, rates.as_mut_ptr(), len) })?;
+        let mut count: u32 = 0;
+        // SAFETY: with `len == 0`, libairspy writes only the count, to `count`.
+        Error::check(unsafe { ffi::airspy_get_samplerates(self.handle(), &mut count, 0) })?;
+        let mut rates = vec![0; count as usize];
+        // SAFETY: `rates` holds exactly `count` writable elements.
+        Error::check(unsafe {
+            ffi::airspy_get_samplerates(self.handle(), rates.as_mut_ptr(), count)
+        })?;
         Ok(rates)
     }
 
@@ -65,7 +81,7 @@ impl Airspy {
         let rates = self.get_sample_rates()?;
         for (idx, rate) in rates.iter().enumerate() {
             if *rate == target_rate {
-                return Error::check(unsafe { ffi::airspy_set_samplerate(self.ptr, idx as u32) });
+                return Error::check(ffi::airspy_set_samplerate(self.handle(), idx as u32));
             }
         }
         Err(Error::InvalidParameter)
@@ -74,19 +90,23 @@ impl Airspy {
     /// Get the Airspy board type.
     pub fn get_board_id(&mut self) -> Result<&'static str> {
         let mut id: u8 = 0;
-        Error::check(unsafe { ffi::airspy_board_id_read(self.ptr, &mut id as *mut u8) })?;
-        // libairspy returns a pointer into its static name table.
-        let cstr: &'static CStr = unsafe { CStr::from_ptr(ffi::airspy_board_id_name(id.into())) };
-        Ok(cstr.to_str().unwrap_or("unknown"))
+        Error::check(ffi::airspy_board_id_read(self.handle(), &mut id))?;
+        let name = ffi::airspy_board_id_name(id.into());
+        // SAFETY: libairspy returns a NUL-terminated entry of its static name
+        // table for every id.
+        let name: &'static CStr = unsafe { CStr::from_ptr(name) };
+        Ok(name.to_str().unwrap_or("unknown"))
     }
 
     /// Get the Airspy firmware version number.
     pub fn get_version(&mut self) -> Result<String> {
-        let mut buf = [0; 255];
-        let bufp = buf.as_mut_ptr();
-        Error::check(unsafe { ffi::airspy_version_string_read(self.ptr, bufp, 255) })?;
-        let cstr = unsafe { CStr::from_ptr(buf.as_ptr()) };
-        Ok(cstr.to_string_lossy().into_owned())
+        let mut buf = [0u8; VERSION_LEN as usize];
+        // SAFETY: `buf` holds exactly `VERSION_LEN` writable bytes.
+        Error::check(unsafe {
+            ffi::airspy_version_string_read(self.handle(), buf.as_mut_ptr().cast(), VERSION_LEN)
+        })?;
+        let version = CStr::from_bytes_until_nul(&buf).map_err(|_| Error::Other)?;
+        Ok(version.to_string_lossy().into_owned())
     }
 
     /// Get the Airspy part ID and serial number.
@@ -95,7 +115,10 @@ impl Airspy {
             part_id: [0u32; 2],
             serial_no: [0u32; 4],
         };
-        Error::check(unsafe { ffi::airspy_board_partid_serialno_read(self.ptr, &mut v) })?;
+        Error::check(ffi::airspy_board_partid_serialno_read(
+            self.handle(),
+            &mut v,
+        ))?;
         Ok(PartID {
             part_id: v.part_id,
             serial_no: (v.serial_no[2] as u64) << 32 | v.serial_no[3] as u64,
@@ -104,37 +127,37 @@ impl Airspy {
 
     /// Set centre frequency in Hz (24 MHz to 1.75 GHz).
     pub fn set_freq(&mut self, freq: u32) -> Result<()> {
-        Error::check(unsafe { ffi::airspy_set_freq(self.ptr, freq) })
+        Error::check(ffi::airspy_set_freq(self.handle(), freq))
     }
 
     /// Set the LNA gain step index; libairspy clamps out-of-range values.
     pub fn set_lna_gain(&mut self, gain: u8) -> Result<()> {
-        Error::check(unsafe { ffi::airspy_set_lna_gain(self.ptr, gain) })
+        Error::check(ffi::airspy_set_lna_gain(self.handle(), gain))
     }
 
     /// Set the mixer gain step index; libairspy clamps out-of-range values.
     pub fn set_mixer_gain(&mut self, gain: u8) -> Result<()> {
-        Error::check(unsafe { ffi::airspy_set_mixer_gain(self.ptr, gain) })
+        Error::check(ffi::airspy_set_mixer_gain(self.handle(), gain))
     }
 
     /// Set the VGA gain step index; libairspy clamps out-of-range values.
     pub fn set_vga_gain(&mut self, gain: u8) -> Result<()> {
-        Error::check(unsafe { ffi::airspy_set_vga_gain(self.ptr, gain) })
+        Error::check(ffi::airspy_set_vga_gain(self.handle(), gain))
     }
 
     /// Enable/disable LNA AGC
     pub fn set_lna_agc(&mut self, enable: bool) -> Result<()> {
-        Error::check(unsafe { ffi::airspy_set_lna_agc(self.ptr, enable as u8) })
+        Error::check(ffi::airspy_set_lna_agc(self.handle(), u8::from(enable)))
     }
 
     /// Enable/disable mixer AGC
     pub fn set_mixer_agc(&mut self, enable: bool) -> Result<()> {
-        Error::check(unsafe { ffi::airspy_set_mixer_agc(self.ptr, enable as u8) })
+        Error::check(ffi::airspy_set_mixer_agc(self.handle(), u8::from(enable)))
     }
 
     /// Enable/disable RF bias voltage
     pub fn set_rf_bias(&mut self, enable: bool) -> Result<()> {
-        Error::check(unsafe { ffi::airspy_set_rf_bias(self.ptr, enable as u8) })
+        Error::check(ffi::airspy_set_rf_bias(self.handle(), u8::from(enable)))
     }
 }
 

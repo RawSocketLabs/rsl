@@ -1,4 +1,4 @@
-use crate::{ffi, Airspy, Error, Result};
+use crate::{Airspy, Error, Result, ffi};
 use num_complex::Complex;
 use std::collections::VecDeque;
 use std::ffi::{c_int, c_void};
@@ -79,28 +79,39 @@ impl RxState {
 }
 
 /// Copy libairspy's borrowed samples into the private receive buffer.
+///
+/// # Safety
+///
+/// `transfer` is null or libairspy's transfer for this call, whose `ctx` is
+/// null or the `RxState` that `start_rx` registered and keeps alive.
 unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
-    if transfer.is_null() {
-        return 1;
-    }
-    // libairspy owns the transfer and sample storage for this callback.
-    let transfer = unsafe { &*transfer };
+    // SAFETY: per this function's contract, libairspy owns the transfer and
+    // keeps it valid for the duration of the call.
+    let Some(transfer) = (unsafe { transfer.as_ref() }) else {
+        return ffi::RX_STOP;
+    };
     if transfer.sample_count <= 0 {
-        return 0;
+        return ffi::RX_CONTINUE;
     }
     if transfer.samples.is_null() || transfer.ctx.is_null() {
-        return 1;
+        return ffi::RX_STOP;
     }
-    // start_rx selected float IQ; the C buffer contains sample_count pairs.
+    // SAFETY: start_rx selected float IQ, so `samples` holds `sample_count`
+    // interleaved f32 pairs, which is the layout of `Complex<f32>`
+    // (`repr(C)`); libairspy keeps them valid until this call returns.
     let samples = unsafe {
         slice::from_raw_parts(
             transfer.samples.cast::<Complex<f32>>(),
             transfer.sample_count as usize,
         )
     };
-    // The Arc stays alive until stop/close joins this callback's thread.
+    // SAFETY: `ctx` is the RxState start_rx registered; `Airspy::rx_ctx` keeps
+    // it alive until stop/close has joined this thread. It is only shared.
     let state = unsafe { &*transfer.ctx.cast::<RxState>() };
-    i32::from(state.push(samples).is_err())
+    match state.push(samples) {
+        Ok(()) => ffi::RX_CONTINUE,
+        Err(_) => ffi::RX_STOP,
+    }
 }
 
 impl Airspy {
@@ -111,13 +122,19 @@ impl Airspy {
         if self.rx_ctx.is_some() {
             self.stop_rx()?;
         }
-        Error::check(unsafe { ffi::airspy_set_sample_type(self.ptr, 0) })?;
+        Error::check(ffi::airspy_set_sample_type(
+            self.handle(),
+            ffi::SampleType::Float32Iq,
+        ))?;
         let state = Arc::new(RxState::new());
         // Shared ownership: a Box move would invalidate the pointer
         // libairspy's threads read through.
         let ctx = Arc::as_ptr(&state).cast_mut().cast::<c_void>();
+        // Stored before starting: callbacks may run before start_rx returns.
         self.rx_ctx = Some(state);
-        let result = Error::check(unsafe { ffi::airspy_start_rx(self.ptr, rx_cb, ctx) });
+        // SAFETY: rx_cb only reads `ctx` as `&RxState`, and `rx_ctx` keeps that
+        // RxState alive until stop_rx or close has joined the callback threads.
+        let result = Error::check(unsafe { ffi::airspy_start_rx(self.handle(), rx_cb, ctx) });
         if result.is_err() {
             // Join threads created before a partial startup failure.
             let _ = self.stop_rx();
@@ -140,14 +157,16 @@ impl Airspy {
 
     /// Stop reception and join callbacks before releasing buffered samples.
     pub fn stop_rx(&mut self) -> Result<()> {
-        let result = Error::check(unsafe { ffi::airspy_stop_rx(self.ptr) });
+        let result = Error::check(ffi::airspy_stop_rx(self.handle()));
+        // libairspy joins the callback threads even when it reports failure,
+        // so nothing can still read the state released here.
         self.rx_ctx.take();
         result
     }
 
     /// Check if the Airspy is currently streaming.
     pub fn is_streaming(&mut self) -> bool {
-        unsafe { ffi::airspy_is_streaming(self.ptr) == 1 }
+        ffi::airspy_is_streaming(self.handle()) == ffi::AIRSPY_TRUE
     }
 }
 
@@ -167,7 +186,8 @@ mod tests {
             samples: input.as_ptr().cast(),
             sample_count: 2,
         };
-        assert_eq!(unsafe { rx_cb(&mut transfer) }, 0);
+        // SAFETY: `transfer`, `input` and `state` outlive the call.
+        assert_eq!(unsafe { rx_cb(&mut transfer) }, ffi::RX_CONTINUE);
         input[0].re = 99.0;
         assert_eq!(input[0].re, 99.0);
         let mut first = [Complex::default(); 1];

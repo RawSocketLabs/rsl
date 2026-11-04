@@ -15,9 +15,7 @@ impl LibVersion {
             minor_version: 0,
             revision: 0,
         };
-        unsafe {
-            ffi::airspy_lib_version(&mut v);
-        }
+        ffi::airspy_lib_version(&mut v);
 
         Self {
             major: v.major_version,
