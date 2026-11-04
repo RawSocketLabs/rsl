@@ -1,3 +1,4 @@
+use crate::ffi;
 use std::ffi::c_int;
 use thiserror::Error;
 
@@ -52,17 +53,17 @@ impl Error {
     /// Convert a native operation status; only zero means success.
     pub(crate) fn check(code: c_int) -> Result<()> {
         match code {
-            0 => Ok(()),
-            -2 => Err(Self::InvalidParameter),
-            -5 => Err(Self::NotFound),
-            -6 => Err(Self::Busy),
-            -11 => Err(Self::NoMemory),
-            -12 => Err(Self::Unsupported),
-            -1000 => Err(Self::LibUsb),
-            -1001 => Err(Self::Thread),
-            -1002 => Err(Self::StreamingThread),
-            -1003 => Err(Self::StreamingStopped),
-            -9999 => Err(Self::Other),
+            ffi::AIRSPY_SUCCESS => Ok(()),
+            ffi::AIRSPY_ERROR_INVALID_PARAM => Err(Self::InvalidParameter),
+            ffi::AIRSPY_ERROR_NOT_FOUND => Err(Self::NotFound),
+            ffi::AIRSPY_ERROR_BUSY => Err(Self::Busy),
+            ffi::AIRSPY_ERROR_NO_MEM => Err(Self::NoMemory),
+            ffi::AIRSPY_ERROR_UNSUPPORTED => Err(Self::Unsupported),
+            ffi::AIRSPY_ERROR_LIBUSB => Err(Self::LibUsb),
+            ffi::AIRSPY_ERROR_THREAD => Err(Self::Thread),
+            ffi::AIRSPY_ERROR_STREAMING_THREAD_ERR => Err(Self::StreamingThread),
+            ffi::AIRSPY_ERROR_STREAMING_STOPPED => Err(Self::StreamingStopped),
+            ffi::AIRSPY_ERROR_OTHER => Err(Self::Other),
             code => Err(Self::Unknown(code)),
         }
     }

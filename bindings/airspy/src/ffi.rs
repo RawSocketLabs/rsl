@@ -58,6 +58,19 @@ pub(crate) enum SampleType {
     Float32Iq = 0,
 }
 
+// `enum airspy_error` (airspy.h): every call's status; only success is zero.
+pub(crate) const AIRSPY_SUCCESS: c_int = 0;
+pub(crate) const AIRSPY_ERROR_INVALID_PARAM: c_int = -2;
+pub(crate) const AIRSPY_ERROR_NOT_FOUND: c_int = -5;
+pub(crate) const AIRSPY_ERROR_BUSY: c_int = -6;
+pub(crate) const AIRSPY_ERROR_NO_MEM: c_int = -11;
+pub(crate) const AIRSPY_ERROR_UNSUPPORTED: c_int = -12;
+pub(crate) const AIRSPY_ERROR_LIBUSB: c_int = -1000;
+pub(crate) const AIRSPY_ERROR_THREAD: c_int = -1001;
+pub(crate) const AIRSPY_ERROR_STREAMING_THREAD_ERR: c_int = -1002;
+pub(crate) const AIRSPY_ERROR_STREAMING_STOPPED: c_int = -1003;
+pub(crate) const AIRSPY_ERROR_OTHER: c_int = -9999;
+
 /// `AIRSPY_TRUE`, as returned by `airspy_is_streaming`.
 pub(crate) const AIRSPY_TRUE: c_int = 1;
 
