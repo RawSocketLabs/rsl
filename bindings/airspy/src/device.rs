@@ -102,22 +102,22 @@ impl Airspy {
         })
     }
 
-    /// Set Airspy centre frequency, `freq` 24000000 to 1750000000 (in Hz)
+    /// Set centre frequency in Hz (24 MHz to 1.75 GHz).
     pub fn set_freq(&mut self, freq: u32) -> Result<()> {
         Error::check(unsafe { ffi::airspy_set_freq(self.ptr, freq) })
     }
 
-    /// Set LNA gain, 0 to 15dB
+    /// Set the LNA gain step index; libairspy clamps out-of-range values.
     pub fn set_lna_gain(&mut self, gain: u8) -> Result<()> {
         Error::check(unsafe { ffi::airspy_set_lna_gain(self.ptr, gain) })
     }
 
-    /// Set mixer gain, 0 to 15dB
+    /// Set the mixer gain step index; libairspy clamps out-of-range values.
     pub fn set_mixer_gain(&mut self, gain: u8) -> Result<()> {
         Error::check(unsafe { ffi::airspy_set_mixer_gain(self.ptr, gain) })
     }
 
-    /// Set VGA gain, 0 to 15dB
+    /// Set the VGA gain step index; libairspy clamps out-of-range values.
     pub fn set_vga_gain(&mut self, gain: u8) -> Result<()> {
         Error::check(unsafe { ffi::airspy_set_vga_gain(self.ptr, gain) })
     }
