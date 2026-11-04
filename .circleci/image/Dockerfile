@@ -24,11 +24,13 @@ LABEL org.opencontainers.image.description="RawSocket Labs rsl CI job image"
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
-# CircleCI's checkout and caches need git, ssh, tar, gzip and CA roots; the FFI profiles need a
-# C/C++ compiler, libclang and libbladeRF; cargo-public-api builds against OpenSSL.
+# CircleCI's checkout and caches need git, ssh, tar, gzip and CA roots; the workspace profile
+# needs libairspy (the airspy member links it); the FFI profiles need a C/C++ compiler, libclang
+# and libbladeRF; cargo-public-api builds against OpenSSL.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      build-essential ca-certificates curl git gzip libbladerf-dev libclang-dev libssl-dev openssh-client \
+      build-essential ca-certificates curl git gzip libairspy-dev libbladerf-dev libclang-dev libssl-dev \
+      openssh-client \
       pkg-config python3 tar xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
