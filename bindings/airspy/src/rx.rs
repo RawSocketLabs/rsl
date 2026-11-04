@@ -15,6 +15,18 @@ struct Buffer {
     overflow: bool,
 }
 
+impl Buffer {
+    /// Append a callback batch, or latch overflow if it does not fit.
+    fn push(&mut self, samples: &[Complex<f32>]) -> Result<()> {
+        if self.overflow || samples.len() > RX_CAPACITY - self.samples.len() {
+            self.overflow = true;
+            return Err(Error::Overflow);
+        }
+        self.samples.extend(samples.iter().copied());
+        Ok(())
+    }
+}
+
 /// Stable callback state, owned until libairspy joins its threads.
 pub(crate) struct RxState {
     buffer: Mutex<Buffer>,
@@ -35,18 +47,12 @@ impl RxState {
 
     /// Copy a callback batch without growing storage or waiting for free capacity.
     fn push(&self, samples: &[Complex<f32>]) -> Result<()> {
-        let result = match self.buffer.lock() {
-            Err(_) => Err(Error::Thread),
-            Ok(mut buffer) => {
-                if buffer.overflow || samples.len() > RX_CAPACITY - buffer.samples.len() {
-                    buffer.overflow = true;
-                    Err(Error::Overflow)
-                } else {
-                    buffer.samples.extend(samples.iter().copied());
-                    Ok(())
-                }
-            }
-        };
+        let result = self
+            .buffer
+            .lock()
+            .map_err(|_| Error::Thread)
+            .and_then(|mut buffer| buffer.push(samples));
+        // Wake a waiting receive for samples and for overflow alike.
         self.ready.notify_one();
         result
     }
