@@ -1,6 +1,9 @@
 use crate::ffi;
 
 /// Hold major, minor and revision version numbers of libairspy C library.
+///
+/// Ordered by major, then minor, then revision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LibVersion {
     pub major: u32,
     pub minor: u32,
@@ -31,7 +34,12 @@ mod tests {
     #[test]
     fn test_lib_version() {
         let v = LibVersion::get_version();
-        assert!(v.major == 1);
-        assert!((v.minor, v.revision) >= (0, 6));
+        assert_eq!(v.major, 1);
+        let oldest = LibVersion {
+            major: 1,
+            minor: 0,
+            revision: 6,
+        };
+        assert!(v >= oldest);
     }
 }

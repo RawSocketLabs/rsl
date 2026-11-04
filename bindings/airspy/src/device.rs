@@ -29,6 +29,7 @@ impl Drop for Airspy {
 }
 
 /// Hold an Airspy's part ID and serial number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PartID {
     pub part_id: [u32; 2],
     pub serial_no: u64,
@@ -201,7 +202,6 @@ mod tests {
         };
         let mut reopened = Airspy::open_serial(identity.serial_no).unwrap();
         let actual = reopened.get_partid_serial().unwrap();
-        assert_eq!(actual.serial_no, identity.serial_no);
-        assert_eq!(actual.part_id, identity.part_id);
+        assert_eq!(actual, identity);
     }
 }
