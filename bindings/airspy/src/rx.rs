@@ -208,6 +208,41 @@ mod tests {
     }
 
     #[test]
+    fn callback_guards_stop_or_skip_malformed_transfers() {
+        // SAFETY: a null transfer is within rx_cb's contract.
+        assert_eq!(unsafe { rx_cb(ptr::null_mut()) }, ffi::RX_STOP);
+        let state = RxState::new();
+        let mut transfer = ffi::airspy_transfer_t {
+            device: ptr::null_mut(),
+            ctx: ptr::from_ref(&state).cast_mut().cast(),
+            samples: ptr::null(),
+            sample_count: 0,
+        };
+        // SAFETY: `transfer` and `state` outlive the call.
+        assert_eq!(unsafe { rx_cb(&mut transfer) }, ffi::RX_CONTINUE);
+        transfer.sample_count = 1; // with null samples
+        // SAFETY: as above; rx_cb rejects the null samples before reading.
+        assert_eq!(unsafe { rx_cb(&mut transfer) }, ffi::RX_STOP);
+        transfer.ctx = ptr::null_mut();
+        // SAFETY: as above; rx_cb rejects the null ctx before reading.
+        assert_eq!(unsafe { rx_cb(&mut transfer) }, ffi::RX_STOP);
+    }
+
+    #[test]
+    fn overflow_wakes_a_waiting_receive() {
+        let state = RxState::new();
+        // Built up front so the producer only latches overflow (Miri is slow).
+        let full = vec![Complex::default(); RX_CAPACITY + 1];
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                assert_eq!(state.push(&full), Err(Error::Overflow));
+            });
+            let mut output = [Complex::default()];
+            assert_eq!(state.receive(&mut output, 5_000), Err(Error::Overflow));
+        });
+    }
+
+    #[test]
     fn empty_receive_times_out_without_modifying_output() {
         let state = RxState::new();
         let mut output = [Complex::new(9.0, 9.0)];

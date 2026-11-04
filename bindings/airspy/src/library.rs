@@ -32,7 +32,7 @@ impl LibVersion {
 mod tests {
     use super::*;
     #[test]
-    fn test_lib_version() {
+    fn links_supported_libairspy() {
         let v = LibVersion::linked();
         assert_eq!(v.major, 1);
         let oldest = LibVersion {
