@@ -53,10 +53,12 @@ DSDcc library — its license governs distributed linked binaries.
 CI compiles all targets and runs only hardware-free configuration tests; the
 remaining device tests are opt-in and serial (`make -C bindings/bladerf test`).
 
-`bindings/airspy/` is a fork of the MIT `airspy-rs` 0.4.0 crate (adds `stop_rx`, owns the RX
-`Sender`; see its README). It links `libairspy` (≥ 1.0.6); `publish = false`, since the name
-belongs to upstream on crates.io. CI runs `cargo check` only — no `libairspy` in the image — so
-its hardware-free tests run locally: `cargo test --manifest-path bindings/airspy/Cargo.toml`.
+`bindings/airspy/` is a fork of the MIT `airspy-rs` 0.4.0 crate (versioned 0.5.0: `stop_rx`,
+caller-owned receive buffers, safe handle-only FFI; see its README). It links `libairspy`
+(≥ 1.0.6); `publish = false`, since the name belongs to upstream on crates.io. CI runs
+`cargo check` only — no `libairspy` in the image. Its hardware-free tests run locally with the
+library installed (`cargo test --manifest-path bindings/airspy/Cargo.toml`), or without it under
+Miri (`cargo +nightly miri test --manifest-path bindings/airspy/Cargo.toml -- rx:: error::`).
 
 ## Verify
 
