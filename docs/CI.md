@@ -128,7 +128,7 @@ coverage. A domain gate edit such as `.github/ci/bnb.toml` selects that domain a
 Ordinary local editing uses focused package/behavior tests, formatting, and strict package
 Clippy with the relevant features. Prose-only edits need diff review and whitespace checks;
 discussion needs no checks. Module/feature changes add relevant configurations, not an
-exhaustive matrix. See the root `AGENTS.md` and the affected crate's routine tier.
+exhaustive matrix. See the root `AGENTS.md` and the affected crate's (or, for `pki/*`, its group's) routine tier.
 
 Full local workspace/feature/MSRV/release-profile suites, fuzzing, mutation testing, and
 benchmarks are reserved for release preparation or an explicit request for broader

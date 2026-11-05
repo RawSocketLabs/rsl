@@ -21,8 +21,8 @@ One directory per domain group; each crate's own (or its group's) `AGENTS.md` ho
 |------|----------|-------|
 | `codecs/` | `bitsandbytes` + `bitsandbytes-macros` (`bitsandbytes/{bnb,bnb-macros}`), `compression`, `error-correction` | the bit-aware codec (`#![forbid(unsafe_code)]`) and accuracy-first compression and redundancy coding (`no_std + alloc`, zero `unsafe`) |
 | `crypto/` | `crypto` (`core/`), `crypto-legacy` (`legacy/`) | accuracy-first primitives (`no_std + alloc`, zero `unsafe`); opt-in historical/broken cryptography, never a default negotiation source; `fuzz/` is the group's detached fuzz workspace |
-| `pki/` | `asn1`, `x509`, `pki` (`asn1/`, `x509/`, `validation/`) | strict DER transport, certificate syntax and path validation; `no_std + alloc`, zero `unsafe`; `fuzz/` is the group's detached fuzz workspace |
-| `transports/` | `rawsock`, `usb` | L2/L3/L4 raw I/O via `rustix` (`#![deny(unsafe_code)]`, one confined `unsafe` fn); owned USB host access over Linux usbfs (unpublished) |
+| `pki/` | `asn1`, `x509`, `pki` (`asn1/`, `x509/`, `validation/`) | strict DER transport, certificate syntax and path validation; `no_std + alloc`, zero `unsafe`; `fuzz/` is the group's detached fuzz workspace and `tests/vectors/` its shared fixtures |
+| `transports/` | `rawsock`, `usb` | L2/L3/L4 raw I/O via `rustix` (rawsock: `#![deny(unsafe_code)]`, one `unsafe` block in `link_addr`); owned USB host access over Linux usbfs (`usb`: `unsafe` in its usbfs, buffer, queue and dispatch modules; unpublished) |
 | `types/` | `rfus` | plain domain value types, each with its units, parsing and validation; no I/O, hardware or protocol logic, `no_std` where possible. `rfus`: RF frequencies, sample rates and scan targets |
 | `devices/` | drivers, simulators, oracles, shared chips, `hal` | pure-Rust device drivers, unpublished; see `devices/AGENTS.md` |
 | `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `rtltcp`, `netlink`, `protocol-examples` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol; `examples/` holds the runnable injection examples |
@@ -38,7 +38,7 @@ One directory per domain group; each crate's own (or its group's) `AGENTS.md` ho
   advisories/licenses; duplicate versions are warned (the facade pulls big trees).
 - **Lints** — `[workspace.lints]`; members opt in with `[lints] workspace = true`. The shared
   unsafe policy is `unsafe_op_in_unsafe_fn = deny`; crates that guarantee zero unsafe pin
-  `#![forbid(unsafe_code)]` at crate level (bnb); rawsock is `deny` with one confined `unsafe` fn.
+  `#![forbid(unsafe_code)]` at crate level (bnb); rawsock is `deny` with one `unsafe` block, in the `#[allow(unsafe_code)]` fn `link_addr`.
 - **Formatting / toolchain / MSRV** — root `rustfmt.toml`, `rust-toolchain.toml`, MSRV 1.85.
 - **Versioning** — per-crate SemVer via `release-plz` (scope = crate name, e.g. `feat(dns): …`).
   Publication is opted in per package in `release-plz.toml`; today only the `bitsandbytes` pair
