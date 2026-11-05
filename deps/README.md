@@ -6,7 +6,7 @@ libraries and applications build on. Depend on `deps` instead of pinning `thiser
 
 ```toml
 [dependencies]
-deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std-ext", "service"] }
+deps = { git = "https://github.com/RawSocketLabs/rsl", features = ["std-ext", "service"] }
 ```
 
 ```rust
@@ -21,8 +21,8 @@ RSL's stack is split by concern:
 
 - **`deps`** (this crate) — the third-party crates we *rent*. A single source of truth for
   their versions, and a standing shortlist of replacement candidates.
-- **[`rsl`](https://github.com/RawSocketLabs/rsl)** — the libraries we *own* (`codec`, `proto`,
-  `rawsock`, `rf`, `usdr`). Consumers wanting RSL's own products depend on that.
+- **[`rsl`](../rsl/README.md)** — the libraries we *own* (see `rsl/README.md` § Namespace map).
+  Consumers wanting RSL's own products depend on that.
 - **`rsl-private`** — the private owned libraries, layered on `rsl`.
 
 The two are orthogonal: a crate that needs both blessed externals and RSL libraries depends on

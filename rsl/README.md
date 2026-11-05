@@ -26,10 +26,10 @@ The RSL stack is split by concern — **what we own** vs. **what we rent**:
 - **`rsl`** (this crate) — the libraries we own, under semantic paths (`rsl::codec`,
   `rsl::crypto`, explicitly opt-in `rsl::crypto_legacy`, `rsl::compression`,
   `rsl::error_correction`, `rsl::asn1`, `rsl::x509`, `rsl::pki`, `rsl::proto`,
-  `rsl::rawsock`, `rsl::rf`, `rsl::usdr`).
-- **[`deps`](https://github.com/RawSocketLabs/rsl-deps)** — the blessed third-party crates
+  `rsl::rawsock`, `rsl::rf`, `rsl::usdr`, `rsl::dsdcc`).
+- **[`deps`](../deps/README.md)** — the blessed third-party crates
   (`deps::tokio`, `deps::serde`, …). The version-pinned "rented" half.
-- **`rsl-private`** — the private owned libraries (`sdr`, `dsdcc`), layered on `rsl`.
+- **`rsl-private`** — the private owned libraries (`sdr`), layered on `rsl`.
 
 The two are **orthogonal**: a crate that needs both RSL libraries and blessed externals depends
 on both `rsl` and `deps`. That separation is the answer to "what do we own, and what might we
@@ -49,19 +49,21 @@ Owned crates, sourced from this lockstep workspace through `path` + `version` de
 | `rsl::pki` | `pki` — certificate-path and identity validation | `pki` |
 | `rsl::compression` | `compression` — stateful compression contracts | `compression` |
 | `rsl::error_correction` | `error-correction` — coding and correction reports | `error-correction` |
-| `rsl::proto::{ethertype,tcp,udp,dns}` | the `protocols` workspace | `proto` (or `proto-<name>`) |
+| `rsl::proto::{ethertype,tcp,udp,dns}` | `ethertype`, `tcp`, `udp`, `dns` protocol crates | `proto` (or `proto-<name>`) |
 | `rsl::rawsock` | `rawsock` — L2/L3/L4 raw-packet I/O | `rawsock` |
 | `rsl::rf` | `rfus` — RF/sample-rate/scan-target parsing | `rf` |
 | `rsl::usdr` | `usdr-ffi` — USDR SDR bindings (FFI, needs C++ toolchain) | `usdr` |
+| `rsl::dsdcc` | `rust-dsdcc` — DSDcc digital-voice decoder bindings (FFI, needs C++ toolchain + DSDcc; its license governs distributed linked binaries) | `dsdcc` |
 
 Bundles: `net` (`codec`+`proto`+`rawsock`), `radio` (`rf`), `transforms`
 (`crypto`+`compression`+`error-correction`), `pki` (DER+X.509+validation), and `full` (all four
-bundles). The FFI `usdr-ffi` is excluded from bundles — add it explicitly.
+bundles). The FFI `usdr-ffi` and `rust-dsdcc` are excluded from bundles — add `usdr` / `dsdcc`
+explicitly.
 
 The `legacy-crypto` feature is also excluded from every bundle. Historical algorithms require a
 separate, visible opt-in and must never become a negotiation fallback.
 
-**Not here** (by design): the private `libsdr` / `rust-dsdcc` — they live in the private
+**Not here** (by design): the private `libsdr` — it lives in the private
 `rsl-private` overlay. Public/private boundary = repo boundary.
 
 ## The graduation path (rented → owned)
@@ -71,7 +73,7 @@ When RSL writes an owned crate to supersede a blessed external, the pin **moves 
 `deps::foo` to `rsl::foo`. Keeping the two crates separate is what makes that replacement
 decision legible: `deps` is the standing shortlist of "things we rent"; `rsl` is what we own.
 
-[`deps`]: https://github.com/RawSocketLabs/rsl-deps
+[`deps`]: ../deps/README.md
 
 ## Sourcing & caveats
 
@@ -81,10 +83,10 @@ decision legible: `deps` is the standing shortlist of "things we rent"; `rsl` is
   `bitsandbytes` package, so their types unify.
 - **`publish = false`.** The facade remains a repository-level convenience; individual owned
   crates carry the publication boundary.
-- **FFI feature `usdr` needs a C++ toolchain** and is off by default.
+- **FFI features `usdr` and `dsdcc` need a C++ toolchain** and are off by default.
 
 ## Verify
 
 ```sh
-cargo build --features full   # codec, transforms, protocols, rawsock, rf; no FFI
+cargo build --features full   # net, radio, transforms, pki; no FFI
 ```

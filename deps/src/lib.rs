@@ -8,7 +8,7 @@
 //! `deps::serde`, …) behind a feature. Nothing compiles until you enable a feature.
 //!
 //! ```toml
-//! deps = { git = "https://github.com/RawSocketLabs/rsl-deps", features = ["std-ext", "service"] }
+//! deps = { git = "https://github.com/RawSocketLabs/rsl", features = ["std-ext", "service"] }
 //! ```
 //!
 //! ```ignore

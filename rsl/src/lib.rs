@@ -3,13 +3,13 @@
 //! A single, feature-gated re-export of the public libraries RSL *owns*, under semantic
 //! paths — [`codec`], [`crypto`], explicitly opt-in `crypto_legacy`, [`asn1`], [`x509`],
 //! [`pki`], [`compression`], [`error_correction`], [`proto`], [`rawsock`], [`rf`], and (FFI,
-//! opt-in) `usdr`. Depend on `rsl` to consume RSL's own products through one crate with
+//! opt-in) `usdr` and `dsdcc`. Depend on `rsl` to consume RSL's own products through one crate with
 //! unified, pinned versions.
 //!
 //! This is the **owned** half of the stack. The **rented** third-party half lives in the
 //! separate [`deps`] crate (`deps::tokio`, `deps::serde`, …). The two are
 //! orthogonal: a crate needing both blessed externals *and* RSL libraries depends on both.
-//! The private owned crates (libsdr, rust-dsdcc) live in the private `rsl-private` overlay.
+//! The private owned crates (libsdr) live in the private `rsl-private` overlay.
 //!
 //! When a rented crate in `deps` is superseded by an owned RSL crate, the pin moves
 //! *out* of `deps` and the owned crate is added *here* — that cross-crate move is the
@@ -20,7 +20,7 @@
 //! rsl = { git = "https://github.com/RawSocketLabs/rsl", features = ["net"] }
 //! ```
 //!
-//! [`deps`]: https://github.com/RawSocketLabs/rsl-deps
+//! [`deps`]: https://github.com/RawSocketLabs/rsl/tree/main/deps
 
 // Re-exports don't carry docs of their own, so we don't `deny(missing_docs)` here.
 

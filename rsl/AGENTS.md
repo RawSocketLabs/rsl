@@ -3,25 +3,24 @@
 > `CLAUDE.md` is a symlink to this file so every AGENTS.md-aware tool reads the same rules.
 
 **What this is.** The RSL **owned-library** facade: a feature-gated crate that re-exports the
-public libraries RSL authors (codec, crypto, compression, error correction, protocols, rawsock,
-rf, usdr) under semantic
-paths. Owns **no logic** — a namespacing + version-unification layer. The blessed *third-party* crates live
+public libraries RSL authors under semantic paths (see [`README.md`](README.md) § Namespace
+map). Owns **no logic** — a namespacing + version-unification layer. The blessed *third-party* crates live
 in the separate `deps` crate; the private owned crates in `rsl-private`. See
-[`README.md`](README.md) for the namespace map and rationale.
+[`README.md`](README.md) for the rationale.
 
 ## Invariants
 
 - **Owned crates only.** Only RSL-authored libraries belong here. Blessed third-party crates go
   in `deps`; never add a `crates.io` dependency to `rsl`.
 - **Public boundary.** Only owned crates with **public** `RawSocketLabs` repos. Never add a
-  private crate (libsdr, rust-dsdcc) or a customer name/URL — those go in `rsl-private`.
+  private crate (libsdr) or a customer name/URL — those go in `rsl-private`.
 - **Every dependency is `optional`.** `default = []`; the crate compiles to nothing until a
   feature is enabled.
 - **One workspace, one codec.** Owned crates are optional path dependencies from this monorepo.
   `bnb` and the protocol crates must resolve to the same `bitsandbytes` package so generated and
   runtime types unify.
-- **`publish = false`.** Git deps can't appear in a crates.io release; `rsl` is consumed as a
-  git dependency.
+- **`publish = false`.** The facade is a repository-level convenience; individual owned crates
+  carry the publication boundary.
 
 ## Adding an owned crate
 
@@ -36,9 +35,9 @@ in the separate `deps` crate; the private owned crates in `rsl-private`. See
 ## Verify
 
 ```sh
-cargo build  --features full            # codec, transforms, proto, rawsock, rf
+cargo build  --features full            # net, radio, transforms, pki; no FFI
 cargo test   --features codec,transforms,proto,rf
 cargo clippy --features codec,transforms,proto,rawsock,rf
 cargo deny   --all-features check
 ```
-The FFI feature `usdr` needs a C++ toolchain (off by default).
+The FFI features `usdr` and `dsdcc` need a C++ toolchain (off by default).
