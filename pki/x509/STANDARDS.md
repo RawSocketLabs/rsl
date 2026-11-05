@@ -7,6 +7,9 @@ Accessed 2026-08-28.
 | RFC 5280 | May 2008, Standards Track; obsoletes RFC 3280 | <https://www.rfc-editor.org/rfc/rfc5280> | §4 certificate/profile syntax, names, validity, SPKI, and extensions; Appendix A ASN.1 |
 | RFC 5480 | March 2009, Standards Track | <https://www.rfc-editor.org/rfc/rfc5480> | §2 EC `SubjectPublicKeyInfo`; §2.1 named-curve identifiers |
 | RFC 8410 | August 2018, Standards Track | <https://www.rfc-editor.org/rfc/rfc8410> | §§3–4 Ed25519/Ed448 algorithm identifiers and public-key encoding |
+| RFC 3279 | April 2002, Standards Track | <https://www.rfc-editor.org/rfc/rfc3279> | §2.3.1 `rsaEncryption` SPKI algorithm identifier |
+| RFC 8017 | November 2016, Informational | <https://www.rfc-editor.org/rfc/rfc8017> | Appendix A.1.1 `RSAPublicKey` syntax |
+| ITU-T X.690 | 02/2021, in force | <https://www.itu.int/rec/T-REC-X.690-202102-I/en> | §§11.7–11.8 GeneralizedTime/UTCTime DER form (parsed in `Validity`); clause numbers not yet checked against the pinned text |
 | RFC 4055 | June 2005, Standards Track | <https://www.rfc-editor.org/rfc/rfc4055> | §§2–3 RSASSA-PSS algorithm identifiers and parameters |
 | NIST PKITS | Version 1.0.1, April 2011 | <https://csrc.nist.gov/Projects/pki-testing> | Imported parser-interoperability certificates from §4.1.1 Valid Signatures Test1; provenance and byte hashes are under `../tests/vectors/nist-pkits/` |
 
@@ -23,5 +26,5 @@ signatures are outside the current validation profile.
 | RFC 5280 §4.1.2.5 | Validity uses `UTCTime` for 1950–2049 and `GeneralizedTime` for 2050–9999, always in `Z` form with seconds; reversed/out-of-range intervals are rejected. | Implemented and tested through parse round trips. |
 | RFC 5280 §§4.1.2.4, 4.1.2.6, Appendix A | `NameBuilder` emits ordered single-valued RDNs; `NameDer::from_der` preserves any strict-DER name for explicit advanced use. Guided issuers and CA subjects are non-empty. | Implemented; multi-valued RDN construction uses the raw-DER import boundary. |
 | RFC 5280 §§4.2.1.1–4.2.1.2, 4.2.1.3, 4.2.1.6, 4.2.1.9, 4.2.1.12 | Typed SKI, AKI-key-id, key-usage, SAN, basic-constraints, and EKU builders; guided CA/end-entity defaults; duplicate OIDs rejected. Empty end-entity subjects require a critical SAN. | Implemented and tested. |
-| RFC 5480 §2; RFC 8410 §§3–4 | Typed SPKI constructors cover uncompressed P-256/P-384 and parameter-absent Ed25519/Ed448. `SubjectPublicKeyInfoDer::from_der` is the strict-syntax escape hatch for other algorithms. | Implemented and exercised by all four signing adapters. |
+| RFC 5480 §2; RFC 8410 §§3–4; RFC 3279 §2.3.1 | Typed SPKI constructors cover uncompressed P-256/P-384, parameter-absent Ed25519/Ed448, and `rsa_encryption` (unrestricted modulus, no strength policy). `SubjectPublicKeyInfoDer::from_der` is the strict-syntax escape hatch for other algorithms. | Implemented and exercised by all four signing adapters. |
 | Caller-governed extensions and signers | `ExtensionDer::from_parts`, `raw_extension`, `SignatureAlgorithmDer::from_der`, `CertificateSigner`, and staged `build_tbs`/`finish` preserve canonical syntax without claiming supported semantics or trust. A critical unknown extension remains rejected by `pki`. | Implemented and fail-closed tested. |
