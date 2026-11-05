@@ -62,21 +62,21 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
 
 ## Draft harvest
 
-The `draft/protocols-*` branches hold binrw-era code migrated from a retired org. None of it is
+The protocol drafts (formerly the `draft/protocols-*` branches) hold binrw-era code migrated from a retired org. None of it is
 kept as code: each protocol is rewritten on `bnb` to the crate template in `AGENTS.md`. Following
 the socks rule (*recover behavior and evidence at the smallest owning layer*), each ledger below
 lists what a draft is worth as evidence — golden vectors, edge cases, registries, behaviours,
 decisions, and draft bugs to guard against — with its spec clause and where it lands. A row is
-evidence, not truth: verify it against the pinned spec when porting. `Draft source` paths are on
-the named branch, which stays as read-only reference until its protocol's port lands (its PR is
-closed); then the branch is deleted and the ledger's remaining rows move into the crate.
+evidence, not truth: verify it against the pinned spec when porting. `Draft source` paths are in
+the named `archive/protocols-*` tag (`git show archive/protocols-tftp:<path>`); the draft branches
+and PRs are closed. When a protocol's port lands, its ledger's remaining rows move into the crate.
 
-- **ssh** (`draft/protocols-ssh`, PR #63) — nothing recovered: a partial RFC 4253 §6.3 cipher-name
+- **ssh** (PR #63, branch deleted) — nothing recovered: a partial RFC 4253 §6.3 cipher-name
   list (with `edes-cbc` for `3des-cbc`) and a packet struct, both re-derivable from the spec.
-- **dcerpc** (`draft/protocols-dcerpc`, PR #62) — nothing recovered: a bare C706 PDU-type enum,
+- **dcerpc** (PR #62, branch deleted) — nothing recovered: a bare C706 PDU-type enum,
   flags and header struct, re-derivable from the spec.
 
-### tftp (`draft/protocols-tftp`, PR #59)
+### tftp (`archive/protocols-tftp`, PR #59)
 
 The draft is worth mining for behaviour and edge cases, not for vectors or code. The lock-step core is mostly right: Sorcerer's Apprentice guard, final block judged by payload length, the empty block after an exact multiple, OACK→ACK(0) on reads and OACK→DATA(1) on writes, and netascii translated over the whole stream. But its "RFC" contract vectors are invented, its decoder breaks byte identity in several places, it has no `Custom` packet, and neither the client nor the server enforces the option RFCs' OACK rules (blksize ≤ requested, timeout must match, ERROR 8 for unrequested options). Next step: open the bnb rewrite with the RFC-figure vectors and the adversarial rows below in `tests/contract.rs`/unit tests, and record the bug rows as ROADMAP items for the high-level layer. Retransmission and option behaviour should be rebuilt sans-I/O and tested there. Do not port `transfer.rs`, `RawClient` or `tests/common`.
 
@@ -108,7 +108,7 @@ The draft is worth mining for behaviour and edge cases, not for vectors or code.
 | No dally after sending the final ACK: `recv_file` returns at once and cannot re-ACK a retransmitted final DATA | behaviour | `src/transfer.rs:196-204` | `rfc1350#6` ("dallying is encouraged") | keep → ROADMAP (verified) |
 | IPv4-only: the client, server-transfer and raw sockets all bind `0.0.0.0:0`, so IPv6 peers fail; non-UTF-8 filenames reach `Handler` through `filename_lossy` and different names collide on U+FFFD | bug | `src/client/client.rs:248`; `src/server/server.rs:165`, `:168`; `src/client/raw.rs:36` | `rfc1350#5` (filename "sequence of bytes") | keep → ROADMAP (verified by reading). `malformed` byte strings (`raw.rs:112-135`) → adversarial unit tests; drop `RawClient`, `Handler(Vec)`, the semaphore and `tests/common` as transport/test infrastructure |
 
-### socks (`draft/protocols-socks`, PR #64)
+### socks (`archive/protocols-socks`, PR #64)
 
 Main already covers everything the draft has for SOCKS5 CONNECT, blocking BIND, method/CMD/REP/ATYP registries, RFC 1929, truncation and unknown-code cases, wrong-version and unknown-command rejection, silent-client and BIND accept timeouts. The draft's remaining value is in SOCKS4/4A vectors and registries, the RFC 1928 §7 UDP header and its size arithmetic, the UDP relay's source-pinning behaviour, and a list of malformed generators. It also has several bugs that main should not reproduce: unbounded USERID reads, a 4A BIND that can never succeed, a UDP relay with no destination policy, and a 65 535-byte datagram ceiling. Recommended next step: land a SOCKS4/4A wire slice with the rows marked `tests/contract.rs`, using the design rows below as its acceptance criteria, before any exchange code; UDP ASSOCIATE follows as its own slice.
 
@@ -145,7 +145,7 @@ Spec sources: RFC 1928 and RFC 1929 come from the `stds` corpus (published text,
 
 Skipped because main covers it or it is draft infrastructure: v5 codecs and registries, RFC 1929, CONNECT/BIND transcripts, silent-client and BIND timeouts, the v4 version-mismatch reply (main closes without guessing a reply), the thread pool, relay, benches, observability and e2e harnesses.
 
-### nbt (`draft/protocols-nbt`, PR #60)
+### nbt (`archive/protocols-nbt`, PR #60)
 
 Keep the draft as evidence only: RFC golden vectors, registries, field order and about a dozen bugs worth turning into regression tests. Its wire code is wrong where it matters (LSB-first `modular_bitfield` in label, NB_FLAGS and session FLAGS; names never first-level encoded; wrong builder opcodes and flags; NBSTAT names parsed as labels; no datagram service). Share only main's `dns::Name` + `CompressionDict` and the TCP length framing, since NBT's header, Op, RCode and RType collide with DNS. Next step: a bnb `nbt` crate that depends on `dns` for `Name`, seeded from rows 1–4. (Checked against the draft's vendored RFC 1001/1002 text, not `stds`, which lacks both; vectors checked with python3; errata not checked; paths relative to `protocols/application/nbt/`.)
 
@@ -177,7 +177,7 @@ Keep the draft as evidence only: RFC golden vectors, registries, field order and
 | `NameType` suffix registry is non-injective (same byte under Unique/Group/Domain/Internet; `MultiHomed` is a WINS static-mapping type, not a suffix; `Custom(u8)` collides) and comes from Microsoft, not the RFC | registry / decision | `src/name/name.rs:221-422` | none (MS KB; RFC 1001 §15.1.1: no intrinsic name quality) | keep → ROADMAP as a `Suffix(u8)` newtype with named consts citing MS sources (unverified); drop enum shape |
 | Vendored RFC 1001/1002/883 copies, MS naming-conventions doc, and `COMPUTER_NOT_ALLOWED`/15-char checks enforced on encode (Windows policy; RFC allows any 16 bytes) | decision | `resources/*`, `src/name/name.rs:6, 99-113` | `rfc1001#14` | drop: cite by clause and permalink; at most an opt-in builder lint. Add rfc1001/rfc1002 to `stds` (host: rfc-editor.org) |
 
-### smb (`draft/protocols-smb`, PR #61)
+### smb (`archive/protocols-smb`, PR #61)
 
 Low value. The README claims SMB 1/2/3, but the draft is SMB1 only. About 80 of the 95 files are empty `cmd/*.rs` stubs, and the only real code is the 32-byte SMB1 header, the NT LM 0.12 NEGOTIATE request/response and the SecurityMode/Capabilities bitfields. There is no SMB2/3 code at all. The registries and bit layouts it does have check out against [MS-CIFS] and [MS-SMB]. The parts worth keeping are one captured extended-security NEGOTIATE response (parameters and data) and a list of doctrine bugs: closed enums with no `Custom`, a panicking `DialectIndex`, a `TryFrom` that drops every AndX command, and RFC 1002 framing wrongly used on port 445. Next step: rewrite smb on bnb starting with `wire/smb1/header` + negotiate and a Direct TCP 4-byte framer that smb owns, seeded with the vectors below. SMB2 is a fresh design from [MS-SMB2] and the draft gives nothing toward it.
 
