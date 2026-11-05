@@ -8,7 +8,7 @@
 
 ## Adopted Rust standards
 
-- Standards pin: `[exact release or commit from rsl-rust-standards.toml]`
+- Standards pin: `[exact release or commit recorded in .rust-skills/adoption.toml]`
 - Base profile: `[public-library | internal-library | application | service | experimental]`
 - Capabilities: `[only applicable domain, execution, environment, risk, and structure capabilities]`
 - Component overlays: `[only real differences]`
@@ -37,7 +37,7 @@ State which commands actually ran and which evidence remains unavailable.
 
 - Exact MSRV and current-development toolchain: `[required]`
 - First-class targets and native-test expectations: `[required]`
-- Dependency policy and whether `rsl-deps` is adopted: `[required]`
+- Dependency policy and whether the `deps` facade crate (`deps/`) is adopted: `[required]`
 - Feature combinations required in CI: `[if applicable]`
 
 Discuss material dependency changes before editing manifests. A change is
