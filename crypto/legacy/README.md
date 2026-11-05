@@ -14,13 +14,14 @@ reproduces published historical output, carries a machine-readable non-recommend
 has published, boundary, intermediate or state, malformed-input, and independent differential
 evidence. Exact source coverage is recorded in `STANDARDS.md`.
 
-```rust
+This example is not compiled from the README; the tested copy is in the `digest::sha1` rustdoc.
+
+```rust,ignore
 use crypto_legacy::{SecurityStatus, digest::sha1};
 
 assert_eq!(sha1::SECURITY_STATUS, SecurityStatus::Broken);
 let digest = sha1::Sha1::digest("historical bytes")?;
 assert_eq!(digest.as_bytes().len(), 20);
-# Ok::<(), crypto_legacy::CryptoError>(())
 ```
 
 RC4 is likewise named directly and stateful; no protocol can acquire it through a generic

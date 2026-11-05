@@ -10,4 +10,9 @@
    with NIST CAVP, Wycheproof, boundary, malformed-input, and differential evidence.**
 
 Protocol cipher-suite work starts only after the required primitives are implemented and remains
-in the TLS/SSH repository. It is never pulled into this crate for convenience.
+in the TLS/SSH crates. It is never pulled into this crate for convenience.
+
+Nothing in this roadmap authorizes default negotiation. A protocol must name a historical suite,
+enable the legacy dependency, and opt into an explicit allowlist. Broken algorithms remain useful
+for decoding captures, interoperability labs, and teaching attacks; correctness never upgrades
+their security status.

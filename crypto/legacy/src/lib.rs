@@ -9,18 +9,22 @@
 //! # Non-negotiation rule
 //!
 //! A primitive in this package performs only its named mathematical transformation. TLS, SSH,
-//! and other protocol repositories must require an explicit legacy allowlist and must never
+//! and other protocol crates must require an explicit legacy allowlist and must never
 //! silently fall back to one of these algorithms. Successful output proves implementation
 //! compatibility, not confidentiality, integrity, authentication, or present-day suitability.
 //!
-//! # Planned learning path
+//! # Learning path
 //!
-//! 1. SHA-1 and MD5 show historical Merkle–Damgård digests and their collision failures.
-//! 2. RC4 shows a compact stream cipher and the consequences of biased keystream output.
-//! 3. DES and Triple-DES show a Feistel network, short keys, and small block-size limits.
-//! 4. CBC-era primitives provide only the transformations needed by explicitly selected protocol
-//!    profiles; record padding and MAC ordering remain protocol-owned.
-//! 5. RSA PKCS #1 v1.5 provides historical signature/encryption encoding with its oracle hazards.
+//! 1. [SHA-1](digest::sha1) and [MD5](digest::md5) show historical Merkle–Damgård digests and
+//!    their collision failures.
+//! 2. [RC4](cipher::rc4) shows a compact stream cipher and the consequences of biased keystream
+//!    output.
+//! 3. [DES and Triple-DES](cipher::des) show a Feistel network, short keys, and small block-size
+//!    limits.
+//! 4. [CBC-era primitives](cipher::cbc) provide only the transformations needed by explicitly
+//!    selected protocol profiles; record padding and MAC ordering remain protocol-owned.
+//! 5. [RSA PKCS #1 v1.5](rsa::pkcs1v15) provides historical signature/encryption encoding with its
+//!    oracle hazards.
 //!
 //! Each implementation receives its own teaching page, published vectors, negative cases,
 //! differential evidence, and current security references before being advertised as functional.
