@@ -4,6 +4,16 @@
 //! such as X.509 live above it. Decoding borrows the original bytes so a caller can retain the
 //! exact signed representation; encoding always emits the distinguished form.
 //!
+//! ```
+//! use asn1::Tag;
+//!
+//! let der = [0x30, 0x03, 0x02, 0x01, 0x2a];
+//! let mut sequence = asn1::decode_exact(&der)?.expect(Tag::SEQUENCE)?.children()?;
+//! assert_eq!(sequence.read()?.unsigned_u64()?, 42);
+//! sequence.finish()?;
+//! # Ok::<(), asn1::Error>(())
+//! ```
+//!
 //! ## Standards ownership
 //!
 //! ITU-T X.690 (02/2021) §§8, 10, and 11 control the identifier, definite-length, primitive
