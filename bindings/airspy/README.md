@@ -39,6 +39,8 @@ returns the device inside `StartError`, so the caller can try again.
   Batches arriving while that backlog drains are dropped too, so read
   promptly to keep the gap short.
   It detects the adapter filling, not USB-level sample loss.
+- `discard()` drops the queued samples and any unreported gap, so a read
+  after a retune starts from samples captured after the call.
 - `Error::Timeout` means no samples arrived within the empty-buffer wait;
   `Duration::ZERO` polls. The timeout does not bound mutex contention or
   copying. A native stop without notification can also appear as a timeout.

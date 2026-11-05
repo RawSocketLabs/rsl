@@ -104,6 +104,14 @@ impl RxState {
             dropped => Err(Error::Overflow { dropped }),
         }
     }
+
+    /// Drop the queued samples and any unreported gap, returning their total.
+    fn discard(&self) -> Result<u64> {
+        let mut buffer = self.buffer.lock().map_err(|_| Error::Thread)?;
+        let discarded = buffer.samples.len() as u64 + mem::take(&mut buffer.dropped);
+        buffer.samples.clear();
+        Ok(discarded)
+    }
 }
 
 /// Copy libairspy's borrowed samples into the private receive buffer.
@@ -249,6 +257,18 @@ impl Receiver {
     /// - [`Error::Thread`] if the buffer lock is poisoned.
     pub fn receive(&mut self, samples: &mut [Complex<f32>], timeout: Duration) -> Result<usize> {
         self.state.receive(samples, timeout)
+    }
+
+    /// Drop every queued sample and any unreported gap, for example after a
+    /// retune, so the next `receive` starts from samples captured after this
+    /// call. Returns how many samples went: the queued ones plus the gap.
+    /// Batches still in flight when it returns are kept.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Thread`] if the buffer lock is poisoned.
+    pub fn discard(&mut self) -> Result<u64> {
+        self.state.discard()
     }
 
     /// Stop reception, join the callback threads and hand the device back.
@@ -438,6 +458,25 @@ mod tests {
         state.push(&[after]).unwrap();
         assert_eq!(state.receive(&mut output, Duration::ZERO), Ok(1));
         assert_eq!(output[0], after);
+    }
+
+    #[test]
+    fn discard_clears_queued_samples_and_the_pending_gap() {
+        let state = state();
+        state.push(&[Complex::default(); CAPACITY]).unwrap();
+        state.push(&[Complex::default()]).unwrap();
+        assert_eq!(state.discard(), Ok(CAPACITY as u64 + 1));
+        let mut output = [Complex::default()];
+        assert_eq!(
+            state.receive(&mut output, Duration::ZERO),
+            Err(Error::Timeout)
+        );
+        // Not inside a gap any more: the next batch is kept.
+        let after = Complex::new(2.0_f32, 0.0);
+        state.push(&[after]).unwrap();
+        assert_eq!(state.receive(&mut output, Duration::ZERO), Ok(1));
+        assert_eq!(output[0], after);
+        assert_eq!(state.discard(), Ok(0));
     }
 
     #[test]
