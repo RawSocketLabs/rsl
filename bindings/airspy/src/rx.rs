@@ -8,22 +8,27 @@ use std::mem;
 use std::slice;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
+use thiserror::Error as ThisError;
 
-/// Fixed sample capacity; about 26 ms at 10 Msps.
-const RX_CAPACITY: usize = 262_144;
+/// Receive capacity used by the crate example, in samples; about 26 ms at
+/// 10 Msps.
+pub const DEFAULT_RX_CAPACITY: usize = 262_144;
 
 /// Samples awaiting delivery, plus the size of a gap not yet reported.
 struct Buffer {
     samples: VecDeque<Complex<f32>>,
+    /// Most samples ever queued; `push` never grows past it.
+    capacity: usize,
     /// Samples dropped since the queued ones; reported once they are drained.
     dropped: u64,
 }
 
 impl Buffer {
     /// Allocate the full capacity up front, so `push` never reallocates.
-    fn new() -> Self {
+    fn new(capacity: usize) -> Self {
         Self {
-            samples: VecDeque::with_capacity(RX_CAPACITY),
+            samples: VecDeque::with_capacity(capacity),
+            capacity,
             dropped: 0,
         }
     }
@@ -33,7 +38,7 @@ impl Buffer {
     /// Once a batch is dropped, later ones are too until `receive` reports the
     /// gap, so each gap sits at exactly one place in the delivered stream.
     fn push(&mut self, samples: &[Complex<f32>]) {
-        if self.dropped > 0 || samples.len() > RX_CAPACITY - self.samples.len() {
+        if self.dropped > 0 || samples.len() > self.capacity - self.samples.len() {
             self.dropped = self.dropped.saturating_add(samples.len() as u64);
             return;
         }
@@ -49,11 +54,17 @@ pub(crate) struct RxState {
 
 impl RxState {
     /// Allocate the bounded sample storage before starting callbacks.
-    fn new() -> Self {
-        Self {
-            buffer: Mutex::new(Buffer::new()),
-            ready: Condvar::new(),
+    ///
+    /// A zero capacity could never deliver a sample, so it is
+    /// [`Error::InvalidParameter`].
+    fn new(capacity: usize) -> Result<Self> {
+        if capacity == 0 {
+            return Err(Error::InvalidParameter);
         }
+        Ok(Self {
+            buffer: Mutex::new(Buffer::new(capacity)),
+            ready: Condvar::new(),
+        })
     }
 
     /// Copy a callback batch without growing storage or waiting for free capacity.
@@ -129,77 +140,94 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
     }
 }
 
-/// An active reception session, borrowing its device until it stops.
+/// An active reception session, owning its device until it stops.
 ///
-/// Dropping it stops reception and discards the status; call
-/// [`Receiver::stop`] to see it. The tuning setters stay available while
-/// streaming; changing the sample rate needs a stop and a restart.
-#[must_use = "dropping the Receiver stops reception"]
-pub struct Receiver<'a> {
-    device: &'a mut Airspy,
+/// [`Receiver::stop`] hands the device back; dropping the Receiver instead
+/// closes the device and discards the stop status. The tuning setters stay
+/// available while streaming; changing the sample rate needs a stop and a
+/// restart.
+#[must_use = "dropping the Receiver stops reception and closes the device"]
+pub struct Receiver {
+    /// Declared first: dropping the Receiver closes the device, which stops
+    /// and joins the callback threads, before `state` is freed.
+    device: Airspy,
     /// This session's buffer, owned here alone. It is released only after
     /// stop or Drop has joined the callback threads; `mem::forget` leaks it,
     /// which keeps the still-running callbacks sound.
     state: Arc<RxState>,
 }
 
-impl fmt::Debug for Receiver<'_> {
+impl fmt::Debug for Receiver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Receiver").finish_non_exhaustive()
     }
 }
 
+/// A failed [`Airspy::start_rx`], handing the device back for another attempt.
+#[derive(Debug, ThisError)]
+#[error("reception did not start")]
+pub struct StartError {
+    /// The device, still open and not streaming.
+    pub device: Airspy,
+    /// Why no session started.
+    #[source]
+    pub error: Error,
+}
+
 impl Airspy {
-    /// Start float IQ reception with a fresh 262,144-sample private buffer.
+    /// Start float IQ reception into a private buffer of `capacity` samples.
+    ///
+    /// The buffer is allocated up front, eight bytes per sample. Size it for
+    /// the longest pause between [`Receiver::receive`] calls, which documents
+    /// what happens once it fills.
     ///
     /// # Errors
     ///
-    /// libairspy's status if a forgotten session fails to stop, the sample
-    /// type is rejected, or streaming fails to start. A failed start is
-    /// stopped again on a best-effort basis; see `ffi::airspy_start_rx` for
-    /// the libairspy 1.0.6 to 1.0.10 crash this cannot prevent.
-    pub fn start_rx(&mut self) -> Result<Receiver<'_>> {
-        // Only a `mem::forget`-ed Receiver leaves a session running.
-        if self.session_active {
-            self.stop_session()?;
+    /// The device comes back inside [`StartError`] with
+    /// [`Error::InvalidParameter`] for a zero capacity, or libairspy's status
+    /// if the sample type is rejected or streaming fails to start. A failed
+    /// start is stopped again on a best-effort basis; see
+    /// `ffi::airspy_start_rx` for the libairspy 1.0.6 to 1.0.10 crash this
+    /// cannot prevent.
+    pub fn start_rx(mut self, capacity: usize) -> std::result::Result<Receiver, StartError> {
+        match self.start_session(capacity) {
+            Ok(state) => Ok(Receiver {
+                device: self,
+                state,
+            }),
+            Err(error) => Err(StartError {
+                device: self,
+                error,
+            }),
         }
+    }
+
+    /// Allocate the buffer, select float IQ and start libairspy's threads.
+    fn start_session(&mut self, capacity: usize) -> Result<Arc<RxState>> {
+        // Validated before the device is touched, so a rejected capacity
+        // changes nothing.
+        let state = Arc::new(RxState::new(capacity)?);
         Error::check(ffi::airspy_set_sample_type(
             self.handle(),
             ffi::SampleType::Float32Iq,
         ))?;
-        let state = Arc::new(RxState::new());
         // An Arc, because moving a Box asserts unique access and would
         // invalidate the pointer libairspy's threads read through.
         let ctx = Arc::as_ptr(&state).cast_mut().cast::<c_void>();
-        // Set before starting, so a failed start is still stopped.
-        self.session_active = true;
         // SAFETY: rx_cb only reads `ctx` as `&RxState`. `state` outlives the
         // callback threads: a failed start joins them below while `state` is
         // still held, and a Receiver releases it only after joining them.
         if let Err(error) = Error::check(unsafe { ffi::airspy_start_rx(self.handle(), rx_cb, ctx) })
         {
             // Join threads created before a partial startup failure.
-            let _ = self.stop_session();
+            let _ = Error::check(ffi::airspy_stop_rx(self.handle()));
             return Err(error);
         }
-        Ok(Receiver {
-            device: self,
-            state,
-        })
-    }
-
-    /// Stop reception and join the callback threads.
-    ///
-    /// `airspy_stop_rx` joins them even when it reports failure, so afterwards
-    /// nothing reads the session's state. The exceptions are libairspy's own:
-    /// see `ffi::airspy_stop_rx`.
-    fn stop_session(&mut self) -> Result<()> {
-        self.session_active = false;
-        Error::check(ffi::airspy_stop_rx(self.handle()))
+        Ok(state)
     }
 }
 
-impl Receiver<'_> {
+impl Receiver {
     /// Receive up to `samples.len()` IQ pairs, returning the number written.
     ///
     /// The unused tail is untouched. An empty output is invalid. Zero timeout
@@ -223,15 +251,21 @@ impl Receiver<'_> {
         self.state.receive(samples, timeout)
     }
 
-    /// Stop reception, join the callback threads and end the borrow of the
-    /// device.
+    /// Stop reception, join the callback threads and hand the device back.
     ///
     /// # Errors
     ///
-    /// libairspy's status; the session is released either way.
-    pub fn stop(self) -> Result<()> {
-        // Drop then finds no session and does nothing.
-        self.device.stop_session()
+    /// libairspy's status. The device is then closed rather than returned,
+    /// because its streaming state is unknown after a failed stop.
+    pub fn stop(self) -> Result<Airspy> {
+        // Destructured, so a successful stop returns the device instead of
+        // dropping, and thereby closing, it.
+        let Self { mut device, state } = self;
+        let stopped = Error::check(ffi::airspy_stop_rx(device.handle()));
+        // airspy_stop_rx joins the callback threads whatever it reports (with
+        // the caveats on `ffi::airspy_stop_rx`), so nothing reads `state` now.
+        drop(state);
+        stopped.map(|()| device)
     }
 
     /// Check whether libairspy is still streaming.
@@ -254,17 +288,8 @@ impl Receiver<'_> {
     clippy::missing_errors_doc,
     reason = "each returns libairspy's status unchanged; Error documents the variants"
 )]
-impl Receiver<'_> {
+impl Receiver {
     tuning_setters!();
-}
-
-/// Stop the session if `stop` did not.
-impl Drop for Receiver<'_> {
-    fn drop(&mut self) {
-        if self.device.session_active {
-            let _ = self.device.stop_session();
-        }
-    }
 }
 
 #[cfg(test)]
@@ -277,9 +302,28 @@ mod tests {
     /// Generous wait for cross-thread tests; they assert they finish far sooner.
     const TIMEOUT: Duration = Duration::from_secs(5);
 
+    /// Small enough that the overflow tests stay quick under Miri.
+    const CAPACITY: usize = 8;
+
+    fn state() -> RxState {
+        RxState::new(CAPACITY).unwrap()
+    }
+
+    #[test]
+    fn receiver_moves_between_threads() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Receiver>();
+        assert_send::<StartError>();
+    }
+
+    #[test]
+    fn zero_capacity_is_rejected() {
+        assert!(matches!(RxState::new(0), Err(Error::InvalidParameter)));
+    }
+
     #[test]
     fn callback_copies_samples_and_preserves_remainder() {
-        let state = RxState::new();
+        let state = state();
         let mut input = [Complex::new(1.0_f32, -2.0), Complex::new(3.0, -4.0)];
         let mut transfer = ffi::airspy_transfer_t {
             device: ptr::null_mut(),
@@ -311,7 +355,7 @@ mod tests {
     fn callback_guards_stop_or_skip_malformed_transfers() {
         // SAFETY: a null transfer is within rx_cb's contract.
         assert_eq!(unsafe { rx_cb(ptr::null_mut()) }, ffi::RX_STOP);
-        let state = RxState::new();
+        let state = state();
         let mut transfer = ffi::airspy_transfer_t {
             device: ptr::null_mut(),
             ctx: ptr::from_ref(&state).cast_mut().cast(),
@@ -330,15 +374,15 @@ mod tests {
 
     #[test]
     fn overflow_wakes_a_waiting_receive() {
-        let state = RxState::new();
-        // Built up front so the producer only counts the drop (Miri is slow).
-        let full = vec![Complex::default(); RX_CAPACITY + 1];
+        let state = state();
+        // Built up front so the producer only counts the drop.
+        let full = vec![Complex::default(); CAPACITY + 1];
         thread::scope(|scope| {
             scope.spawn(|| state.push(&full).unwrap());
             let mut output = [Complex::default()];
             let start = Instant::now();
             let gap = Error::Overflow {
-                dropped: RX_CAPACITY as u64 + 1,
+                dropped: CAPACITY as u64 + 1,
             };
             assert_eq!(state.receive(&mut output, TIMEOUT), Err(gap));
             // Without the wake-up, receive only returns at its deadline.
@@ -348,18 +392,12 @@ mod tests {
 
     #[test]
     fn overflow_waits_until_the_whole_backlog_is_read() {
-        let state = RxState::new();
-        state.push(&vec![Complex::default(); RX_CAPACITY]).unwrap();
+        let state = state();
+        state.push(&[Complex::default(); CAPACITY]).unwrap();
         state.push(&[Complex::default()]).unwrap();
-        let mut half = vec![Complex::default(); RX_CAPACITY / 2];
-        assert_eq!(
-            state.receive(&mut half, Duration::ZERO),
-            Ok(RX_CAPACITY / 2)
-        );
-        assert_eq!(
-            state.receive(&mut half, Duration::ZERO),
-            Ok(RX_CAPACITY / 2)
-        );
+        let mut half = vec![Complex::default(); CAPACITY / 2];
+        assert_eq!(state.receive(&mut half, Duration::ZERO), Ok(CAPACITY / 2));
+        assert_eq!(state.receive(&mut half, Duration::ZERO), Ok(CAPACITY / 2));
         assert_eq!(
             state.receive(&mut half, Duration::ZERO),
             Err(Error::Overflow { dropped: 1 })
@@ -368,7 +406,7 @@ mod tests {
 
     #[test]
     fn empty_receive_times_out_without_modifying_output() {
-        let state = RxState::new();
+        let state = state();
         let mut output = [Complex::new(9.0, 9.0)];
         assert_eq!(
             state.receive(&mut output, Duration::ZERO),
@@ -383,12 +421,12 @@ mod tests {
 
     #[test]
     fn overflow_reports_the_gap_after_queued_samples_then_resumes() {
-        let state = RxState::new();
+        let state = state();
         let before = Complex::new(1.0_f32, 0.0);
-        state.push(&vec![before; RX_CAPACITY]).unwrap();
+        state.push(&[before; CAPACITY]).unwrap();
         state.push(&[Complex::default(); 3]).unwrap();
-        let mut output = vec![Complex::default(); RX_CAPACITY];
-        assert_eq!(state.receive(&mut output, Duration::ZERO), Ok(RX_CAPACITY));
+        let mut output = vec![Complex::default(); CAPACITY];
+        assert_eq!(state.receive(&mut output, Duration::ZERO), Ok(CAPACITY));
         assert!(output.iter().all(|sample| *sample == before));
         // Still inside the gap: dropped even though there is room now.
         state.push(&[Complex::default()]).unwrap();
@@ -404,7 +442,7 @@ mod tests {
 
     #[test]
     fn receive_accepts_samples_from_callback_thread() {
-        let state = RxState::new();
+        let state = state();
         thread::scope(|scope| {
             scope.spawn(|| state.push(&[Complex::new(1.0, 2.0)]).unwrap());
             let mut output = [Complex::default()];
@@ -417,7 +455,7 @@ mod tests {
 
     #[test]
     fn poisoned_state_stops_without_unwinding() {
-        let state = RxState::new();
+        let state = state();
         thread::scope(|scope| {
             let worker = scope.spawn(|| {
                 let _guard = state.buffer.lock().unwrap();
@@ -434,20 +472,21 @@ mod tests {
 
     #[test]
     #[ignore = "requires an attached Airspy device; run with RUST_TEST_THREADS=1"]
-    fn stop_releases_state_and_allows_restart() {
+    fn stop_returns_the_device_for_a_restart() {
         let mut device = Airspy::open().unwrap();
         let mut samples = [Complex::default(); 1024];
         for _ in 0..2 {
-            let mut rx = device.start_rx().unwrap();
+            let mut rx = device.start_rx(DEFAULT_RX_CAPACITY).unwrap();
             assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
             rx.set_frequency(rfus::FrequencyHz::new(100_000_000))
                 .unwrap();
             assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
-            rx.stop().unwrap();
+            device = rx.stop().unwrap();
         }
-        // A forgotten receiver's session ends when the next one starts.
-        mem::forget(device.start_rx().unwrap());
-        let mut rx = device.start_rx().unwrap();
+        // A rejected start hands the device back for another attempt.
+        let failed = device.start_rx(0).unwrap_err();
+        assert_eq!(failed.error, Error::InvalidParameter);
+        let mut rx = failed.device.start_rx(DEFAULT_RX_CAPACITY).unwrap();
         assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
     }
 }

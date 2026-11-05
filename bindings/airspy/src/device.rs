@@ -12,9 +12,6 @@ pub struct Airspy {
     /// Live libairspy handle: set only by a successful open, closed only in
     /// `Drop`.
     ptr: NonNull<ffi::AirspyDevice>,
-    /// Whether libairspy has a session running; only a forgotten
-    /// [`Receiver`](crate::Receiver) leaves it set while no Receiver exists.
-    pub(crate) session_active: bool,
 }
 
 impl fmt::Debug for Airspy {
@@ -32,11 +29,11 @@ unsafe impl Send for Airspy {}
 /// Ensure whenever the Airspy goes out of scope it is closed.
 impl Drop for Airspy {
     fn drop(&mut self) {
-        // SAFETY: `ptr` is live (field invariant) and unused after this. No
-        // Receiver can outlive the borrow, so only a forgotten one's session
-        // can still run; airspy_close stops and joins it (with the caveats on
-        // `ffi::airspy_stop_rx`) before freeing the device, and its state was
-        // leaked, so the callbacks never see freed memory.
+        // SAFETY: `ptr` is live (field invariant) and unused after this. If a
+        // Receiver is being dropped, its stream is still running: airspy_close
+        // stops and joins it (with the caveats on `ffi::airspy_stop_rx`) before
+        // freeing the device, while the Receiver's buffer, declared after the
+        // device, is still alive.
         unsafe {
             ffi::airspy_close(self.ptr.as_ptr());
         }
@@ -80,10 +77,7 @@ impl Airspy {
         Error::check(open(&mut device))?;
         // libairspy reports success only alongside a handle.
         let ptr = NonNull::new(device).ok_or(Error::Other)?;
-        Ok(Self {
-            ptr,
-            session_active: false,
-        })
+        Ok(Self { ptr })
     }
 
     /// Borrow the live handle for a libairspy call.

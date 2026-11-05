@@ -5,9 +5,9 @@
 //! Receive floating-point IQ samples from an Airspy through libairspy.
 //!
 //! Requires libairspy 1.0.6 or later. Each received element is one complex
-//! sample. [`Airspy::start_rx`] returns a [`Receiver`]; stopping or dropping it
-//! joins the callback threads. If a Receiver is `mem::forget`-ed, the next
-//! `start_rx` or dropping the device stops its session instead.
+//! sample. [`Airspy::start_rx`] takes the device and returns a [`Receiver`];
+//! [`Receiver::stop`] joins the callback threads and hands the device back,
+//! while dropping the Receiver closes it instead.
 //!
 //! # Capture to a file
 //!
@@ -15,7 +15,7 @@
 //! as little-endian `f32` pairs to `airspy.iq`.
 //!
 //! ```no_run
-//! use airspy::{Airspy, Error, SampleRateSps};
+//! use airspy::{Airspy, DEFAULT_RX_CAPACITY, Error, SampleRateSps};
 //! use num_complex::Complex;
 //! use std::fs::File;
 //! use std::io::{BufWriter, Write};
@@ -33,7 +33,7 @@
 //!
 //! let mut output = BufWriter::new(File::create("airspy.iq")?);
 //! let mut samples = vec![Complex::default(); 65_536];
-//! let mut rx = dev.start_rx()?;
+//! let mut rx = dev.start_rx(DEFAULT_RX_CAPACITY)?;
 //! let mut count = 0;
 //! while count < 50_000_000 {
 //!     let received = match rx.receive(&mut samples, Duration::from_secs(5)) {
@@ -51,7 +51,8 @@
 //!         output.write_all(&sample.im.to_le_bytes())?;
 //!     }
 //! }
-//! rx.stop()?;
+//! // The device comes back, ready for another session; drop it to close.
+//! let _dev = rx.stop()?;
 //! output.flush()?;
 //! # Ok(())
 //! # }
@@ -70,4 +71,4 @@ pub use device::{Airspy, Identity};
 pub use error::{Error, Result};
 pub use library::LibVersion;
 pub use rfus::{FrequencyHz, SampleRateSps};
-pub use rx::Receiver;
+pub use rx::{DEFAULT_RX_CAPACITY, Receiver, StartError};
