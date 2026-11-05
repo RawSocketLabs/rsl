@@ -1,4 +1,4 @@
-# crypto repository structure
+# crypto crate structure
 
 The crate is organized by cryptographic primitive, then by specification layer. Public modules
 identify algorithm families. Private modules hold the small operations needed to explain and
@@ -9,17 +9,17 @@ crypto/core/
 ├── src/
 │   ├── digest/
 │   │   ├── mod.rs                 digest contract
-│   │   └── sha2/
-│   │       ├── mod.rs             SHA-2 family boundary
-│   │       ├── sha256/
-│   │           ├── mod.rs         public SHA-256 surface
-│   │           ├── constants.rs   tested initial words and round constants
-│   │           ├── functions.rs   tested Ch, Maj, and sigma functions
-│   │           ├── schedule.rs    tested parsing and complete 64-word schedule
-│   │           ├── compression.rs 64 rounds and feed-forward
-│   │           └── state.rs       streaming, length, padding, and output
-│   │       ├── sha512/             independent 64-bit SHA-2 specification layers
-│   │       └── sha384/             SHA-384 initial words and truncated state over SHA-512 layers
+│   │   ├── sha2/
+│   │   │   ├── mod.rs             SHA-2 family boundary
+│   │   │   ├── sha256/
+│   │   │   │   ├── mod.rs         public SHA-256 surface
+│   │   │   │   ├── constants.rs   tested initial words and round constants
+│   │   │   │   ├── functions.rs   tested Ch, Maj, and sigma functions
+│   │   │   │   ├── schedule.rs    tested parsing and complete 64-word schedule
+│   │   │   │   ├── compression.rs 64 rounds and feed-forward
+│   │   │   │   └── state.rs       streaming, length, padding, and output
+│   │   │   ├── sha512/            independent 64-bit SHA-2 specification layers
+│   │   │   └── sha384/            SHA-384 initial words and truncated state over SHA-512 layers
 │   │   └── sha3/
 │   │       ├── keccak.rs          FIPS 202 state, θ/ρ/π/χ/ι, and the 24-round permutation
 │   │       ├── sponge.rs          rate-generic sponge with pad10*1 and domain suffix
@@ -111,7 +111,7 @@ crypto/core/
 │   ├── aes256.rs                  NIST core blocks and differential AES-256 evidence
 │   ├── vectors/aes-256/           FIPS 197 A.3 and AES_Core256 provenance
 │   ├── aes256_gcm.rs, aes256_gcm/ NIST GCM-AES256, Wycheproof, and differential evidence
-│   ├── x448.rs, x448/             RFC 7748 X448 vectors, Wycheproof cases, boundaries
+│   ├── x448.rs, x448/             RFC 7748 X448 vectors and Wycheproof cases
 │   ├── vectors/x448/              RFC 7748 X448 and Wycheproof provenance
 │   ├── x25519.rs                  public X25519 integration-test harness
 │   ├── x25519/                    known-answer, boundary, and differential tests
@@ -144,27 +144,32 @@ crypto/core/
 │   ├── ecdsa_p256.rs              public ECDSA P-256 evidence harness
 │   ├── ecdsa_p256/                RFC 6979, CAVP SigGen/SigVer fixtures, boundaries, differential
 │   ├── vectors/ecdsa-p256/        FIPS 186-5, RFC 6979, and CAVP provenance
-│   ├── chacha20.rs                public ChaCha20 harness (Appendix A.1–A.2)
-│   ├── poly1305.rs                public Poly1305 harness (Appendix A.3)
-│   ├── chacha20poly1305.rs        public AEAD harness (§2.8.2, A.4–A.5, Wycheproof, differential)
+│   ├── chacha20.rs, chacha20/     public ChaCha20 harness and RFC 8439 Appendix A.1–A.2 tests
+│   ├── poly1305.rs, poly1305/     public Poly1305 harness and Appendix A.3 tests
+│   ├── chacha20poly1305.rs, chacha20poly1305/ AEAD tests (§2.8.2, A.4–A.5, Wycheproof, differential)
 │   ├── vectors/chacha20-poly1305/ RFC 8439 and Wycheproof provenance
 │   ├── rsa_pss.rs                 public RSASSA-PSS evidence harness
 │   ├── rsa_pss/                   CAVP SigVer/SigGen and Wycheproof fixtures and verdict tests
 │   └── vectors/rsa-pss/           RFC 8017, CAVP, and Wycheproof provenance
-├── ../fuzz/                          separate-workspace cargo-fuzz crate (see ../fuzz/README.md)
+├── AGENTS.md                      agent and contributor rules (`CLAUDE.md` links here)
+├── README.md                      overview, status, and showcase examples
+├── GUIDE.md                       task-to-algorithm selection
 ├── SIDE-CHANNELS.md               source-level constant-time review record
 ├── DESIGN.md                      crate-wide architectural decisions
 ├── ROADMAP.md                     primitive implementation order
 └── STANDARDS.md                   sources, notation, coverage, and evidence ledger
 ```
 
+The fuzz workspace lives at `crypto/fuzz/` (see [`../fuzz/README.md`](../fuzz/README.md)).
+
 ## Test placement
 
 - Formula, schedule, round-state, and padding tests live beside their private implementation.
   They are white-box tests whose purpose is to make each layer inspectable.
 - Public tests live in an algorithm-named directory and are compiled by the corresponding
-  top-level integration-test harness. SHA-256, HMAC-SHA-256, HKDF-SHA-256, and AES-128 follow
-  this layout.
+  top-level integration-test harness. Most algorithms follow this layout; single-file harnesses
+  (`sha3.rs`, `sha384.rs`, `sha512.rs`, `aes256.rs`, `aead_records.rs`) hold all their public
+  tests in one file.
 - Published vector material and provenance live under `tests/vectors/<algorithm>/`. A vector
   record must name its source document, revision, section or case identifier, retrieval location,
   and any mechanical conversion applied to it.
@@ -196,44 +201,14 @@ so broken source-map links fail validation instead of quietly degrading the rend
 
 ## Dependency direction
 
-```text
-constants ────────────────────────┬─> compression ─> state ─> public Sha256 API
-                                 └──────────────────> state (initial words)
-functions ─> schedule ───────────────> compression
-          └──────────────────────────> compression
-
-Sha256 ─> HMAC key normalization ─> inner/outer seeded states ─> public HmacSha256 API
-
-HmacSha256 ─> HKDF Extract ─> secret PRK ─> bounded HKDF Expand
-
-AES block bytes ─> four-by-four State ─> round transforms ─> AES-128 block API
-
-GF(2^8) byte arithmetic ────────────────> round transforms and calculated S-box
-
-GF(2^128) block multiplication ─> GHASH recurrence ─> AES-128-GCM authentication
-
-GCM CounterBlock ─> inc32 ─> GCTR keystream ───────> AES-128-GCM confidentiality
-
-AAD/ciphertext padding + lengths ─> GHASH ─> tag mask/verify ─> public AES-128-GCM
-
-GF(2^255 - 19) bytes ─> field arithmetic ─> scalar-prepared Montgomery ladder
-                                              └─> checked public X25519 agreement
-
-SHA-512 ─> seed expansion + nonce/challenge hashes ─┐
-                                                    ├─> Ed25519 signing/strict verification
-Edwards field ─> point encoding/addition ─> scalar multiplication
-Subgroup order L ─> canonical/reduced scalar arithmetic ────────────────┘
-```
-
+[`DESIGN.md` §5](DESIGN.md#5-dependency-direction) holds the canonical algorithm dependency graph.
 Dependencies point toward composition. A lower layer must not depend on streaming state or the
 public API. This keeps every transformation testable without constructing an entire hash.
 
 ## Export rule
 
-The SHA-256, SHA-512, HMAC-SHA-256, HKDF-SHA-256, AES-128, AES-128-GCM, X25519, and Ed25519
-modules export their
-algorithm and distinct input/output types where semantic separation matters. They became public
-only after each readable layer was implemented and its applicable known-answer,
+Every exported algorithm module exports its algorithm and distinct input/output types where
+semantic separation matters. Each became public only after each readable layer was implemented and its applicable known-answer,
 boundary/negative, fragmentation, round-trip or agreement, and differential tests passed. Future
 algorithms follow the same evidence-before-export rule. Public export records implementation
 status; it does not claim production readiness.

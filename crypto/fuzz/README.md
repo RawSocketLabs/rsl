@@ -18,6 +18,9 @@ cargo +nightly fuzz run aead_open --fuzz-dir crypto/fuzz              # from the
 The tree pins stable via `rust-toolchain.toml`, so the explicit `+nightly` is required locally.
 A crash drops a reproducer in `crypto/fuzz/artifacts/<target>/`; replay it by passing the path.
 
+Routine CI does not fuzz. Each target runs with a bounded budget during release qualification
+(`scripts/ci-local.sh release --product crypto`).
+
 ## Targets
 
 | Target | Boundary | Invariants |
@@ -31,3 +34,6 @@ A crash drops a reproducer in `crypto/fuzz/artifacts/<target>/`; replay it by pa
 Fuzzing is engineering evidence, not a security proof: it does not observe timing, and it cannot
 show that an accepted input was cryptographically correct. Published vectors, Wycheproof suites,
 and differential tests in `crypto/core/tests/` cover correctness.
+
+`crypto-legacy` boundaries are not fuzzed; its RSA decoding is covered by Wycheproof and
+malformed-input tests only.

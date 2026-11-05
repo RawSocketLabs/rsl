@@ -35,20 +35,29 @@ Readable and vector-correct does not imply side-channel resistant or production-
 claims require constant-time analysis, secret-lifetime review, fuzzing, differential testing,
 interoperability testing, and independent audit. Documentation must keep that distinction clear.
 
-## 5. Initial dependency direction
+## 5. Dependency direction
 
 ```text
 SHA-256
   -> HMAC-SHA-256
       -> HKDF-SHA-256
 
-AES-128
+SHA-512
+  -> SHA-384
+      -> HMAC-SHA-384
+          -> HKDF-SHA-384
+
+AES-128 / AES-256 (CIPH_K)
   + GHASH
-      -> AES-128-GCM
+      -> AES-128-GCM, AES-256-GCM
 
 ChaCha20 quarter round -> block function -> keystream
   + Poly1305 one-time authenticator
       -> AEAD_CHACHA20_POLY1305
+
+Keccak-f[1600] -> sponge
+  -> SHA3-256
+  -> SHAKE256
 
 GF(2^255 - 19) arithmetic
   -> X25519 Montgomery ladder
@@ -59,10 +68,18 @@ SHA-512
       -> Edwards25519 points
           -> Ed25519 key derivation, signing, and strict verification
 
-256-bit limb arithmetic modulo p and n
-  -> P-256 field, scalar, and complete projective points
-      -> ECDH P-256 validated agreement
-      -> ECDSA P-256 verification (+ SHA-256)
+GF(2^448 - 2^224 - 1) arithmetic
+  -> X448 Montgomery ladder
+      -> checked shared secret
+
+SHAKE256
+  + edwards448 field and points
+      -> Ed448 key derivation, signing, and strict verification
+
+curve::weierstrass<N> limb arithmetic modulo p and n
+  -> P-256 / P-384 field, scalar, and complete projective points
+      -> ECDH P-256 / P-384 validated agreement
+      -> ECDSA P-256 / P-384 signing and verification (+ SHA-256 / SHA-384)
 
 RFC 8017 integer engine (shared with crypto-legacy)
   -> RSA public/private primitives

@@ -5,8 +5,8 @@ memory, or returns early, classified by whether the controlling value is secret.
 reading the code, not by measuring it. It does **not** show that the compiled machine code is
 constant-time: the compiler may reintroduce branches from masks, `==` on arrays is not guaranteed
 branch-free, and cache, instruction-timing, and power behaviour are unobserved. Production use
-still requires the compiler-output and platform-level analysis, fuzzing beyond the smoke runs
-in `../fuzz/`, and the independent audit listed in the crate's security status.
+still requires the compiler-output and platform-level analysis, fuzzing beyond the bounded
+release-qualification runs of `../fuzz/`, and the independent audit listed in the crate's security status.
 
 Review date: 2026-08-28. Re-review any row whose module changes.
 
@@ -50,7 +50,7 @@ Review date: 2026-08-28. Re-review any row whose module changes.
 | `signature::ecdsa_*::sign` | `r == 0` / `s == 0` retries | Secret, one-shot | Branches on outputs that are published in the signature anyway (`r`) or whose zero-ness would be visible (`s`); probability `2^-256` and `2^-384`. |
 | `signature::ecdsa_*::nonce` | RFC 6979 candidate `>= n` retry | Secret, one-shot | The retry reveals only that a candidate was out of range (probability `2^-32` for P-256, far less for P-384); RFC 6979 §3.2 defines the loop. |
 | `signature::ecdsa_*::verify` | all checks | Public | Verification inputs are public. |
-| `rsa::integer` | `modpow`, `Montgomery::multiply` | **Secret, variable-time** | Branches on exponent bits, uses data-dependent vector lengths, no blinding. `RSA_PRIMITIVE_SECURITY_STATUS = EducationalOnly`; this crate exposes only public-key (RSASSA-PSS verify) uses. |
+| `rsa::integer` | `modpow`, `Montgomery::multiply` | **Secret, variable-time** | Branches on exponent bits, uses data-dependent vector lengths, no blinding. `RSA_PRIMITIVE_SECURITY_STATUS = EducationalOnly`. `crypto::rsa::RsaPrivateKey::apply` is public but variable-time; `crypto` itself uses only the public-key operation (RSASSA-PSS verify). |
 | `signature::rsa_pss::emsa` | EMSA-PSS checks | Public | Verification inputs; all checks are accumulated into one flag before returning. |
 | `secret::Secret` | zeroize on drop | n/a | Lifetime hygiene only; copies made by the compiler, allocator, or OS are out of scope. |
 
@@ -63,8 +63,9 @@ Review date: 2026-08-28. Re-review any row whose module changes.
 2. **Key import range checks** (`Secret, one-shot` rows) are a deliberate trade: rejecting an
    out-of-range private key at construction is required by the standards and reveals only a
    condition that a correctly generated key never triggers.
-3. **RSA private operations** are variable-time by design of this readable engine and are not
-   exposed by `crypto` for that reason; `crypto-legacy` exposes them as educational.
+3. **RSA private operations** are variable-time by design of this readable engine.
+   `crypto::rsa::RsaPrivateKey` is public only as the shared `EducationalOnly` primitive that
+   `crypto-legacy` builds on.
 4. **Nothing here is measured.** A `dudect`-style statistical harness or a compiler-output
    inspection would be the next step; both belong to the independent audit, not to this
    record.

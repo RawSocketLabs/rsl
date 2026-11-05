@@ -1,7 +1,7 @@
 # crypto — roadmap
 
-The first goal is an inspectable AES-128-GCM protection path suitable for later TLS and SSH
-record/packet contexts. Every layer lands independently and remains testable on its own.
+Implementation order and evidence for each primitive slice; every layer lands independently and
+remains testable on its own.
 
 ## Validation convention
 
@@ -13,7 +13,7 @@ Each algorithm change must include:
 - differential tests against at least one established implementation before protocol use;
 - no claim of side-channel resistance or production suitability without a separate review.
 
-## Initial dependency chain
+## Implemented slices
 
 1. **SHA-256** — direct FIPS 180-4 implementation, proceeding through constants and elementary
    word functions, message scheduling, compression, and incremental state in that order. The
@@ -73,14 +73,14 @@ Each algorithm change must include:
    differential test agrees with `RustCrypto` `aes-gcm` 0.11.1 over 32 varied keys, nonces, AAD
    lengths, and payload lengths. Variable-length IVs and truncated tags remain deliberately
    unsupported. Protocol-specific nonce construction, uniqueness, counter exhaustion, replay
-   handling, record/packet framing, and activation rules remain in the TLS or SSH repository.
+   handling, record/packet framing, and activation rules remain in the TLS or SSH crate.
 7. **X25519** — the RFC 7748 field representation, coordinate decoding, scalar preparation,
    fixed-structure Montgomery ladder, affine recovery, typed public boundary, and all-zero shared
    result rejection are implemented as separate readable layers. Public evidence covers both
    direct §5.2 vectors, its one- and 1,000-iteration checkpoints, the complete §6.1 Alice/Bob
    exchange, non-canonical and high-bit input behavior, exact wire length, rejection, generic
    dispatch, and development-only differential comparison with `x25519-dalek` 3.0.0. Private and
-   shared-secret owners are non-`Clone`, redacted, and zeroizing. Protocol repositories still own
+   shared-secret owners are non-`Clone`, redacted, and zeroizing. Protocol crates still own
    entropy adapters, ephemeral-key lifetime, transcript authentication, key-share framing, and
    KDF inputs.
 8. **SHA-512 and Ed25519** — SHA-512 is implemented as a complete independent FIPS 180-4 path with
@@ -95,7 +95,7 @@ Each algorithm change must include:
    prehashed suite. TLS/SSH transcript construction, key identifiers, certificates, and
    negotiation remain protocol-owned.
 
-9. **P-256, ECDH, and ECDSA verification** — the SP 800-186 curve is implemented once as
+9. **P-256, ECDH, and ECDSA** — the SP 800-186 curve is implemented once as
    readable 256-bit limb arithmetic with a fold-based reduction derived from the prime's form,
    distinct field and scalar residue types, Renes–Costello–Batina complete projective addition
    in its printed 43-step order, and fixed-structure scalar multiplication. ECDH exposes
@@ -107,8 +107,8 @@ Each algorithm change must include:
    12 CAVP PKV P-256 cases, RFC 6979 A.2.5 (published `k` values and exact signatures), all 15
    CAVP SigGen `(d, k) -> (r, s)` cases and 15 CAVP SigVer verdicts, range and tampering
    boundaries, and development-only byte-identical differential comparison with the `p256`
-   crate 0.14.0. Randomized `k`, DER signature framing, compressed points, and other curves
-   and hashes remain deliberately unsupported.
+   crate 0.14.0. Randomized `k`, DER signature framing, and compressed points remain
+   deliberately unsupported (P-384/SHA-384 arrived in item 14).
 
 10. **RSA primitive and RSASSA-PSS verification** — the RFC 8017 integer engine (`BigUint`,
     Montgomery `modpow`) and `RsaPublicKey`/`RsaPrivateKey` owners moved from `crypto-legacy`
@@ -174,19 +174,19 @@ API clarity, and flexibility come first, so no optimized implementation is plann
 reference path. Simple algorithmic choices (limb arithmetic instead of bit-serial loops) are
 acceptable when they keep the code and its tests clear and fast.
 
-## Widening the TLS 1.3 / SSH algorithm set
+## Assurance status
 
-The next slices add the remaining commonly negotiated algorithms, each with the same evidence
-bar:
+Assurance work was **done 2026-08-28**: `../fuzz/` (five libFuzzer targets over every
+untrusted-input boundary plus fragmentation/round-trip invariants, run with a bounded budget
+during release qualification, `scripts/ci-local.sh release --product crypto`),
+`SIDE-CHANNELS.md` (a source-level constant-time review of every branch and early exit,
+classified public / secret-masked / secret-one-shot / variable-time), and the X25519 and X448
+one-million-iteration checkpoints as `#[ignore]`d tests. Still required for a production claim:
+measured timing analysis, compiler-output inspection, and an independent audit.
 
-1. Assurance work — **done 2026-08-28**: `../fuzz/` (five libFuzzer targets over every
-   untrusted-input boundary plus fragmentation/round-trip invariants, smoke-run in CI),
-   `SIDE-CHANNELS.md` (a source-level constant-time review of every branch and early exit,
-   classified public / secret-masked / secret-one-shot / variable-time), and the X25519 and
-   X448 one-million-iteration checkpoints as `#[ignore]`d tests. Still required for a
-   production claim: measured timing analysis, compiler-output inspection, and an independent
-   audit.
+No further primitives are planned.
 
-## After the first vertical slice
+## Historical cryptography
 
-- The quarantined historical-cryptography sequence is tracked in `LEGACY-ROADMAP.md`.
+- The quarantined historical-cryptography sequence is tracked in
+  [`../legacy/ROADMAP.md`](../legacy/ROADMAP.md).

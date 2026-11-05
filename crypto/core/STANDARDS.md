@@ -40,7 +40,7 @@ Supplementary validation material:
 - **Source last checked:** 2026-08-27
 
 This example is validation evidence, not the controlling algorithm definition. It does not
-publish expanded words `W_16` through `W_63`, so this repository labels those expectations as
+publish expanded words `W_16` through `W_63`, so this crate labels those expectations as
 standard-derived.
 
 Boundary validation material:
@@ -72,8 +72,8 @@ rearranging them:
 | addition modulo `2^32` | `wrapping_add` | Overflow is required algorithm behavior, not an error. |
 | big-endian word parsing | `u32::from_be_bytes` | The first input octet becomes the most-significant byte. |
 
-These choices are part of the readable reference path. An optimized implementation may exist
-beside it later, but must retain independent tests against this path and the same standard.
+These choices are part of the readable reference path. No separate optimized implementation is
+planned (`ROADMAP.md` performance policy).
 
 ## SHA-256 coverage
 
@@ -229,7 +229,7 @@ in `tests/vectors/hkdf-sha256/README.md`.
 | §3 | Keep salt, input keying material, and context roles distinct. | Separate parameters and secret-bearing PRK type; no implicit serialization or protocol-specific context construction. | Implemented in the primitive API. |
 
 HKDF owns generic byte-oriented extraction and expansion. TLS labels, SSH key material layout, and
-other protocol-specific `info` encodings remain in their protocol repositories.
+other protocol-specific `info` encodings remain in their protocol crates.
 
 The public implementation has differential tests against RustCrypto `hkdf` 0.13.0 with `sha2`
 0.11.0 across absent and present salts, varied input/context lengths, block boundaries, and the
@@ -535,7 +535,7 @@ signatures, and `verify_strict` behavior agree over 32 deterministic pure cases,
 `sign_prehashed`/`verify_prehashed` path agrees over 32 Ed25519ph cases. It offers no Ed25519ctx
 oracle; the four RFC vectors are the independent evidence for that variant. TLS certificate and
 `CertificateVerify` encodings, SSH public-key blobs and exchange hashes, key identifiers,
-transcript construction, and negotiation remain in their protocol repositories.
+transcript construction, and negotiation remain in their protocol crates.
 
 ## P-256 source baseline
 
@@ -943,5 +943,5 @@ stable retrieval location, and access date here. As code is added:
 - this coverage table changes in the same commit as the implementation status it describes.
 
 For TLS, SSH, compression formats, and error-correction schemes, protocol-specific standards
-belong in their owning repositories. This ledger covers only cryptographic primitives implemented
-by `crypto`; protocol repositories should link back to the primitive API they consume.
+belong in their owning crates (`compression`, `error-correction`, `protocols/*`). This ledger
+covers only cryptographic primitives implemented by `crypto`; protocol crates should link back to the primitive API they consume.

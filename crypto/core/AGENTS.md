@@ -15,7 +15,9 @@ obvious operations over table tricks, SIMD, assembly, or clever fusion.
 - Protocol constructions (TLS records, SSH packets) live in protocol crates; this crate supplies
   primitives and narrowly defined primitive contracts.
 - Every algorithm needs published known-answer tests, intermediate-state tests where vectors
-  provide them, negative tests, and differential tests before it is advertised as usable.
+  provide them, negative tests, and differential tests (or, where no stable independent
+  implementation exists, a complete Wycheproof suite recorded as the scheme-level oracle in
+  `STANDARDS.md`) before it is advertised as usable.
 - `STANDARDS.md` is the traceability ledger. Update it in the same change that implements or
   removes a standards-defined operation, constant, encoding rule, or state transition.
 - Every standards-derived module names the exact controlling publication and the sections it
@@ -26,8 +28,8 @@ obvious operations over table tricks, SIMD, assembly, or clever fusion.
   a locally calculated intermediate value as a vector published by the standard.
 - Store the publication revision, authoritative link, access date, and any supersession notice in
   `STANDARDS.md`; store imported vector provenance and conversions under `tests/vectors/`.
-- Performance work must not obscure the readable reference path. Add an optimized implementation
-  beside it rather than rewriting away the reference implementation.
+- Performance work must not obscure the readable reference path; no separate optimized backend is
+  planned (`ROADMAP.md` performance policy).
 - No production-security claim without side-channel review, fuzzing, differential testing, and
   an independent cryptographic audit. `SIDE-CHANNELS.md` is the review record: update its row
   for any module whose branches change. `../fuzz/` holds the libFuzzer targets; add a target when
