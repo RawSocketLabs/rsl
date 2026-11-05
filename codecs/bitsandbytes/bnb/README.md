@@ -8,23 +8,8 @@ unified `#[bin]` whole-message macro for binary protocols. No external codec
 dependency — `bnb` is self-contained.
 
 Published on crates.io as **`bitsandbytes`**; import it as `bnb`:
-`bnb = { package = "bitsandbytes", version = "0.6" }`. Docs: <https://docs.rs/bitsandbytes>.
-
-Version **0.5** extends `BitBuf` with detailed incremental attempts,
-finite EOF, and context/read-only support; stream helpers preserve buffered tails across
-protocol handoff. It changes `push` to a fallible operation and replaces lossy stream
-extraction. See the [I/O guide](src/guide/io.rs) for usage and
-[design/migration decisions](DESIGN.md#11-incremental-decoding-and-lossless-handoff-05-candidate).
-These APIs require 0.5; see the migration notes when upgrading from 0.4.
-
-Version **0.6** adds hint-driven whole-message reads: `MessageStream::read_message`
-handles refills internally; `net::read_message` and `net::read_message_async` borrow your
-transport, `BitBuf`, and reusable scratch. Enable `net` for sync or `tokio-io` for Tokio
-without `tokio-util`; `tokio` includes both the borrowed reader and existing `BinCodec`.
-Read-ahead survives cancellation/error and protocol handoff. Stream reads now return
-`net::MessageReadError`, retaining original I/O errors, and custom positive `Incomplete`
-hints must be proven lower bounds. See the [migration guide](src/guide/io.rs) and
-[candidate evidence](DESIGN.md#12-hint-driven-whole-message-reads-06-candidate).
+`bnb = { package = "bitsandbytes", version = "0.8" }`. Docs: <https://docs.rs/bitsandbytes>.
+What changed in each release is in [`CHANGELOG.md`](CHANGELOG.md).
 
 `bnb` collapses a stack of overlapping helpers — `modular-bitfield(-msb)`,
 `bitfield-struct`, `bitbybit`, `arbitrary-int`, `num_enum`, and a `binrw`-style
@@ -49,9 +34,12 @@ codec — into one crate that is:
 | `#[derive(BitsBuilder)]` | `derive_builder` (for bit/byte structs) | required-by-default builder |
 | **`#[bin]`** | a hand-written codec | **whole-message codec**: magic/count/ctx/map/if/calc/reserved/positioning/validate |
 
-## Bitfields, enums, flags
+## Example
 
-```rust
+Not compiled here; the tested version is the crate-level example on
+[docs.rs](https://docs.rs/bitsandbytes).
+
+```rust,ignore
 use bnb::{bitfield, BitEnum, u4};
 
 #[derive(BitEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,89 +69,8 @@ assert_eq!(s.to_be_bytes(), [0x20, 0x02]);
 assert_eq!(s.rcode(), RCode::ServFail);
 ```
 
-A byte-aligned `#[derive(BitEnum)]` also gets `num_enum`-parity conversions
-(`From<Enum> for uN` always; `From<uN>`/`TryFrom<uN>` depending on the catch-all),
-so a magic-byte enum needs no hand-written `From` impl or round-trip test.
-
-`#[bitflags]` packs named single-bit flags into one integer with full set algebra;
-a flag set implements `Bits`, so it nests in a `#[bitfield]` and in a `#[bin]`
-message:
-
-```rust
-use bnb::bitflags;
-
-#[bitflags(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct TcpFlags { fin: bool, syn: bool, rst: bool, psh: bool, ack: bool, urg: bool, ece: bool, cwr: bool }
-
-let f = TcpFlags::SYN | TcpFlags::ACK;
-assert!(f.contains(TcpFlags::SYN));
-assert!(f.ack()); // per-flag accessor
-```
-
-## The `#[bin]` whole-message codec
-
-`#[bin]` folds the read/write codec and a required-by-default builder over one
-struct. It reads/writes fields at arbitrary bit offsets, so the **same** attribute
-handles byte-aligned headers and sub-byte frames. A field that is another
-`#[bitfield]`/`BitEnum`/`#[bitflags]` nests with no glue.
-
-```rust,ignore
-use bnb::{bin, bitfield, u3, u4, BitEnum};
-
-#[bin(big, validate = header_soundness)]
-#[derive(Debug, Clone, PartialEq)]
-struct Header {
-    id: u16,
-    flags: Flags,        // a 16-bit #[bitfield], nested as a leaf
-    qdcount: u16,
-    ancount: u16,
-    nscount: u16,
-    arcount: u16,
-}
-
-// Derived & framed: `len` is never stored — it is read into a temp that drives the
-// Vec, and recomputed from the data on write, so it can't drift.
-#[bin(big, magic = 0xCAFEu16)]
-#[derive(Debug, Clone, PartialEq)]
-struct Frame {
-    #[br(temp)]
-    #[bw(calc = self.payload.len() as u8)]
-    len: u8,
-    #[br(count = len)]
-    payload: Vec<u8>,
-}
-
-let header = Header::builder().id(0x1234).flags(flags)
-    .qdcount(1).ancount(1).nscount(0).arcount(0).build()?; // Err names any unset field
-let bytes = header.to_bytes()?;            // -> 12 bytes
-let parsed = Header::decode_exact(&bytes)?; // exact inverse
-```
-
-The generated API per `#[bin]` type: `decode` (over a `Source` cursor) / `decode_all` /
-`decode_iter` / `peek` / `decode_exact` to read; `to_bytes` / `encode` (to any `io::Write`) /
-`BitEncode::bit_encode` (to a `Sink`) to write; and `Type::builder()` / `Type::new(…)`. See
-[`examples/bin_message.rs`](examples/bin_message.rs) for a complete, runnable DNS-header +
-framed-payload round-trip.
-
-### Directives & I/O
-
-- **Struct-level:** `big`/`little`, `bits = msb|lsb`, `read_only`/`write_only`,
-  `no_builder`, `forward_only`, `magic = <expr>`, `ctx(name: Ty, …)`,
-  `validate = <path>`.
-- **Field-level** (`#[br]`/`#[bw]`): `count`, `ctx { … }`, `temp` + `calc`, `if(…)`,
-  `map`/`try_map` (+ inverse `bw(map)`), `parse_with`/`write_with`, `ignore`,
-  `pad_before/after` / `align_before/after` / `restore_position`,
-  `#[reserved]` / `#[reserved_with(…)]`, and `#[try_str]` (a `Debug`-rendering hint —
-  a byte buffer prints as a string when valid UTF-8, else hex).
-- **I/O ladder:** decode from a `&[u8]` slice (`BitReader`), a forward `Read`
-  (`StreamBitReader`), a bounded retain-and-seek socket adapter (`BufSource`), a pushable
-  in-memory buffer (`BitBuf`), or a `Read + Seek` file (`SeekReader`); with the opt-in
-  **`bytes`** feature, the zero-copy `BytesReader`/`BytesWriter`.
-
-`validate` gates `build()` only — the **parser stays permissive** (it never rejects
-representable input, per the dual-use rule), so deliberately malformed messages are
-still decodable.
+More examples — flags, `#[bin]` messages, the I/O ladder — are in the doctested
+[guide](https://docs.rs/bitsandbytes/latest/bnb/guide/) and [`examples/`](examples/README.md).
 
 ## Bit order vs. byte order
 
@@ -185,28 +92,19 @@ mixed in one struct.
 ## Crate layout
 
 `bnb` (this crate, the runtime types) re-exports the macros from `bnb-macros` (the
-proc-macro crate). Depend only on `bnb`. The optional `bytes` feature adds the
-`bytes`-crate I/O adapters; the core is otherwise dependency-light.
+proc-macro crate). Depend only on `bnb`.
+
+| Feature | Adds |
+|---|---|
+| `std` *(default)* | the `std::io` reader/writer ladder |
+| `bytes` | zero-copy `bytes`-crate adapters |
+| `net` | `MessageStream` / `MessageDatagram` socket helpers |
+| `tokio-io` | borrowed `net::read_message_async` over Tokio `AsyncRead` |
+| `tokio` | `BinCodec` for `tokio_util` framing (implies `bytes`, `tokio-io`) |
+| `mock` | in-memory test transports for `net` code |
+
+Details: [Feature flags](https://docs.rs/bitsandbytes/latest/bnb/#feature-flags--no_std).
+Credits to the crates that shaped `bnb` are in [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md).
 
 See [`DESIGN.md`](DESIGN.md) for the design rationale and [`ROADMAP.md`](ROADMAP.md)
 for the capability/status summary.
-
-## Inspiration
-
-`bnb` collapses the capabilities of several excellent crates into one. The
-arbitrary-width integers echo [`arbitrary-int`]; the bitfield packing echoes
-[`modular-bitfield`], [`bitfield-struct`], and [`bitbybit`]; the enum ⇄ integer
-mapping echoes [`num_enum`]; and — most of all — the declarative, bidirectional
-codec and its `#[br]`/`#[bw]` attribute vocabulary are modeled on
-[`binrw`](https://github.com/jam1garner/binrw), so the two feel like one toolkit.
-
-`bnb` shares no code with any of them — it is a from-scratch implementation,
-extended to do the one thing a byte-oriented `Read + Seek` codec cannot: read and
-write fields at arbitrary **bit** offsets. See [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md)
-for the full credit.
-
-[`arbitrary-int`]: https://crates.io/crates/arbitrary-int
-[`modular-bitfield`]: https://crates.io/crates/modular-bitfield
-[`bitfield-struct`]: https://crates.io/crates/bitfield-struct
-[`bitbybit`]: https://crates.io/crates/bitbybit
-[`num_enum`]: https://crates.io/crates/num_enum

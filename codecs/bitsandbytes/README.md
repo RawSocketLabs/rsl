@@ -45,7 +45,10 @@ and whole-message encoding one shared model—from a single flag to a streaming 
 
 ## A layout that looks like the spec
 
-```rust
+Not compiled here; the [guide](https://docs.rs/bitsandbytes/latest/bnb/guide/) holds the
+doctested versions.
+
+```rust,ignore
 use bnb::{bitfield, u3, u4};
 
 // Fields are declared in the same order as an MSB-first protocol diagram.
@@ -92,14 +95,14 @@ Or add it directly:
 
 ```toml
 [dependencies]
-bnb = { package = "bitsandbytes", version = "0.3.2" }
+bnb = { package = "bitsandbytes", version = "0.8" }
 ```
 
 For `no_std + alloc`, disable the default `std` feature:
 
 ```toml
 [dependencies]
-bnb = { package = "bitsandbytes", version = "0.3.2", default-features = false }
+bnb = { package = "bitsandbytes", version = "0.8", default-features = false }
 ```
 
 Optional features add `bytes` adapters, Tokio codecs, standard socket helpers, and
@@ -107,7 +110,7 @@ in-memory mock transports without changing the core data model.
 
 ## Explore
 
-- **[Crate overview and quick start](bnb/README.md)** — the practical API tour.
+- **[Crate overview](bnb/README.md)** — what crates.io shows: install, one example, feature flags.
 - **[Guided documentation](https://docs.rs/bitsandbytes/latest/bnb/guide/)** — runnable,
   doctested walkthroughs from numbers through full codecs.
 - **[Examples](bnb/examples/README.md)** — DNS, IPv4, AIS, CAN signals, WAV, TLV,
@@ -123,7 +126,7 @@ implementations, but remains pre-1.0 while its public API earns a long-term SemV
 commitment. The test suite includes golden wire vectors, property-based round trips,
 compile-fail diagnostics, arbitrary-input robustness checks, and fuzzing.
 
-The workspace contains two independently published crates:
+This directory contains two independently published crates:
 
 | Crate | Path | Role |
 |---|---|---|

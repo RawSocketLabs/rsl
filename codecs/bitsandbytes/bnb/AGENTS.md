@@ -11,7 +11,8 @@ is entirely in-house — `binrw` is an inspiration, not a dependency (see
 `ACKNOWLEDGMENTS.md`); `DESIGN.md` has the design rationale.
 
 > Canonical agent-guidance file for this crate; `CLAUDE.md` is a symlink to it, and
-> the repo-root `README.md` is the user-facing overview.
+> [`../README.md`](../README.md) is the landing page; `README.md` here is what crates.io
+> renders.
 >
 > **Published as `bitsandbytes` / `bitsandbytes-macros`; imported as `bnb` / `bnb_macros`**
 > (via `[lib] name`). Downstream: `bnb = { package = "bitsandbytes" }`, then `use bnb`.
@@ -121,7 +122,7 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   — a derive cannot re-emit the item. The bare derives
   stay usable directly for read/write without the `#[bin]` sugar.
 - **Struct-level options:** `read_only` / `write_only` (directional codecs),
-  `no_builder`, `bits = msb|lsb`, `bytes = big|le` (`big`/`little`),
+  `no_builder`, `bits = msb|lsb`, `bytes = big|little`,
   `allow_byte_aligned`.
 - **Struct-level wire mapping (`bin_struct_mapped`):** a *logical* struct serializes via a
   separate *wire* type, two forms. **Closure form:** `map = |w: Wire| Self` / `try_map = |w:
@@ -293,7 +294,7 @@ in the layer that matches its subject:
   Display + the `Source`/`Sink` trait defaults via tiny in-test impls, `error`/`builder`).
 - **`component`** — inline `#[cfg(test)] mod component` in `src/*.rs`, next to the adapter it
   exercises: `bitstream.rs` for the I/O ladder (`BufSource`/`SeekReader`/`StreamBitReader`/
-  `BitBuf`/the `bytes` adapters), `net.rs` for the `mock`-driven `Message*` wrappers, `codec.rs`
+  `BitBuf`/the `bytes` adapters), `net.rs` for the `mock`-driven `Message*` wrappers, `framing.rs`
   for the `tokio` `BinCodec`. (`#[bin]` works inside the crate's own test mods via
   `extern crate self as bnb`.)
 - **`macro_`** — `tests/`, `mod macro_`. One generated surface over a slice (`#[bitfield]` /
@@ -316,66 +317,37 @@ for the entire monorepo. The [CI policy](../../../docs/CI.md) defines selection 
 qualification; an upstream codec change must not omit consumer behavior tests.
 
 ```bash
-cargo test                                  # whole workspace (default features)
-cargo test unit                             # one layer at a time (filters by mod name):
-cargo test macro_                           #   unit · macro_ · component · integration · e2e · property
+cargo test -p bitsandbytes                  # default features
+cargo test -p bitsandbytes -- unit          # one layer at a time (filters by mod name):
+cargo test -p bitsandbytes -- macro_        #   unit · macro_ · component · integration · e2e · property
 cargo test -p bitsandbytes --features bytes # + the bytes-crate I/O adapters
 cargo test -p bitsandbytes --features mock  # + net socket helpers, mocks, the sealed-trait UI test
 cargo test -p bitsandbytes --features tokio # + the async BinCodec (Framed/UdpFramed)
 # Coverage (cargo-llvm-cov): the runtime crate `bnb/src` is 90–100% per file. The macro crate
 # reads lower because its diagnostic arms are exercised only by trybuild (separate rustc
 # processes llvm-cov can't instrument) — not a true gap; still test real generated paths.
-cargo llvm-cov --all-features --ignore-filename-regex 'guide/|nostd-check/'
+cargo llvm-cov -p bitsandbytes --all-features --ignore-filename-regex 'guide/|nostd-check/'
 # no_std proof: build the detached smoke crate for a bare-metal target (std off).
 # A host `--no-default-features` build still links std, so the cross target is the
 # one that actually fails on a leak.
-cargo build --manifest-path bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
+cargo build --manifest-path codecs/bitsandbytes/bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
 # MSRV floor (1.85): let-chains are unstable below 1.88 — DON'T use them; verify with:
-cargo +1.85.0 check --workspace
+cargo +1.85.0 check -p bitsandbytes -p bitsandbytes-macros
 ```
 
-- Inline tests in `src/*.rs`: `mod unit` (int ranges/conversions, `Bits` impls, the
-  `BitReader`/`BitWriter` cursor + `BitError`, `error`/`builder`) and `mod component` (the I/O
-  ladder in `bitstream.rs`, the `mock`-driven wrappers in `net.rs`, the `tokio` `BinCodec` in
-  `codec.rs`).
+Anchor files (`ls tests/` for the rest; one concern per file):
+
 - `tests/protocol_shapes.rs` — the **real** DNS `State` (0x1002), nested
-  `OpCode`/`Flags` positions, catch-all preservation, exhaustive `Op`, SMB
-  `SecurityMode` (LSB) / `Capabilities` (LE), manual ranges, and the `Bitfield`
-  seam. Golden byte vectors.
-- `tests/comprehensive.rs` — the full bitfield matrix: every backing (u8..u128),
-  msb/lsb mirroring, all three width forms agreeing, masking/overflow,
-  partial-width padding, 3-level nesting, byte-order, exhaustive/catch-all/
-  contract-violation enums (incl. the documented panic for a non-exhaustive
-  no-catch-all enum), and UInt boundaries + error `Display`.
-- `tests/flags.rs` — `#[bitflags]`: consts, set algebra + operators, per-flag
-  accessors, `iter`, retain vs truncate, nesting in a `#[bitfield]`.
-- `tests/builder.rs` — `#[derive(BitsBuilder)]`: required-field errors, `default`
-  / `default = expr`, the `#[bitfield]` intercept, and the plain-struct path.
-- `tests/bin_*.rs` — the `#[bin]` surface, one concern per file: `bin_macro`
-  (the fold), `bin_magic`, `bin_count` (+ `bin_count_adversarial`: hostile
-  `count` — over-count → graceful EOF, `u32::MAX` → no pre-alloc, under-count
-  → `TrailingBytes`), `bin_ctx`(+`_layer2`), `bin_map`,
-  `bin_if`, `bin_calc_temp`, `bin_reserved`, `bin_ignore`, `bin_parse_with`,
-  `bin_positioning`/`bin_restore_position`, `bin_validate`, `bin_byte_order`
-  (+ `bin_order_matrix`: the message-level endian × bit-order 2×2),
-  `bin_fold`. (The low-level I/O-ladder adapter tests — `BufSource`/`SeekReader`/`BitBuf`/the
-  `bytes` adapters / `as_read`-`as_write` — moved to `src/bitstream.rs`'s `mod component`.)
-- `tests/bitstream_*.rs` — the low-level derives/runtime: `bitstream_dmr`(+`_frame`)
-  (the `108|48|108` DMR burst that motivated bit offsets), `bitstream_nested`,
-  `bitstream_payload`, `bitstream_bitorder`, `bitstream_builder`, `bitstream_guard`
-  (the right-tool-guard override). (`bitstream_source`/`_seek`/`_entry`/`_errors` moved to
-  `src/bitstream.rs`'s `mod component`.)
-- Transport `e2e` in `tests/`: `net.rs` (`--features net`, real sockets), `net_mock.rs`
-  (`--features mock`, mock-stream session + loopback UDP), `codec_tokio.rs` (`--features tokio`,
-  `Framed`/`UdpFramed` round-trips). The one-call `component` tests for these live inline in
-  `src/net.rs` and `src/codec.rs`.
-- `tests/compile_fail.rs` + `tests/ui/*` — trybuild snapshots proving `#[bin]` /
-  `#[bitfield]` / derive misuse is rejected with a clear, well-spanned error
-  (`bin_count_not_fixed`, `bin_ctx_needs_context`, `bin_forward_only_no_seek`,
-  `bin_if_needs_option`, `bin_map_needs_inverse`, `bin_temp_needs_calc`,
-  `bin_validate_needs_builder`, `bitfield_range_reversed`,
-  `bitstream_byte_aligned`). `tests/ui_seal/*` (run under `--features mock`) proves the sealed
-  `DatagramSocket` rejects a downstream impl. Regenerate with `TRYBUILD=overwrite`.
+  `OpCode`/`Flags` positions, SMB `SecurityMode` (LSB) / `Capabilities` (LE). Golden byte vectors.
+- `tests/comprehensive.rs` — the full bitfield matrix: every backing (u8..u128), msb/lsb,
+  width forms, nesting, byte order, enum contracts, UInt boundaries.
+- `tests/bin_*.rs` — the `#[bin]` surface, one directive or concern per file.
+- Transport `e2e`: `net.rs` (`--features net`), `net_mock.rs` (`--features mock`),
+  `codec_tokio.rs` (`--features tokio`); their one-call `component` tests live inline in
+  `src/net.rs` and `src/framing.rs`.
+- `tests/compile_fail.rs` — trybuild snapshots under `tests/ui/` (plus the feature-gated
+  `ui_seal/`, `ui_seek/`, `ui_countprefix_seal/` dirs) proving misuse is rejected with a clear,
+  well-spanned error. Regenerate with `TRYBUILD=overwrite`.
 
 `#![deny(missing_docs)]` is on (both crates); the `uN` aliases are the one
 allowed exception. Keep the public surface fully documented.
@@ -388,14 +360,14 @@ allowed exception. Keep the public surface fully documented.
   16-bit field. Result: `bnb` matches `bitbybit`, beats `modular-bitfield`, within
   noise of hand-written (pack ~870ps, unpack ~192ps).
 - `benches/bitstream_bench.rs` — the `#[bin]`/derive codec throughput.
+- `benches/message_bench.rs` — whole-message encode/decode.
+- `benches/seek_bench.rs` — the seekable reader adapters.
 
 Run: `cargo bench -p bitsandbytes`.
 
 ## Examples
 
-- `enums` — `#[derive(BitEnum)]` in depth: exhaustive, catch-all (the `num_enum`
-  pattern), nesting, and checked-int error handling.
-- `standalone` — building the IPv4 `0x45` byte from the field types directly.
+See [`examples/README.md`](examples/README.md) (indexed by feature).
 
 ## Scope notes
 

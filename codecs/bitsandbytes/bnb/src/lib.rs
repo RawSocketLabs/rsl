@@ -67,8 +67,8 @@ These are independent knobs, which is the whole point:
 
 - `bits = msb | lsb` — does the **first** declared field land in the high or low
   bits of the backing integer. Default: `msb` (matches RFC ASCII-art layouts).
-- `bytes = big | le` — endianness of the backing integer when serialized.
-  Default: `be`.
+- `bytes = big | little` — endianness of the backing integer when serialized.
+  Default: `big`.
 
 # The `#[bin]` codec
 

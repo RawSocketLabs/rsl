@@ -1,7 +1,7 @@
 # `bnb` examples
 
 Runnable, self-checking walkthroughs — each ends in `all checks passed` (or panics). They're
-grouped by what they exercise; the [guide module](https://docs.rs/bnb/latest/bnb/guide/) is the
+grouped by what they exercise; the [guide module](https://docs.rs/bitsandbytes/latest/bnb/guide/) is the
 prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--features <feat>]`.
 
 ## Field types & macros (no codec)
@@ -11,7 +11,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `standalone` | `#[bitfield]` + `#[derive(BitEnum)]` packed/unpacked directly — the dependency-light path | `--example standalone` |
 | `enums` | `#[derive(BitEnum)]` in depth: exhaustive, `#[catch_all]` (the `num_enum` pattern), nesting, checked-int errors | `--example enums` |
 | `flags` | `#[bitflags]` in depth: set algebra, per-flag accessors, iteration, **retain-vs-truncate** of unknown bits, nesting in `#[bin]` | `--example flags` |
-| `bitfield_bytes` | `#[bitfield]` **byte order**: the declared `bytes = big\|le` drives `to_bytes()`/`from_bytes()`; `to_be_bytes`/`to_le_bytes` are the explicit override | `--example bitfield_bytes` |
+| `bitfield_bytes` | `#[bitfield]` **byte order**: the declared `bytes = big\|little` drives `to_bytes()`/`from_bytes()`; `to_be_bytes`/`to_le_bytes` are the explicit override | `--example bitfield_bytes` |
 
 ## The `#[bin]` whole-message codec
 

@@ -8,7 +8,18 @@ benchmarked. This file is the capability checklist; for the design rationale see
 [`examples/`](examples/README.md) suite (indexed by feature), and for credit (binrw and the
 bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md).
 
-[`bnb::guide`]: https://docs.rs/bnb/latest/bnb/guide/
+[`bnb::guide`]: https://docs.rs/bitsandbytes/latest/bnb/guide/
+
+## 0.8.0 — prefix decoding, bulk byte runs, bitfield `From`
+
+- [x] Stateless slice prefix decoding ([`DESIGN.md` §15](DESIGN.md#15-stateless-slice-prefix-decoding-080)),
+      bulk byte-run copies ([§16](DESIGN.md#16-bulk-byte-runs-080)), and breaking `From`
+      conversions for `#[bitfield]` over its backing integer ([§17](DESIGN.md#17-from-conversions-for-bitfield-080-breaking)).
+
+## 0.7.x — dispatch diagnostics and an owned seek reader
+
+- [x] 0.7.0: closed-enum dispatch misses attributed by type, breaking ([`DESIGN.md` §13](DESIGN.md#13-type-attributed-enum-dispatch-diagnostics-070)).
+- [x] 0.7.1: `BufSeekReader`, a buffered seek reader for owned inputs ([§14](DESIGN.md#14-owned-buffered-seek-reader-071)).
 
 ## 0.6.0 — hinted message reads
 
@@ -17,7 +28,7 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 - [x] Strict additional-byte lower bounds, automatic invalidation on compaction/rebasing,
       bounded read-ahead, immediate finite EOF and lossless byte-padded handoff.
 - [x] Non-SOCKS protocol evidence, lower-bound/async cancellation tests, separate allocation
-      profiling and baseline-controlled performance gate; see [`DESIGN.md` §12](DESIGN.md#12-hint-driven-whole-message-reads-06-candidate).
+      profiling and baseline-controlled performance gate; see [`DESIGN.md` §12](DESIGN.md#12-hint-driven-whole-message-reads-060).
 - [x] Final post-fix fuzz/mutation/reviewer gate (2026-09-09, no remaining findings).
 - [x] Source delivery: clean-tree container and hosted CI; [PR #80](https://github.com/RawSocketLabs/rsl/pull/80)
       merged as `cd5db374`. The generated version PR has separate archive/release gates.
@@ -38,7 +49,7 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 - [x] Generic evidence: DMR/packed bits, compressed DNS envelopes, borrowed DER,
       contextual/versioned records, stateful fuzz, mutation and allocation checks.
 - [x] Final independent review and evidence reconciliation before commit (2026-09-08). See
-      [`DESIGN.md` §11](DESIGN.md#11-incremental-decoding-and-lossless-handoff-05-candidate).
+      [`DESIGN.md` §11](DESIGN.md#11-incremental-decoding-and-lossless-handoff-050).
 - [x] Deliver the coordinated **0.5.0 runtime/macros pair** through release-plz; verify
       versions/pin, archives, tags, and registry consumer; restore patch compatibility
       gates against published 0.5.0 (223 rules pass in each feature mode). Delivery receipt:
@@ -65,7 +76,7 @@ Audit follow-ups (not silently waived or bundled into this feature):
 - [x] **`u1`..`u127`** (`UInt<T, N>`) — range-checked arbitrary-width unsigned
       integers; `new`/`try_new`/`from_raw`, `From`/`TryFrom`, `MIN`/`MAX`.
 - [x] **`#[bitfield]`** — integer-backed packing with independent `bits = msb|lsb` and
-      `bytes = big|le`; inferred / `#[bits(N)]` / `#[bits(A..=B)]` width forms; getters,
+      `bytes = big|little`; inferred / `#[bits(N)]` / `#[bits(A..=B)]` width forms; getters,
       `with_*`/`set_*`, order-respecting `to_bytes`/`from_bytes` (the declared `bytes`) plus the
       endianness-explicit `to_be_bytes`/`to_le_bytes` override; nests in other bitfields and in `#[bin]`;
       `From` both ways over the backing integer.
@@ -242,10 +253,10 @@ survived real use. Suggested order: **A** and **B** run in parallel and drive **
 (e.g. `0.9`) in a real tool for a release or two and tag **`1.0.0`** once a cycle
 passes with no breaking change needed.
 
-### A. Live testing / dogfooding — **satisfied** (the `RawSocketLabs/protocols` workspace)
+### A. Live testing / dogfooding — **satisfied** (`protocols/` in the rsl workspace)
 
 The load-bearing gate is met: `bnb` now has a **real, multi-protocol consumer** — the
-`RawSocketLabs/protocols` workspace — built from scratch on the codec across three layers.
+`protocols/` tree in the rsl workspace — built from scratch on the codec across three layers.
 
 - [x] **Real protocols on `bnb`, more than the 2–3 asked for** — `link/ethertype` (`BitEnum`
       + catch_all), `application/dns` (the flagship: `#[bitfield]` header, ctx-`tag` `RData`
@@ -265,9 +276,10 @@ The load-bearing gate is met: `bnb` now has a **real, multi-protocol consumer** 
 **What dogfooding confirmed:** the feature surface held — `BitEnum`+catch_all, `#[bitfield]` as
 a direct RFC bit-diagram, `count = <expr>`, ctx-`tag` unions, `WireLen`, `#[bin(codec)]`
 newtypes + `Sink::scratch` all carried real protocols with no workaround. **What it surfaced**
-(small, additive — see §C / the co-evolution list): a ready-made `internet_checksum` helper
-(the network crates + the `ipv4` example each hand-roll RFC 1071) and `BitDecode`/`BitEncode`
-for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neither blocks 1.0.
+(small, additive): a ready-made `internet_checksum` helper (the network crates + the `ipv4`
+example each hand-roll RFC 1071; open under §C) and `BitDecode`/`BitEncode` for
+`std::net::Ipv4Addr`/`Ipv6Addr` (done: `src/bitstream.rs`, `tests/bin_net_addr.rs`). Neither
+blocks 1.0.
 
 ### B. Correctness hardening — it parses untrusted bytes
 
@@ -275,8 +287,8 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       the "decode of arbitrary bytes never panics" proptest, plus the fixed-parser
       bijection assert; curated seed corpus). Wired into CI (the `fuzz` job: build +
       time-boxed smoke run under ASan/UBSan). Remaining: submit to **OSS-Fuzz**.
-- [x] **Zero `unsafe`** — enforced crate-wide by `unsafe_code = "forbid"` in the
-      workspace lints (a guarantee an `#[allow]` can't reopen, unlike `deny`). The macros
+- [x] **Zero `unsafe`** — enforced by `#![forbid(unsafe_code)]` at crate level in both
+      crates (a guarantee an `#[allow]` can't reopen, unlike `deny`). The macros
       never *emit* `unsafe` either, so the guarantee carries into consumer code.
 - [ ] **Miri** over the test suite — lower priority now that `unsafe` is forbidden (Miri
       mainly hunts UB reachable through `unsafe`); keep as a backstop for the codec's
@@ -329,6 +341,10 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
       rustdoc comparison cannot detect macro-expansion or behavioral changes.
       Advance the explicit baseline deliberately after release.
 - [ ] Lock the MSRV (1.85) and feature-flag set as part of the contract.
+- [ ] A ready-made `internet_checksum` (RFC 1071) helper, surfaced by dogfooding (§A).
+- [ ] Plain `BitEncode` for `ctx` types whose encode needs no context (surfaced by
+      `protocols/ROADMAP.md`).
+- [ ] A buffer-owning, transport-free framer (surfaced by `protocols/ROADMAP.md`).
 
 ### D. Docs & migration
 
@@ -366,8 +382,9 @@ for `std::net::Ipv4Addr`/`Ipv6Addr` (IPv4 models addresses as `u32` today). Neit
 
 - [x] Conventional-Commit enforcement (commitlint CI) + Conventional-Commit-driven
       release automation (`release-plz`: per-crate `CHANGELOG.md` + SemVer-bump PRs,
-      git tags on merge; crates.io publishing deferred — see `docs/RELEASING.md`).
-- [x] `CONTRIBUTING.md` (product-first, maintainer-decides model; issue-first for
+      git tags on merge; published to crates.io by the CircleCI `release` job — see
+      [`docs/RELEASING.md`](../docs/RELEASING.md)).
+- [ ] `CONTRIBUTING.md` (product-first, maintainer-decides model; issue-first for
       non-trivial work; inbound = outbound dual MIT/Apache; the local-checks + API-gate
       regen commands) and `SECURITY.md` (threat model, the dual-use "what is / isn't a
       vulnerability" scope, the security properties, private GitHub vulnerability reporting
@@ -466,7 +483,7 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       `BitEncode::encode_slice` (the `decode_vec` dual; `u8` → `write_bytes`) for context-free
       `Vec` fields, `[u8; N]` through `read_into`/`write_bytes`, and byte-aligned copy overrides
       on `BitWriter`/`BytesWriter`/`BitReader`/`BitBuf`/`BytesReader`. 2×255-byte encode
-      1.50 µs → 98 ns, decode 0.58 µs → 30 ns. See [`DESIGN.md` §16](DESIGN.md#16-bulk-byte-runs-unreleased-candidate).
+      1.50 µs → 98 ns, decode 0.58 µs → 30 ns. See [`DESIGN.md` §16](DESIGN.md#16-bulk-byte-runs-080).
 - [ ] **[perf] Remaining per-byte runs.** `LimitedSource` (needs a no-allocation,
       hint-preserving delegation), `StreamBitReader`/`BufSource`/`SeekReader`/`BufSeekReader`
       (mid-run EOF/`BufferFull`/I/O semantics must stay per-byte-identical), and unaligned runs

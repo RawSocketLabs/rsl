@@ -7,7 +7,7 @@ design rationale: the problem it solves, the shape of the solution, and the deci
 behind it. For runnable walkthroughs see the [`bnb::guide`] module; for credit see
 [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMENTS.md).
 
-[`bnb::guide`]: https://docs.rs/bnb/latest/bnb/guide/
+[`bnb::guide`]: https://docs.rs/bitsandbytes/latest/bnb/guide/
 
 ## 1. The problem
 
@@ -91,8 +91,9 @@ A proc-macro crate cannot also export runtime items, so:
 
 - **`bnb`** — the runtime: `int` (`UInt<T, N>` + `u1..u127`), `field` (`Bits`,
   `Bitfield`, `BitOrder`, `ByteOrder`), `error`, `builder`, and `bitstream` (the codec
-  runtime — cursors, traits, the I/O ladder). Re-exports the macros, so users depend
-  only on `bnb`.
+  runtime — cursors, traits, the I/O ladder) are the core; `codecs`, `wirelen`, the
+  feature-gated `net` and `framing`, and `guide` complete it (see `lib.rs` for the full
+  list). Re-exports the macros, so users depend only on `bnb`.
 - **`bnb-macros`** — `#[bitfield]`, `#[derive(BitEnum)]`, `#[bitflags]`,
   `#[derive(BitsBuilder)]`, the low-level `#[derive(BitDecode/BitEncode)]`, and `#[bin]`.
 
@@ -151,7 +152,7 @@ generated one — `repr(C)`/`repr(align(N))` cannot combine with `transparent`.
   smallest sufficient primitive. Checked (`try_new`), panicking (`new`), and masking
   (`from_raw`) constructors.
 - **`#[bitfield]`** — packs typed `Bits` fields into one backing integer, with
-  `bits = msb|lsb` and `bytes = big|le` as independent knobs, and inferred /
+  `bits = msb|lsb` and `bytes = big|little` as independent knobs, and inferred /
   `#[bits(N)]` / `#[bits(A..=B)]` (manual range) width forms. Generates getters,
   immutable `with_*` setters, in-place `set_*`, and allocation-free `*_bytes`
   conversions.
@@ -521,7 +522,7 @@ runs (`Vec<u8>`, `[u8; N]`) go further: a byte-aligned run is one slice copy (§
 generated accessors and the runtime read/write methods are `#[inline]` so they inline
 across crate boundaries.
 
-## 11. Incremental decoding and lossless handoff (0.5 candidate)
+## 11. Incremental decoding and lossless handoff (0.5.0)
 
 ### 11.1 Scope and existing capabilities
 
@@ -725,7 +726,7 @@ cannot overwrite the JSON input of an API check.
 | `cargo deny check`; `actionlint` | Pass with refreshed advisory data. Unused-license and duplicate-syn warnings remain; yanked wnaf is absent. |
 
 Benchmark, allocation, mutation, fuzz, and final reviewer evidence below complement these
-checks. A clean committed worktree must additionally pass `scripts/ci-act.sh pre-push`,
+checks. A clean committed worktree must additionally pass `scripts/ci-local.sh pre-push`,
 then exact-SHA hosted PR/main CI and release-PR/package checks before registry publication.
 
 Final independent reviewer approval: 2026-09-08, no findings or unresolved pre-commit
@@ -800,7 +801,7 @@ replace duplicated framing with the approved buffer/handoff API and prove handsh
 payload preservation in sync and async paths. Do not combine that adoption with another
 parser architecture, client/server expansion, or the independent audit follow-ups.
 
-## 12. Hint-driven whole-message reads (0.6 candidate)
+## 12. Hint-driven whole-message reads (0.6.0)
 
 ### 12.1 Scope, contracts, and migration
 
@@ -992,7 +993,7 @@ historical evidence and the standing public-API snapshot remains enforced. The n
 slice is SOCKS adoption of the published borrowed readers, preserving its existing session,
 error and handoff policies. Neither dirty SOCKS checkout nor the unrelated PNGs was changed.
 
-## 13. Type-attributed enum dispatch diagnostics (unreleased candidate)
+## 13. Type-attributed enum dispatch diagnostics (0.7.0)
 
 ### Contract and consumer boundary
 
@@ -1184,7 +1185,7 @@ under `/tmp/rsl-gate.piGQor/`: `gate-{baseline,cold}-{1,2,3}.log`,
 `allocations-cold.log`, and `disasm-summary.txt`. `superseded/` holds the earlier build's
 logs. The directory is local and does not survive a reboot.
 
-**Qualification (2026-09-20).** `scripts/ci-act.sh pre-push --base 9b29a2a8` ran against a
+**Qualification (2026-09-20).** `scripts/ci-act.sh pre-push --base 9b29a2a8` (`ci-act.sh` has since been replaced by `scripts/ci-local.sh`) ran against a
 throwaway commit of this candidate in a scratch clone; the checkout and index were untouched.
 Every selected check profile's step passed: blessed, bnb, facades, msrv, network, no-std,
 package, public-api, semver, socks, workspace, rust-dsdcc, rust-skills, and usdr. Two
@@ -1227,7 +1228,7 @@ denied-warning docs; `cargo +1.85.0 check`; the `thumbv7em-none-eabi` `nostd-che
 byte-identical `public-api.txt`; and trunk SOCKS `session` fuzz, 2,000,000 runs, exit 0
 (`fuzz-trunk-socks-session.log`). `scripts/ci-act.sh pre-push` was not repeated on this tree.
 
-## 14. Owned buffered seek reader (unreleased candidate)
+## 14. Owned buffered seek reader (0.7.1)
 
 ### Scope and contract
 
@@ -1344,7 +1345,7 @@ every bit-consuming success against `BitReader`, since both seek readers share `
 after the workspace run were doc comments only, so the workspace suite and semver-checks
 were not repeated.
 
-## 15. Stateless slice prefix decoding (unreleased candidate)
+## 15. Stateless slice prefix decoding (0.8.0)
 
 ### Scope and contract
 
@@ -1395,7 +1396,7 @@ Performance: no existing path changed; the new functions are thin wrappers over
 `decode_attempt`. Not benchmarked. Not run: mutation testing, fuzzing, MSRV (the current
 lockfile needs a newer rustc than 1.85 locally), and `scripts/ci-act.sh pre-push`.
 
-## 16. Bulk byte runs (unreleased candidate)
+## 16. Bulk byte runs (0.8.0)
 
 ### Scope and contract
 
@@ -1493,7 +1494,7 @@ Fuzzing (`cargo +nightly fuzz run`, `-max_len=2048`): `decode` 2,000,000 runs an
 `stream_decode` 2,000,000 runs, no crashes. Not run: `scripts/ci-act.sh pre-push`, which
 fails locally under Podman 5.8.7; hosted CI is the substitute for this change.
 
-## 17. `From` conversions for `#[bitfield]` (unreleased candidate, breaking)
+## 17. `From` conversions for `#[bitfield]` (0.8.0, breaking)
 
 `#[bitfield(uN)]` now emits `From<uN> for Struct` and `From<Struct> for uN`, delegating to the
 same unvalidated `from_raw`/`to_raw` conversion. A byte-aligned `BitEnum` already has

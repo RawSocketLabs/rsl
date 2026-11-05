@@ -1,4 +1,4 @@
-//! Procedural macros for the [`bnb`](https://docs.rs/bnb) crate.
+//! Procedural macros for the [`bnb`](https://docs.rs/bitsandbytes) crate.
 //!
 //! - [`macro@bitfield`] — pack typed fields into one backing integer with
 //!   explicit bit and byte order.

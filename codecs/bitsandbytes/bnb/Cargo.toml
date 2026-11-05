@@ -12,7 +12,7 @@ categories = ["encoding", "parsing", "no-std", "network-programming"]
 
 # docs.rs builds with all features (so the `std` ladder and `bytes` adapters are
 # documented) and `--cfg docsrs`, which lights up the per-item feature badges
-# (`#![cfg_attr(docsrs, feature(doc_auto_cfg))]` in lib.rs).
+# (`#![cfg_attr(docsrs, feature(doc_cfg))]` in lib.rs).
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

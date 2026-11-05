@@ -1,4 +1,4 @@
-//! `#[bitfield]` standalone serialization honors the **declared** `bytes = big|le`:
+//! `#[bitfield]` standalone serialization honors the **declared** `bytes = big|little`:
 //! `to_bytes`/`from_bytes` use it, while the endianness-explicit
 //! `to_be_bytes`/`to_le_bytes` ignore it (an override). Same logical value, declared two
 //! ways, gives two wire encodings — the proof that the byte-order knob is observable.

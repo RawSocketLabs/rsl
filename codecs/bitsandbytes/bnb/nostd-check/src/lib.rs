@@ -7,9 +7,9 @@
 //! `count`-driven `Vec` payload, a `#[bitfield]`, and a closed `BitEnum`'s checked
 //! `TryFrom` (the `UnknownDiscriminant`/`String` path).
 //!
-//! Run it (from the repo root):
+//! Run it (from the rsl workspace root):
 //! ```text
-//! cargo build --manifest-path bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
+//! cargo build --manifest-path codecs/bitsandbytes/bnb/nostd-check/Cargo.toml --target thumbv7em-none-eabi
 //! ```
 #![no_std]
 #![allow(missing_docs)]

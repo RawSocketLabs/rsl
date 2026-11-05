@@ -1,4 +1,4 @@
-//! **`bitfield_bytes`** — a `#[bitfield]`'s declared byte order (`bytes = big|le`) drives
+//! **`bitfield_bytes`** — a `#[bitfield]`'s declared byte order (`bytes = big|little`) drives
 //! `to_bytes()`/`from_bytes()`, while `to_be_bytes`/`to_le_bytes` are the explicit override.
 //!
 //! The *same* logical value, declared big- vs little-endian, serializes to *different* wire bytes
