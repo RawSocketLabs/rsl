@@ -1,7 +1,8 @@
 # devices — agent & contributor guide
 
 > `CLAUDE.md` is a symlink to this file. Inherits the workspace-root `../AGENTS.md`; each
-> driver carries its own `AGENTS.md` with driver-specific detail.
+> driver carries its own `AGENTS.md` with driver-specific detail. Shared crates carry no
+> `AGENTS.md`: the Layout table and Layout rules are their guide, their crate docs their detail.
 
 **What this is.** Pure-Rust drivers for hardware, grouped by kind: `devices/<kind>/<device>`,
 for example `sdr/usdr`. A driver's simulator, oracle and driver-interface crates live inside
@@ -24,9 +25,9 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
 | `sdr/frontend/` | `sdr-frontend`, `sdr-frontend-sim` (`sim/`) | libusdr's front-end board probe (`device_fe.c`: order, `fe=` hints, every board's identification) and every bring-up it runs on the uSDR, XSDR and LSDr (`pciefe`, `xmass`, `supersync`, `simplesync`, `exm2pe`, `fe1005000`, `fe4ch4007200`) with the boards' controls, shared by those drivers (`no_std` core, blocking probe behind `std`); and the M.2 boards' register models the uSDR and XSDR sims share |
 | `sdr/stream/` | `sdr-stream`, `sdr-stream-sim` (`sim/`) | the FPGA stream engine the uSDR and LMS7 family gateware share at the same addresses (`ipblks/streams/`): its register sequences (`EngineSequence`: RX DMA and front end, sync unit, TX cores), RX burst arithmetic (`BurstPlan`) and both TX cores' announcements and status, `no_std`; and the RX engine, TX cores and sync unit models the uSDR and XSDR sims share |
 | `sdr/gearbox/` | `sdr-gearbox` | libusdr's FPGA FIR gearbox microcode (`ipblks/fgearbox.c`: each 7-series decimation and interpolation table), moved out of `usdr` when the XSDR's DUC/DDC gateware needed it; `no_std`, no dependencies |
-| `sdr/formats/` | `sdr-formats` | libusdr's host sample-format conversions (`xdsp/conv.c`: `get_transform_fn` and its generic kernels), moved out of `usdr` (which re-exports them as `usdr::dsp`) when the XSDR's and LimeSDR's streams needed them; `no_std`, no dependencies |
+| `sdr/formats/` | `sdr-formats` | libusdr's host sample-format conversions (`xdsp/conv.c`: `get_transform_fn` and its generic kernels), moved out of `usdr` (which re-exports them as `usdr::dsp`) when the XSDR's streams and the LimeSDR's stream setup needed them; `no_std`, no dependencies |
 | `sdr/cal/` | `sdr-cal` | libusdr's calibration mathematics (`cal/opt_func.c` integer searches, `cal/cal_filt.c` sinusoid fits), moved out of `usdr` (which re-exports it as `usdr::cal`) when the XSDR's TX quality check needed the fit; `std` (floating-point `sin`/`cos`) |
-| `sync/pe_sync/` | `pe-sync`, `pe-sync-sim`, `pe-sync-oracle`, `pe-sync-nostd-check` | the PE_SYNC clock-distribution board driver: libusdr's whole open and close |
+| `sync/pe_sync/` | `pe-sync`, `pe-sync-sim`, `pe-sync-oracle`, `pe-sync-nostd-check` | the PE_SYNC clock-distribution board driver: libusdr's whole open and close, and the LMX chips' unused operations at chip-level parity (not offered by `Device`) |
 
 ## Layout rules
 
@@ -35,41 +36,14 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   with no `rsl-` prefix.
 - Kinds now: `sdr/` (uSDR, LMS7 family, LSDr, LimeSDR, RTL-SDR) and `sync/` (PE_SYNC clock distribution).
 - Code shared by several drivers of one kind (an SDR tune/rate/stream abstraction, say)
-  lives in `devices/<kind>/` once a second driver needs it, not before. The first is
-  `sdr/frontend` (`sdr-frontend`, 2026-10-13): libusdr's front-end probe
-  (`device/device_fe.c`), every board's identification and every board's bring-up and
-  controls the probe's drivers run (`pciefe`, `xmass`, `supersync`, `simplesync`,
-  `exm2pe`, `fe1005000`; 2026-10-18; `fe4ch4007200`, 2026-10-21), run by the uSDR, XSDR and LSDr drivers whose
-  libusdr probes their connector. `Connector::probe` brings the board up whole and hands
-  the driver the `FrontEnd` libusdr keeps (`struct dev_fe`); the driver keeps it, offers
-  the controls its libusdr device offers, and re-exports the crate's types. The
-  boards' register models live beside it (`sdr/frontend/sim`, `sdr-frontend-sim`), shared
-  by the sims whose connector admits them (`usdr-sim`, `xsdr-sim`); a board only one
-  driver admits or reaches keeps its model in that driver's sim (fe1005000 in
-  `lsdr-sim`; fe4ch4007200 too, on the I2C core 1 only that sim answers).
-  The second is `sdr/stream` (`sdr-stream`, 2026-10-18), the stream engine's registers
-  and burst arithmetic, moved out of `usdr` (which re-exports them where its board and
-  `NativeUsb` found them) when the XSDR's RX streams needed them; which logical channel
-  rides which lanes, host formats and the RF side of a stream stay in each driver. Its
-  sim model (`sdr/stream/sim`, `sdr-stream-sim`: the RX engine and sync unit) is shared
-  likewise. The XSDR's TX streams (2026-10-19) moved the original TX core's announcement
-  words, status decoding and create checks into `sdr-stream` (re-exported by `usdr`'s
-  `fpga/tx_stream.rs`) and the TX core model with its transport buffers into
-  `sdr-stream-sim` (re-exported by `usdr-sim`); the extended TX core's announcement cache
-  followed (2026-10-21) when the XSDR's extended TX front end streamed on it. The third is
-  `sdr/cal` (`sdr-cal`, 2026-10-19): libusdr's calibration mathematics, `usdr`'s
-  `cal::{fit, search}` (re-exported there), when the XSDR's TX quality check needed the
-  fit; the fit uses the search, so both moved. The fourth is `sdr/gearbox`
-  (`sdr-gearbox`, 2026-10-21): the FPGA FIR gearbox's microcode tables, `usdr`'s
-  `portable/fir_tables.rs`, when the XSDR's DUC/DDC gateware needed them; the LSDr's
-  sample rate loads them too, with five decimation tables only it uses (×3, ×5, ×6, ×64,
-  ×128). Each driver keeps its own loader, as their write targets and gaps differ. The
-  fifth is `sdr/formats` (`sdr-formats`, 2026-10-21): libusdr's host sample-format
-  converters, `usdr`'s `dsp::{Converter, SampleFormat, ConversionError}` (re-exported
-  there), when the XSDR's streams took its other formats and the LimeSDR's stream setup
-  selects a converter; a crate of its own rather than a part of `sdr-stream`, whose engine
-  the LimeSDR does not run (skeptic review, recorded in `sdr/xsdr/PORTING.md`). Which
-  formats a stream offers, and its buffer element types, stay in each driver.
+  lives in `devices/<kind>/` once a second driver needs it, not before. Each driver keeps
+  what is its own: which logical channel rides which lanes, the formats a stream offers and
+  its buffer element types, the RF side of a stream, and its own loader where write targets
+  and gaps differ. A driver keeps the old paths by re-exporting the moved items. A shared
+  crate's sim model sits beside it (`<crate>/sim`), shared by the sims whose connector
+  admits it; a board only one driver admits or reaches keeps its model in that driver's
+  sim (fe1005000 in `lsdr-sim`; fe4ch4007200 too, on the I2C core 1 only that sim
+  answers). The extractions so far are under [Extractions](#extractions).
 - Code every kind's drivers share lives in `devices/hal` (`hal`): libusdr's
   `ls_op` seam (`Bus`, `BusError`, I2C/SPI addresses), the typed-register traits and the
   portable `Sequence` seam with its blocking executor. It is `no_std` (std items behind
@@ -127,3 +101,13 @@ its directory (`sdr/usdr/{sim,pcie,oracle}`). All of them are unpublished.
   depend on them.
 - FFI crates wrapping a vendor's C library stay excluded under `bindings/` (`bindings/usdr/`,
   crate `usdr-ffi`).
+
+## Extractions
+
+| Crate | Date | Trigger | What moved |
+|-------|------|---------|------------|
+| `sdr-frontend` (+ `sdr-frontend-sim`) | 2026-10-13; bring-ups 2026-10-18; `fe4ch4007200` 2026-10-21 | the uSDR, XSDR and LSDr drivers, whose libusdr probes their connector | libusdr's front-end probe (`device/device_fe.c`), every board's identification, and the bring-ups and controls the probe's drivers run (`pciefe`, `xmass`, `supersync`, `simplesync`, `exm2pe`, `fe1005000`, `fe4ch4007200`). `Connector::probe` brings the board up whole and hands the driver the `FrontEnd` libusdr keeps (`struct dev_fe`); the driver keeps it, offers the controls its libusdr device offers, and re-exports the crate's types. The board models are shared by `usdr-sim` and `xsdr-sim` |
+| `sdr-stream` (+ `sdr-stream-sim`) | 2026-10-18; TX 2026-10-19; extended TX cache 2026-10-21 | the XSDR's RX streams, then its TX streams, then its extended TX front end | from `usdr` (re-exported where its board and `NativeUsb` found them): the stream engine's registers and burst arithmetic; the original TX core's announcement words, status decoding and create checks (re-exported by `usdr`'s `fpga/tx_stream.rs`); the extended TX core's announcement cache. Sim: the RX engine, sync unit and TX core model with its transport buffers (re-exported by `usdr-sim`) |
+| `sdr-cal` | 2026-10-19 | the XSDR's TX quality check needed the fit | `usdr`'s `cal::{fit, search}` (re-exported there); the fit uses the search, so both moved |
+| `sdr-gearbox` | 2026-10-21 | the XSDR's DUC/DDC gateware | `usdr`'s `portable/fir_tables.rs`; the LSDr's sample rate loads the tables too, with five decimation tables only it uses (×3, ×5, ×6, ×64, ×128) |
+| `sdr-formats` | 2026-10-21 | the XSDR's streams took its other formats, and the LimeSDR's stream setup selects a converter | `usdr`'s `dsp::{Converter, SampleFormat, ConversionError}` (re-exported there); a crate of its own rather than part of `sdr-stream`, whose engine the LimeSDR does not run (skeptic review, recorded in `sdr/xsdr/PORTING.md`) |

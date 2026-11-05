@@ -20,7 +20,7 @@ hardware-qualified.
 | `sim/` | `pe-sync-sim` (unpublished, root workspace member) | Board model at libusdr's `ls_op` seam: FPGA GPO/GPI registers, the SPI and I2C clock chips, virtual clock, op trace |
 | `oracle/` | `pe-sync-oracle` (unpublished, own workspace: compiles C) | libusdr's `pe_sync` driving `sim` through `oracle/shim/sim_plugin.c`; also the LMX chips' C drivers called directly |
 | `nostd-check/` | `pe-sync-nostd-check` (unpublished, own workspace) | Exact-source `no_std` witness for `src/portable` |
-| `../../chips/lmk05318` | `lmk05318` (unpublished, root workspace member) | The LMK05318's plan, staging map and register types, shared with `usdr` (extracted from it 2026-10-13), and its bus driver, shared with `sdr-frontend` (2026-10-20) |
+| `../../chips/lmk05318` | `lmk05318` (unpublished, root workspace member) | The LMK05318's plan, staging map and register types, shared with `sdr-frontend` (extracted from `usdr` 2026-10-13), and its bus driver (`driver`, 2026-10-20) |
 
 ## Driver layout
 
@@ -176,8 +176,8 @@ libusdr), DAC trims and the external SPI (libusdr has no code for them).
 ## Verify
 
 ```sh
-cargo fmt -p pe-sync -p pe-sync-sim -p lmk05318 --check
-cargo clippy -p pe-sync -p pe-sync-sim -p lmk05318 --all-targets -- -D warnings
+cargo fmt -p pe-sync -p pe-sync-sim -p lmk05318 -p lmk05318-sim --check
+cargo clippy -p pe-sync -p pe-sync-sim -p lmk05318 -p lmk05318-sim --all-targets -- -D warnings
 cargo test -p pe-sync -p pe-sync-sim -p lmk05318 -p lmk05318-sim
 cargo check -p lmk05318 --target thumbv7em-none-eabi
 python3 scripts/ci/portable.py pe-sync

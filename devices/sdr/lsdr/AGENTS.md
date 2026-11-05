@@ -274,7 +274,8 @@ by a lock: one is open at a time per process.
   (`src/portable/lmk04832.rs`) follow the C, so the driver inherits the question. Open only
   logs libusdr's result (`-ENODEV` is tolerated), so whether the C accepts the sim's ID bytes
   is observed only in its log (`LMK=1`); `lsdr` reports it in `Device::fitted`, and
-  `/dm/rate/master` coverage (which branches on `lmk04832_present`) will observe the C's.
+  `oracle/tests/rate_parity.rs` observes the C's result (on a clocked board its
+  `lmk04832_present` branch is compared).
 - Reset values for the TPS6594, ADS42LBx9 and LMK04832 are not vendored (datasheets or
   register maps with defaults are needed before any sequence reads back unwritten state).
 - `/dm/rate/master` is ported (2026-10-21); the LMK04832's lock and status word read 0

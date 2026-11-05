@@ -288,9 +288,9 @@ to libusdr's division trap off DUC/DDC gateware). The XTRX's session is compared
 ## Verify
 
 ```sh
-cargo fmt -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal -p sdr-formats --check
-cargo clippy -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal -p sdr-formats --all-targets -- -D warnings
-cargo test -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal -p sdr-formats
+cargo fmt -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal -p sdr-formats -p sdr-frontend -p sdr-frontend-sim -p sdr-gearbox --check
+cargo clippy -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal -p sdr-formats -p sdr-frontend -p sdr-frontend-sim -p sdr-gearbox --all-targets -- -D warnings
+cargo test -p xsdr -p xsdr-sim -p lms7002m -p lms7002m-sim -p sdr-stream -p sdr-stream-sim -p sdr-cal -p sdr-formats -p sdr-frontend -p sdr-frontend-sim -p sdr-gearbox
 cargo check -p lms7002m -p sdr-frontend -p sdr-stream -p sdr-formats --target thumbv7em-none-eabi
 python3 scripts/ci/portable.py xsdr
 cargo fmt --manifest-path devices/sdr/xsdr/nostd-check/Cargo.toml -- --check

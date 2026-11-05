@@ -18,7 +18,7 @@ an LMS7002M RFIC. Nothing here is hardware-qualified.
 
 | Path | Crate | Role |
 |------|-------|------|
-| `.` | `limesdr` (unpublished, root workspace member) | The driver, on `hal`, `lms7002m` and `sdr-formats` (`../formats`, the streams' host conversions, shared with the uSDR and XSDR) |
+| `.` | `limesdr` (unpublished, root workspace member) | The driver, on `hal`, `lms7002m` and `sdr-formats` (`../formats`: the converter a stream's setup selects, and `SampleFormat`; shared with the uSDR and XSDR) |
 | `sim/` | `limesdr-sim` (unpublished, root workspace member) | Board model at the LMS64C seam: gateware registers with the reference-clock detector, the LMS7002M (VCO comparators clocked from the board reference), the stream blocks (RX bursts timed by the sample counter, TX blocks taken), virtual clock, trace of frames, decoded register operations and stream blocks |
 | `oracle/` | `limesdr-oracle` (unpublished, own workspace: compiles C) | libusdr's `u3_limesdr` driving `sim` through `oracle/shim/sim_plugin.c`, and its `lms64c_proto.c` builder and parser called directly |
 | `nostd-check/` | `limesdr-nostd-check` (unpublished, own workspace) | Exact-source `no_std` compilation witness for `src/portable` (`#[path]` import), as `xsdr`'s; `scripts/ci/portable.py limesdr` holds its dependencies to the driver's |
