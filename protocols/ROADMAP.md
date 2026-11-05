@@ -18,12 +18,22 @@ table in [`AGENTS.md`](AGENTS.md) tracks per-crate stage.
       (uncompressed round-trip byte-identical; compressed decoded with names resolved inline) +
       an adversarial suite. Dogfooded, on real DNS: codec newtypes, bulk `read_bytes`, ctx-`tag`
       dispatch + aux ctx + bytes catch-all, `count = expr`, nested-bitfield flattening, absolute
-      `seek`. **Increment 2** (encode compression, needs the bnb mutable-state gap) and a
-      client (needs `rawsock`) remain.
+      `seek`. Increment 2 (compressed encode) and the `client` resolver: done (see adoption
+      item 1).
 - [x] **`system/netlink`** — strict native-endian Netlink and attribute framing, route and
       generic-netlink clients, typed link/address/route/rule operations, and WireGuard family
       support. Its blocking `rustix` transport owns sequence/ACK/multipart/extack validation and
       stays with the protocol because those rules define the kernel/userspace exchange.
+- [x] **`transport/tcp`, `transport/udp`** — header codecs plus `inject` layers (`Tcp<P>`,
+      `Udp<P>`) with pseudo-header checksums (adoption item 2).
+- [x] **`network/ip`, `network/icmp`** — IPv4 header codec with the `Ip<P>` layer that supplies
+      the L4 pseudo-header; ICMP header codec, typed message views and `Icmp<P>` (item 3).
+- [x] **`link/arp`, `link/ethernet`** — ARP leaf `Protocol` and `Ethernet<P>` top of stack
+      (item 4).
+- [x] **`application/rtltcp`** — the `rtl_tcp` greeting and command codecs plus a blocking
+      client (no RFC; see its `AGENTS.md`).
+- [x] **`protocol-examples`** (`examples/`) — runnable dual-use demos (`spoof_udp`, `forge_arp`)
+      over rawsock's privileged `network`/`link` backends.
 
 ## Protocol adoption order
 
@@ -39,15 +49,16 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        **`transport/udp`** done (header codec **plus** the `inject` feature: a `rawsock::Protocol`
        `Udp<P>` layer + pseudo-header `udp_checksum` — the socket layer's first on-the-wire
        consumer, the `rawsock` extraction trigger, now live). **TCP has the same `inject` layer**
-       (`Tcp<P>` + `tcp_checksum`). Remaining transport follow-up: privileged L3 send (needs
-       rawsock's `network` backend — in progress).
+       (`Tcp<P>` + `tcp_checksum`). Privileged L3/L2 send: done via rawsock `network`/`link`
+       (see `protocols/examples`).
 3. [x] **`network/ip`** + **`network/icmp`** done. `ip`: IPv4 header codec + the `inject` `Ip<P>`
        layer that supplies the L4 pseudo-header and computes the header checksum. `icmp`: RFC 792
        header codec + an `Icmp<P>` inject layer whose checksum is **self-contained** (no
        pseudo-header). A full `Ip(Udp/Tcp/Icmp(..))` stack emits a correct datagram — every
        checksum verifies (a composed ping is a real, valid packet).
-4. [ ] **`link/ethertype` consumers: `link/arp`, `link/ethernet`** — the one real
-       protocol-to-protocol chain.
+4. [x] **`link/ethertype` consumers: `link/arp`, `link/ethernet`** — the one real
+       protocol-to-protocol chain: done (ARP leaf `Protocol`, `Ethernet<P>` top of stack;
+       `protocol-examples` forges ARP over L2).
 5. [~] **`session/socks`** — RFC 1928/1929 wire slices implemented on `bnb`: method negotiation,
        complete method/CMD/REP/ATYP registries, IPv4/domain/IPv6 endpoints, requests, replies, and
        username/password authentication messages. Blocking and optional Tokio CONNECT clients,
@@ -67,9 +78,12 @@ kept as code: each protocol is rewritten on `bnb` to the crate template in `AGEN
 the socks rule (*recover behavior and evidence at the smallest owning layer*), each ledger below
 lists what a draft is worth as evidence — golden vectors, edge cases, registries, behaviours,
 decisions, and draft bugs to guard against — with its spec clause and where it lands. A row is
-evidence, not truth: verify it against the pinned spec when porting. `Draft source` paths are in
-the named `archive/protocols-*` tag (`git show archive/protocols-tftp:<path>`); the draft branches
-and PRs are closed. When a protocol's port lands, its ledger's remaining rows move into the crate.
+evidence, not truth: verify it against the pinned spec when porting. `Draft source` paths are relative to
+the crate directory in the named `archive/protocols-*` tag, so `git show` needs the full in-tag
+path `protocols/<layer>/<p>/<path>` (e.g. `git show
+archive/protocols-tftp:protocols/application/tftp/src/transfer.rs`): tftp, nbt and smb live under
+`protocols/application/<p>/`, socks under `protocols/session/socks/`. The draft branches and PRs
+are closed. When a protocol's port lands, its ledger's remaining rows move into the crate.
 
 - **ssh** (PR #63, branch deleted) — nothing recovered: a partial RFC 4253 §6.3 cipher-name
   list (with `edes-cbc` for `3des-cbc`) and a packet struct, both re-derivable from the spec.
@@ -211,9 +225,10 @@ Verification: no MS-CIFS, MS-SMB, MS-SMB2 or RFC 1002 is in the `stds` corpus, s
 | ~80 `cmd/*.rs` command modules (0 bytes each), `v1/client/mod.rs`, `session_setup_andx.rs` | decision | `src/v1/message/cmd/*.rs` | `MS-CIFS#2.2.4` | drop: empty skeleton that the command table already implies |
 | `Client` (unwrap/println, `connect` ignores share, test dials 127.0.0.1:445) and `message.rs` test writing `/tmp/hello.txt` | decision | `src/client.rs:17-129`, `src/v1/message/message.rs:141-153` | — | drop: draft transport/test infrastructure (socks rule). An e2e test needs a loopback server, not a live host |
 
-## bnb co-evolution — gaps the DNS port is expected to surface
+## bnb co-evolution — gaps found by protocol ports
 
-Consuming bnb from git exists precisely to feed these back upstream. Each becomes a
+Developing bnb in-workspace (a workspace path dependency) exists to feed these back upstream.
+`bitsandbytes #nn` references are PR numbers in the former standalone bitsandbytes repo. Each becomes a
 `bitsandbytes` ROADMAP item; fix in bnb rather than working around it here.
 
 - [x] **Mutable, message-scoped, sibling-threaded scratch state** — **fixed upstream**
@@ -240,10 +255,10 @@ Consuming bnb from git exists precisely to feed these back upstream. Each become
       (`bitsandbytes` #81): each generated field now carries a `/// The `<name>` context
       parameter.` doc. The DNS crate runs `#![deny(missing_docs)]` again. The first bnb finding
       fed back from real-protocol dogfooding.
-- [ ] **`#[bitfield]` sub-byte backing (minor)** — bnb bitfields need a byte-width backing
-      (u8/u16/…), so the reference crate's u5 `OpCode` / u7 `Flags` sub-byte groupings had to be
-      flattened into the parent `State`. Flattening is arguably cleaner (matches the RFC diagram),
-      so this is a low-priority ergonomic nicety, not a blocker — noted for completeness.
+- [x] **`#[bitfield]` sub-byte backing** — not a gap: a partial-width `#[bitfield(u8)]` whose
+      `Bits::BITS` is its declared total nests into a `u16` `State`
+      (`codecs/bitsandbytes/bnb/tests/protocol_shapes.rs`). DNS keeps the flat `State` by
+      choice, to match the RFC diagram.
 - [ ] **No transport-free counterpart to `net::read_message`** — surfaced by the SOCKS sans-I/O
       client: its hint skipping, capacity check, and finite-EOF decode are private to `net`, so
       `socks::v5::sansio` re-implements them over `BitBuf::try_pull`/`pull_eof`. The slice-level
@@ -257,14 +272,14 @@ Consuming bnb from git exists precisely to feed these back upstream. Each become
 
 ## Open decisions
 
-- [x] **`rawsock` extraction** — **done**: published at `github.com/RawSocketLabs/rawsock` as a
-      single crate, consumed here as a git dep behind `udp`'s `inject` feature
-      (`default-features = false` → the `compose` trait + `Loopback`, no `rustix`). UDP was the
-      trigger — the first protocol to compose real, checksummed packets.
+- [x] **`rawsock`** — **done**: workspace member `transports/rawsock`, optional dep behind each
+      injecting crate's `inject` feature (`default-features = false` → the `compose` trait +
+      `Loopback`, no `rustix`). UDP was the first consumer.
 - [ ] **`refcheck` extraction + wiring** — trigger: DNS compliance tracking. The `//~` grammar is
       already kept in-source; decide the corpus-hosting and CI-integration shape then.
-- [ ] **bnb: path dep → crates.io version req** — bnb is a workspace member (path + version)
-      today; switch the requirement to a plain crates.io version once bnb is published there
-      (see the workspace-wide crates.io naming/publishing decision).
-- [ ] **`testutil`** — introduce the shared test/bench/logging helper crate when the second
-      protocol crate needs it (the seed crate's tests are self-contained).
+- [x] **bnb: path dep → crates.io version req** — closed: bnb is published (`bitsandbytes`
+      0.8.0; see `codecs/bitsandbytes/docs/RELEASING.md`), and the workspace's path + version
+      requirement already resolves to that crates.io version for a published dependent.
+- [ ] **`testutil`** — a shared test/bench/logging helper crate. Trigger: the same helper
+      (e.g. hex-diff byte assertions) copied into a third crate's tests. Until then each crate's
+      tests are self-contained.

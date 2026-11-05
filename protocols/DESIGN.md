@@ -1,7 +1,7 @@
 # protocols — design
 
-**Status:** scaffold (rev 1) — the conventions, harness, and first seed crate. Protocol crates
-land incrementally on `bnb`; see [`ROADMAP.md`](ROADMAP.md).
+**Status:** rev 2 — the conventions and 11 protocol crates on `bnb` (stages in
+[`AGENTS.md`](AGENTS.md#crate-status)); see [`ROADMAP.md`](ROADMAP.md).
 
 ## §1 What and why
 
@@ -11,8 +11,8 @@ do not belong to the OSI model live under `system/`. Two goals in tension, both 
 the protocols deeply** (the types mirror the RFC wire format exactly) and **ship fast tooling**
 (real encoders/decoders, not inspection scripts).
 
-**Non-goals.** Not a packet-capture framework (that's the transport layer's job, via the external
-`rawsock`). Not a compliance *enforcer* (compliance is observed, never imposed — see the dual-use
+**Non-goals.** Not a packet-capture framework (that's the raw-I/O layer's job: `rawsock`, a
+sibling workspace crate in `transports/rawsock`). Not a compliance *enforcer* (compliance is observed, never imposed — see the dual-use
 invariant). Not a serde data model (the wire format is bit-exact; serde has no bit widths or byte
 order — same conclusion bnb reached).
 
@@ -23,8 +23,9 @@ pulls only `dns`, not a monolith. The OSI-layer directory structure (`link/netwo
 session/application`) makes the dependency direction legible (lower layers don't depend on higher
 ones) and mirrors how network protocols actually stack. The parallel `system/` category keeps
 local protocols such as Linux Netlink visible without misclassifying them as an OSI layer.
-Cross-cutting concerns (raw I/O, compliance tracking, test helpers) are *external* crates so they
-stay independently useful too.
+Cross-cutting concerns stay out of the protocol crates so they are independently useful too:
+rawsock (`transports/rawsock`) and bnb (`codecs/bitsandbytes`) are sibling workspace crates;
+refcheck stays external.
 
 ## §3 Why `bnb` as the codec
 
@@ -34,8 +35,8 @@ workspace used into one macro family: `#[bin]` (whole-message), `#[bitfield]`, `
 `#[bitflags]`, plus `parse_with`/`write_with` and `#[bin(codec = …)]` newtypes for custom shapes.
 It shares this workspace's **dual-use doctrine at the codec level** — permissive decode, encode
 refuses only the physically unencodable — so the codec and the protocol layer pull in the same
-direction. Consuming it from git during the first ports lets protocol needs drive bnb features
-before its 1.0 (co-evolution).
+direction. Developing bnb in the same workspace lets protocol needs drive its features before its 1.0
+(co-evolution).
 
 ## §4 The dual-use contract
 
@@ -47,9 +48,9 @@ and its rationale are in [`AGENTS.md`](AGENTS.md).
 
 ## §5 External-crate boundaries (extraction triggers)
 
-- **`rawsock`** is extracted to its own repo and depended on **when the first protocol needs to
-  put frames on the wire** (raw sockets, checksum/length derivation). Until then, protocols are
-  pure encoders/decoders and pull no socket code.
+- **`rawsock`** — done: first needed by `udp`'s `inject`; lives in `transports/rawsock`, an
+  optional dependency behind each injecting crate's `inject` feature (pure codecs pull no socket
+  code).
 - **`refcheck`** is extracted and wired **when compliance tracking begins** for a real protocol
   (starting with DNS's RFC 1034/1035 corpus). The `//~` annotation grammar is kept in-source from
   the start (cheap, codec-agnostic) so no re-annotation is needed when the tool arrives.

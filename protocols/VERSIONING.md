@@ -1,9 +1,9 @@
 # Versioning
 
-This workspace versions **each crate independently** (its own `version` in its `Cargo.toml`) and
-also carries a **workspace version** (`[workspace.package].version`) as a release-train milestone
-marker. Everything else — `edition`, `license`, `repository`, `rust-version`, dependency
-versions, lints — is shared from the workspace.
+Each protocol crate is versioned **independently** (its own `version` in its `Cargo.toml`).
+`edition`, `license`, `repository`, `rust-version`, dependency versions and lints are shared
+from the root `rsl` workspace, whose guide ([`AGENTS.md`](../AGENTS.md)) is canonical for the
+workspace-wide versioning rules. This file covers the protocol-specific parts.
 
 ## Commits drive versions
 
@@ -32,14 +32,13 @@ signals "API not yet stable" by staying `0.x`; the first stable release is an ex
 
 ## Where versions live
 
-- Per-crate: `[package] version` in each crate's `Cargo.toml`.
-- Workspace milestone: `[workspace.package] version` — **not** inherited by any crate; bump it
-  when cutting a coordinated milestone (its minor tracks broad capability milestones, its patch
-  smaller rollups).
-- Current versions + stage: the crate status table in [`AGENTS.md`](AGENTS.md).
+- Per-crate: `[package] version` in each crate's `Cargo.toml` (canonical; release-plz moves it).
+- The root workspace's `[workspace.package] version` is a milestone marker shared by every
+  product, not a protocol version; no crate inherits it.
+- Stage: the crate status table in [`AGENTS.md`](AGENTS.md).
 
 ## Publishing
 
-Pre-1.0 and co-evolving with `bnb`, this workspace **does not publish to crates.io yet**
-(`release-plz.toml: publish = false`) — release-plz manages versions, changelogs, and git tags
-only. Publishing flips on later (add `CARGO_REGISTRY_TOKEN`, set `publish = true`).
+Release processing and publishing are opt-in per package via `[[package]]` overrides in the
+root `release-plz.toml`; no protocol crate is currently released (`netlink` has a pending
+`publish` opt-in awaiting a crates.io name check). Never flip the workspace defaults.

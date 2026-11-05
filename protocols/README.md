@@ -1,10 +1,10 @@
 # protocols
 
-A Rust workspace of **from-scratch network-protocol implementations**, built for learning the
-protocols deeply and for shipping fast, RFC-grounded tooling — a typed, compiled, dual-use
-alternative to Scapy / Impacket. Each protocol is its own crate, organized by OSI layer; the
-wire codec throughout is [`bnb`](https://github.com/RawSocketLabs/bitsandbytes) (the
-`bitsandbytes` bit-aware binary codec).
+The protocol group of the [`rsl` workspace](https://github.com/RawSocketLabs/rsl):
+**from-scratch network-protocol implementations**, built for learning the protocols deeply and
+for shipping fast, RFC-grounded tooling — a typed, compiled, dual-use alternative to Scapy /
+Impacket. Each protocol is its own crate, organized by OSI layer; the wire codec throughout is
+[`bnb`](../codecs/bitsandbytes/) (the `bitsandbytes` bit-aware binary codec).
 
 ## Dual-use by default
 
@@ -17,9 +17,9 @@ values become `Custom(..)`, never a hard error — and never enforce policy. See
 ## What's here
 
 - **Protocols** — one crate per protocol, by OSI layer (`link/`, `network/`, `transport/`,
-  `session/`, `application/`). Current surface and the adoption roadmap are in the crate status
-  table in [`AGENTS.md`](AGENTS.md); the first landed crate is `link/ethertype`, with
-  `application/dns` the next (flagship) port.
+  `session/`, `application/`), plus `system/` for kernel/userspace protocols (netlink).
+  11 crates are functional or in development; see the crate status table in
+  [`AGENTS.md`](AGENTS.md). `examples/` holds the runnable injection demos.
 - **Sibling crates** in the [`rsl` monorepo](https://github.com/RawSocketLabs/rsl) (workspace
   members, path deps): `bnb` (the codec, published as `bitsandbytes`) and `rawsock` (dual-use
   raw-packet I/O, used by the crates that put frames on the wire). `refcheck` (an RFC-compliance
@@ -35,7 +35,7 @@ crate name) — see [`VERSIONING.md`](VERSIONING.md).
 
 ## License
 
-Dual-licensed under either [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your option.
+Dual-licensed under either [MIT](../LICENSE-MIT) or [Apache-2.0](../LICENSE-APACHE) at your option.
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in
 the work by you, as defined in the Apache-2.0 license, shall be dual-licensed as above, without
 any additional terms or conditions.
