@@ -51,7 +51,7 @@ owner instead of copying its directive.
 | `CORE-PROTO-006` | `rust-protocol` | API design owns public representation ergonomics; onboarding records repository policy for preserving or rejecting unknown and reserved values. |
 | `CORE-SAFE-001` | `rust-unsafe-ffi` | Repository and organization unsafe policy decides whether activation is permitted. |
 | `CORE-DEP-001` | `rust-dependencies-security` | RSL's preapproval threshold stays in its organization layer. |
-| `CORE-DEP-002` | `rust-dependencies-security` | The `rsl-deps` preference moves wholly to the RSL organization layer. |
+| `CORE-DEP-002` | `rust-dependencies-security` | Retired: the `deps` facade preference now lives in the RSL organization decision `organizations/rsl/decisions/dependencies.toml`. The ID is not reused. |
 | `CORE-DEP-003` | `rust-dependencies-security` | Testing and embedded route here for feature matrices. |
 | `CORE-DEP-004` | `rust-dependencies-security` | API design owns the exposed contract; async/concurrency owns runtime and pool semantics. |
 | `CORE-CHANGE-001` | `rust-implement` | `rust-review` checks diff scope without restating the implementation workflow. |
