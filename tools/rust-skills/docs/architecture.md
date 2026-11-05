@@ -256,7 +256,7 @@ feature-matrix handling, structured output, or portability.
 Unavailable tools never count as passed. Human-readable and JSON results are
 the standard outputs; JUnit and SARIF are adapters where useful.
 
-The first modular evaluation suite contains 22 cases and grows beyond 30 before
+The modular evaluation suite under `evals/` grows beyond 30 cases before
 the modular catalog is declared stable. Paired positive and counterexample cases
 guard against slogans becoming mechanical rewrites. Schema 2 records expected
 skill selection, commands, hard gates, forbidden regressions, hidden-test

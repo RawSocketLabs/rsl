@@ -33,6 +33,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+Release qualification also runs `cargo +1.85.0 check --workspace`. This
+directory is a detached workspace; pushes go through `scripts/ci-local.sh
+pre-push` (root `AGENTS.md`), which selects it when it changes.
+
 Keep eval task prompts isolated from graders and expected answers. Independent
 baseline-versus-skill runs are a publication gate, not an implementation
 artifact to reconstruct from the checked-in fixtures.

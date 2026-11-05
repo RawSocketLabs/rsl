@@ -48,7 +48,7 @@ ownership, and evaluation needs.
 1. Run blinded no-skill and current-skill evaluation campaigns and store results
    in an external result system. The repository deliberately does not invent
    those results.
-2. Grow from 22 toward at least 30 cases using reduced real-world failures,
+2. Grow the suite under `evals/` toward at least 30 cases using reduced real-world failures,
    especially additional unsafe, protocol-state, security, and negative-
    activation cases.
 3. Onboard bitsandbytes as a controlled pilot and libsdr as a preserve-and-index

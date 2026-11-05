@@ -42,7 +42,8 @@ exporting the directory into another repository, does not activate its skills.
      --skills rust-core,rust-implement,rust-review,rust-api-design,rust-testing
    ```
 
-8. Run `scripts/validate-rust.py`, discovery smoke tests, and relevant evals.
+8. Run the rendered `scripts/validate-rust.py` from the consumer repository
+   root, discovery smoke tests, and relevant evals.
    Present the resulting diff and obtain final confirmation.
 
 Omitting `--skills` installs all 14 canonical skills. Selective installation

@@ -37,10 +37,14 @@ cargo xtask validate
 cargo xtask generate
 cargo xtask generate --check
 cargo xtask install --agent common --scope repo --target /path/to/repository
+cargo xtask inspect-adoption /path/to/repository   # legacy rsl-rust-standards.toml (schema 1) only
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
+
+`cargo xtask help` lists every command and flag, including the `install`
+options `--agent common|claude|multi-agent`, `--skills`, and `--replace`.
 
 From the RSL repository root, use an explicit manifest path when scripting the
 component, for example:
@@ -58,11 +62,16 @@ skill or rule. The current structure is defined by the
 [v0.1 migration](docs/migrations/0.1-to-modular.md). Use the
 [task-to-skill map](docs/task-to-skill-map.md) to select capability owners and
 the [hypothetical onboarding example](docs/onboarding-example.md) to understand
-the approval-gated adoption workflow.
+the approval-gated adoption workflow. The
+[evaluation guide](docs/evaluation-guide.md) explains the eval suite, and the
+[core and review rule ownership map](docs/migrations/core-review-rule-ownership.md)
+records which portable skill owns each stable rule.
 Design provenance remains in the
 [preference record](docs/preference-record.md),
 [research report](docs/research-report.md), and
 [borrowed-option and frozen-sequence synthesis](docs/research/borrowed-option-and-frozen-sequences.md),
+[CodeAesthetic readability research](docs/research/codeaesthetic-readability.md),
+the [source ledger](docs/source-ledger.md),
 and the
 [historical v0.1 architecture proposal](docs/architecture-proposal.md).
 

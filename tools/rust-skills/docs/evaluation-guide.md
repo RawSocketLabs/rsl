@@ -67,7 +67,7 @@ The initial repository intentionally commits fixtures and graders, not invented
 run results. Independent forward runs require a clean agent context and are a
 separate validation action.
 
-The current 22-case suite includes paired ownership cases: improve a read-only
+The current suite under `evals/` includes paired ownership cases: improve a read-only
 borrowed optional API but retain a mutable optional slot; share a measured frozen
 sequence but retain a uniquely owned reusable `Vec`. Domain cases cover wire
 ordering, unsafe boundaries, async cancellation, dependency features, benchmark
