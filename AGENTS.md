@@ -60,8 +60,9 @@ library — its license governs distributed linked binaries.
 CI compiles all targets and runs only hardware-free configuration tests; the
 remaining device tests are opt-in and serial (`make -C bindings/bladerf test`).
 
-`bindings/airspy/` is a fork of the MIT `airspy-rs` 0.4.0 crate (versioned 0.5.0: a
-`Receiver` session guard, caller-owned receive buffers, safe handle-only FFI; see its README).
+`bindings/airspy/` is a fork of the MIT `airspy-rs` 0.4.0 crate (versioned 0.6.0: a
+`Receiver` session that owns the device, caller-owned receive buffers with a caller-chosen
+capacity, safe handle-only FFI; see its README).
 It is a workspace member and links `libairspy` (≥ 1.0.6), so building its tests — including
 `cargo test --workspace` — needs the library installed (Fedora `airspy-devel`, Debian/Ubuntu
 `libairspy-dev`); the CI image provides it. `publish = false`, since the name belongs to

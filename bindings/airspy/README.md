@@ -6,7 +6,8 @@ A RawSocket Labs fork of [airspy-rs](https://github.com/adamgreig/airspy-rs)
 - An explicit stop (`Receiver::stop`, or dropping the `Receiver`) — upstream
   can only stop reception by hanging up the sample channel, which leaves
   libairspy unable to start streaming again.
-- Caller-owned receive buffers replace the public sample channel.
+- Caller-owned receive buffers, with a caller-chosen capacity, replace the
+  public sample channel.
 - Standard-library C types and `num-complex` replace `libc` and `num`.
 - Device-requiring tests are `#[ignore]`d.
 
@@ -19,15 +20,20 @@ See the [crate-level documentation](src/lib.rs) for a complete capture example.
 
 ## Receiving
 
-`start_rx()` returns a `Receiver` that borrows the device. Call
-`receive(&mut samples, timeout)` on it with a `num_complex::Complex<f32>` slice.
-The returned count is the filled prefix; the tail is untouched, and an empty
-slice is `Error::InvalidParameter`. The tuning setters (frequency, gains, AGC,
-RF bias) also work on the `Receiver` while streaming; a sample-rate change
-needs `stop()` and a restart. Dropping the `Receiver` stops reception and
-discards the status; `stop()` returns it.
+`start_rx(capacity)` takes the device and returns a `Receiver` that owns it
+for the session. Call `receive(&mut samples, timeout)` on it with a
+`num_complex::Complex<f32>` slice. The returned count is the filled prefix;
+the tail is untouched, and an empty slice is `Error::InvalidParameter`. The
+tuning setters (frequency, gains, AGC, RF bias) also work on the `Receiver`
+while streaming; a sample-rate change needs `stop()` and a restart. `stop()`
+joins the callback threads and hands the device back; dropping the `Receiver`
+instead closes the device and discards the stop status. A failed `start_rx`
+returns the device inside `StartError`, so the caller can try again.
 
-- Reception buffers at most 262,144 IQ samples (2 MiB, about 26 ms at 10 Msps).
+- Reception buffers at most `capacity` IQ samples, eight bytes each,
+  allocated when the session starts. `DEFAULT_RX_CAPACITY` (262,144 samples,
+  2 MiB, about 26 ms at 10 Msps) suits a reader that drains continuously;
+  size it for the longest pause between `receive` calls.
   If it fills, later batches are dropped: `receive` first returns the samples
   queued before the gap, then `Error::Overflow { dropped }` once, then resumes.
   Batches arriving while that backlog drains are dropped too, so read
@@ -43,9 +49,10 @@ discards the status; `stop()` returns it.
 
 - `Airspy::new()` / `from_serial()` are `Airspy::open()` / `open_serial(serial)`.
   The no-op `init()` and `exit()` are gone; opening and dropping manage lifetime.
-- `start_rx()` takes no arguments and returns a `Receiver`; `receive`,
-  `stop` and `is_streaming` live on it (above). `Airspy` is `Send`, and
-  `receive` takes a `Duration`.
+- `start_rx(capacity)` takes the device by value and returns a `Receiver`;
+  `receive`, `stop` and `is_streaming` live on it (above). `stop` returns the
+  device, and `receive` takes a `Duration`. `Airspy`, `Receiver` and
+  `StartError` are `Send`.
 - `FFIError` is `Error`, with named native failures (`Busy`,
   `InvalidParameter`, ...) and `Unknown(i32)` for unrecognized codes.
 - `lib_version()` is `LibVersion::linked()`.
