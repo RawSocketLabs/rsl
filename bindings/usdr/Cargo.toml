@@ -3,7 +3,7 @@ name = "usdr-ffi"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/RawSocketLabs/usdr-lib-rs"
+repository = "https://github.com/RawSocketLabs/rsl"
 description = "Rust bindings to the USDR software-defined-radio library (cxx/FFI)."
 readme = "README.md"
 

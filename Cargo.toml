@@ -87,6 +87,8 @@ members = [
 ]
 # The other FFI crates (need a C++ toolchain + system libs) and the bnb/crypto fuzz and no_std helpers
 # are excluded from the default workspace build; each is built on its own in a dedicated CI job.
+# Other detached workspaces (pki and socks fuzz, device oracles and nostd-checks, tools/rust-skills)
+# declare their own `[workspace]` table, so they need no entry here.
 exclude = [
     "bindings/bladerf",
     "bindings/usdr",
@@ -98,7 +100,7 @@ exclude = [
 
 # Shared package metadata — members inherit with `field.workspace = true`. All crates now live
 # in the `rsl` monorepo, so `repository` points there; individual crates keep their own
-# `version` (e.g. bitsandbytes is 0.2.0) by declaring it explicitly.
+# `version` (e.g. bitsandbytes) by declaring it explicitly.
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
@@ -217,8 +219,8 @@ des = { version = "0.9.0", default-features = false }
 num-bigint-dig = { version = "0.9.1", default-features = false, features = ["std"] }
 
 # Common lints. Unsafe policy is the softer `unsafe_op_in_unsafe_fn = deny` (protocols allows
-# isolated unsafe for future raw I/O); bnb/rawsock pin the stricter `#![forbid(unsafe_code)]`
-# at crate level, so a single shared table serves all three.
+# isolated unsafe for raw I/O); bnb pins the stricter `#![forbid(unsafe_code)]` and rawsock
+# `#![deny(unsafe_code)]` at crate level, so a single shared table serves them all.
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 unreachable_pub = "warn"
