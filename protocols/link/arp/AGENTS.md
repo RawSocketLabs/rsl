@@ -3,7 +3,8 @@
 ARP (RFC 826) packet codec on `bnb`, IPv4-over-Ethernet. refcheck protocol name: **`arp`**.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
-> [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
+> [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
+> (dual-use philosophy, the codec) also apply.
 
 ## Status — packet codec + rawsock injection
 
@@ -25,8 +26,9 @@ Decode/encode of the 28-byte IPv4-over-Ethernet ARP packet, plus (the `inject` f
 ARP is a **leaf** `Protocol` (a complete message, no payload): `impl Protocol for ArpPacket`,
 `protocol_id` → `0x0806` (its EtherType, presented to an enclosing Ethernet frame), `layer` →
 `Network`. It has **no derived fields** (no checksum, no length), so `encode == encode_raw ==
-to_bytes` — everything verbatim. rawsock is a git dep behind the feature (`default-features =
-false` → no `rustix`). `Ethernet(ArpPacket)` composes a complete L2 frame.
+to_bytes` — everything verbatim. rawsock is an optional workspace dependency behind `inject`
+(workspace default `default-features = false` → the `compose` trait + `Loopback`, no `rustix`).
+`Ethernet(ArpPacket)` composes a complete L2 frame.
 
 ## Dual-use
 
@@ -53,5 +55,5 @@ form (arbitrary `hlen`/`plen`, e.g. non-Ethernet hardware) is a later refinement
 
 ## Conventions
 
-Conventional Commits (lowercase, verb-led subject), no `Co-Authored-By:`. `#![forbid(unsafe_code)]`,
-`#![deny(missing_docs)]`. Workspace lints (`clippy::all` denied).
+`#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`. Commit and lint rules: the workspace root
+[`AGENTS.md`](../../../AGENTS.md).

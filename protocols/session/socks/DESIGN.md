@@ -211,6 +211,8 @@ version-specific exchanges still leave authorization and dialing to their caller
 
 The initial results and dated entries below apply to their recorded source revisions. They
 are not a claim that old blockers persist or that current local checks qualify a release.
+File paths in this record are as of their entry's date (for example, `src/stream.rs` is now
+`src/io/stream/stream.rs`).
 
 - `cargo fmt --all --check`: passed.
 - Focused RFC 1929 contract and adversarial tests: passed (28 tests).

@@ -3,7 +3,8 @@
 UDP (RFC 768) datagram-**header** codec on `bnb`. refcheck protocol name: **`udp`**.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
-> [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
+> [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
+> (dual-use philosophy, the codec) also apply.
 
 ## Status — header codec + rawsock injection
 
@@ -34,10 +35,10 @@ rejects them, so a forged length or checksum survives a round-trip.
   by writing the fields.
 
 `udp_checksum(pseudo, udp)` is RFC 768 over the pseudo-header + datagram, on rawsock's
-`internet_checksum`; a computed `0x0000` becomes `0xFFFF`. rawsock is a **git dep behind the
-feature** with `default-features = false` (the `compose` trait + `Loopback` only — no `rustix`
-socket code). Follow-ups: a TCP checksum helper; actual privileged L3 send (needs rawsock's
-`network` backend + an IP layer to wrap `Udp` in).
+`internet_checksum`; a computed `0x0000` becomes `0xFFFF`. rawsock is an optional workspace
+dependency behind `inject` (workspace default `default-features = false` → the `compose` trait +
+`Loopback`, no `rustix`). Privileged L3 send: `network/ip` wraps `Udp`, rawsock's `network` backend
+sends it (see `protocols/examples`, `spoof_udp`).
 
 ## Testing
 
@@ -55,5 +56,5 @@ Run: `cargo test -p udp` (add `--features inject` for the rawsock layer).
 
 ## Conventions
 
-Conventional Commits (lowercase, verb-led subject), no `Co-Authored-By:`. `#![forbid(unsafe_code)]`,
-`#![deny(missing_docs)]`. Workspace lints (`clippy::all` denied).
+`#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`. Commit and lint rules: the workspace root
+[`AGENTS.md`](../../../AGENTS.md).

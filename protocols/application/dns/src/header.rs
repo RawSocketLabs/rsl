@@ -48,8 +48,8 @@ pub enum RCode {
 }
 
 /// The second 16-bit word of the header — QR/OPCODE/AA/TC/RD/RA/Z/RCODE, exactly the
-/// RFC 1035 §4.1.1 bit diagram (MSB-first). `bnb` bitfields carry a byte-width backing,
-/// so the sub-byte OPCODE/flags groupings are flattened into these leaf fields.
+/// RFC 1035 §4.1.1 bit diagram (MSB-first). The OPCODE/flags groupings are flat leaf fields
+/// to match that diagram (bnb could nest them as partial-width bitfields).
 #[bitfield(u16, bits = msb, bytes = big)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {

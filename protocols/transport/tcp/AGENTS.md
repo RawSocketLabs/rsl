@@ -3,7 +3,8 @@
 TCP (RFC 9293) segment-**header** codec on `bnb`. refcheck protocol name: **`tcp`**.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
-> [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
+> [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
+> (dual-use philosophy, the codec) also apply.
 
 ## Status — header codec + rawsock injection
 
@@ -40,17 +41,17 @@ never panics.
 ## Injection — the `inject` feature (`src/inject.rs`)
 
 `Tcp<P>` wraps a `TcpHeader` + payload and implements `rawsock::Protocol` (`protocol_id` → 6,
-`layer` → `Transport`). Dual-use: `encode` (compliant) computes the checksum from the enclosing
-IPv4 pseudo-header (`Context`); `encode_raw` (verbatim) emits `.header.checksum` as set (forge
-by writing it). `tcp_checksum(pseudo, tcp)` is RFC 9293 over the pseudo-header + segment on
-rawsock's `internet_checksum` — no UDP-style `0 → 0xFFFF` sentinel. rawsock is a git dep behind
-the feature (`default-features = false` → the `compose` trait + `Loopback`, no `rustix`). The IP
-layer (`network/ip`) supplies the pseudo-header in a full `Ip(Tcp(...))` stack.
+`layer` → `Transport`). Dual-use: `encode` (compliant) computes the checksum from the enclosing IPv4
+pseudo-header (`Context`); `encode_raw` (verbatim) emits `.header.checksum` as set (forge by writing
+it). `tcp_checksum(pseudo, tcp)` is RFC 9293 over the pseudo-header + segment on rawsock's
+`internet_checksum` — no UDP-style `0 → 0xFFFF` sentinel. rawsock is an optional workspace
+dependency behind `inject` (workspace default `default-features = false` → the `compose` trait +
+`Loopback`, no `rustix`). The IP layer (`network/ip`) supplies the pseudo-header in a full
+`Ip(Tcp(...))` stack.
 
 ## Scope / follow-ups
 
-- **DNS-over-TCP** (the `dns` resolver's TCP fallback) is a downstream consumer once a stream
-  transport exists.
+- **DNS-over-TCP** (the `dns` resolver's TCP fallback) uses OS sockets, not this codec.
 
 ## Testing
 
@@ -69,5 +70,5 @@ Run: `cargo test -p tcp` (add `--features inject` for the rawsock layer).
 
 ## Conventions
 
-Conventional Commits (lowercase, verb-led subject), no `Co-Authored-By:`. `#![forbid(unsafe_code)]`,
-`#![deny(missing_docs)]`. Workspace lints (`clippy::all` denied).
+`#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`. Commit and lint rules: the workspace root
+[`AGENTS.md`](../../../AGENTS.md).

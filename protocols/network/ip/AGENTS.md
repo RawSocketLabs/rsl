@@ -3,7 +3,8 @@
 IPv4 (RFC 791) header codec on `bnb`. refcheck protocol name: **`ip`**.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
-> [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
+> [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
+> (dual-use philosophy, the codec) also apply.
 
 ## Status — header codec + rawsock injection
 
@@ -25,13 +26,13 @@ keystone: the IP layer is what supplies the pseudo-header a UDP/TCP checksum nee
 
 ## Injection — the `inject` feature (`src/inject.rs`)
 
-`Ip<P>` wraps an `Ipv4Header` + payload (`protocol_id` → `0x0800`, `layer` → `Network`).
-`encode` (compliant) is the keystone: it hands the payload the IPv4 **pseudo-header**
-(src/dst/protocol) in a child `Context` so the L4 layer can checksum, then fills
-`total_length` + `protocol` from the payload and computes the IPv4 **header checksum** (on
-rawsock's `internet_checksum`). `encode_raw` emits everything verbatim (dual-use). rawsock is a
-git dep behind the feature (`default-features = false` → the `compose` trait + `Loopback`, no
-`rustix`). Compose a real packet: `Ip::new(Ipv4Header::datagram(..), Udp::new(..)).encode()`.
+`Ip<P>` wraps an `Ipv4Header` + payload (`protocol_id` → `0x0800`, `layer` → `Network`). `encode`
+(compliant) is the keystone: it hands the payload the IPv4 **pseudo-header** (src/dst/protocol) in a
+child `Context` so the L4 layer can checksum, then fills `total_length` + `protocol` from the
+payload and computes the IPv4 **header checksum** (on rawsock's `internet_checksum`). `encode_raw`
+emits everything verbatim (dual-use). rawsock is an optional workspace dependency behind `inject`
+(workspace default `default-features = false` → the `compose` trait + `Loopback`, no `rustix`).
+Compose a real packet: `Ip::new(Ipv4Header::datagram(..), Udp::new(..)).encode()`.
 
 ## Dual-use
 
@@ -55,9 +56,9 @@ Run: `cargo test -p ip` (add `--features inject` for the rawsock layer).
 ## Scope / follow-ups
 
 IPv4 only (IPv6 later). No fragmentation/reassembly logic (the fields are exposed; policy is
-the caller's). `network/icmp` and the L2 `link/*` layers are the next network-stack pieces.
+the caller's). IPv6 is the next network-layer piece.
 
 ## Conventions
 
-Conventional Commits (lowercase, verb-led subject), no `Co-Authored-By:`. `#![forbid(unsafe_code)]`,
-`#![deny(missing_docs)]`. Workspace lints (`clippy::all` denied).
+`#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`. Commit and lint rules: the workspace root
+[`AGENTS.md`](../../../AGENTS.md).

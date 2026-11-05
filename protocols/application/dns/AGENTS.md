@@ -3,7 +3,8 @@
 DNS message codec (RFC 1034/1035) on `bnb`. refcheck protocol name: **`dns`**.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
-> [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
+> [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
+> (dual-use philosophy, the codec) also apply.
 
 ## Status — codec + resolver client
 
@@ -19,11 +20,13 @@ length prefix); `query_udp`/`query_tcp` force a single transport. Deferred: EDNS
 
 ## Architecture
 
-A pure wire codec (no I/O yet). One module per wire concept, all `#[bin]`-based:
+The wire codec (no I/O); the `client` feature adds `Resolver` in `client.rs`. One module per
+wire concept, all `#[bin]`-based:
 
 - `header.rs` — the 12-byte header. `State` is a flat `#[bitfield(u16)]` (QR/OPCODE/AA/TC/
-  RD/RA/Z/RCODE) — `bnb` bitfields need byte-width backing, so the reference crate's
-  sub-byte `OpCode`/`Flags` groupings are **flattened** into leaf fields (more RFC-faithful).
+  RD/RA/Z/RCODE): the reference crate's sub-byte `OpCode`/`Flags` groupings are **flattened**
+  into leaf fields to match the RFC diagram. bnb can nest them as partial-width bitfields
+  (`codecs/bitsandbytes/bnb/tests/protocol_shapes.rs`); flat is a choice, not a workaround.
   `Op`/`RCode` are `#[derive(BitEnum)]` with `Other` catch-alls.
 - `name.rs` — `Name`, a **`#[bin(codec = …)]` newtype** whose label codec follows
   compression pointers inline on decode (via `seek`, bounded against loops). On encode it
@@ -53,6 +56,7 @@ is byte-identical and a forged count survives. The parser never enforces policy.
 
 `Message` (`decode_exact` / `to_bytes` / `assemble` / `query`), `Header`, `Name`,
 `Question`, `Record`, `RData`, and the enums `Op`/`RCode`/`RType`/`RClass`/`QType`/`QClass`.
+With `--features client`: `Resolver` (`query` / `query_udp` / `query_tcp`) and `ResolveError`.
 
 ## Testing
 
@@ -67,15 +71,16 @@ Four layers, each runnable on its own (`cargo test -p dns <layer>`):
   the reference implementation (the decode-fidelity anchor) — the uncompressed + compressed
   `example.com` packets and an unknown-type raw-RDATA case. Uncompressed round-trips
   byte-identically; a compressed message decodes with names resolved inline (re-encode is
-  uncompressed).
+  uncompressed). `tests/accessors.rs` (also `mod integration`) covers `Message`'s typed answer
+  accessors (records extracted by `RData` variant; empty answers give empty views).
 - **`adversarial`** — `tests/adversarial.rs`: pointer loops/cycles, truncation, oversized
   RDLENGTH, out-of-range pointers, and "decode of arbitrary bytes never panics".
 
 Plus runnable **examples** (`cargo run -p dns --example <name>`): `decode_response` (walk a real
 response; unknown types preserved), `build_query` (construct + encode a query), `compress_message`
 (`to_compressed_bytes` vs `to_bytes`, and both round-trip), `dual_use_forge` (emit a header whose
-count deliberately disagrees with its section). `testutil` is deferred — the golden vectors are
-inline until a second crate would share the helpers.
+count deliberately disagrees with its section). The golden vectors are inline; tests are
+self-contained, as in every protocol crate.
 
 **Client** (`--features client`): `src/client.rs` — inline `mod component` drives the resolver's
 validation/retry logic against a `MockDatagramSocket` (matching/mismatched/off-path/truncated/

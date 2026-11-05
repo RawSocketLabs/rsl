@@ -3,7 +3,8 @@
 Ethernet II (IEEE 802.3) frame-**header** codec on `bnb`. refcheck protocol name: **`ethernet`**.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
-> [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
+> [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
+> (dual-use philosophy, the codec) also apply.
 
 ## Status — header codec + rawsock injection
 
@@ -19,12 +20,12 @@ Decode/encode of the 14-byte Ethernet II frame header, plus (the `inject` featur
 
 ## Injection — the `inject` feature (`src/inject.rs`)
 
-`Ethernet<P>` wraps an `EthernetHeader` + payload at `Layer::Link`, `protocol_id` → `None` (L2
-is the outermost frame — nothing demuxes it upward). `encode` sets the frame's `EtherType` from
-the payload's demux id (IPv4 → `0x0800`, ARP → `0x0806`); `encode_raw` emits it verbatim
-(dual-use forging). This closes the ladder: `Ethernet(Ip(Udp/Tcp/Icmp(..)))` composes a
-complete, on-the-wire frame. rawsock is a git dep behind the feature (`default-features = false`
-→ no `rustix`).
+`Ethernet<P>` wraps an `EthernetHeader` + payload at `Layer::Link`, `protocol_id` → `None` (L2 is
+the outermost frame — nothing demuxes it upward). `encode` sets the frame's `EtherType` from the
+payload's demux id (IPv4 → `0x0800`, ARP → `0x0806`); `encode_raw` emits it verbatim (dual-use
+forging). This closes the ladder: `Ethernet(Ip(Udp/Tcp/Icmp(..)))` composes a complete, on-the-wire
+frame. rawsock is an optional workspace dependency behind `inject` (workspace default
+`default-features = false` → the `compose` trait + `Loopback`, no `rustix`).
 
 ## Dual-use
 
@@ -47,10 +48,10 @@ Run: `cargo test -p ethernet` (add `--features inject` for the rawsock layer).
 
 ## Scope / follow-ups
 
-Ethernet II only (no 802.1Q VLAN tag / 802.3 LLC-SNAP length framing). `link/arp` (the other
-`ethertype` consumer) and rawsock's `link` (`AF_PACKET`) L2 backend are the remaining L2 pieces.
+Ethernet II only (no 802.1Q VLAN tag / 802.3 LLC-SNAP length framing). Privileged L2 send uses
+rawsock's `link` (`AF_PACKET`) backend; see `protocols/examples` (`forge_arp`).
 
 ## Conventions
 
-Conventional Commits (lowercase, verb-led subject), no `Co-Authored-By:`. `#![forbid(unsafe_code)]`,
-`#![deny(missing_docs)]`. Workspace lints (`clippy::all` denied).
+`#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`. Commit and lint rules: the workspace root
+[`AGENTS.md`](../../../AGENTS.md).

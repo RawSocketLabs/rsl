@@ -3,7 +3,8 @@
 ICMP (RFC 792) message-**header** codec on `bnb`. refcheck protocol name: **`icmp`**.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
-> [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
+> [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
+> (dual-use philosophy, the codec) also apply.
 
 ## Status — header codec + rawsock injection
 
@@ -26,11 +27,12 @@ layer that wraps the message data and computes the **self-contained** checksum.
 
 `Icmp<P>` wraps an `IcmpHeader` + data payload (`protocol_id` → 1, `layer` → `Transport` — it
 occupies the same IP-payload slot as UDP/TCP). The distinguishing trait: the ICMP checksum is
-**self-contained** — over the header + data, with **no IP pseudo-header** — so `encode`
-computes it **unconditionally** (the enclosing `Context` is ignored), unlike UDP/TCP. `encode`
-(compliant) fills it via rawsock's `internet_checksum`; `encode_raw` emits `.header.checksum`
-verbatim (dual-use). rawsock is a git dep behind the feature (`default-features = false` → no
-`rustix`). Compose a ping: `Ip::new(Ipv4Header::datagram(.., 1, ..), Icmp::new(echo, data))`.
+**self-contained** — over the header + data, with **no IP pseudo-header** — so `encode` computes it
+**unconditionally** (the enclosing `Context` is ignored), unlike UDP/TCP. `encode` (compliant) fills
+it via rawsock's `internet_checksum`; `encode_raw` emits `.header.checksum` verbatim (dual-use).
+rawsock is an optional workspace dependency behind `inject` (workspace default `default-features =
+false` → the `compose` trait + `Loopback`, no `rustix`). Compose a ping:
+`Ip::new(Ipv4Header::datagram(.., 1, ..), Icmp::new(echo, data))`.
 
 ## Dual-use
 
@@ -54,10 +56,9 @@ Run: `cargo test -p icmp` (add `--features inject` for the rawsock layer).
 
 A flat header codec (type/code/checksum/rest) — deliberately **not** a tag-dispatched union
 over `icmp_type`, which would hit bnb's ctx-`BitEncode` gap (deferred to bnb's freeze review).
-Typed message views (Echo / Destination Unreachable / Time Exceeded) are a later refinement.
 ICMPv6 (RFC 4443, which *does* use a pseudo-header) is separate.
 
 ## Conventions
 
-Conventional Commits (lowercase, verb-led subject), no `Co-Authored-By:`. `#![forbid(unsafe_code)]`,
-`#![deny(missing_docs)]`. Workspace lints (`clippy::all` denied).
+`#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`. Commit and lint rules: the workspace root
+[`AGENTS.md`](../../../AGENTS.md).

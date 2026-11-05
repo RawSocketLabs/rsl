@@ -4,7 +4,8 @@ The `rtl_tcp` protocol (an RTL-SDR served over TCP) on `bnb`. No RFC; protocol r
 <https://k3xec.com/rtl-tcp/>. refcheck protocol name: none.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
-> [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
+> [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
+> (dual-use philosophy, the codec) also apply.
 
 ## Status — codec + blocking client
 
@@ -32,7 +33,9 @@ Deferred: a server half, async clients.
 
 The parser accepts any opcode (preserved as `Opcode::Other`). The greeting's `RTL0` is a
 codec constant rather than a field, so decoding any other magic fails with `BadMagic`, which
-the client reports as `ClientError::Handshake`.
+the client reports as `ClientError::Handshake`. This is a deliberate, annotated deviation from
+the group's reject-only-the-unencodable rule (`//~ rejects` on `TunerInfo`): a handshake magic
+identifies the protocol, so it may be a codec constant.
 
 ## Testing
 

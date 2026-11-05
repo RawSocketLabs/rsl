@@ -4,13 +4,14 @@ The 16-bit **EtherType** — the Ethernet II field naming the encapsulated proto
 the IANA ethertype registry). refcheck protocol name: *(none yet — leaf value type)*.
 
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The workspace root
-> [`AGENTS.md`](../../AGENTS.md) (dual-use philosophy, standards, the codec) also applies.
+> [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
+> (dual-use philosophy, the codec) also apply.
 
 ## What it is
 
 The workspace's **harness proof + smallest template**: one `bnb` `#[derive(BitEnum)]` at a
 byte-aligned `u16` (network order), with a `#[catch_all] Custom(u16)` making it dual-use. It
-exists to prove the toolchain end-to-end (the bnb git-dependency resolves, CI is green, the
+exists to prove the toolchain end-to-end (the bnb workspace dependency builds, CI is green, the
 per-crate lint/test shape holds) and to model the pattern richer protocol crates follow.
 
 ## Architecture
