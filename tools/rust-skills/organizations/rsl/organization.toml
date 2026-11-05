@@ -1,6 +1,6 @@
 schema = 1
 id = "rsl"
-name = "Raw Socket Labs"
+name = "RawSocket Labs"
 default_pack = "rsl-rust-default"
 portable_skill_prefix = "rust-"
 compatibility_skill_prefix = "rsl-rust-"

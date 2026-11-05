@@ -920,7 +920,7 @@ fn validate_organization(
     let source = document.string("source")?;
     let decisions = document.array("decisions")?;
     document.finish()?;
-    if id != "rsl" || name != "Raw Socket Labs" {
+    if id != "rsl" || name != "RawSocket Labs" {
         return Err("RSL organization manifest has an unexpected identity".to_owned());
     }
     if !packs.contains_key(&default_pack) {

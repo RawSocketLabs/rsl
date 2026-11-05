@@ -428,7 +428,7 @@ From most to least preferred:
 
 #### R20. Use opaque application errors at orchestration boundaries
 
-Narrowed for Raw Socket Labs repositories by R216 (color-eyre; no new anyhow).
+Narrowed for RawSocket Labs repositories by R216 (color-eyre; no new anyhow).
 
 - **Strength:** MAY
 - **Scope:** binaries and application orchestration
@@ -1998,7 +1998,7 @@ The owner confirmed the following additional choices in refinement round 2:
 #### R169. Prefer shared frozen slices in RSL when shared cloning is the design
 
 - **Strength:** PREFER
-- **Scope:** Raw Socket Labs repositories and components with long-lived,
+- **Scope:** RawSocket Labs repositories and components with long-lived,
   immutable sequence data
 - **Rule:** When multiple logical owners intentionally share the same immutable
   sequence, prefer `Rc<[T]>` within one thread and `Arc<[T]>` across threads.
@@ -3239,7 +3239,7 @@ the preference named in its rule.
 #### R216. Approve thiserror for library errors and color-eyre for binaries
 
 - **Strength:** SHOULD
-- **Scope:** Raw Socket Labs repositories
+- **Scope:** RawSocket Labs repositories
 - **Rule:** Organization decision `errors`. Keeps R18 (typed library errors); gives
   thiserror the dependency approval R68 requires; and narrows R20, which allows
   `anyhow` or `eyre`, to color-eyre with no new use of anyhow.
@@ -3249,7 +3249,7 @@ the preference named in its rule.
 #### R217. Treat the rsl-deps stack as pre-approved
 
 - **Strength:** SHOULD
-- **Scope:** Raw Socket Labs repositories adopting dependency policy
+- **Scope:** RawSocket Labs repositories adopting dependency policy
 - **Rule:** Organization decision `dependencies`. Revises R68, which required approval even
   for a crate available through `rsl-deps`: a carried crate, used for the
   capability it is carried for with minimal features, is approved in advance.
@@ -3340,7 +3340,7 @@ than restating its steps (clarifies R127; no new preference).
 #### R68. Discuss every new dependency
 
 Revised by R217: a crate carried by `rsl-deps`, used for its carried capability
-with minimal features, is approved in advance for Raw Socket Labs repositories.
+with minimal features, is approved in advance for RawSocket Labs repositories.
 
 - **Strength:** MUST
 - **Scope:** agent behavior in all repositories

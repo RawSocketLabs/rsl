@@ -1,7 +1,7 @@
 # RSL Rust Engineering Skills
 
 This directory is the canonical source for a portable Rust engineering system
-with a separate Raw Socket Labs organization layer. It contains a modular skill
+with a separate RawSocket Labs organization layer. It contains a modular skill
 catalog, composable repository profiles, trust-tiered references, migration
 contracts, generated agent adapters, and comparative eval fixtures. It is
 independently versioned within the RSL monorepo and may also be exported as a
