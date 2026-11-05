@@ -12,4 +12,4 @@ FFI crate: building it requires a C++ toolchain and the DSDcc native library/hea
 
 ## License
 
-The binding source is licensed under either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).
+The binding source is licensed under either of [Apache-2.0](../../LICENSE-APACHE) or [MIT](../../LICENSE-MIT).

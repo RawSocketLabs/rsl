@@ -27,3 +27,5 @@ substitute a fabricated value in an error.
 
 - `rsl` re-exports this crate as `rsl::rf` behind its optional `rf` feature. Check
   `cargo check -p rsl --features rf` after any public API change.
+- `airspy` takes and re-exports `FrequencyHz` and `SampleRateSps`; check `cargo check -p airspy`
+  (needs libairspy) after changing them.
