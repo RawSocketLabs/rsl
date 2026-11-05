@@ -1,29 +1,31 @@
 # rsl — agent & contributor guide (workspace root)
 
-> `CLAUDE.md` is a symlink to this file. Each crate carries its own `AGENTS.md` with
-> crate-specific detail; this root file holds the workspace-wide rules.
+> `CLAUDE.md` is a symlink to this file. Each top-level crate carries its own `AGENTS.md`
+> (+ `CLAUDE.md` symlink) with crate-specific detail; sims, sub-crates and group-covered crates
+> (`pki/*`, `devices/` shared chips) inherit their group's or parent's. This root file holds the
+> workspace-wide rules.
 
 **What this is.** The `rsl` monorepo: one Cargo workspace holding the public RawSocket Labs
 stack — the codec (`bitsandbytes`), raw-packet I/O (`rawsock`), cryptography (`crypto`),
 ASN.1/X.509/PKI (`pki/*`), compression (`compression`), error correction (`error-correction`),
 RF value types (`rfus`), the protocol crates (`protocols/*`), the facades (`rsl`, `deps`), the
-libairspy bindings (`airspy`), and (excluded, FFI) `usdr-ffi`, `rust-dsdcc` and `bladerf`. Crates are **published independently** but developed
-**in lockstep** — inter-crate deps are `path` + `version`, so there's one `Cargo.lock` and no
-git-rev pinning.
+libairspy bindings (`airspy`), and (excluded, FFI) `usdr-ffi`, `rust-dsdcc` and `bladerf`. Crates
+are **published independently** (as each is release-enabled) but developed **in lockstep** —
+inter-crate deps are `path` + `version`, so there's one `Cargo.lock` and no git-rev pinning.
 
 ## Layout
 
-One directory per domain group; each crate's own `AGENTS.md` holds its detail.
+One directory per domain group; each crate's own (or its group's) `AGENTS.md` holds its detail.
 
 | Path | Crate(s) | Notes |
 |------|----------|-------|
 | `codecs/` | `bitsandbytes` + `bitsandbytes-macros` (`bitsandbytes/{bnb,bnb-macros}`), `compression`, `error-correction` | the bit-aware codec (`#![forbid(unsafe_code)]`) and accuracy-first compression and redundancy coding (`no_std + alloc`, zero `unsafe`) |
 | `crypto/` | `crypto` (`core/`), `crypto-legacy` (`legacy/`) | accuracy-first primitives (`no_std + alloc`, zero `unsafe`); opt-in historical/broken cryptography, never a default negotiation source; `fuzz/` is the group's detached fuzz workspace |
-| `pki/` | `asn1`, `x509`, `pki` (`asn1/`, `x509/`, `validation/`) | strict DER transport, certificate syntax and path validation; `no_std + alloc`, zero `unsafe` |
+| `pki/` | `asn1`, `x509`, `pki` (`asn1/`, `x509/`, `validation/`) | strict DER transport, certificate syntax and path validation; `no_std + alloc`, zero `unsafe`; `fuzz/` is the group's detached fuzz workspace |
 | `transports/` | `rawsock`, `usb` | L2/L3/L4 raw I/O via `rustix` (`#![deny(unsafe_code)]`, one confined `unsafe` fn); owned USB host access over Linux usbfs (unpublished) |
 | `types/` | `rfus` | plain domain value types, each with its units, parsing and validation; no I/O, hardware or protocol logic, `no_std` where possible. `rfus`: RF frequencies, sample rates and scan targets |
 | `devices/` | drivers, simulators, oracles, shared chips, `hal` | pure-Rust device drivers, unpublished; see `devices/AGENTS.md` |
-| `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `netlink`, `protocol-examples` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol; `examples/` holds the runnable injection examples |
+| `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, `rtltcp`, `netlink`, `protocol-examples` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol; `examples/` holds the runnable injection examples |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `deps/` | `deps` | blessed external-dependency stack |
 | `bindings/` | `airspy`; `usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys` | `airspy` is a workspace member (links libairspy, which the CI image provides); the rest are **excluded** FFI workspaces (need native toolchains/libraries) |
@@ -38,16 +40,19 @@ One directory per domain group; each crate's own `AGENTS.md` holds its detail.
   unsafe policy is `unsafe_op_in_unsafe_fn = deny`; crates that guarantee zero unsafe pin
   `#![forbid(unsafe_code)]` at crate level (bnb); rawsock is `deny` with one confined `unsafe` fn.
 - **Formatting / toolchain / MSRV** — root `rustfmt.toml`, `rust-toolchain.toml`, MSRV 1.85.
-- **Versioning** — per-crate SemVer via `release-plz` (scope = crate name, e.g. `feat(dns): …`);
-  `publish = false` until the registry decision flips on.
+- **Versioning** — per-crate SemVer via `release-plz` (scope = crate name, e.g. `feat(dns): …`).
+  Publication is opted in per package in `release-plz.toml`; today only the `bitsandbytes` pair
+  (`bitsandbytes` + `bitsandbytes-macros`) is release-enabled and published to crates.io (see
+  `codecs/bitsandbytes/docs/RELEASING.md`). Everything else stays `publish = false`.
 - **Commits** — Conventional Commits (commitlint). **No `Co-Authored-By:` trailer.**
 
 ## FFI crates (`usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys`, `airspy`)
 
 `usdr-ffi`, `rust-dsdcc` and `bladerf` (with `bladerf-sys`) are excluded workspaces; `airspy` is a
 root member (below). The excluded ones stay out of the default workspace build/CI (they need a
-C++ toolchain + system libs). Build them explicitly: `cargo build --manifest-path bindings/usdr/Cargo.toml`. `rust-dsdcc` links the external
-DSDcc library — its license governs distributed linked binaries.
+C++ toolchain + system libs). Build them explicitly:
+`cargo build --manifest-path bindings/usdr/Cargo.toml`. `rust-dsdcc` links the external DSDcc
+library — its license governs distributed linked binaries.
 
 `bindings/bladerf/` retains its own workspace with the `bladerf-sys` member in
 `sys/`. It requires `libbladeRF` development headers/library and `libclang`.
@@ -101,8 +106,9 @@ cargo deny check
 Before pushing a source, dependency, API, FFI, or CI change, run
 `scripts/ci-local.sh pre-push` from a clean, committed worktree. It runs the jobs CircleCI
 would generate for the change, unchanged, in the same pinned `rsl-ci` image under rootless
-Podman: complete affected-package and downstream-consumer suites. The selector includes optional/dev/build/platform dependencies,
-detached validation workspaces, and shared fixtures; do not replace it with ad-hoc path filters.
+Podman: complete affected-package and downstream-consumer suites. The selector includes
+optional/dev/build/platform dependencies, detached validation workspaces, and shared fixtures;
+do not replace it with ad-hoc path filters.
 Dependency-only manifest/lockfile deltas select users and old/new consumers, including
 shared feature users. Shared build policy, central CI changes, unknown ownership, and
 unavailable dependency-impact evidence select full routine coverage.

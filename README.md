@@ -1,8 +1,8 @@
 # rsl — the RawSocket Labs stack
 
 A single Cargo workspace for the public RSL stack. The crates are **published independently**
-(you can depend on just `bitsandbytes`, or `rawsock`, or `dns`), but they're **developed in
-lockstep** — inter-crate dependencies are in-workspace `path` deps, so there's one lockfile and
+as each is release-enabled (today: `bitsandbytes`), but they're **developed in lockstep** —
+inter-crate dependencies are in-workspace `path` + `version` deps, so there's one lockfile and
 no cross-repo version pinning to keep in sync.
 
 ## Crates
@@ -26,11 +26,14 @@ no cross-repo version pinning to keep in sync.
 - **`devices/*`** — pure-Rust device drivers with their simulators, parity oracles and shared
   chip crates (unpublished; see `devices/AGENTS.md`).
 - **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer
-  crates `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, and `dns`, plus
+  crates `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, and
+  `rtltcp`, plus `protocol-examples` (runnable injection examples, unpublished), and
   **`netlink`** (`protocols/system/netlink`) for strict Linux route/generic-netlink
   transport and typed link, address, route, rule, and WireGuard operations.
 - **`rsl`** — the owned-library facade: one feature-gated re-export of the crates above.
 - **`deps`** — the blessed external-dependency stack (pins + re-exports third-party crates).
+- **`airspy`** (`bindings/airspy`) — libairspy bindings (workspace member; needs libairspy
+  ≥ 1.0.6 installed: `airspy-devel` / `libairspy-dev`).
 - **`usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys`** (`bindings/*`) — FFI/SDR bindings
   (excluded from the default build; need native toolchains/libraries).
 
@@ -48,11 +51,11 @@ for blessed externals. See each crate's README and `rsl/README.md`.
 ## Developing
 
 ```sh
-cargo build --workspace       # everything except the FFI members
+cargo build --workspace       # all but the excluded FFI workspaces; airspy needs libairspy
 cargo test --workspace
 ```
 
-FFI members build on their own (`cargo build --manifest-path bindings/usdr/Cargo.toml`) given a native
+Excluded FFI workspaces build on their own (`cargo build --manifest-path bindings/usdr/Cargo.toml`) given a native
 toolchain. The [bladeRF workspace](bindings/bladerf/README.md) additionally requires `libbladeRF`
 development headers/library and `libclang`. See `AGENTS.md` for the workspace-wide standards.
 
