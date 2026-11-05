@@ -97,9 +97,6 @@ Verbs: `implements` (fully), `partial` (`missing="…"`), `deviates` (`reason="�
 `rfc1035#4.1.1`, not a single requirement). Requirement ids look like
 `rfc1035#4.1.4/must.2348d6`.
 
-A handshake magic that identifies the protocol (e.g. rtltcp's `RTL0`) may be a codec constant
-rather than a stored field; annotate it `//~ rejects … reason=`.
-
 ## Anatomy of a protocol crate (the template)
 
 New protocol crates follow this shape (its own `AGENTS.md` fills in the specifics); existing

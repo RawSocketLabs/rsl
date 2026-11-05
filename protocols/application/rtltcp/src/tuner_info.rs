@@ -8,7 +8,6 @@ use bnb::bin;
 ///
 /// The magic is a codec constant: encoding writes it, and decoding anything else fails
 /// with [`bnb::ErrorKind::BadMagic`].
-//~ rejects rtl_tcp#greeting part="magic" reason="a handshake magic identifies the protocol; a non-RTL0 greeting is not rtl_tcp, so the magic is a codec constant"
 #[bin(big, magic = u32::from_be_bytes(*b"RTL0"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TunerInfo {

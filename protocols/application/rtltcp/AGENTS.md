@@ -33,9 +33,9 @@ Deferred: a server half, async clients.
 
 The parser accepts any opcode (preserved as `Opcode::Other`). The greeting's `RTL0` is a
 codec constant rather than a field, so decoding any other magic fails with `BadMagic`, which
-the client reports as `ClientError::Handshake`. This is a deliberate, annotated deviation from
-the group's reject-only-the-unencodable rule (`//~ rejects` on `TunerInfo`): a handshake magic
-identifies the protocol, so it may be a codec constant.
+the client reports as `ClientError::Handshake`. This is a deliberate exception to the group's
+reject-only-the-unencodable rule: a handshake magic identifies the protocol, so a non-`RTL0`
+greeting is not rtl_tcp. (rtltcp has no refcheck corpus, so the exception is recorded here.)
 
 ## Testing
 

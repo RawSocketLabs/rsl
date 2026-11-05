@@ -15,9 +15,9 @@ obvious operations over table tricks, SIMD, assembly, or clever fusion.
 - Protocol constructions (TLS records, SSH packets) live in protocol crates; this crate supplies
   primitives and narrowly defined primitive contracts.
 - Every algorithm needs published known-answer tests, intermediate-state tests where vectors
-  provide them, negative tests, and differential tests (or, where no stable independent
-  implementation exists, a complete Wycheproof suite recorded as the scheme-level oracle in
-  `STANDARDS.md`) before it is advertised as usable.
+  provide them, negative tests, and differential tests before it is advertised as usable. The
+  recorded exceptions (X448 and Ed448, where a complete Wycheproof suite stands in as the
+  scheme-level oracle) are listed in `STANDARDS.md`; a new exception needs owner approval.
 - `STANDARDS.md` is the traceability ledger. Update it in the same change that implements or
   removes a standards-defined operation, constant, encoding rule, or state transition.
 - Every standards-derived module names the exact controlling publication and the sections it
