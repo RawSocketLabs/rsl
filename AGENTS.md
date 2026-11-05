@@ -2,7 +2,8 @@
 
 > `CLAUDE.md` is a symlink to this file. Each top-level crate carries its own `AGENTS.md`
 > (+ `CLAUDE.md` symlink) with crate-specific detail; sims, sub-crates and group-covered crates
-> (`pki/*`, `devices/` shared chips) inherit their group's or parent's. This root file holds the
+> (`pki/*`, `devices/` shared chips) inherit their group's or parent's; `bindings/airspy` is covered
+> by the FFI section below. This root file holds the
 > workspace-wide rules.
 
 **What this is.** The `rsl` monorepo: one Cargo workspace holding the public RawSocket Labs

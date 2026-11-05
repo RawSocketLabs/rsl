@@ -726,7 +726,8 @@ cannot overwrite the JSON input of an API check.
 | `cargo deny check`; `actionlint` | Pass with refreshed advisory data. Unused-license and duplicate-syn warnings remain; yanked wnaf is absent. |
 
 Benchmark, allocation, mutation, fuzz, and final reviewer evidence below complement these
-checks. A clean committed worktree must additionally pass `scripts/ci-local.sh pre-push`,
+checks. A clean committed worktree must additionally pass `scripts/ci-act.sh pre-push` (since
+replaced by `scripts/ci-local.sh`),
 then exact-SHA hosted PR/main CI and release-PR/package checks before registry publication.
 
 Final independent reviewer approval: 2026-09-08, no findings or unresolved pre-commit
@@ -1185,7 +1186,8 @@ under `/tmp/rsl-gate.piGQor/`: `gate-{baseline,cold}-{1,2,3}.log`,
 `allocations-cold.log`, and `disasm-summary.txt`. `superseded/` holds the earlier build's
 logs. The directory is local and does not survive a reboot.
 
-**Qualification (2026-09-20).** `scripts/ci-act.sh pre-push --base 9b29a2a8` (`ci-act.sh` has since been replaced by `scripts/ci-local.sh`) ran against a
+**Qualification (2026-09-20).** `scripts/ci-act.sh pre-push --base 9b29a2a8` (since replaced by
+`scripts/ci-local.sh`) ran against a
 throwaway commit of this candidate in a scratch clone; the checkout and index were untouched.
 Every selected check profile's step passed: blessed, bnb, facades, msrv, network, no-std,
 package, public-api, semver, socks, workspace, rust-dsdcc, rust-skills, and usdr. Two

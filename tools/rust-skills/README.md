@@ -44,7 +44,8 @@ cargo fmt --all -- --check
 ```
 
 `cargo xtask help` lists every command and flag, including the `install`
-options `--agent common|claude|multi-agent`, `--skills`, and `--replace`.
+options `--agent common|claude` (`multi-agent` is blocked until Cursor's duplicate-skill
+behaviour is verified), `--skills`, and `--replace`.
 
 From the RSL repository root, use an explicit manifest path when scripting the
 component, for example:

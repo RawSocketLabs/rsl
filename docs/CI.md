@@ -198,7 +198,8 @@ generator and the setup config: its toolchains (pinned stable, MSRV, and the pin
 public-API and fuzzing), cargo tools, release-plz, native libraries and DSDcc headers are fixed at
 build time, and nothing is installed at run time. A change under `.circleci/image/` adds an
 `image` job to a main push, after `rsl` passes, that builds and publishes
-`ghcr.io/rawsocketlabs/rsl-ci:<sha>` with the `images` context's GHCR token; adopting it is a
+`ghcr.io/rawsocketlabs/rsl-ci:<sha>` with the `images` context's GHCR token (a classic token holding only `write:packages`: GHCR
+rejects fine-grained tokens); adopting it is a
 reviewed digest change. To try a changed image first, build it locally and run
 `scripts/ci-local.sh pre-push --image localhost/rsl-ci:<tag>`. `test_circleci.py` keeps the
 Dockerfile pins, `bnb.toml`, the generator and the setup config in step. `commitlint` lints every
@@ -211,7 +212,12 @@ a version bump below the tip of a multi-commit push qualifies nothing. Main qual
 changes; any other branch compares from its merge base with `origin/main`, and a same-repository
 `release-plz-` branch qualifies its products. Any explicit parameter (`full`, `base`, `release`,
 `products`) is a manual run: the nightly schedule passes `full=true`, and the weekly advisory
-schedule passes `audit=true`, which continues with only `cargo deny check advisories`. A
+schedule passes `audit=true`, which continues with only `cargo deny check advisories`. The
+triggers live in the CircleCI project settings, not in code: the GitHub App push trigger
+(`all-pushes`) and two `main` schedules owned by the system actor, daily at 09:17 UTC
+(`full=true`) and Mondays at 06:00 UTC (`audit=true`). Jobs use the Docker executor; the heaviest
+measured 1.5 GiB peak, and a machine executor is the one-line fallback if a job runs out of
+memory. A
 namespaced `resource_class` parameter selects a self-hosted container runner with the same image.
 
 Caches are keyed by job, toolchain, job image and the job's lockfile (the root `Cargo.lock`, or a
