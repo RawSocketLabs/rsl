@@ -3,8 +3,7 @@
 Status: implemented; compatibility routers remain available for consumer migration
 
 This map is the boundary contract for migrating the two compatibility packages.
-It preserves every stable runtime rule ID while assigning one portable owner;
-a retired rule keeps its row and its ID is never reused.
+It preserves every stable runtime rule ID while assigning one portable owner.
 Routing is not ownership: a reviewing or implementing skill activates the named
 owner instead of copying its directive.
 
@@ -52,7 +51,7 @@ owner instead of copying its directive.
 | `CORE-PROTO-006` | `rust-protocol` | API design owns public representation ergonomics; onboarding records repository policy for preserving or rejecting unknown and reserved values. |
 | `CORE-SAFE-001` | `rust-unsafe-ffi` | Repository and organization unsafe policy decides whether activation is permitted. |
 | `CORE-DEP-001` | `rust-dependencies-security` | RSL's preapproval threshold stays in its organization layer. |
-| `CORE-DEP-002` | retired | The dependency-facade preference moved wholly to the RSL organization layer (`organizations/rsl/decisions/dependencies.toml`); the ID is not reused. |
+| `CORE-DEP-002` | `rust-dependencies-security` | The `rsl-deps` preference moves wholly to the RSL organization layer. |
 | `CORE-DEP-003` | `rust-dependencies-security` | Testing and embedded route here for feature matrices. |
 | `CORE-DEP-004` | `rust-dependencies-security` | API design owns the exposed contract; async/concurrency owns runtime and pool semantics. |
 | `CORE-CHANGE-001` | `rust-implement` | `rust-review` checks diff scope without restating the implementation workflow. |
