@@ -6,8 +6,8 @@ read it before changing `bnb`/`bnb-macros`.
 
 ## What this is
 
-A Cargo workspace for **`bitsandbytes`** (imported as `bnb`), an owned, bit-aware binary
-codec, plus its proc-macro crate. Two members:
+A directory in the rsl workspace holding the two codec crates of **`bitsandbytes`**
+(imported as `bnb`), an owned, bit-aware binary codec, and its proc-macro crate:
 
 - `bnb/` — runtime library (published as `bitsandbytes`, lib name `bnb`).
 - `bnb-macros/` — proc-macros (published as `bitsandbytes-macros`; re-exported by `bnb`).
@@ -17,7 +17,7 @@ and the road to 1.0 in [`bnb/ROADMAP.md`](bnb/ROADMAP.md).
 
 ## Working here
 
-- **One concern per change**, on a branch off `main` → green CircleCI `CI` → fast-forward `main`.
+- **One concern per change**, on a branch off `main` → green `ci/circleci: rsl` → fast-forward `main`.
 - **Before committing runtime/macro changes**, apply the correctness/performance gate in
   [`docs/RELEASING.md`](docs/RELEASING.md#pre-commit-correctness-and-performance-gate).
   Record candidate evidence and findings in `bnb/DESIGN.md`; obtain final independent review.
@@ -31,18 +31,14 @@ and the road to 1.0 in [`bnb/ROADMAP.md`](bnb/ROADMAP.md).
   These complete gates and affected consumer suites run when bnb is in the impact set.
   Ordinary prose-only changes use the lightweight policy path; release candidates never do.
   Use the root `scripts/ci-local.sh pre-push` selector, not hand-maintained consumer lists.
-- **Zero `unsafe`** — `unsafe_code = "forbid"` workspace-wide; don't introduce any.
+- **Zero `unsafe`** — `#![forbid(unsafe_code)]` at crate level in both crates; don't introduce any.
 - **Public items need docs** (`#![deny(missing_docs)]`); a public-API change means
   regenerating `bnb/public-api.txt` (see `bnb/AGENTS.md` and the `public-api` CI job).
 
 ## Layout
 
-The root holds only what must live there (`Cargo.toml`, `rust-toolchain.toml`, `LICENSE-*`,
-`README.md`, `rustfmt.toml`, `release-plz.toml`, this file). Relocatable tool configs are in
-`.config/` (`deny.toml`, `commitlint.config.mjs`); community-health docs in `.github/`
-(`CONTRIBUTING.md`, `SECURITY.md`); release process in `docs/`. Run cargo-deny locally via
-`cargo deny-check` (alias in `.cargo/config.toml`).
-
-## Contributors & security
-
-[`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) · [`.github/SECURITY.md`](.github/SECURITY.md)
+Shared configs live at the workspace root (`rustfmt.toml`, `release-plz.toml`, `deny.toml`,
+`.config/commitlint.config.mjs`, `.cargo/config.toml`; run cargo-deny locally via
+`cargo deny-check`). This directory adds `docs/RELEASING.md` (release process), `fuzz/`
+(detached fuzz workspace) and `scripts/` (gdb profiles). `bnb-macros` has no guide of its own:
+[`bnb/AGENTS.md`](bnb/AGENTS.md) covers both crates.
