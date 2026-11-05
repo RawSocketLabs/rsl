@@ -101,7 +101,8 @@ release-enabled. Its oracle runs as `pe-sync-oracle`, which a change to `pe-sync
 
 All five device oracles compile the one vendored libusdr tree, `devices/vendor/libusdr`
 (refreshed by `devices/vendor/vendor.sh`); a change under `devices/vendor/` selects every
-oracle profile and no driver package. The FFI bindings' compile check runs as `usdr-ffi`.
+oracle profile and no driver package. The excluded FFI workspaces run as the `usdr-ffi`,
+`rust-dsdcc` and `bladerf` profiles; `airspy` is a workspace member covered by the workspace jobs.
 
 | Change | Coverage beyond lightweight policy validation |
 |---|---|
@@ -161,7 +162,7 @@ the coverage receipt; the final job receives only the other jobs' results, not t
 same pinned `rsl-ci` image. The plan job's generator writes the continuation CircleCI would run,
 and each job's own `run` steps execute unchanged in a fresh clone of the tested commit: `policy`
 and `commitlint` first, then the selected checks and fuzz targets (`-j N`, default
-`CI_LOCAL_JOBS` or 2), then `CI`, which recomputes the plan and rejects divergence. Release jobs
+`CI_LOCAL_JOBS` or 2), then `rsl`, which recomputes the plan and rejects divergence. Release jobs
 never run locally; a changed job image is built, not published. A machine job (`commitlint`)
 runs its script on the host with Podman standing in for Docker, so its own container does the work. It requires a clean committed
 tree and tests a self-contained clone, so linked worktrees and unstaged files never reach it.
@@ -176,7 +177,7 @@ built from `.circleci/image/`). Build targets and the Cargo registry are cached 
 
 `.circleci/config.yml` is a setup workflow: its `plan` job runs the selector through
 `scripts/ci/circleci.py` and continues the pipeline with only the selected jobs. Unselected
-profiles are never scheduled; a prose-only change runs `policy`, `commitlint` and the `CI` gate.
+profiles are never scheduled; a prose-only change runs `policy`, `commitlint` and the `rsl` gate.
 Selected jobs all start once `policy` passes and run concurrently. The `workspace` profile, the
 critical path, runs as three jobs (`run.py --part`): `lint` (fmt and Clippy), `test` (`cargo
 nextest run`, which runs every test binary at once, plus `cargo test --doc`), and `extra`
@@ -196,7 +197,7 @@ Every job runs the `rsl-ci` image (`.circleci/image/Dockerfile`), pinned by dige
 generator and the setup config: its toolchains (pinned stable, MSRV, and the pinned nightly for
 public-API and fuzzing), cargo tools, release-plz, native libraries and DSDcc headers are fixed at
 build time, and nothing is installed at run time. A change under `.circleci/image/` adds an
-`image` job to a main push, after `CI` passes, that builds and publishes
+`image` job to a main push, after `rsl` passes, that builds and publishes
 `ghcr.io/rawsocketlabs/rsl-ci:<sha>` with the `images` context's GHCR token; adopting it is a
 reviewed digest change. To try a changed image first, build it locally and run
 `scripts/ci-local.sh pre-push --image localhost/rsl-ci:<tag>`. `test_circleci.py` keeps the
@@ -255,6 +256,23 @@ use "Rerun workflow from start". Redundant branch workflows are auto-cancelled; 
 No success is reused across different SHAs. Dependency edits use proven declaration/resolution
 deltas; shared policy or unavailable dependency-impact evidence retains the conservative
 full-routine fallback. Release-only qualification remains limited to the releasing product's closure.
+
+## Known gaps and procedures
+
+CircleCI replaced GitHub Actions on 2026-10-15 (the migration decisions are in git history, in
+the removed `docs/CIRCLECI-PLAN.md`). What remains:
+
+- First release through CircleCI: run `release-plz release --dry-run` from a release-PR merge
+  before the live one. Confirm tags are pushed with `RELEASE_PLZ_TOKEN`, and that a superseded
+  SHA, a failed `rsl` gate, and a tampered receipt each stop before publishing.
+- Outage procedure: an admin can disable the ruleset to land a fix while CircleCI is down, then
+  re-enable it. The Actions workflows remain in history.
+- Not yet covered: SBOM and build-provenance attestation for published crates, and rulesets
+  kept as code.
+- Before enabling a second release product: a trunk push judges version changes against its
+  first parent only, so a bump below the tip of a multi-commit push is never qualified, and the
+  next release-plz merge for another product could publish it. Make `release` refuse any
+  release-enabled package whose version is neither on the registry nor in the qualified members.
 
 ## Measurements
 
