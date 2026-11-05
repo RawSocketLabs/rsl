@@ -1,11 +1,12 @@
 # rawsock — agent guide
 
+> `CLAUDE.md` is a symlink to this file. Inherits the workspace-root `../../AGENTS.md`.
+
 Dual-use, layered raw-packet I/O. The **sink** half of the RawSocketLabs workspace: the
 `bnb`-based protocol crates encode bytes; `rawsock` transmits them verbatim at a chosen
-layer. Single-crate repo (no proc-macros); `CLAUDE.md` is a symlink to this file.
+layer. A workspace member of the `rsl` monorepo (no proc-macros).
 
-> Sibling repos: [`bitsandbytes`](https://github.com/RawSocketLabs/bitsandbytes) (the codec),
-> [`protocols`](https://github.com/RawSocketLabs/protocols) (the protocol crates that consume
+> Siblings: `codecs/bitsandbytes` (the codec), `protocols/` (the protocol crates that consume
 > both). This crate is bnb-**independent** — pure I/O + composition.
 
 ## Status — full L2→L4 injection
@@ -17,9 +18,9 @@ all three socket rungs — `transport` (L4 UDP), `network` (L3 `NetworkSocket`, 
 name). The L3/L2 backends are privileged (`CAP_NET_RAW`) and are the rungs the `protocols`
 `ip`/`ethernet` layers target to put forged datagrams and frames on the wire.
 
-**One confined `unsafe`:** rustix 1.1.4 exposes no safe link-layer socket address, so
-`linux/link.rs` builds a `sockaddr_ll` via `SocketAddrAny::read` inside a single
-`#[allow(unsafe_code)]` fn. The crate is otherwise `#![deny(unsafe_code)]` (relaxed from
+**One confined `unsafe`:** rustix 1.x (last checked at 1.1.6) exposes no safe link-layer
+socket address, so `linux/link.rs` builds a `sockaddr_ll` via `SocketAddrAny::read` in one
+`unsafe` block, in the `#[allow(unsafe_code)]` fn `link_addr`. The crate is otherwise `#![deny(unsafe_code)]` (relaxed from
 `forbid` for exactly this, per the ROADMAP) — **no `libc`**, rustix-only.
 
 ## Architecture
@@ -36,7 +37,7 @@ name). The L3/L2 backends are privileged (`CAP_NET_RAW`) and are the rungs the `
 - **`linux/transport`** — L4: unprivileged UDP over rustix.
 - **`linux/network`** — L3: `NetworkSocket`, raw IPv4 via `IPPROTO_RAW` (`network` feature).
 - **`linux/link`** — L2: `LinkSocket`, raw Ethernet via `AF_PACKET`, bound by interface name
-  (`link` feature); holds the crate's one `unsafe` fn.
+  (`link` feature); holds the crate's one `unsafe` block.
 
 ## Dual-use doctrine (load-bearing)
 
@@ -50,8 +51,8 @@ is a deliberate, compile-checked opt-in. Never add validation to the sink.
 - **rustix** is the syscall crate (Linux, `net` feature, optional). Not `libc`/`socket2`/
   `pnet`/`pcap` — **rustix-only, no `libc`**.
 - The crate is `#![deny(unsafe_code)]` with **exactly one** `#[allow(unsafe_code)]`, the
-  `link_addr` fn in `linux/link.rs` (the `link`/L2 backend). rustix 1.1.4 (the latest) has no
-  safe link-layer socket address, so binding an `AF_PACKET` socket needs one call to build a
+  `link_addr` fn in `linux/link.rs` (the `link`/L2 backend). rustix 1.x (last checked at 1.1.6) has
+  no safe link-layer socket address, so binding an `AF_PACKET` socket needs one call to build a
   `sockaddr_ll` via `SocketAddrAny::read`. `name_to_index` covered the interface lookup, so
   `libc` was avoided entirely. (This is the pre-planned relaxation from `forbid` → `deny`;
   keep the `unsafe` confined to that one fn — never widen it.)
@@ -76,10 +77,9 @@ is a deliberate, compile-checked opt-in. Never add validation to the sink.
 - Doctests: the README's code block (`ReadmeDoctests` in `lib.rs`) and one example per socket
   type; the L3/L2 ones are `no_run`.
 
-`cargo test` · `cargo clippy --all-targets -- -D warnings` (default, `--all-features`, and
-`--no-default-features` are all clean) · `cargo fmt --all --check` · MSRV 1.85.
+`cargo test -p rawsock` · `cargo clippy -p rawsock --all-targets [--all-features|--no-default-features] -- -D warnings`
+(default, `--all-features` and `--no-default-features` are all clean) · `cargo fmt --all --check`.
 
 ## Conventions
 
-Conventional Commits, **lowercase subject** (lead with a verb), **no `Co-Authored-By:`
-trailer**. `#![deny(missing_docs)]`. Workspace lints: `clippy::all` denied, `pedantic` warn.
+`#![deny(missing_docs)]`. Commits, lints and MSRV are the workspace root's.

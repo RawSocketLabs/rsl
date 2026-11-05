@@ -26,11 +26,12 @@
 //!
 //! Syscalls go through [`rustix`](https://docs.rs/rustix) (safe, Linux-only, optional) —
 //! **not** `libc`/`socket2`. The crate is `#![deny(unsafe_code)]` with a **single** confined
-//! `unsafe` block, in `linux/link.rs` (the `link` feature): rustix (1.1.4, the latest) exposes
-//! no safe link-layer socket address, so binding an `AF_PACKET` socket needs one call to
-//! construct a `sockaddr_ll` — no `libc`, and everything else stays safe. See `DESIGN.md`.
+//! `unsafe` block, in `linux/link.rs` (the `link` feature): rustix (1.x, last checked at
+//! 1.1.6) exposes no safe link-layer socket address, so binding an `AF_PACKET` socket needs
+//! one call to construct a `sockaddr_ll` — no `libc`, and everything else stays safe. See
+//! `DESIGN.md`.
 //!
-//! [`bnb`]: https://github.com/RawSocketLabs/bitsandbytes
+//! [`bnb`]: https://docs.rs/bitsandbytes
 //! [RawSocketLabs]: https://github.com/RawSocketLabs
 #![deny(unsafe_code)]
 #![deny(missing_docs)]

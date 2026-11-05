@@ -6,7 +6,7 @@ layer — an ordinary L4 payload, a hand-built IP header (L3), or a forged Ether
 
 `rawsock` is the socket-layer half of the [RawSocketLabs](https://github.com/RawSocketLabs)
 dual-use philosophy. The protocol crates *encode* bytes (compliant by default, deliberately
-violatable, on the [`bnb`](https://github.com/RawSocketLabs/bitsandbytes) codec); `rawsock`
+violatable, on the [`bnb`](https://docs.rs/bitsandbytes) codec); `rawsock`
 *transmits* those bytes verbatim. It is the sink; the protocol crates are the source.
 
 ```rust
@@ -52,7 +52,7 @@ See [`DESIGN.md`](DESIGN.md).
 
 ## Not this
 
-- **Not `bnb`.** [`bnb`](https://github.com/RawSocketLabs/bitsandbytes)'s `net` feature
+- **Not `bnb`.** [`bnb`](https://docs.rs/bitsandbytes)'s `net` feature
   already does typed whole-message exchange over *ordinary kernel sockets* (UDP/TCP, sync +
   async). `rawsock` never re-implements that; it forges and injects raw bytes below the
   kernel's help. A protocol crate depends on both.

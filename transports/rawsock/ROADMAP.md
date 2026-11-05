@@ -1,7 +1,7 @@
 # rawsock — roadmap
 
 Status and plan of record. This crate is extracted from the proven asyio `rawsock` (rev 3)
-and re-homed as a bnb-independent repo.
+and re-homed as a bnb-independent crate.
 
 ## Built — the core
 
@@ -22,7 +22,7 @@ and re-homed as a bnb-independent repo.
       capability-consistency check (runs in CI) + a `CAP_NET_RAW`-gated loopback send.
 - [x] **`link` (L2)** — **done** (`link` feature): `LinkSocket`, raw Ethernet via `AF_PACKET`,
       bound to an interface by name. rustix's `netdevice::name_to_index` covers the interface
-      lookup, but rustix 1.1.4 (the latest) has **no safe link-layer socket address** — so
+      lookup, but rustix 1.x (last checked at 1.1.6) has **no safe link-layer socket address** — so
       binding needs **one** `unsafe` call to build a `sockaddr_ll` via `SocketAddrAny::read`.
       Per the plan below, the crate went `forbid(unsafe_code)` → `deny` with that single
       `#[allow]` confined to `linux/link.rs`; **no `libc`** (rustix-only). Capability-consistency

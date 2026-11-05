@@ -4,7 +4,7 @@
 crates *encode* bytes (compliant by default, deliberately violatable); `rawsock` *transmits
 those bytes verbatim at a chosen layer*. It is the sink; the protocol crates are the source.
 This design is carried over from the proven predecessor implementation (asyio `rawsock`
-rev 3), re-homed as its own bnb-independent repo.
+rev 3), re-homed as a bnb-independent crate.
 
 ## Confirmed decisions
 
@@ -12,9 +12,10 @@ rev 3), re-homed as its own bnb-independent repo.
   (designed-for, not shipped).
 - **Sockets via `rustix`, not `socket2`/`libc`/`pnet`/`pcap`.** rustix gives safe `AF_PACKET`
   and `SOCK_RAW` syscalls with no libc linkage; `IP_HDRINCL` comes free by opening the L3
-  socket as `IPPROTO_RAW`. Re-verified against rustix 1.1.4: `netdevice::name_to_index`
+  socket as `IPPROTO_RAW`. Re-verified against rustix 1.1.6: `netdevice::name_to_index`
   replaces `if_nametoindex`, but there is still no safe link-layer socket address, so the L2
-  bind builds a `sockaddr_ll` via `SocketAddrAny::read` in one confined `unsafe` fn. No `libc`.
+  bind builds a `sockaddr_ll` via `SocketAddrAny::read` in one `unsafe` block, in the
+  `#[allow(unsafe_code)]` fn `link_addr`. No `libc`.
 - **Sync-first**; non-blocking handles leave async additive.
 - **Misuse resistance is first-class:** lower layers are opt-in Cargo features, the default
   path uses maximum kernel help (L4), and sends are typed per layer with an explicit raw
