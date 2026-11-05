@@ -25,8 +25,9 @@ extensions, algorithms, and staged external signing remain available without tur
 certificate into trusted state.
 
 [`fuzz/`](fuzz/README.md) covers strict DER, differential certificate parsing against an
-independent implementation, and structured path-validation mutations. Published NIST PKITS
-fixtures and byte-level provenance live under [`tests/vectors/`](tests/vectors/).
+independent implementation (its table states exactly what is compared), and structured
+path-validation mutations. Published NIST PKITS fixtures and byte-level provenance live under
+[`tests/vectors/`](tests/vectors/).
 
 All three crates are `no_std + alloc`, forbid unsafe code, and are unaudited. They make no
 production-security claim.

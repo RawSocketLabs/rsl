@@ -50,17 +50,41 @@ let path = PathValidator::builder()
     .validate()?;
 ```
 
-The three required setters replace compile-time marker types. `validate()` exists only for
-`HasLeaf + HasAnchors + HasTime`; optional policy setters remain available in any order. This
+`leaf`, `trust_anchors` and `at_time` each advance a typestate marker (`MissingLeaf`→`HasLeaf`,
+etc.). `validate()` exists only on `PathBuilder<HasLeaf, HasAnchors, HasTime>`; optional policy
+setters remain available in any order. This
 prevents accidentally attempting validation without its required external inputs while keeping
 those inputs explicit.
 
 Implemented policy is deliberately narrower than all of RFC 5280: unsupported critical
 extensions fail closed; policy-tree, name-constraints, root-store loading, clocks, and revocation
 transport are not inferred. Candidate paths use conservative exact-DER name matching.
+Because conforming nameConstraints are always critical, any path through a name-constrained CA
+fails with `UnsupportedCriticalExtension`. The same applies to critical certificatePolicies,
+policyConstraints and inhibitAnyPolicy.
+
+Trust anchors are trusted inputs (RFC 5280 §6.1.1(d)): their validity, extensions and CA flag are
+not checked. Callers that want anchor expiry enforced must filter anchors first.
+
+Revocation is checked only when `.revocation(&checker, mode)` is supplied. The default
+`RevocationMode::SoftFail` rejects only an affirmative `Revoked`. Use
+`RevocationMode::RequireKnown` to require `Good` for every non-anchor certificate.
+`RequireKnown` without a checker always fails.
+
+Supported signature profiles:
+
+- Ed25519
+- Ed448
+- ECDSA P-256 with SHA-256
+- ECDSA P-384 with SHA-384
+- RSASSA-PSS with SHA-256, MGF1-SHA-256, trailer field 1 and an explicit salt length
+
+Any other signature algorithm, including PKCS#1 v1.5 `sha*WithRSAEncryption`, fails with
+`UnsupportedAlgorithm`.
 
 Path construction defaults to at most 1,024 issuer-candidate checks, independently of the number
 of untrusted intermediates supplied by a peer. `max_candidate_checks` selects an explicit CPU-work
-budget; exhausting it fails closed.
+budget; exhausting it fails closed. `max_depth` (default 8 certificates, leaf and anchor
+included) bounds path length; exceeding it fails with `PathTooDeep`.
 
 This implementation is unaudited. It makes no production-security claim.

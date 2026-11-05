@@ -2,7 +2,8 @@
 //!
 //! ## Boundary
 //!
-//! This crate consumes already parsed [`x509::Certificate`] values and issuer public keys.
+//! This crate consumes already parsed [`x509::Certificate`] values (leaf, untrusted
+//! intermediates, trust-anchor certificates).
 //! It constructs a path, verifies the exact signed bytes, checks validity, CA/path constraints,
 //! critical extensions, optional key purpose and usage, and optional service identity. Root-store
 //! loading, clocks, and revocation transport remain platform inputs. TLS/SSH negotiation and
