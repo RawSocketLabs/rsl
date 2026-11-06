@@ -22,10 +22,18 @@ PREFIX = "release-plz-"
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def options(env, merge_base="c" * 40, parent=""):
+def options(env, merge_base="c" * 40, parent="", previous=""):
     with mock.patch.object(circleci, "merge_base", return_value=merge_base), \
-            mock.patch.object(circleci, "first_parent", return_value=parent):
+            mock.patch.object(circleci, "first_parent", return_value=parent), \
+            mock.patch.object(circleci, "previous_trunk_revision", return_value=previous):
         return event_options(None, env, PREFIX)
+
+
+def pipelines(*items):
+    response = mock.MagicMock()
+    response.__enter__.return_value.read.return_value = json.dumps({"items": [
+        {"number": number, "trigger_parameters": {"git": {"checkout_sha": sha}}} for number, sha in items]})
+    return response
 
 
 def cont(plan, gate, env):
@@ -52,6 +60,84 @@ class EventTests(unittest.TestCase):
                 env = {"CIRCLE_BRANCH": "main", "CI_BASE_REVISION": revision, "CIRCLE_SHA1": "e" * 40}
                 self.assertEqual(options(env, parent="d" * 40), ("push", "d" * 40, True, True, None))
 
+    def test_an_absent_previous_revision_falls_back_to_the_previous_trunk_pipeline(self):
+        env = {"CIRCLE_BRANCH": "main", "CI_BASE_REVISION": "<nil>", "CIRCLE_SHA1": "e" * 40}
+        self.assertEqual(options(env, parent="d" * 40, previous="a" * 40), ("push", "a" * 40, False, True, None))
+        # A re-run of the same commit still has no diff.
+        self.assertEqual(options(env, parent="d" * 40, previous="e" * 40), ("push", "d" * 40, True, True, None))
+
+    def test_the_gate_reads_the_pinned_trunk_base_not_the_network(self):
+        env = {"CIRCLE_BRANCH": "main", "CI_BASE_REVISION": "<nil>", "CIRCLE_SHA1": "e" * 40}
+        with mock.patch.object(circleci, "merge_base"), \
+                mock.patch.object(circleci, "first_parent", return_value="d" * 40), \
+                mock.patch.object(circleci, "previous_trunk_revision") as lookup, \
+                mock.patch.object(circleci, "descends", return_value=True):
+            self.assertEqual(event_options(None, {**env, "CI_TRUNK_BASE": "a" * 40}, PREFIX)[1:3], ("a" * 40, False))
+            for pinned in ("none", "", "a" * 39):
+                with self.subTest(pinned=pinned):
+                    self.assertEqual(event_options(None, {**env, "CI_TRUNK_BASE": pinned}, PREFIX)[1:3],
+                                     ("d" * 40, True))
+            lookup.assert_not_called()
+        with mock.patch.object(circleci, "first_parent", return_value="d" * 40), \
+                mock.patch.object(circleci, "descends", return_value=False):
+            self.assertEqual(event_options(None, {**env, "CI_TRUNK_BASE": "a" * 40}, PREFIX)[1:3], ("d" * 40, True))
+
+    def test_the_continuation_pins_a_scoped_trunk_base_for_the_gate(self):
+        scoped = test_plan.planned(["protocols/session/socks/src/lib.rs"])
+        for plan, branch, pinned in ((scoped, "main", scoped["base"]), (test_plan.planned(full=True), "main", "none"),
+                                     (scoped, "feat/x", "none")):
+            with self.subTest(branch=branch, full=plan["full"]):
+                config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": branch})
+                self.assertEqual(config["jobs"]["rsl"]["environment"]["CI_TRUNK_BASE"], pinned)
+
+    def test_previous_trunk_revision_is_the_latest_earlier_green_pipeline_head_descends_from(self):
+        env = {"CI_PIPELINE_NUMBER": "137", "CI_PROJECT_SLUG": "circleci/org/project"}
+        history = pipelines((140, "f" * 40), (137, "e" * 40), (134, "a" * 40), (133, "b" * 40))
+        with mock.patch.object(circleci.urllib.request, "urlopen", return_value=history) as urlopen, \
+                mock.patch.object(circleci, "descends", return_value=True) as descends, \
+                mock.patch.object(circleci, "gate_passed", return_value=True) as passed:
+            self.assertEqual(circleci.previous_trunk_revision("root", env), "a" * 40)
+        self.assertEqual(urlopen.call_args.args[0],
+                         "https://circleci.com/api/v2/project/circleci/org/project/pipeline?branch=main")
+        descends.assert_called_once_with("root", "a" * 40)
+        passed.assert_called_once_with("a" * 40)
+
+    def test_previous_trunk_revision_proves_nothing_unless_it_is_certain(self):
+        env = {"CI_PIPELINE_NUMBER": "137", "CI_PROJECT_SLUG": "circleci/org/project"}
+        earlier = pipelines((134, "a" * 40))
+        cases = {
+            "force-pushed away": ({}, earlier, False, True),
+            "red or unfinished predecessor": ({}, earlier, True, False),
+            "no earlier pipeline on the page": ({}, pipelines((140, "f" * 40)), True, True),
+            "not a commit": ({}, pipelines((134, None)), True, True),
+            "malformed history": ({}, mock.MagicMock(**{"__enter__.return_value.read.return_value": "{}"}), True, True),
+            "no pipeline number": ({"CI_PIPELINE_NUMBER": ""}, earlier, True, True),
+            "no project": ({"CI_PROJECT_SLUG": ""}, earlier, True, True),
+        }
+        for name, (overrides, history, descends, passed) in cases.items():
+            with self.subTest(name), mock.patch.object(circleci.urllib.request, "urlopen", return_value=history), \
+                    mock.patch.object(circleci, "descends", return_value=descends), \
+                    mock.patch.object(circleci, "gate_passed", return_value=passed):
+                self.assertEqual(circleci.previous_trunk_revision(None, {**env, **overrides}), "")
+        with mock.patch.object(circleci.urllib.request, "urlopen", side_effect=OSError("unreachable")):
+            self.assertEqual(circleci.previous_trunk_revision(None, env), "")
+
+    def test_gate_passed_requires_a_successful_required_gate_from_the_circleci_app(self):
+        bot = {"login": "circleci-app[bot]"}
+        cases = [
+            ([{"context": "ci/circleci: rsl", "state": "success", "creator": bot}], True),
+            ([{"context": "ci/circleci: rsl", "state": "failure", "creator": bot}], False),
+            ([{"context": "ci/circleci: rsl-scoped", "state": "success", "creator": bot}], False),
+            ([{"context": "ci/circleci: rsl", "state": "success", "creator": {"login": "someone"}}], False),
+            ([{"context": "ci/circleci: rsl", "state": "success", "creator": None}], False),
+            ([], False),
+        ]
+        for statuses, expected in cases:
+            with self.subTest(statuses=statuses), mock.patch.object(circleci, "github", return_value=statuses):
+                self.assertIs(circleci.gate_passed("a" * 40), expected)
+        with mock.patch.object(circleci, "github", side_effect=OSError("rate limited")):
+            self.assertFalse(circleci.gate_passed("a" * 40))
+
     def test_first_parent_reads_the_checkout(self):
         with tempfile.TemporaryDirectory(prefix="rsl-ci-parent-test-") as directory:
             def git(*args):
@@ -68,6 +154,9 @@ class EventTests(unittest.TestCase):
             self.assertEqual(circleci.first_parent(directory), "")
             git("update-ref", "HEAD", git("commit-tree", tree, "-p", root, "-m", "child"))
             self.assertEqual(circleci.first_parent(directory), root)
+            self.assertTrue(circleci.descends(directory, root))
+            git("update-ref", "HEAD", git("commit-tree", tree, "-m", "rewritten"))
+            self.assertFalse(circleci.descends(directory, root))
 
     def test_branch_compares_from_its_merge_base_with_the_trunk(self):
         event, base, full, release, _ = options({"CIRCLE_BRANCH": "feat/x", "CI_BASE_REVISION": "a" * 40})

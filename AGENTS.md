@@ -115,7 +115,7 @@ Dependency-only manifest/lockfile deltas select users and old/new consumers, inc
 shared feature users. Shared build policy, central CI changes, unknown ownership, and
 unavailable dependency-impact evidence select full routine coverage.
 Use `pre-push --base REF` for an explicit comparison and `pre-push --full` for all routine checks.
-Missing trunk history also selects full routine coverage. Full routine CI runs nightly;
+Missing trunk history also selects full routine coverage. Full routine CI runs weekly;
 ordinary prose-only changes run policy checks without Rust builds or fuzzing.
 Fuzzing, packaging, compatibility and exhaustive feature/MSRV/cross-target qualification
 are release-only and scoped independently to enabled products and their affected closure.

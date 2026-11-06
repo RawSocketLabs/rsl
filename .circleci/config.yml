@@ -28,7 +28,7 @@ parameters:
   resource_class:
     description: Resource class for check and fuzz jobs; a namespace/name class selects a self-hosted container runner.
     type: string
-    default: large
+    default: medium
 
 jobs:
   plan:
@@ -46,6 +46,9 @@ jobs:
       CI_INPUT_AUDIT: << pipeline.parameters.audit >>
       CI_TRIGGER_SOURCE: << pipeline.trigger_source >>
       CI_BASE_REVISION: << pipeline.git.base_revision >>
+      # GitHub App pipelines leave base_revision unset; these find the previous trunk pipeline.
+      CI_PIPELINE_NUMBER: << pipeline.number >>
+      CI_PROJECT_SLUG: << pipeline.project.slug >>
     steps:
       - checkout
       - run:

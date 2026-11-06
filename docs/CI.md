@@ -25,7 +25,7 @@ members require explicit validation registration; rust-skills is validated as it
 workspace. Its evaluation manifests and generated Markdown are inputs, not prose exemptions.
 Shared PKI vectors select the certificate-stack consumers' routine checks.
 
-Scope and intensity are independent. Ordinary branches, main pushes, local pre-push, and nightly
+Scope and intensity are independent. Ordinary branches, main pushes, local pre-push, and weekly
 full runs perform selected package tests and lint plus relevant feature/FFI smoke checks.
 One all-feature lint/test configuration keeps optional codec I/O, SOCKS adapters and USDR
 transports covered even when default features are empty. They do not run fuzzing,
@@ -205,16 +205,22 @@ reviewed digest change. To try a changed image first, build it locally and run
 Dockerfile pins, `bnb.toml`, the generator and the setup config in step. `commitlint` lints every
 commit since the base with the pinned upstream commitlint image and `.config/commitlint.config.mjs`.
 
-Event mapping: main compares against `pipeline.git.base_revision`. When that is absent (`<nil>`,
-always so for GitHub App pipelines) main runs full coverage, because an admin push can bypass the
+Event mapping: main compares against `pipeline.git.base_revision`. GitHub App pipelines never set
+it (`<nil>`), so the plan reads the commit of the latest earlier main pipeline from CircleCI's
+public pipeline list (no credential; `CI_PIPELINE_NUMBER` and `CI_PROJECT_SLUG` identify it) and
+uses it when the pushed head descends from it and the CircleCI app posted a successful
+`ci/circleci: rsl` status on it, so a red or unfinished predecessor is never a base. The plan
+pins the result as `CI_TRUNK_BASE` for the generated jobs, so the gate recomputes from it rather
+than asking the network again. Without one (unreadable history, a force-push, a red predecessor,
+or no earlier pipeline on the first page) main runs full coverage, because an admin push can bypass the
 branch run, and judges releases against the pushed head's first parent, as the release gate does;
 a version bump below the tip of a multi-commit push qualifies nothing. Main qualifies any release whose versions it
 changes; any other branch compares from its merge base with `origin/main`, and a same-repository
 `release-plz-` branch qualifies its products. Any explicit parameter (`full`, `base`, `release`,
-`products`) is a manual run: the nightly schedule passes `full=true`, and the weekly advisory
+`products`) is a manual run: the weekly full schedule passes `full=true`, and the weekly advisory
 schedule passes `audit=true`, which continues with only `cargo deny check advisories`. The
 triggers live in the CircleCI project settings, not in code: the GitHub App push trigger
-(`all-pushes`) and two `main` schedules owned by the system actor, daily at 09:17 UTC
+(`all-pushes`) and two `main` schedules owned by the system actor, Sundays at 09:17 UTC
 (`full=true`) and Mondays at 06:00 UTC (`audit=true`). Jobs use the Docker executor; the heaviest
 measured 1.5 GiB peak, and a machine executor is the one-line fallback if a job runs out of
 memory. A
@@ -275,8 +281,9 @@ the removed `docs/CIRCLECI-PLAN.md`). What remains:
   re-enable it. The Actions workflows remain in history.
 - Not yet covered: SBOM and build-provenance attestation for published crates, and rulesets
   kept as code.
-- Before enabling a second release product: a trunk push judges version changes against its
-  first parent only, so a bump below the tip of a multi-commit push is never qualified, and the
+- Before enabling a second release product: a full-coverage trunk push judges version changes
+  against its first parent only, and a scoped one against the previous green main commit (when
+  that is not `sha^`, `gate.py release` rejects the members mismatch and the job fails), so a bump below the tip of a multi-commit push is never qualified, and the
   next release-plz merge for another product could publish it. Make `release` refuse any
   release-enabled package whose version is neither on the registry nor in the qualified members.
 
@@ -289,6 +296,6 @@ targets, cold) took 7m50, bounded by the SOCKS fuzz budget. Timing must distingu
 wall time, summed job time, and cold/warm caches.
 
 Acceptance: ordinary prose schedules zero Rust/fuzz profiles; SOCKS does not test upstream bnb
-or unrelated crypto; ordinary/full/nightly runs schedule zero heavy profiles; product releases
+or unrelated crypto; ordinary/full/weekly runs schedule zero heavy profiles; product releases
 retain relevant downstream fuzzing and qualification; complete full-routine gates remain
 reachable. Existing workspace warn-level lint debt is reported separately.

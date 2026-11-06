@@ -76,7 +76,7 @@ and review remain required.
 
 The shared [CI selector](../../../docs/CI.md) runs complete affected-package and downstream
 consumer suites, not unrelated domains. Shared lockfiles/build configuration and central CI
-changes remain full-workspace triggers. Nightly/manual full runs retain workspace-wide
+changes remain full-workspace triggers. Weekly/manual full runs retain workspace-wide
 feature-unification coverage. A bnb change selects protocol and PKI consumer tests/fuzzing,
 but does not run independent crypto primitive tests merely because PKI also uses crypto.
 

@@ -32,8 +32,9 @@ COMMITLINT = ("docker.io/commitlint/commitlint@"
               "sha256:33f225c84111a38ebac0c81fa21c488a79709b8a8e04056dfaaf4f80ef20be25")
 STABLE = "1.99.0"
 MSRV = "1.85.0"
-# 4 vCPU, 8 GB: the heaviest trial job peaked at 1.5 GiB and saturated its CPUs.
-DEFAULT_CLASS = "large"
+# 2 vCPU, 4 GB at half large's credit rate: on large most jobs took 1-2 minutes (insights,
+# 2026-11) and the heaviest trial job peaked at 1.5 GiB. Pass resource_class=large to go faster.
+DEFAULT_CLASS = "medium"
 NO_RUST = {"deny", "blessed"}
 # Every job's budget: a slow job fails rather than stretching the pipeline past it.
 BUDGET = "10m"
@@ -61,10 +62,12 @@ RELEASE_GROUP = "<< pipeline.project.slug >>/release"
 # The gate's job name is the required status. A manual run with an explicit `base` may cover less
 # than the commit's own diff, so its gate reports under another name and cannot satisfy it.
 GATE, SCOPED_GATE = "rsl", "rsl-scoped"
+CIRCLECI_BOT = "circleci-app[bot]"
 # Pipeline inputs the setup job receives; generated jobs get the same literal values so the
 # gate's recomputation sees the event the plan saw.
 INPUTS = ("CI_INPUT_FULL", "CI_INPUT_BASE", "CI_INPUT_RELEASE", "CI_INPUT_PRODUCTS",
-          "CI_INPUT_CLASS", "CI_INPUT_AUDIT", "CI_TRIGGER_SOURCE", "CI_BASE_REVISION")
+          "CI_INPUT_CLASS", "CI_INPUT_AUDIT", "CI_TRIGGER_SOURCE", "CI_BASE_REVISION",
+          "CI_PIPELINE_NUMBER", "CI_PROJECT_SLUG")
 # Declared again in the continuation: trigger-time parameters carry over into it.
 PARAMETERS = {"full": {"type": "boolean", "default": False}, "base": {"type": "string", "default": ""},
               "release": {"type": "boolean", "default": False},
@@ -92,11 +95,51 @@ def first_parent(root):
     return result.stdout.decode().strip() if result.returncode == 0 else ""
 
 
+def descends(root, revision):
+    """Whether HEAD's history contains `revision`; a force-push leaves the old trunk outside it."""
+    result = subprocess.run(["git", "merge-base", "--is-ancestor", revision, "HEAD"], cwd=root,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return result.returncode == 0
+
+
+def gate_passed(sha):
+    """Whether the CircleCI app posted a successful required gate on this commit; on any error, no."""
+    try:
+        statuses = github(f"repos/{REPOSITORY}/commits/{sha}/statuses")
+    except (OSError, ValueError):  # URLError and HTTPError are OSErrors; ValueError is bad JSON.
+        return False
+    # Only the CircleCI app posts as its bot; the scoped gate never stands in for the required one.
+    return any(status.get("context") == f"ci/circleci: {GATE}" and status.get("state") == "success"
+               and (status.get("creator") or {}).get("login") == CIRCLECI_BOT for status in statuses)
+
+
+def previous_trunk_revision(root, env):
+    """What `pipeline.git.base_revision` would hold, when it is a proven base: the commit of this
+    project's latest earlier trunk pipeline (CircleCI's public pipeline list), if HEAD descends from
+    it and its required gate passed; else "". A red or unfinished predecessor proves nothing."""
+    number, project = env.get("CI_PIPELINE_NUMBER", ""), env.get("CI_PROJECT_SLUG", "")
+    if not number.isdigit() or not project:
+        return ""
+    host = env.get("CIRCLECI_HOST", "https://circleci.com")
+    try:
+        with urllib.request.urlopen(f"{host}/api/v2/project/{project}/pipeline?branch={TRUNK}",
+                                    timeout=60) as response:
+            items = json.loads(response.read())["items"]
+        # Newest first, one page: if 20 later trunk pipelines overtook this one, coverage is full.
+        revision = next((item["trigger_parameters"]["git"]["checkout_sha"] for item in items
+                         if item["number"] < int(number)), "")
+    except (OSError, ValueError, KeyError, TypeError):  # Unreadable history proves nothing: full.
+        return ""
+    if not isinstance(revision, str) or not SHA.fullmatch(revision):
+        return ""
+    return revision if descends(root, revision) and gate_passed(revision) else ""
+
+
 def event_options(root, env, prefix):
     """(event, base, full, release, products) in the vocabulary `gate.py` records.
 
     Explicit pipeline parameters are a manual dispatch. A schedule passes `full`. The trunk is
-    a push compared against the previous pipeline's revision, qualifying any release whose
+    a push compared against the previous trunk pipeline's revision, qualifying any release whose
     versions it changes (without one: full coverage, releases judged against the first parent); any other branch is compared from its merge base with the trunk."""
     base = env.get("CI_INPUT_BASE", "")
     if not re.fullmatch(r"(?:[A-Za-z0-9._][A-Za-z0-9._/-]*)?", base):
@@ -109,13 +152,23 @@ def event_options(root, env, prefix):
         event = "workflow_dispatch"
     elif branch == TRUNK:
         revision = env.get("CI_BASE_REVISION", "")
+        if not SHA.fullmatch(revision):
+            # CircleCI renders an absent previous revision as "<nil>", and GitHub App pipelines
+            # never set one, so read it from the project's pipeline history instead.
+            # The plan pins its answer for the generated jobs, so the gate's recomputation reads
+            # the same base instead of asking the network again.
+            pinned = env.get("CI_TRUNK_BASE")
+            if pinned is None:
+                revision = previous_trunk_revision(root, env)
+            else:
+                revision = pinned if SHA.fullmatch(pinned) and descends(root, pinned) else ""
         if revision == env.get("CIRCLE_SHA1"):
             revision = ""  # A re-run of the same commit has no diff; never post an empty green.
         if SHA.fullmatch(revision):
             base = revision
         else:
-            # CircleCI renders an absent previous revision as "<nil>", and GitHub App pipelines
-            # never set one. An admin push can bypass the branch run, so coverage stays full; the
+            # No previous trunk pipeline this commit descends from (or its history is
+            # unreadable). An admin push can bypass the branch run, so coverage stays full; the
             # first parent (gate.py's `sha^`) only decides which versions this push changed. A
             # version bump below the tip of a multi-commit push qualifies nothing.
             base, full = first_parent(root), True
@@ -277,7 +330,10 @@ def continuation(plan, bnb, env, event):
     # keep panic locations.
     common = {"CI_PLAN": handed, "CI_TEMP": "/tmp/ci", "RUNNER_TEMP": "/tmp/ci",
               "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
-              "CI_MERGE_BASE": plan["base"] or "", **{name: env.get(name, "") for name in INPUTS}}
+              "CI_MERGE_BASE": plan["base"] or "",
+              # A scoped trunk plan's base came from the previous pipeline; "none" pins full coverage.
+              "CI_TRUNK_BASE": plan["base"] if trunk and not plan["full"] else "none",
+              **{name: env.get(name, "") for name in INPUTS}}
     checkout = ["checkout", run("Prepare", 'mkdir -p "$CI_TEMP"')]
 
     def job(steps, *, resource=resource_class, **environment):
