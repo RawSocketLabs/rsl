@@ -214,7 +214,12 @@ pins the result as `CI_TRUNK_BASE` for the generated jobs, so the gate recompute
 than asking the network again. Without one (unreadable history, a force-push, a red predecessor,
 or no earlier pipeline on the first page) main runs full coverage, because an admin push can bypass the
 branch run, and judges releases against the pushed head's first parent, as the release gate does;
-a version bump below the tip of a multi-commit push qualifies nothing. Main qualifies any release whose versions it
+a version bump below the tip of a multi-commit push qualifies nothing. A scoped main push whose
+own commit's latest `ci/circleci: rsl` from the CircleCI app is green (the branch run, since main
+moves by fast-forward, and its merge base is at or before the green trunk base) re-tests nothing: it plans an empty run and schedules only `policy`, the
+gate and `release-pr`. A push that qualifies a release or changes `.circleci/image/` keeps its
+plan, since the receipt and the image job need this workflow. The plan pins the answer as
+`CI_HEAD_TESTED` for the gate, whose own status is pending by then. Main qualifies any release whose versions it
 changes; any other branch compares from its merge base with `origin/main`, and a same-repository
 `release-plz-` branch qualifies its products. Any explicit parameter (`full`, `base`, `release`,
 `products`) is a manual run: the weekly full schedule passes `full=true`, and the weekly advisory
@@ -238,7 +243,8 @@ release qualification) restores and saves no cache at all. Forked pull requests 
 
 Changes reach main by fast-forward after their branch is green: the required status is
 `ci/circleci: rsl`, created by the CircleCI GitHub App (`circleci-app[bot]`), so the pushed commit
-already carries it. A repository ruleset requires it with no bypass actors. A manual run with an
+already carries it. A repository ruleset requires it; organization and repository admins can bypass it, which is
+why main never assumes its branch ran. A manual run with an
 explicit `base` names its gate `rsl-scoped`, so a narrowed run never reports the required status.
 The `rsl` gate job recomputes the plan from the pipeline's inputs and immutable
 trees, then requires every generated job: CircleCI starts it only after all of them succeeded,

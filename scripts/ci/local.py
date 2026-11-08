@@ -59,7 +59,7 @@ def pipeline_inputs(args, root):
     return {"CI_INPUT_BASE": base, "CI_INPUT_FULL": str(full).lower(), "CI_INPUT_RELEASE": str(release).lower(),
             "CI_INPUT_PRODUCTS": " ".join(args.product or ()), "CI_INPUT_CLASS": "local",
             "CI_INPUT_AUDIT": "false", "CI_TRIGGER_SOURCE": "local", "CI_BASE_REVISION": "",
-            "CIRCLE_BRANCH": branch}
+            "CI_HEAD_TESTED": "false", "CIRCLE_BRANCH": branch}
 
 
 def job_script(name, job):

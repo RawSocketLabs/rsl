@@ -122,11 +122,52 @@ class EventTests(unittest.TestCase):
         with mock.patch.object(circleci.urllib.request, "urlopen", side_effect=OSError("unreachable")):
             self.assertEqual(circleci.previous_trunk_revision(None, env), "")
 
+    def test_a_trunk_push_already_green_on_its_branch_re_tests_nothing(self):
+        head = "e" * 40
+        scoped = {**test_plan.planned(["codecs/bitsandbytes/bnb/src/lib.rs"]), "head": head}
+        empty = {**test_plan.planned(), "base": head, "head": head}
+        cases = {  # name: (event, plan, tested, skipped)
+            "tested push": ("push", scoped, True, True),
+            "untested push": ("push", scoped, False, False),
+            "full push without a green predecessor": ("push", {**scoped, "full": True}, True, False),
+            "release push": ("push", {**scoped, "release": True}, True, False),
+            "image push": ("push", {**scoped, "paths": [".circleci/image/Dockerfile"]}, True, False),
+            "branch": ("pull_request", scoped, True, False),
+        }
+        for name, (event, plan, tested, skipped) in cases.items():
+            env = {"CIRCLE_SHA1": head}
+            with self.subTest(name), \
+                    mock.patch.object(circleci, "event_options", return_value=(event, "a" * 40, False, True, None)), \
+                    mock.patch.object(circleci, "release_policy", return_value=PREFIX), \
+                    mock.patch.object(circleci, "validate_plan"), \
+                    mock.patch.object(circleci, "build_plan", side_effect=[dict(plan), dict(empty)]) as build, \
+                    mock.patch.object(circleci, "gate_passed", return_value=tested):
+                _, result = circleci.plan_for_event(None, env)
+                self.assertEqual(result["profiles"] == [] and result["base"] == head, skipped)
+                if skipped:
+                    self.assertEqual(build.call_args.kwargs, {"base": head})
+                    # Pinned for the gate, which must reach the same plan without the network.
+                    self.assertEqual((env["CI_HEAD_TESTED"], env["CI_TRUNK_BASE"]), ("true", "a" * 40))
+                    jobs = cont(result, BNB_GATE, {"CIRCLE_BRANCH": "main", **env})["jobs"]
+                    self.assertEqual(set(jobs), {"policy", "rsl", "release-pr"})
+                    self.assertEqual(jobs["rsl"]["environment"]["CI_HEAD_TESTED"], "true")
+                    # The gate's recomputation reads the pins, never the network.
+                    with mock.patch.object(circleci, "build_plan", side_effect=[dict(plan), dict(empty)]), \
+                            mock.patch.object(circleci, "gate_passed", side_effect=OSError("offline")):
+                        self.assertEqual(circleci.plan_for_event(None, env)[1], result)
+
     def test_gate_passed_requires_a_successful_required_gate_from_the_circleci_app(self):
         bot = {"login": "circleci-app[bot]"}
         cases = [
             ([{"context": "ci/circleci: rsl", "state": "success", "creator": bot}], True),
             ([{"context": "ci/circleci: rsl", "state": "failure", "creator": bot}], False),
+            # Newest first: a later red overrides an earlier green, and vice versa.
+            ([{"context": "ci/circleci: rsl", "state": "failure", "creator": bot},
+              {"context": "ci/circleci: rsl", "state": "success", "creator": bot}], False),
+            ([{"context": "ci/circleci: rsl", "state": "success", "creator": bot},
+              {"context": "ci/circleci: rsl", "state": "failure", "creator": bot}], True),
+            ([{"context": "ci/circleci: rsl", "state": "failure", "creator": {"login": "someone"}},
+              {"context": "ci/circleci: rsl", "state": "success", "creator": bot}], True),
             ([{"context": "ci/circleci: rsl-scoped", "state": "success", "creator": bot}], False),
             ([{"context": "ci/circleci: rsl", "state": "success", "creator": {"login": "someone"}}], False),
             ([{"context": "ci/circleci: rsl", "state": "success", "creator": None}], False),

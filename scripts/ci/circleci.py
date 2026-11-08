@@ -103,14 +103,16 @@ def descends(root, revision):
 
 
 def gate_passed(sha):
-    """Whether the CircleCI app posted a successful required gate on this commit; on any error, no."""
+    """Whether the CircleCI app's latest required gate on this commit succeeded; on any error, no."""
     try:
         statuses = github(f"repos/{REPOSITORY}/commits/{sha}/statuses")
     except (OSError, ValueError):  # URLError and HTTPError are OSErrors; ValueError is bad JSON.
         return False
     # Only the CircleCI app posts as its bot; the scoped gate never stands in for the required one.
-    return any(status.get("context") == f"ci/circleci: {GATE}" and status.get("state") == "success"
-               and (status.get("creator") or {}).get("login") == CIRCLECI_BOT for status in statuses)
+    # GitHub lists statuses newest first, and the ruleset judges the latest: a later red overrides.
+    latest = next((status for status in statuses if status.get("context") == f"ci/circleci: {GATE}"
+                   and (status.get("creator") or {}).get("login") == CIRCLECI_BOT), {})
+    return latest.get("state") == "success"
 
 
 def previous_trunk_revision(root, env):
@@ -133,6 +135,19 @@ def previous_trunk_revision(root, env):
     if not isinstance(revision, str) or not SHA.fullmatch(revision):
         return ""
     return revision if descends(root, revision) and gate_passed(revision) else ""
+
+
+def head_tested(env):
+    """Whether the pushed commit already carries the CircleCI app's green required gate. The plan
+    pins the answer as CI_HEAD_TESTED: by the gate's recomputation this workflow's own gate is
+    pending, and the gate must not depend on the network."""
+    if "CI_HEAD_TESTED" not in env:
+        env["CI_HEAD_TESTED"] = str(gate_passed(env["CIRCLE_SHA1"])).lower()
+    return env["CI_HEAD_TESTED"] == "true"
+
+
+def image_changed(plan):
+    return any(path.startswith(IMAGE_SOURCE) for path in plan.get("paths", ()))
 
 
 def event_options(root, env, prefix):
@@ -193,6 +208,14 @@ def plan_for_event(root, env):
     # A trunk push that qualifies a release is a publication candidate; `release` confirms it
     # came from a merged release-plz PR before anything is published.
     plan["release_candidate"] = event == "push" and plan["release"]
+    if (event == "push" and not plan["full"] and not plan["release"] and not image_changed(plan)
+            and head_tested(env)):
+        # The branch pipeline already passed the required gate on this exact commit, and its merge
+        # base is at or before the proven green trunk base, so main re-tests nothing. A full plan
+        # (no green predecessor) could hide a red trunk the branch never tested; a release or image
+        # push needs this workflow's own run. The gate recomputes from the same pinned trunk base.
+        env.setdefault("CI_TRUNK_BASE", plan["base"])
+        plan = build_plan(root, base=env["CIRCLE_SHA1"])
     if plan["head"] != env["CIRCLE_SHA1"]:
         raise ValueError("checkout does not match the pipeline's tested SHA")
     validate_plan(plan)
@@ -332,7 +355,8 @@ def continuation(plan, bnb, env, event):
               "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
               "CI_MERGE_BASE": plan["base"] or "",
               # A scoped trunk plan's base came from the previous pipeline; "none" pins full coverage.
-              "CI_TRUNK_BASE": plan["base"] if trunk and not plan["full"] else "none",
+              "CI_TRUNK_BASE": env.get("CI_TRUNK_BASE") or (plan["base"] if trunk and not plan["full"] else "none"),
+              "CI_HEAD_TESTED": env.get("CI_HEAD_TESTED", "false"),
               **{name: env.get(name, "") for name in INPUTS}}
     checkout = ["checkout", run("Prepare", 'mkdir -p "$CI_TEMP"')]
 
@@ -346,7 +370,7 @@ def continuation(plan, bnb, env, event):
         run("Shell syntax", "bash -n scripts/ci-local.sh"),
     ], resource="medium")}
     selected = []
-    if plan["base"]:
+    if plan["base"] and plan["base"] != plan["head"]:  # A tested trunk commit has no new commits.
         jobs["commitlint"] = commitlint_job(plan["base"])
         selected.append("commitlint")
     for profile in plan["profiles"]:
@@ -378,7 +402,7 @@ def continuation(plan, bnb, env, event):
                 {gate: {"requires": ["policy", *selected]}}]
     if event == "push":
         # Only reviewed trunk commits reach a secret. The image publishes after CI passes.
-        if any(path.startswith(IMAGE_SOURCE) for path in plan.get("paths", ())):
+        if image_changed(plan):
             jobs["image"] = image_job()
             workflow.append({"image": {"requires": [GATE], "context": [IMAGE_CONTEXT]}})
         jobs.update(release_jobs(plan["release_candidate"]))
