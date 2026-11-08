@@ -232,10 +232,16 @@ memory. A
 namespaced `resource_class` parameter selects a self-hosted container runner with the same image.
 
 Caches are keyed by job, toolchain, job image and the job's lockfile (the root `Cargo.lock`, or a
-fuzz workspace's own). Each key is written once, from a clean build, and only by a
-full-coverage main pipeline, so a scoped push cannot store a partial build. Detached
+fuzz workspace's own). Each key is written from a clean build, and only by the weekly full-coverage
+schedule on main, so a scoped push cannot store a partial build. Detached
 workspaces' own lockfiles are not in the key. Jobs build with `CARGO_INCREMENTAL=0` and
-line-tables-only debuginfo to keep cached targets small. CircleCI caches are
+line-tables-only debuginfo to keep cached targets small, and `scripts/ci/prune.py` removes every
+owned (path) package's units, test and example executables, and nextest/doc output before a save,
+so a cache holds only third-party artifacts (measured on the local workspace test and all-feature
+targets: about a tenth of the target). A pruning failure never fails the job; that target is left
+out of the cache. CircleCI bills a saved cache by size times retention, and saving jobs set
+`retention: caches: 6d`: only the weekly full schedule saves, and a key that outlived the next
+Sunday would make that run skip its save and leave the key missing for a week. CircleCI caches are
 project-wide, not branch-scoped, so a pipeline whose evidence can authorise publication (any
 release qualification) restores and saves no cache at all. Forked pull requests are not built.
 

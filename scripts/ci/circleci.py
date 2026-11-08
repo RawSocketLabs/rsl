@@ -42,6 +42,9 @@ BUDGET = "10m"
 JUNIT = "target/nextest/ci/junit.xml"
 # The critical path; its parts run on separate machines (run.py workspace_parts).
 WORKSPACE_PARTS = ("lint", "test", "extra")
+# Caches are written only by the weekly full schedule (Sundays). CircleCI never overwrites a live
+# key, so a retention past 7 days would skip the next Sunday's save and leave it missing for a week.
+CACHE_RETENTION = "6d"
 CACHE_PATHS = ["~/.cargo/registry/index", "~/.cargo/registry/cache", "~/.cargo/git/db", "target"]
 DETACHED_TARGETS = [
     "codecs/bitsandbytes/bnb/nostd-check", "tools/rust-skills", "bindings/usdr",
@@ -241,11 +244,14 @@ def cached(key, paths, steps, *, save, toolchain, lock="Cargo.lock", enabled=Tru
     # A saving job restores only its exact key, so a new key holds a clean build rather than
     # accumulating every earlier lockfile's dependencies.
     result = [{"restore_cache": {"keys": [exact] if save else [exact, key + "-"]}}, *steps]
-    # Only full-coverage trunk pipelines write caches, so a scoped push cannot fix a partial
+    # Only the weekly full trunk schedule writes caches, so a scoped push cannot fix a partial
     # build under a key it never rewrites. CircleCI does not scope caches by branch, so a
     # collaborator's branch could still write one: release candidates restore none.
     if save:
-        result.append({"save_cache": {"key": exact, "paths": paths, "when": "on_success"}})
+        # CircleCI bills size times retention: only third-party artifacts are worth keeping.
+        targets = " ".join(path for path in paths if path.endswith("target"))
+        result += [run("Prune owned artifacts before caching", f"python3 scripts/ci/prune.py {targets}"),
+                   {"save_cache": {"key": exact, "paths": paths, "when": "on_success"}}]
     return result
 
 
@@ -345,7 +351,8 @@ def continuation(plan, bnb, env, event):
     resource_class = env.get("CI_INPUT_CLASS") or DEFAULT_CLASS
     trunk = env.get("CIRCLE_BRANCH") == TRUNK
     caches = not plan["release"]  # Evidence that can authorise publication restores no cache.
-    save = trunk and caches and plan["full"]
+    # Only the weekly full schedule saves, so every key lives exactly one CACHE_RETENTION cycle.
+    save = trunk and caches and plan["full"] and env.get("CI_TRIGGER_SOURCE") == "scheduled_pipeline"
     handed = json.dumps(handed_on(plan), separators=(",", ":"), sort_keys=True)
     if len(handed.encode()) > ENV_LIMIT:
         raise ValueError("the handed-on plan exceeds one environment variable's limit")
@@ -361,7 +368,9 @@ def continuation(plan, bnb, env, event):
     checkout = ["checkout", run("Prepare", 'mkdir -p "$CI_TEMP"')]
 
     def job(steps, *, resource=resource_class, **environment):
+        saves = any(isinstance(step, dict) and "save_cache" in step for step in steps)
         return {**executor(resource), "environment": {**common, **environment},
+                **({"retention": {"caches": CACHE_RETENTION}} if saves else {}),
                 "steps": [*checkout, *steps]}
 
     jobs = {"policy": job([

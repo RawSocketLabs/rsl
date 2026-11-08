@@ -67,7 +67,8 @@ def job_script(name, job):
     (the clone is the checkout, caches are mounted, results stay in the run directory)."""
     lines = []
     for step in job["steps"]:
-        if isinstance(step, dict) and "run" in step:
+        # Local caches cost nothing, and a pruned target would only rebuild.
+        if isinstance(step, dict) and "run" in step and not step["run"]["command"].startswith("python3 scripts/ci/prune.py"):
             lines += [f"echo {shlex.quote('==> ' + step['run']['name'])}", step["run"]["command"]]
     return "\n".join(lines)
 

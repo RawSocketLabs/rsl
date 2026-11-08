@@ -327,17 +327,37 @@ class ContinuationTests(unittest.TestCase):
 
     def test_only_full_trunk_plans_save_caches(self):
         scoped = test_plan.planned(["protocols/session/socks/src/lib.rs"])
-        for plan, branch, saves in ((test_plan.planned(full=True), "main", True), (scoped, "main", False),
-                                    (test_plan.planned(full=True), "feat/x", False)):
-            config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": branch})
+        full = test_plan.planned(full=True)
+        for plan, branch, trigger, saves in ((full, "main", "scheduled_pipeline", True),
+                                             (full, "main", "webhook", False),  # full-reason push
+                                             (scoped, "main", "scheduled_pipeline", False),
+                                             (full, "feat/x", "scheduled_pipeline", False)):
+            config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": branch, "CI_TRIGGER_SOURCE": trigger})
             steps = [step for step in config["jobs"]["checks-workspace-test"]["steps"] if isinstance(step, dict)]
             self.assertEqual(any("save_cache" in step for step in steps), saves)
             # A saving job starts from its exact key only, so the saved key holds a clean build.
             keys = next(step["restore_cache"]["keys"] for step in steps if "restore_cache" in step)
             self.assertEqual(len(keys), 1 if saves else 2)
 
+    def test_saved_caches_are_pruned_and_expire_before_the_next_weekly_save(self):
+        weekly = {"CIRCLE_BRANCH": "main", "CI_TRIGGER_SOURCE": "scheduled_pipeline"}
+        config = cont(test_plan.planned(full=True), BNB_GATE, weekly)
+        prune = next(step["run"]["command"] for step in config["jobs"]["checks-workspace-test"]["steps"]
+                     if isinstance(step, dict) and step.get("run", {}).get("name", "").startswith("Prune"))
+        self.assertEqual(prune.split()[2:4], ["target", "codecs/bitsandbytes/bnb/nostd-check/target"])
+        for name, job in config["jobs"].items():
+            steps = [step for step in job["steps"] if isinstance(step, dict)]
+            saves = [step["save_cache"] for step in steps if "save_cache" in step]
+            with self.subTest(name):
+                self.assertEqual(job.get("retention"), {"caches": "6d"} if saves else None)
+                if saves:
+                    # The prune runs immediately before the save, over every cached target.
+                    prune = steps[steps.index({"save_cache": saves[0]}) - 1]["run"]["command"]
+                    self.assertTrue(prune.startswith("python3 scripts/ci/prune.py "))
+
     def test_cache_keys_name_toolchain_image_and_lockfile(self):
-        config = cont(test_plan.planned(full=True), BNB_GATE, {"CIRCLE_BRANCH": "main"})
+        config = cont(test_plan.planned(full=True), BNB_GATE,
+                      {"CIRCLE_BRANCH": "main", "CI_TRIGGER_SOURCE": "scheduled_pipeline"})
         steps = [step for step in config["jobs"]["checks-workspace-test"]["steps"] if isinstance(step, dict)]
         key = next(step["save_cache"]["key"] for step in steps if "save_cache" in step)
         self.assertIn(circleci.STABLE, key)
