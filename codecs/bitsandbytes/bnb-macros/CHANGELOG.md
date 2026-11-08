@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.8.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.8.0...bitsandbytes-macros-v0.8.1) - 2026-11-08
+
+### Other
+
+- *(bitsandbytes)* bring the docs up to 0.8.0
+- describe the codecs directory as part of the rsl workspace
+
 ## [0.8.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.7.1...bitsandbytes-macros-v0.8.0) - 2026-10-08
 
 ### Added
