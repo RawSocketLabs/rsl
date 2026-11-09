@@ -66,8 +66,11 @@ capacity, safe handle-only FFI; see its README).
 It is a workspace member and links `libairspy` (≥ 1.0.6), so building its tests — including
 `cargo test --workspace` — needs the library installed (Fedora `airspy-devel`, Debian/Ubuntu
 `libairspy-dev`); the CI image provides it. `publish = false`, since the name belongs to
-upstream on crates.io. Without the library, its hardware-free tests run under Miri
-(`cargo +nightly miri test -p airspy --lib -- rx:: error::`); device tests are `#[ignore]`d.
+upstream on crates.io. Its hardware-free tests also run under Miri, without the library
+(`cargo +nightly miri test -p airspy --lib -- rx:: error:: library::`, a few
+seconds; `src/ffi/fake.rs` stands in for the session calls); device tests are `#[ignore]`d.
+Miri is a local check only, never a cloud CI job:
+run it before pushing a change to `rx.rs`, `ffi.rs` or the session lifecycle.
 
 ## Verify
 
