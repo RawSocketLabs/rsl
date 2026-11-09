@@ -7,7 +7,10 @@
 //! Requires libairspy 1.0.6 or later. Each received element is one complex
 //! sample. [`Airspy::start_rx`] takes the device and returns a [`Receiver`];
 //! [`Receiver::stop`] joins the callback threads and hands the device back,
-//! while dropping the Receiver closes it instead.
+//! while dropping the Receiver closes it instead. Releases before 1.0.12 can
+//! skip that join after a USB failure, so there each session leaks a small
+//! allocation, and after such a failure the device can no longer start or
+//! close (see [`Airspy::start_rx`]).
 //!
 //! # Capture to a file
 //!
@@ -15,8 +18,7 @@
 //! as little-endian `f32` pairs to `airspy.iq`.
 //!
 //! ```no_run
-//! use airspy::{Airspy, DEFAULT_RX_CAPACITY, Error, SampleRateSps};
-//! use num_complex::Complex;
+//! use airspy::{Airspy, Complex, DEFAULT_RX_CAPACITY, Error, SampleRateSps};
 //! use std::fs::File;
 //! use std::io::{BufWriter, Write};
 //! use std::time::Duration;
@@ -70,5 +72,8 @@ mod rx;
 pub use device::{Airspy, Identity};
 pub use error::{Error, Result};
 pub use library::LibVersion;
+/// The sample type `Receiver::receive` fills, re-exported so callers need no
+/// `num-complex` dependency of their own.
+pub use num_complex::Complex;
 pub use rfus::{FrequencyHz, SampleRateSps};
 pub use rx::{DEFAULT_RX_CAPACITY, Receiver, StartError};

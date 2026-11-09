@@ -21,9 +21,9 @@ See the [crate-level documentation](src/lib.rs) for a complete capture example.
 ## Receiving
 
 `start_rx(capacity)` takes the device and returns a `Receiver` that owns it
-for the session. Call `receive(&mut samples, timeout)` on it with a
-`num_complex::Complex<f32>` slice. The returned count is the filled prefix;
-the tail is untouched, and an empty slice is `Error::InvalidParameter`. The
+for the session. Call `receive(&mut samples, timeout)` on it with an
+`airspy::Complex<f32>` slice (re-exported from `num-complex`). The returned
+count is the filled prefix; the tail is untouched, and an empty slice is `Error::InvalidParameter`. The
 tuning setters (frequency, gains, AGC, RF bias) also work on the `Receiver`
 while streaming; a sample-rate change needs `stop()` and a restart. `stop()`
 joins the callback threads and hands the device back; dropping the `Receiver`
@@ -43,7 +43,15 @@ returns the device inside `StartError`, so the caller can try again.
   after a retune starts from samples captured after the call.
 - `Error::Timeout` means no samples arrived within the empty-buffer wait;
   `Duration::ZERO` polls. The timeout does not bound mutex contention or
-  copying. A native stop without notification can also appear as a timeout.
+  copying. Once libairspy ends the stream itself, `receive` returns
+  `Error::StreamingStopped` after the queued samples.
+- libairspy before 1.0.12 can leave its threads running after a USB failure;
+  reusing or closing the device then is undefined behaviour inside libairspy.
+  On those releases, once a stop finds the stream already ended, `start_rx`
+  returns `Error::StreamingStopped` and dropping the device leaks its handle,
+  so the device stays claimed until the process exits. This is best-effort: a
+  failure racing the stop can slip past it. Each session there also leaks a
+  small allocation, never the sample buffer.
 - Only the common C transfer prefix is read, so both 1.0.6 and newer layouts
   (with dropped-sample fields) work.
 

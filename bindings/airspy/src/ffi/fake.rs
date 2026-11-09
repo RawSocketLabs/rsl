@@ -7,11 +7,11 @@ use super::{
     AIRSPY_ERROR_THREAD, AIRSPY_SUCCESS, AIRSPY_TRUE, AirspyDevice, RX_CONTINUE, SampleType,
     airspy_lib_version_t, airspy_transfer_t,
 };
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_void};
 use std::ptr;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 thread_local! {
@@ -22,6 +22,10 @@ thread_local! {
     /// Whether start fails after its threads are running, ending the stream
     /// as a USB failure would.
     pub(crate) static FAIL_START: Cell<bool> = const { Cell::new(false) };
+    /// This test thread's open fake devices, keyed by handle address. The
+    /// handle is a leaked byte, so no Rust reference to it ever covers the
+    /// state here; per thread, so parallel tests never see each other's.
+    static DEVICES: RefCell<Vec<(usize, Device)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// A callback thread and the flag that ends it.
@@ -51,18 +55,25 @@ struct Device {
     alloc: Option<SendPtr>,
 }
 
-/// Open fake devices, keyed by handle address. The handle is a leaked byte,
-/// so no Rust reference to it ever covers the state here.
-static DEVICES: Mutex<Vec<(usize, Device)>> = Mutex::new(Vec::new());
-
 /// Run `f` on the fake device behind `device`.
 fn with<R>(device: *const AirspyDevice, f: impl FnOnce(&mut Device) -> R) -> R {
-    let mut devices = DEVICES.lock().expect("fake device table poisoned");
-    let (_, entry) = devices
-        .iter_mut()
-        .find(|(addr, _)| *addr == device.addr())
-        .expect("fake handle is open");
-    f(entry)
+    DEVICES.with_borrow_mut(|devices| {
+        let (_, entry) = devices
+            .iter_mut()
+            .find(|(addr, _)| *addr == device.addr())
+            .expect("fake handle is open");
+        f(entry)
+    })
+}
+
+/// Join a device's callback thread, if any, and free its handle.
+fn close_entry(entry: Device) {
+    if let Some(session) = entry.session {
+        session.join();
+    }
+    let alloc = entry.alloc.expect("opened handles record their allocation");
+    // SAFETY: `alloc` is airspy_open's box, and its entry is gone.
+    drop(unsafe { Box::from_raw(alloc.get().cast::<u8>()) });
 }
 
 /// A pointer kept in the device table or moved to the callback thread.
@@ -88,12 +99,11 @@ pub(crate) fn airspy_lib_version(version: &mut airspy_lib_version_t) {
 pub(crate) fn airspy_open(device: &mut *mut AirspyDevice) -> c_int {
     let alloc = Box::into_raw(Box::new(0_u8)).cast::<c_void>();
     *device = alloc.cast();
-    let mut devices = DEVICES.lock().expect("fake device table poisoned");
     let entry = Device {
         alloc: Some(SendPtr(alloc)),
         ..Device::default()
     };
-    devices.push((alloc.addr(), entry));
+    DEVICES.with_borrow_mut(|devices| devices.push((alloc.addr(), entry)));
     AIRSPY_SUCCESS
 }
 
@@ -101,22 +111,28 @@ pub(crate) fn airspy_open(device: &mut *mut AirspyDevice) -> c_int {
 ///
 /// `device` came from `airspy_open` and is not used again.
 pub(crate) unsafe fn airspy_close(device: *mut AirspyDevice) -> c_int {
-    let entry = {
-        let mut devices = DEVICES.lock().expect("fake device table poisoned");
+    let entry = DEVICES.with_borrow_mut(|devices| {
         let index = devices
             .iter()
             .position(|(addr, _)| *addr == device.addr())
             .expect("fake handle is open");
         devices.swap_remove(index).1
-    };
-    // Close always joins, so tests never leave a thread running.
-    if let Some(session) = entry.session {
-        session.join();
-    }
-    let alloc = entry.alloc.expect("opened handles record their allocation");
-    // SAFETY: per this function's contract, this is airspy_open's box.
-    drop(unsafe { Box::from_raw(alloc.get().cast::<u8>()) });
+    });
+    // Real libairspy would free the device and condvar under that thread.
+    assert!(
+        entry.session.is_none(),
+        "airspy_close with an unjoined callback thread"
+    );
+    close_entry(entry);
     AIRSPY_SUCCESS
+}
+
+/// Close every device this test thread leaked instead of closing, joining
+/// their callback threads, so Miri sees no leak.
+pub(crate) fn close_leaked() {
+    for (_, entry) in DEVICES.take() {
+        close_entry(entry);
+    }
 }
 
 pub(crate) fn airspy_set_sample_type(_device: &mut AirspyDevice, _sample: SampleType) -> c_int {
@@ -132,6 +148,11 @@ pub(crate) unsafe fn airspy_start_rx(
     callback: unsafe extern "C" fn(*mut airspy_transfer_t) -> c_int,
     rx_ctx: *mut c_void,
 ) -> c_int {
+    // Real libairspy would race a second consumer against the orphaned one.
+    assert!(
+        with(device, |device| device.session.is_none()),
+        "airspy_start_rx with an unjoined callback thread"
+    );
     let running = Arc::new(AtomicBool::new(true));
     let deliver = DELIVER.get();
     let failed = FAIL_START.get();

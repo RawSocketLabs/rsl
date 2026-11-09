@@ -1,8 +1,10 @@
+use crate::rx::RxState;
 use crate::{Error, Result, ffi};
 use rfus::SampleRateSps;
 use std::ffi::{CStr, c_int};
 use std::fmt;
 use std::ptr::{self, NonNull};
+use std::sync::Arc;
 
 /// Firmware version buffer size; libairspy's own limit is smaller.
 const VERSION_LEN: u8 = u8::MAX;
@@ -12,6 +14,14 @@ pub struct Airspy {
     /// Live libairspy handle: set only by a successful open, closed only in
     /// `Drop`.
     ptr: NonNull<ffi::AirspyDevice>,
+    /// The running session's callback state, while libairspy may call back
+    /// into it. Only `end_session` takes it, after deciding whether a stop
+    /// can join the callback threads.
+    pub(crate) session: Option<Arc<RxState>>,
+    /// Set when a stop may have left libairspy's threads running (releases
+    /// before 1.0.12, after a USB failure). Its own state is then unsafe to
+    /// reuse or free, so `start_rx` refuses and `Drop` leaks the handle.
+    pub(crate) threads_orphaned: bool,
 }
 
 impl fmt::Debug for Airspy {
@@ -22,18 +32,23 @@ impl fmt::Debug for Airspy {
 
 // SAFETY: libairspy handles are not tied to the thread that opened them, and
 // every call goes through `&mut self`, so moving the device between threads
-// never makes two calls race. The callback state lives in the
-// `Receiver`. `Airspy` stays `!Sync`.
+// never makes two calls race. The callback state is an `Arc` of a `Sync`
+// type. `Airspy` stays `!Sync`.
 unsafe impl Send for Airspy {}
 
 /// Ensure whenever the Airspy goes out of scope it is closed.
 impl Drop for Airspy {
     fn drop(&mut self) {
-        // SAFETY: `ptr` is live (field invariant) and unused after this. If a
-        // Receiver is being dropped, its stream is still running: airspy_close
-        // stops and joins it (with the caveats on `ffi::airspy_stop_rx`) before
-        // freeing the device, while the Receiver's buffer, declared after the
-        // device, is still alive.
+        // A dropped Receiver's session is still running. Ending it first
+        // decides whether the stop could skip the join before anything is
+        // freed.
+        let _ = self.end_session();
+        // Closing would free the device under libairspy's orphaned threads.
+        if self.threads_orphaned {
+            return;
+        }
+        // SAFETY: `ptr` is live (field invariant) and unused after this. Any
+        // session was stopped and joined above.
         unsafe {
             ffi::airspy_close(self.ptr.as_ptr());
         }
@@ -77,7 +92,11 @@ impl Airspy {
         Error::check(open(&mut device))?;
         // libairspy reports success only alongside a handle.
         let ptr = NonNull::new(device).ok_or(Error::Other)?;
-        Ok(Self { ptr })
+        Ok(Self {
+            ptr,
+            session: None,
+            threads_orphaned: false,
+        })
     }
 
     /// Borrow the live handle for a libairspy call.
@@ -181,10 +200,12 @@ impl Airspy {
 /// `handle(&mut self) -> &mut ffi::AirspyDevice`; every other path is `$crate`.
 macro_rules! tuning_setters {
     () => {
-        /// Set the centre frequency (24 MHz to 1.75 GHz).
+        /// Set the centre frequency; the tuner covers 24 MHz to 1.75 GHz.
         ///
-        /// libairspy takes whole hertz as a `u32`, so a frequency above
-        /// `u32::MAX` Hz is [`Error::InvalidParameter`] before any call.
+        /// Neither this crate nor libairspy checks that range: any `u32` is
+        /// sent to the device. libairspy takes whole hertz as a `u32`, so a
+        /// frequency above `u32::MAX` Hz is [`Error::InvalidParameter`] before
+        /// any call.
         pub fn set_frequency(&mut self, freq: $crate::FrequencyHz) -> $crate::Result<()> {
             let hz = u32::try_from(freq.hz()).map_err(|_| $crate::Error::InvalidParameter)?;
             $crate::Error::check($crate::ffi::airspy_set_freq(self.handle(), hz))
@@ -268,7 +289,8 @@ mod tests {
     fn configures_device_with_advertised_rate() {
         let mut device = Airspy::open().unwrap();
         let rates = device.sample_rates().unwrap();
-        let rate = *rates.first().expect("device must advertise a sample rate");
+        // The last rate, so an index lookup stuck at 0 cannot pass.
+        let rate = *rates.last().expect("device must advertise a sample rate");
         device.set_sample_rate(rate).unwrap();
         device.set_frequency(FrequencyHz::new(434_000_000)).unwrap();
         device.set_lna_gain(7).unwrap();
