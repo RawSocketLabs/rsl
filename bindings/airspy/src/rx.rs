@@ -3,7 +3,6 @@ use crate::{Airspy, Error, LibVersion, Result, ffi};
 use num_complex::Complex;
 use std::collections::VecDeque;
 use std::ffi::{c_int, c_void};
-use std::fmt;
 use std::mem;
 use std::slice;
 use std::sync::{Arc, Condvar, Mutex};
@@ -33,16 +32,49 @@ impl Buffer {
         }
     }
 
+    /// Whether there is nothing to deliver: no samples and no gap.
+    fn is_idle(&self) -> bool {
+        self.samples.is_empty() && self.dropped == 0
+    }
+
     /// Append a callback batch, or count it as dropped if it does not fit.
     ///
-    /// Once a batch is dropped, later ones are too until `receive` reports the
-    /// gap, so each gap sits at exactly one place in the delivered stream.
+    /// Once a batch is dropped, later ones are too until `drain_into` reports
+    /// the gap, so each gap sits at exactly one place in the delivered stream.
     fn push(&mut self, samples: &[Complex<f32>]) {
         if self.dropped > 0 || samples.len() > self.capacity - self.samples.len() {
             self.dropped = self.dropped.saturating_add(samples.len() as u64);
             return;
         }
         self.samples.extend(samples.iter().copied());
+    }
+
+    /// Move up to `out.len()` queued samples into `out`; once none are queued,
+    /// report the gap, if any, or a timeout.
+    fn drain_into(&mut self, out: &mut [Complex<f32>]) -> Result<usize> {
+        let count = out.len().min(self.samples.len());
+        if count > 0 {
+            // Two slice copies, since the ring may wrap; draining a prefix of
+            // `Copy` samples then only moves the head.
+            let (front, back) = self.samples.as_slices();
+            let split = count.min(front.len());
+            out[..split].copy_from_slice(&front[..split]);
+            out[split..count].copy_from_slice(&back[..count - split]);
+            self.samples.drain(..count);
+            return Ok(count);
+        }
+        // Queued samples come first, so the gap is reported where it happened.
+        match mem::take(&mut self.dropped) {
+            0 => Err(Error::Timeout),
+            dropped => Err(Error::Overflow { dropped }),
+        }
+    }
+
+    /// Drop the queued samples and any unreported gap, returning their total.
+    fn clear(&mut self) -> u64 {
+        let cleared = self.samples.len() as u64 + mem::take(&mut self.dropped);
+        self.samples.clear();
+        cleared
     }
 }
 
@@ -68,18 +100,14 @@ impl RxState {
         })
     }
 
-    /// Leak one reference, for a stop that may return without joining the
+    /// Leak one reference before a stop that may return without joining the
     /// callback threads, so they never read freed state. Only a small shell
-    /// leaks: the sample storage is freed, and a late callback finds a gap
+    /// leaks: the sample storage is freed, and a late callback finds no room
     /// and drops its batch without allocating.
-    fn leak_for_unjoined_threads(self: &Arc<Self>) {
+    fn leak_in_case_stop_skips_join(self: &Arc<Self>) {
         mem::forget(Arc::clone(self));
         if let Ok(mut buffer) = self.buffer.lock() {
-            *buffer = Buffer {
-                samples: VecDeque::new(),
-                capacity: 0,
-                dropped: u64::MAX,
-            };
+            *buffer = Buffer::new(0);
         }
     }
 
@@ -103,34 +131,15 @@ impl RxState {
         let buffer = self.buffer.lock().map_err(|_| Error::Thread)?;
         let (mut buffer, _) = self
             .ready
-            .wait_timeout_while(buffer, timeout, |buffer| {
-                buffer.samples.is_empty() && buffer.dropped == 0
-            })
+            .wait_timeout_while(buffer, timeout, |buffer| buffer.is_idle())
             .map_err(|_| Error::Thread)?;
-        let count = samples.len().min(buffer.samples.len());
-        if count > 0 {
-            // Two slice copies, since the ring may wrap; draining a prefix of
-            // `Copy` samples then only moves the head.
-            let (front, back) = buffer.samples.as_slices();
-            let split = count.min(front.len());
-            samples[..split].copy_from_slice(&front[..split]);
-            samples[split..count].copy_from_slice(&back[..count - split]);
-            buffer.samples.drain(..count);
-            return Ok(count);
-        }
-        // Queued samples come first, so the gap is reported where it happened.
-        match mem::take(&mut buffer.dropped) {
-            0 => Err(Error::Timeout),
-            dropped => Err(Error::Overflow { dropped }),
-        }
+        buffer.drain_into(samples)
     }
 
     /// Drop the queued samples and any unreported gap, returning their total.
     fn discard(&self) -> Result<u64> {
         let mut buffer = self.buffer.lock().map_err(|_| Error::Thread)?;
-        let discarded = buffer.samples.len() as u64 + mem::take(&mut buffer.dropped);
-        buffer.samples.clear();
-        Ok(discarded)
+        Ok(buffer.clear())
     }
 }
 
@@ -146,9 +155,8 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
     let Some(transfer) = (unsafe { transfer.as_ref() }) else {
         return ffi::RX_STOP;
     };
-    let count = match usize::try_from(transfer.sample_count) {
-        Ok(0) | Err(_) => return ffi::RX_CONTINUE,
-        Ok(count) => count,
+    let Ok(count @ 1..) = usize::try_from(transfer.sample_count) else {
+        return ffi::RX_CONTINUE;
     };
     if transfer.samples.is_null() || transfer.ctx.is_null() {
         return ffi::RX_STOP;
@@ -157,10 +165,10 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
     // interleaved f32 pairs, which is the layout of `Complex<f32>`
     // (`repr(C)`); libairspy keeps them valid until this call returns.
     let samples = unsafe { slice::from_raw_parts(transfer.samples.cast::<Complex<f32>>(), count) };
-    // SAFETY: `ctx` is the RxState start_rx registered. Its device and
-    // Receiver keep it alive until a stop has joined this thread; where the
-    // stop may not join, and when a Receiver is forgotten, it is leaked. It
-    // is only shared.
+    // SAFETY: `ctx` is the RxState start_rx registered. The device's session
+    // keeps it alive until a stop has joined this thread; where the stop may
+    // not join, and when a Receiver is forgotten, it is leaked. It is only
+    // shared.
     let state = unsafe { &*transfer.ctx.cast::<RxState>() };
     // Only a poisoned lock fails here; a full buffer counts the batch as dropped.
     match state.push(samples) {
@@ -175,21 +183,12 @@ unsafe extern "C" fn rx_cb(transfer: *mut ffi::airspy_transfer_t) -> c_int {
 /// closes the device and discards the stop status. The tuning setters stay
 /// available while streaming; changing the sample rate needs a stop and a
 /// restart.
+#[derive(Debug)]
 #[must_use = "dropping the Receiver stops reception and closes the device"]
 pub struct Receiver {
-    /// Holds the session too: dropping the device ends it before releasing
-    /// its reference, leaking the state where the stop may not join.
+    /// The device, whose session holds this reception's buffer. Dropping it
+    /// ends the session before the buffer is released.
     device: Airspy,
-    /// This session's buffer, shared with `device.session`. Either reference
-    /// may be released last; both are released only after the session ended.
-    /// `mem::forget` leaks it, which keeps the still-running callbacks sound.
-    state: Arc<RxState>,
-}
-
-impl fmt::Debug for Receiver {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Receiver").finish_non_exhaustive()
-    }
 }
 
 /// A failed [`Airspy::start_rx`], handing the device back for another attempt.
@@ -212,23 +211,19 @@ impl Airspy {
     ///
     /// # Errors
     ///
-    /// The device comes back inside [`StartError`] with
-    /// [`Error::InvalidParameter`] for a zero capacity, or libairspy's status
-    /// if the sample type is rejected or streaming fails to start. A failed
-    /// start is stopped again on a best-effort basis; see
-    /// `ffi::airspy_start_rx` for the libairspy 1.0.6 to 1.0.10 crash this
-    /// cannot prevent.
-    ///
-    /// [`Error::StreamingStopped`] if, on libairspy before 1.0.11, an earlier
-    /// stop found the stream already ended by a USB failure: libairspy's
-    /// threads may still be running, so this device cannot receive again in
-    /// this process.
+    /// The device comes back inside [`StartError`] with:
+    /// - [`Error::InvalidParameter`] for a zero capacity;
+    /// - libairspy's status if the sample type is rejected or streaming fails
+    ///   to start. A failed start is stopped again on a best-effort basis; see
+    ///   `ffi::airspy_start_rx` for the libairspy 1.0.6 to 1.0.10 crash this
+    ///   cannot prevent;
+    /// - [`Error::StreamingStopped`] if, on libairspy before 1.0.11, an
+    ///   earlier stop found the stream already ended by a USB failure.
+    ///   libairspy's threads may still be running, so the device cannot
+    ///   receive again in this process, and dropping it leaks its handle.
     pub fn start_rx(mut self, capacity: usize) -> std::result::Result<Receiver, StartError> {
         match self.start_session(capacity) {
-            Ok(state) => Ok(Receiver {
-                device: self,
-                state,
-            }),
+            Ok(()) => Ok(Receiver { device: self }),
             Err(error) => Err(StartError {
                 device: self,
                 error,
@@ -237,7 +232,7 @@ impl Airspy {
     }
 
     /// Allocate the buffer, select float IQ and start libairspy's threads.
-    fn start_session(&mut self, capacity: usize) -> Result<Arc<RxState>> {
+    fn start_session(&mut self, capacity: usize) -> Result<()> {
         if self.threads_orphaned {
             return Err(Error::StreamingStopped);
         }
@@ -260,34 +255,35 @@ impl Airspy {
             // Join threads created before a partial startup failure. A failed
             // start leaves `streaming` set whenever it created threads, so this
             // stop joins them, and it never orphans the device.
-            let _ = Error::check(ffi::airspy_stop_rx(self.handle()));
+            let _ = ffi::airspy_stop_rx(self.handle());
             return Err(error);
         }
-        self.session = Some(Arc::clone(&state));
-        Ok(state)
+        self.session = Some(state);
+        Ok(())
     }
 
-    /// End the running session, if any, and release this device's reference
-    /// to its state.
+    /// End the running session, if any, and release its state.
     ///
-    /// `airspy_stop_rx` joins the callback threads whatever it reports,
-    /// except before 1.0.11 once a USB failure cleared `streaming` (see
-    /// `ffi::airspy_stop_rx`). There the state is leaked, and a stream already
-    /// ended marks the threads orphaned. Best-effort: a failure after the
-    /// check slips past it.
+    /// Before 1.0.11 the stop may skip the join (see `ffi::airspy_stop_rx`),
+    /// so the state is leaked, and a stream already ended marks the threads
+    /// orphaned. Best-effort: a failure after the check slips past it.
     pub(crate) fn end_session(&mut self) -> Result<()> {
         let Some(state) = self.session.take() else {
             return Ok(());
         };
         if !LibVersion::linked().stop_always_joins() {
-            if ffi::airspy_is_streaming(self.handle()) != ffi::AIRSPY_TRUE {
+            if !self.is_streaming() {
                 self.threads_orphaned = true;
             }
-            state.leak_for_unjoined_threads();
+            state.leak_in_case_stop_skips_join();
         }
-        let stopped = Error::check(ffi::airspy_stop_rx(self.handle()));
-        drop(state);
-        stopped
+        // `state` is released after this stop has joined the threads.
+        Error::check(ffi::airspy_stop_rx(self.handle()))
+    }
+
+    /// Whether libairspy reports this device streaming.
+    fn is_streaming(&mut self) -> bool {
+        ffi::airspy_is_streaming(self.handle()) == ffi::AIRSPY_TRUE
     }
 }
 
@@ -301,25 +297,25 @@ impl Receiver {
     /// then one `Overflow` reports how many were dropped, then streaming
     /// resumes. Batches arriving while that backlog drains are dropped too, so
     /// the gap lasts until the backlog is read; draining promptly keeps it
-    /// short.
+    /// short. `Overflow` reports adapter overflow, not USB-level sample loss.
+    ///
     /// Once libairspy has ended the stream itself (a USB failure), queued
-    /// samples still drain first. `Overflow` reports adapter overflow, not
-    /// USB-level sample loss.
+    /// samples still drain first.
     ///
     /// # Errors
     ///
     /// - [`Error::InvalidParameter`] if `samples` is empty.
     /// - [`Error::Timeout`] if nothing arrived within `timeout` while streaming.
     /// - [`Error::StreamingStopped`] if nothing is queued and libairspy has
-    ///   ended the stream; call [`Receiver::stop`]. Starting again works on
-    ///   libairspy 1.0.11 and later; see [`Airspy::start_rx`] for older ones.
+    ///   ended the stream; call [`Receiver::stop`], then start again (see
+    ///   [`Airspy::start_rx`] for libairspy before 1.0.11).
     /// - [`Error::Overflow`] once per gap, after the samples queued before it.
     /// - [`Error::Thread`] if the buffer lock is poisoned.
     pub fn receive(&mut self, samples: &mut [Complex<f32>], timeout: Duration) -> Result<usize> {
-        match self.state.receive(samples, timeout) {
+        match self.state().receive(samples, timeout) {
             // Poll once more for a final batch that landed before the check.
             Err(Error::Timeout) if !self.is_streaming() => {
-                match self.state.receive(samples, Duration::ZERO) {
+                match self.state().receive(samples, Duration::ZERO) {
                     Err(Error::Timeout) => Err(Error::StreamingStopped),
                     result => result,
                 }
@@ -337,27 +333,21 @@ impl Receiver {
     ///
     /// [`Error::Thread`] if the buffer lock is poisoned.
     pub fn discard(&mut self) -> Result<u64> {
-        self.state.discard()
+        self.state().discard()
     }
 
     /// Stop reception, join the callback threads and hand the device back.
     ///
-    /// On libairspy before 1.0.11, after a USB failure, the stop cannot join
-    /// libairspy's threads: the device comes back, but its `start_rx` returns
-    /// [`Error::StreamingStopped`] and dropping it leaks the handle.
+    /// After a USB failure on libairspy before 1.0.11 the device comes back
+    /// unable to start again; see [`Airspy::start_rx`].
     ///
     /// # Errors
     ///
     /// libairspy's status. The device is then closed rather than returned,
     /// because its streaming state is unknown after a failed stop.
     pub fn stop(self) -> Result<Airspy> {
-        // Destructured, so a successful stop returns the device instead of
-        // dropping, and thereby closing, it.
-        let Self { mut device, state } = self;
-        let stopped = device.end_session();
-        // The session ended (or leaked the state), so nothing reads it now.
-        drop(state);
-        stopped.map(|()| device)
+        let mut device = self.device;
+        device.end_session().map(|()| device)
     }
 
     /// Check whether libairspy is still streaming.
@@ -366,7 +356,16 @@ impl Receiver {
     /// stop (only on a poisoned lock), releases 1.0.6 to 1.0.10 still report
     /// true until `stop`; libairspy's master reports false.
     pub fn is_streaming(&mut self) -> bool {
-        ffi::airspy_is_streaming(self.handle()) == ffi::AIRSPY_TRUE
+        self.device.is_streaming()
+    }
+
+    /// This reception's buffer: `start_rx` set the device's session before
+    /// the Receiver existed, and only `stop` or `Drop` end it.
+    fn state(&self) -> &RxState {
+        self.device
+            .session
+            .as_deref()
+            .expect("invariant: a Receiver's device has a running session")
     }
 
     /// Borrow the device's live handle, for the shared tuning setters.
@@ -387,11 +386,12 @@ impl Receiver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::FrequencyHz;
     use std::ptr;
     use std::thread;
     use std::time::Instant;
 
-    /// Generous wait for cross-thread tests; they assert they finish far sooner.
+    /// Generous wait for cross-thread tests; a missed wake-up takes all of it.
     const TIMEOUT: Duration = Duration::from_secs(5);
 
     /// Small enough that the overflow tests stay quick under Miri.
@@ -488,7 +488,7 @@ mod tests {
             };
             assert_eq!(state.receive(&mut output, TIMEOUT), Err(gap));
             // Without the wake-up, receive only returns at its deadline.
-            assert!(start.elapsed() < Duration::from_secs(4));
+            assert!(start.elapsed() < TIMEOUT);
         });
     }
 
@@ -589,7 +589,7 @@ mod tests {
             let mut output = [Complex::default()];
             let start = Instant::now();
             assert_eq!(state.receive(&mut output, TIMEOUT), Ok(1));
-            assert!(start.elapsed() < Duration::from_secs(4));
+            assert!(start.elapsed() < TIMEOUT);
             assert_eq!(output[0], Complex::new(1.0_f32, 2.0));
         });
     }
@@ -628,8 +628,7 @@ mod tests {
         for _ in 0..2 {
             let mut rx = device.start_rx(DEFAULT_RX_CAPACITY).unwrap();
             assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
-            rx.set_frequency(rfus::FrequencyHz::new(100_000_000))
-                .unwrap();
+            rx.set_frequency(FrequencyHz::new(100_000_000)).unwrap();
             assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
             device = rx.stop().unwrap();
         }
@@ -652,11 +651,11 @@ mod tests {
         fn receive_some(rx: &mut Receiver) -> Weak<RxState> {
             let mut output = [Complex::default(); 4];
             assert!(rx.receive(&mut output, TIMEOUT).unwrap() > 0);
-            assert_eq!(output[0], Complex::new(0.5_f32, 0.5));
-            Arc::downgrade(&rx.state)
+            assert_eq!(output[0], Complex::new(fake::SAMPLE, fake::SAMPLE));
+            Arc::downgrade(rx.device.session.as_ref().expect("a running session"))
         }
 
-        /// Release the one reference `leak_for_unjoined_threads` leaked, once
+        /// Release the one reference `leak_in_case_stop_skips_join` leaked, once
         /// the callback thread is gone, and check the state is then freed.
         fn reclaim(state: &Weak<RxState>) {
             let strong = state.upgrade().expect("state was leaked");

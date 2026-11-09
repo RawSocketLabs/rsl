@@ -89,7 +89,7 @@ pub(crate) use fake::{
     airspy_start_rx, airspy_stop_rx,
 };
 
-// SAFETY: every signature matches airspy.h for libairspy 1.0.6 and later.
+// SAFETY: every signature in this block and the one below matches airspy.h for libairspy 1.0.6 and later.
 // The `safe` items need only a live handle. `AirspyDevice` is never
 // constructed, and `Airspy::handle` is the only source of a
 // `&mut AirspyDevice`, so every such reference names a live handle. Their
@@ -98,16 +98,7 @@ pub(crate) use fake::{
 // it is given.
 #[link(name = "airspy")]
 unsafe extern "C" {
-    #[cfg(not(all(miri, test)))]
-    pub(crate) safe fn airspy_lib_version(version: &mut airspy_lib_version_t);
-    #[cfg(not(all(miri, test)))]
-    pub(crate) safe fn airspy_open(device: &mut *mut AirspyDevice) -> c_int;
     pub(crate) safe fn airspy_open_sn(device: &mut *mut AirspyDevice, serial_number: u64) -> c_int;
-    /// Runs `airspy_stop_rx` (see its caveat), then frees `device`.
-    ///
-    /// Callers must pass a live handle and never use it again.
-    #[cfg(not(all(miri, test)))]
-    pub(crate) fn airspy_close(device: *mut AirspyDevice) -> c_int;
     /// With `len == 0`, writes only the number of supported rates to
     /// `buffer[0]`; otherwise writes up to `len` rates.
     ///
@@ -119,38 +110,6 @@ unsafe extern "C" {
     ) -> c_int;
     /// Takes an index into the supported rates; 1.0.6 accepts nothing else.
     pub(crate) safe fn airspy_set_samplerate(device: &mut AirspyDevice, samplerate: u32) -> c_int;
-    /// Calls `callback` from libairspy's threads with `rx_ctx` until stopped.
-    ///
-    /// Callers must keep whatever `rx_ctx` points to alive and valid for
-    /// `callback` until `airspy_stop_rx` or `airspy_close` has returned.
-    ///
-    /// In releases 1.0.6 to 1.0.10, if submitting the USB transfers or
-    /// creating a thread fails, it returns with `streaming` set but threads
-    /// missing, and the next stop or close joins a thread that was never
-    /// created. That is undefined behaviour inside libairspy, and no caller
-    /// can avoid it; libairspy's master joins only threads it started.
-    #[cfg(not(all(miri, test)))]
-    pub(crate) fn airspy_start_rx(
-        device: &mut AirspyDevice,
-        callback: unsafe extern "C" fn(*mut airspy_transfer_t) -> c_int,
-        rx_ctx: *mut c_void,
-    ) -> c_int;
-    /// Joins the streaming threads before returning, whatever it reports,
-    /// unless libairspy already ended the stream itself after a USB failure:
-    /// releases 1.0.6 to 1.0.10 then skip the join, so `Receiver` leaks its
-    /// state on any release before 1.0.11, the first that always joins. In
-    /// those releases a callback's stop return does not trigger this, because
-    /// it only sets `stop_requested`; 1.0.12 clears `streaming` instead, which
-    /// is harmless there because its stop always joins.
-    ///
-    /// After a skipped join the consumer thread lives on inside libairspy, so
-    /// restarting (a second consumer) or closing (freeing its condvar and
-    /// device) is undefined behaviour there. `Airspy` refuses both once a stop
-    /// finds the stream already ended, on a best-effort basis.
-    #[cfg(not(all(miri, test)))]
-    pub(crate) safe fn airspy_stop_rx(device: &mut AirspyDevice) -> c_int;
-    #[cfg(not(all(miri, test)))]
-    pub(crate) safe fn airspy_is_streaming(device: &mut AirspyDevice) -> c_int;
     pub(crate) safe fn airspy_board_id_read(device: &mut AirspyDevice, value: &mut u8) -> c_int;
     /// Writes at most `length` bytes to `version`.
     ///
@@ -164,11 +123,6 @@ unsafe extern "C" {
         device: &mut AirspyDevice,
         read_partid_serialno: &mut airspy_read_partid_serialno_t,
     ) -> c_int;
-    #[cfg(not(all(miri, test)))]
-    pub(crate) safe fn airspy_set_sample_type(
-        device: &mut AirspyDevice,
-        sample_type: SampleType,
-    ) -> c_int;
     pub(crate) safe fn airspy_set_freq(device: &mut AirspyDevice, freq_hz: u32) -> c_int;
     pub(crate) safe fn airspy_set_lna_gain(device: &mut AirspyDevice, value: u8) -> c_int;
     pub(crate) safe fn airspy_set_mixer_gain(device: &mut AirspyDevice, value: u8) -> c_int;
@@ -178,4 +132,49 @@ unsafe extern "C" {
     pub(crate) safe fn airspy_set_rf_bias(device: &mut AirspyDevice, value: u8) -> c_int;
     /// Returns a string literal for any id, including unknown ones.
     pub(crate) safe fn airspy_board_id_name(board_id: c_int) -> *const c_char;
+}
+
+// The calls `fake` stands in for under Miri.
+#[cfg(not(all(miri, test)))]
+#[link(name = "airspy")]
+unsafe extern "C" {
+    pub(crate) safe fn airspy_lib_version(version: &mut airspy_lib_version_t);
+    pub(crate) safe fn airspy_open(device: &mut *mut AirspyDevice) -> c_int;
+    /// Runs `airspy_stop_rx` (see its caveat), then frees `device`.
+    ///
+    /// Callers must pass a live handle and never use it again.
+    pub(crate) fn airspy_close(device: *mut AirspyDevice) -> c_int;
+    /// Calls `callback` from libairspy's threads with `rx_ctx` until stopped.
+    ///
+    /// Callers must keep whatever `rx_ctx` points to alive and valid for
+    /// `callback` until `airspy_stop_rx` or `airspy_close` has returned.
+    ///
+    /// In releases 1.0.6 to 1.0.10, if submitting the USB transfers or
+    /// creating a thread fails, it returns with `streaming` set but threads
+    /// missing, and the next stop or close joins a thread that was never
+    /// created. That is undefined behaviour inside libairspy, and no caller
+    /// can avoid it; libairspy's master joins only threads it started.
+    pub(crate) fn airspy_start_rx(
+        device: &mut AirspyDevice,
+        callback: unsafe extern "C" fn(*mut airspy_transfer_t) -> c_int,
+        rx_ctx: *mut c_void,
+    ) -> c_int;
+    /// Joins the streaming threads before returning, whatever it reports,
+    /// unless libairspy already ended the stream itself after a USB failure:
+    /// releases 1.0.6 to 1.0.10 then skip the join, so `Airspy` leaks its
+    /// state on any release before 1.0.11, the first that always joins. In
+    /// those releases a callback's stop return does not trigger this, because
+    /// it only sets `stop_requested`; 1.0.12 clears `streaming` instead, which
+    /// is harmless there because its stop always joins.
+    ///
+    /// After a skipped join the consumer thread lives on inside libairspy, so
+    /// restarting (a second consumer) or closing (freeing its condvar and
+    /// device) is undefined behaviour there. `Airspy` refuses both once a stop
+    /// finds the stream already ended, on a best-effort basis.
+    pub(crate) safe fn airspy_stop_rx(device: &mut AirspyDevice) -> c_int;
+    pub(crate) safe fn airspy_is_streaming(device: &mut AirspyDevice) -> c_int;
+    pub(crate) safe fn airspy_set_sample_type(
+        device: &mut AirspyDevice,
+        sample_type: SampleType,
+    ) -> c_int;
 }

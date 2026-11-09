@@ -20,42 +20,22 @@ See the [crate-level documentation](src/lib.rs) for a complete capture example.
 
 ## Receiving
 
-`start_rx(capacity)` takes the device and returns a `Receiver` that owns it
-for the session. Call `receive(&mut samples, timeout)` on it with an
-`airspy::Complex<f32>` slice (re-exported from `num-complex`). The returned
-count is the filled prefix; the tail is untouched, and an empty slice is
-`Error::InvalidParameter`. The tuning setters (frequency, gains, AGC, RF bias)
-also work on the `Receiver` while streaming; a sample-rate change needs
-`stop()` and a restart. `stop()` joins the callback threads and hands the
-device back (except after a USB failure on libairspy before 1.0.11; see
-below); dropping the `Receiver` instead closes the device and discards the
-stop status. A failed `start_rx` returns the device inside `StartError`, so
-the caller can try again.
+`start_rx(capacity)` takes the device and returns a `Receiver` that owns it;
+`stop()` hands it back, and dropping the `Receiver` closes it. A failed
+`start_rx` returns the device inside `StartError` for another attempt. The
+rustdoc on `receive`, `discard` and `start_rx` is the contract; in short:
 
-- Reception buffers at most `capacity` IQ samples, eight bytes each,
-  allocated when the session starts. `DEFAULT_RX_CAPACITY` (262,144 samples,
-  2 MiB, about 26 ms at 10 Msps) suits a reader that drains continuously;
-  size it for the longest pause between `receive` calls.
-  If it fills, later batches are dropped: `receive` first returns the samples
-  queued before the gap, then `Error::Overflow { dropped }` once, then resumes.
-  Batches arriving while that backlog drains are dropped too, so read
-  promptly to keep the gap short.
-  It detects the adapter filling, not USB-level sample loss.
-- `discard()` drops the queued samples and any unreported gap, so a read
-  after a retune starts from samples captured after the call.
-- `Error::Timeout` means no samples arrived within the empty-buffer wait;
-  `Duration::ZERO` polls. The timeout does not bound mutex contention or
-  copying. Once libairspy ends the stream itself, `receive` returns
+- The buffer holds `capacity` samples (`DEFAULT_RX_CAPACITY` is 262,144, about
+  26 ms at 10 Msps); size it for the longest pause between `receive` calls.
+  When it fills, `receive` delivers the queued samples, then one
+  `Error::Overflow`, then resumes.
+- Once libairspy ends the stream itself, `receive` returns
   `Error::StreamingStopped` after the queued samples.
-- libairspy before 1.0.11 can leave its threads running after a USB failure;
-  reusing or closing the device then is undefined behaviour inside libairspy.
-  On those releases, once a stop finds the stream already ended, `start_rx`
-  returns `Error::StreamingStopped` and dropping the device leaks its handle,
-  so the device stays claimed until the process exits. This is best-effort: a
-  failure racing the stop can slip past it. Each session there also leaks a
-  small allocation, never the sample buffer.
+- On libairspy before 1.0.11, a USB failure can leave libairspy's threads
+  running: the device then refuses to start again and its handle is leaked
+  rather than closed. Each session there also leaks a small allocation.
 - Only the common C transfer prefix is read, so both 1.0.6 and newer layouts
-  (with dropped-sample fields) work.
+  work.
 
 ## Migrating from upstream 0.4.0
 

@@ -14,6 +14,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 
+/// The I and Q value of every sample the fake's callback thread delivers.
+pub(crate) const SAMPLE: f32 = 0.5;
+
 thread_local! {
     /// The libairspy revision (1.0.x) the fake reports to this test thread.
     pub(crate) static REVISION: Cell<u32> = const { Cell::new(12) };
@@ -43,13 +46,12 @@ impl Session {
 }
 
 /// One open fake device.
-#[derive(Default)]
 struct Device {
     session: Option<Session>,
     /// Cleared by start, set by a simulated USB failure.
     usb_failed: bool,
     /// The handle's allocation, with the provenance that frees it.
-    alloc: Option<SendPtr>,
+    alloc: *mut u8,
 }
 
 /// Run `f` on the fake device behind `device`.
@@ -68,12 +70,11 @@ fn close_entry(entry: Device) {
     if let Some(session) = entry.session {
         session.join();
     }
-    let alloc = entry.alloc.expect("opened handles record their allocation");
     // SAFETY: `alloc` is airspy_open's box, and its entry is gone.
-    drop(unsafe { Box::from_raw(alloc.get().cast::<u8>()) });
+    drop(unsafe { Box::from_raw(entry.alloc) });
 }
 
-/// A pointer kept in the device table or moved to the callback thread.
+/// The context pointer, moved to the callback thread as libairspy does.
 struct SendPtr(*mut c_void);
 
 // SAFETY: the pointer is only handed back to the callback, whose contract
@@ -94,11 +95,12 @@ pub(crate) fn airspy_lib_version(version: &mut airspy_lib_version_t) {
 }
 
 pub(crate) fn airspy_open(device: &mut *mut AirspyDevice) -> c_int {
-    let alloc = Box::into_raw(Box::new(0_u8)).cast::<c_void>();
+    let alloc = Box::into_raw(Box::new(0_u8));
     *device = alloc.cast();
     let entry = Device {
-        alloc: Some(SendPtr(alloc)),
-        ..Device::default()
+        session: None,
+        usb_failed: false,
+        alloc,
     };
     DEVICES.with_borrow_mut(|devices| devices.push((alloc.addr(), entry)));
     AIRSPY_SUCCESS
@@ -159,7 +161,7 @@ pub(crate) unsafe fn airspy_start_rx(
     let thread = thread::spawn({
         let running = Arc::clone(&running);
         move || {
-            let samples = [0.5_f32; 8];
+            let samples = [SAMPLE; 8];
             while running.load(Ordering::Acquire) {
                 if !deliver {
                     thread::yield_now();
@@ -204,7 +206,11 @@ pub(crate) fn airspy_stop_rx(device: &mut AirspyDevice) -> c_int {
 
 pub(crate) fn airspy_is_streaming(device: &mut AirspyDevice) -> c_int {
     with(device, |device| {
-        c_int::from(device.session.is_some() && !device.usb_failed) * AIRSPY_TRUE
+        if device.session.is_some() && !device.usb_failed {
+            AIRSPY_TRUE
+        } else {
+            0
+        }
     })
 }
 

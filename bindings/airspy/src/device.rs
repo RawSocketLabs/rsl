@@ -11,16 +11,15 @@ const VERSION_LEN: u8 = u8::MAX;
 
 /// An open Airspy device.
 pub struct Airspy {
-    /// Live libairspy handle: set only by a successful open, closed only in
-    /// `Drop`.
+    /// Live libairspy handle: set only by a successful open, closed (or,
+    /// with orphaned threads, leaked) only in `Drop`.
     ptr: NonNull<ffi::AirspyDevice>,
     /// The running session's callback state, while libairspy may call back
-    /// into it. Only `end_session` takes it, after deciding whether a stop
-    /// can join the callback threads.
+    /// into it. Only `end_session` takes it.
     pub(crate) session: Option<Arc<RxState>>,
-    /// Set when a stop may have left libairspy's threads running (releases
-    /// before 1.0.11, after a USB failure). Its own state is then unsafe to
-    /// reuse or free, so `start_rx` refuses and `Drop` leaks the handle.
+    /// Set when a stop may have left libairspy's threads running (see
+    /// `ffi::airspy_stop_rx`), so `start_rx` refuses and `Drop` leaks the
+    /// handle.
     pub(crate) threads_orphaned: bool,
 }
 
@@ -36,12 +35,11 @@ impl fmt::Debug for Airspy {
 // type. `Airspy` stays `!Sync`.
 unsafe impl Send for Airspy {}
 
-/// Ensure whenever the Airspy goes out of scope it is closed.
+/// End any session and close the device, or leak the handle if libairspy's
+/// threads may still be running.
 impl Drop for Airspy {
     fn drop(&mut self) {
-        // A dropped Receiver's session is still running. Ending it first
-        // decides whether the stop could skip the join before anything is
-        // freed.
+        // A dropped Receiver's session is still running.
         let _ = self.end_session();
         // Closing would free the device under libairspy's orphaned threads.
         if self.threads_orphaned {
