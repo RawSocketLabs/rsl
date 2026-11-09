@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "bitsandbytes"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "bitsandbytes-macros",
  "tracing",
@@ -12,7 +12,7 @@ dependencies = [
 
 [[package]]
 name = "bitsandbytes-macros"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
