@@ -138,9 +138,10 @@ unsafe extern "C" {
     /// Joins the streaming threads before returning, whatever it reports,
     /// unless libairspy already ended the stream itself after a USB failure:
     /// releases 1.0.6 to 1.0.10 then skip the join, so `Receiver` leaks its
-    /// state on any release before 1.0.12, which always joins. In those
-    /// releases a callback's stop return does not trigger this, because it only sets `stop_requested`; master clears `streaming`
-    /// instead, which is harmless there because its stop always joins.
+    /// state on any release before 1.0.11, the first that always joins. In
+    /// those releases a callback's stop return does not trigger this, because
+    /// it only sets `stop_requested`; 1.0.12 clears `streaming` instead, which
+    /// is harmless there because its stop always joins.
     ///
     /// After a skipped join the consumer thread lives on inside libairspy, so
     /// restarting (a second consumer) or closing (freeing its condvar and

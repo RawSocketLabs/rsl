@@ -7,7 +7,7 @@
 //! Requires libairspy 1.0.6 or later. Each received element is one complex
 //! sample. [`Airspy::start_rx`] takes the device and returns a [`Receiver`];
 //! [`Receiver::stop`] joins the callback threads and hands the device back,
-//! while dropping the Receiver closes it instead. Releases before 1.0.12 can
+//! while dropping the Receiver closes it instead. Releases before 1.0.11 can
 //! skip that join after a USB failure, so there each session leaks a small
 //! allocation, and after such a failure the device can no longer start or
 //! close (see [`Airspy::start_rx`]).

@@ -14,13 +14,16 @@ pub struct LibVersion {
 }
 
 impl LibVersion {
-    /// The first version whose `airspy_stop_rx` always joins the callback
-    /// threads: 1.0.10 skips the join once a USB failure cleared `streaming`,
-    /// and 1.0.12 joins whenever a stop was requested. 1.0.11 is unverified.
+    /// The first release whose `airspy_stop_rx` always joins the callback
+    /// threads. Through the v1.0.10 tag a USB failure clears `streaming`, which
+    /// gates the join; upstream 3f23328 (after that tag, still reporting
+    /// 1.0.10) sets `stop_requested` instead, and 1.0.11 ships it. 1.0.12 keys
+    /// the join on `stop_requested`, which every stop sets. A snapshot built
+    /// between 3f23328 and the 1.0.11 bump is treated as affected.
     const STOP_ALWAYS_JOINS: Self = Self {
         major: 1,
         minor: 0,
-        revision: 12,
+        revision: 11,
     };
 
     /// Whether a stop or close of this version always joins the callback
@@ -63,14 +66,14 @@ mod tests {
     }
 
     #[test]
-    fn only_releases_from_1_0_12_always_join() {
+    fn only_releases_from_1_0_11_always_join() {
         let version = |revision| LibVersion {
             major: 1,
             minor: 0,
             revision,
         };
         assert!(!version(10).stop_always_joins());
-        assert!(!version(11).stop_always_joins());
+        assert!(version(11).stop_always_joins());
         assert!(version(12).stop_always_joins());
     }
 }

@@ -1,7 +1,7 @@
 //! Rust stand-ins for libairspy's session calls, used only under Miri, which
 //! cannot call C. They model the thread behaviour `Receiver` relies on: start
 //! runs the callback from another thread, and stop joins it, except that a
-//! release before 1.0.12 skips the join after a USB failure.
+//! release before 1.0.11 skips the join after a USB failure.
 
 use super::{
     AIRSPY_ERROR_LIBUSB, AIRSPY_SUCCESS, AIRSPY_TRUE, AirspyDevice, RX_CONTINUE, SampleType,
@@ -188,7 +188,7 @@ pub(crate) unsafe fn airspy_start_rx(
 }
 
 pub(crate) fn airspy_stop_rx(device: &mut AirspyDevice) -> c_int {
-    let skip_join = REVISION.get() < 12;
+    let skip_join = REVISION.get() < 11;
     let session = with(device, |device| {
         if device.usb_failed && skip_join {
             None

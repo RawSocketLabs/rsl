@@ -215,7 +215,7 @@ impl Airspy {
     /// `ffi::airspy_start_rx` for the libairspy 1.0.6 to 1.0.10 crash this
     /// cannot prevent.
     ///
-    /// [`Error::StreamingStopped`] if, on libairspy before 1.0.12, an earlier
+    /// [`Error::StreamingStopped`] if, on libairspy before 1.0.11, an earlier
     /// stop found the stream already ended by a USB failure: libairspy's
     /// threads may still be running, so this device cannot receive again in
     /// this process.
@@ -267,7 +267,7 @@ impl Airspy {
     /// to its state.
     ///
     /// `airspy_stop_rx` joins the callback threads whatever it reports,
-    /// except before 1.0.12 once a USB failure cleared `streaming` (see
+    /// except before 1.0.11 once a USB failure cleared `streaming` (see
     /// `ffi::airspy_stop_rx`). There the state is leaked, and a stream already
     /// ended marks the threads orphaned. Best-effort: a failure after the
     /// check slips past it.
@@ -308,7 +308,7 @@ impl Receiver {
     /// - [`Error::Timeout`] if nothing arrived within `timeout` while streaming.
     /// - [`Error::StreamingStopped`] if nothing is queued and libairspy has
     ///   ended the stream; call [`Receiver::stop`]. Starting again works on
-    ///   libairspy 1.0.12 and later; see [`Airspy::start_rx`] for older ones.
+    ///   libairspy 1.0.11 and later; see [`Airspy::start_rx`] for older ones.
     /// - [`Error::Overflow`] once per gap, after the samples queued before it.
     /// - [`Error::Thread`] if the buffer lock is poisoned.
     pub fn receive(&mut self, samples: &mut [Complex<f32>], timeout: Duration) -> Result<usize> {
@@ -338,7 +338,7 @@ impl Receiver {
 
     /// Stop reception, join the callback threads and hand the device back.
     ///
-    /// On libairspy before 1.0.12, after a USB failure, the stop cannot join
+    /// On libairspy before 1.0.11, after a USB failure, the stop cannot join
     /// libairspy's threads: the device comes back, but its `start_rx` returns
     /// [`Error::StreamingStopped`] and dropping it leaks the handle.
     ///

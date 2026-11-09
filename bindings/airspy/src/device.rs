@@ -19,7 +19,7 @@ pub struct Airspy {
     /// can join the callback threads.
     pub(crate) session: Option<Arc<RxState>>,
     /// Set when a stop may have left libairspy's threads running (releases
-    /// before 1.0.12, after a USB failure). Its own state is then unsafe to
+    /// before 1.0.11, after a USB failure). Its own state is then unsafe to
     /// reuse or free, so `start_rx` refuses and `Drop` leaks the handle.
     pub(crate) threads_orphaned: bool,
 }

@@ -27,7 +27,7 @@ count is the filled prefix; the tail is untouched, and an empty slice is
 `Error::InvalidParameter`. The tuning setters (frequency, gains, AGC, RF bias)
 also work on the `Receiver` while streaming; a sample-rate change needs
 `stop()` and a restart. `stop()` joins the callback threads and hands the
-device back (except after a USB failure on libairspy before 1.0.12; see
+device back (except after a USB failure on libairspy before 1.0.11; see
 below); dropping the `Receiver` instead closes the device and discards the
 stop status. A failed `start_rx` returns the device inside `StartError`, so
 the caller can try again.
@@ -47,7 +47,7 @@ the caller can try again.
   `Duration::ZERO` polls. The timeout does not bound mutex contention or
   copying. Once libairspy ends the stream itself, `receive` returns
   `Error::StreamingStopped` after the queued samples.
-- libairspy before 1.0.12 can leave its threads running after a USB failure;
+- libairspy before 1.0.11 can leave its threads running after a USB failure;
   reusing or closing the device then is undefined behaviour inside libairspy.
   On those releases, once a stop finds the stream already ended, `start_rx`
   returns `Error::StreamingStopped` and dropping the device leaks its handle,
