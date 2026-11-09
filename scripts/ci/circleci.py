@@ -21,6 +21,7 @@ import urllib.request
 
 from gate import coverage_report, validate_plan
 from plan import build_plan, handed_on, release_policy
+import release_sync
 
 TRUNK = "main"
 REPOSITORY = "RawSocketLabs/rsl"
@@ -317,6 +318,7 @@ def release_jobs(release):
     jobs = {"release-pr": {**executor("medium"), "environment": {"CI_TEMP": "/tmp/ci"}, "steps": [
         "checkout", current, authenticate,
         run("release-plz release-pr", 'release-plz release-pr --git-token "$RELEASE_PLZ_TOKEN"'),
+        run("Sync the release PR's detached lockfiles", "python3 scripts/ci/circleci.py sync-release"),
     ]}}
     if release:
         jobs["release"] = {**executor("medium"), "environment": {"CI_TEMP": "/tmp/ci"}, "steps": [
@@ -430,11 +432,13 @@ def audit_continuation():
             "workflows": {"audit": {"jobs": ["audit"]}}}
 
 
-def github(path):
-    """Every page of a public GitHub REST list."""
+def github(path, token=None):
+    """Every page of a public GitHub REST list; a token only lifts the anonymous rate limit."""
     items, url = [], f"https://api.github.com/{path}?per_page=100"
+    headers = {"Accept": "application/vnd.github+json",
+               **({"Authorization": f"Bearer {token}"} if token else {})}
     while url:
-        request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+        request = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(request, timeout=60) as response:
             items.extend(json.loads(response.read()))
             links = re.findall(r'<([^>]+)>;\s*rel="next"', response.headers.get("Link", ""))
@@ -452,6 +456,33 @@ def is_release_pr(pr, prefix):
 
 def is_release_merge(pr, sha, prefix):
     return bool(pr["merged_at"] and pr["merge_commit_sha"] == sha and is_release_pr(pr, prefix))
+
+
+def sync_release(root, temp):
+    """Commit the open release PR's detached lockfile versions onto its branch (see
+    `release_sync`). Runs the trunk's tooling over the branch's files; pushes only by
+    fast-forward, so a branch release-plz moved meanwhile fails this run, not the branch."""
+    pulls = [pr for pr in github(f"repos/{REPOSITORY}/pulls", os.environ.get("RELEASE_PLZ_TOKEN"))
+             if is_release_pr(pr, release_policy(root))]
+    if not pulls:
+        print("No open release PR")
+        return
+    if len(pulls) > 1:
+        raise RuntimeError(f"several open release PRs: {[pr['number'] for pr in pulls]}")
+    # The API names the branch; its tip comes from Git, since a PR's head SHA lags a fresh push.
+    branch = pulls[0]["head"]["ref"]
+    tree = temp / "release-branch"
+    subprocess.run(["git", "fetch", "origin", f"refs/heads/{branch}"], check=True)
+    subprocess.run(["git", "worktree", "add", "--detach", str(tree), "FETCH_HEAD"], check=True)
+    for lockfile in release_sync.sync(tree):
+        print(f"Synced {lockfile}")
+    git = ["git", "-C", str(tree)]
+    if not subprocess.run([*git, "status", "--porcelain"], check=True, stdout=subprocess.PIPE).stdout:
+        print(f"{branch}: detached lockfiles already match")
+        return
+    subprocess.run([*git, "commit", "--all", "--message",
+                    "chore: sync detached lockfiles to the released versions"], check=True)
+    subprocess.run([*git, "push", "origin", f"HEAD:refs/heads/{branch}"], check=True)
 
 
 def trunk_tip():
@@ -472,7 +503,7 @@ def continue_pipeline(configuration):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("plan", "gate", "current", "candidate"))
+    parser.add_argument("mode", choices=("plan", "gate", "current", "candidate", "sync-release"))
     parser.add_argument("--dry-run", action="store_true", help="write the continuation without continuing")
     args = parser.parse_args()
     root, env = Path.cwd(), dict(os.environ)
@@ -481,6 +512,9 @@ def main():
         if trunk_tip() != env["CIRCLE_SHA1"]:
             print("Superseded: the trunk has moved past this commit")
             sys.exit(SKIP)
+        return
+    if args.mode == "sync-release":
+        sync_release(root, temp)
         return
     if args.mode == "candidate":
         # A read of a public repository: no write-scoped token is needed or used.

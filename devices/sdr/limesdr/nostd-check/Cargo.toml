@@ -14,8 +14,8 @@ resolver = "3"
 
 [dependencies]
 # scripts/ci/portable.py checks these declarations against the actual driver/workspace.
-lms7002m = { path = "../../chips/lms7002m", version = "0.0.0", default-features = false }
-hal = { path = "../../../hal", version = "0.0.0", default-features = false }
+lms7002m = { path = "../../chips/lms7002m", default-features = false }
+hal = { path = "../../../hal", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"

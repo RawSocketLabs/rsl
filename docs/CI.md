@@ -259,7 +259,13 @@ legitimate only after successful policy/selection verification.
 
 The gate writes `ci-coverage.json` (the plan and job results, bound to the exact tested SHA and
 the workflow ID) as an artifact and to the workspace. On a main push, `release-pr` refreshes the
-release-plz PR on every pipeline, and a release-qualifying push adds `release` before it. Both
+release-plz PR on every pipeline, and a release-qualifying push adds `release` before it.
+release-plz updates only the root `Cargo.lock`, so `release-pr` then fast-forwards the open
+release branch with one `chore:` commit that sets every registered detached lockfile's path
+packages to the bumped versions (`scripts/ci/release_sync.py`, run from the trunk's tooling;
+a branch that moved meanwhile fails the job and the next main pipeline retries). The release PR
+therefore holds two commits and must be squash-merged: the release gate reads the version
+change from the merge commit's first parent. Both
 hold only the contexts they use (`release-pr`: `github`; `release`: `github` and
 `crates`) and share one serial group, so tag discovery never races a release. Every context
 is restricted to this project (`images` is shared with libsdr) and

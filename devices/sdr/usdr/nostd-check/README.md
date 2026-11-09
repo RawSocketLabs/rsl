@@ -17,9 +17,10 @@ cargo test --manifest-path devices/sdr/usdr/nostd-check/Cargo.toml --locked --of
 ```
 
 Run from the repository root with the pinned toolchain and target installed. The dependency
-check compares each fixture dependency's path/version/features with the actual production
+check compares each fixture dependency's path/features with the actual production
 manifests (a per-dependency table in `scripts/ci/portable.py`; `hal`'s `std` is the
-only host-only feature).
+only host-only feature). Fixture dependencies carry no version: the path already names the
+production crate, so a release bump never has to edit the fixture.
 It deliberately does not depend on the whole std/native driver just to expose ownership;
 the CI selector explicitly records that production-source edge.
 

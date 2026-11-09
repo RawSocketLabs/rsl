@@ -19,9 +19,10 @@ class Fixture:
     """A driver's detached no_std fixture: where it is, what it may depend on, its features.
 
     `dependencies` maps every dependency of the driver's portable core to the features only
-    the std driver may add to it. The fixture declares each with the workspace's path and
-    version, without default features, and enables exactly the driver's remaining features
-    (none today); never `std`.
+    the std driver may add to it. The fixture declares each with the workspace's path and no
+    version (the path already names the production crate, and a release bump must not touch
+    the fixture), without default features, and enables exactly the driver's remaining
+    features (none today); never `std`.
     """
 
     driver: str
@@ -62,9 +63,10 @@ def check_dependency(root, fixture, name, host_only, shared, member, candidate):
         raise ValueError(f"portable {name} has an unsupported dependency override")
     if (root / shared["path"]).resolve() != (root / fixture.path / candidate["path"]).resolve():
         raise ValueError(f"portable {name} path differs from the production dependency")
-    for field in ("package", "version"):
-        if candidate.get(field) != shared.get(field):
-            raise ValueError(f"portable {name} {field} differs from production")
+    if "version" in candidate:
+        raise ValueError(f"portable {name} must not pin a version: its path is the production crate")
+    if candidate.get("package") != shared.get("package"):
+        raise ValueError(f"portable {name} package differs from production")
     if (shared.get("default-features", True) is not False
             or member.get("default-features", False) is not False
             or candidate.get("default-features", True) is not False):
@@ -92,7 +94,7 @@ def check_owned_edges(root, name, shared):
 
 
 def validate(root, names=None):
-    """Keep each detached proof's source, dependency features and versions in sync."""
+    """Keep each detached proof's source and dependency features in sync."""
     root = Path(root).resolve()
     workspace = tomllib.loads((root / "Cargo.toml").read_text())["workspace"]
     for name in names or FIXTURES:

@@ -3,7 +3,6 @@
 from pathlib import Path
 import shutil
 import tempfile
-import tomllib
 import unittest
 
 from portable import FIXTURES, validate
@@ -72,17 +71,14 @@ class PortableContractTests(unittest.TestCase):
         self.assertEqual(XSDR.dependencies["hal"], {"std"})
         self.assertEqual(LIMESDR.dependencies["hal"], {"std"})
         self.assertEqual(PE_SYNC.dependencies["hal"], {"std"})
-        source = Path(__file__).resolve().parents[2]
         for fixture in FIXTURES.values():
-            declared = tomllib.loads((source / fixture.path / "Cargo.toml").read_text())
             for name in fixture.dependencies:
                 declaration = f"{name} = {{ "
-                version = declared["dependencies"][name]["version"]
                 cases = [
                     ("default-features = false }",
                      'default-features = false, features = ["std"] }'),
                     ("default-features = false }", "default-features = true }"),
-                    (f'version = "{version}"', 'version = "0.0.1"'),
+                    ('path = "', 'version = "0.0.1", path = "'),
                     ('path = "../', 'path = "../../'),
                 ]
                 for before, after in cases:
