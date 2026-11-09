@@ -70,8 +70,9 @@ impl Airspy {
     /// [`Error::NotFound`] if no unopened Airspy is attached; otherwise
     /// libairspy's status.
     pub fn open() -> Result<Self> {
-        // A closure, because extern "C" fn items do not implement FnOnce.
-        Self::open_with(|device| ffi::airspy_open(device))
+        let mut device = ptr::null_mut();
+        let status = ffi::airspy_open(&mut device);
+        Self::from_open(status, device)
     }
 
     /// Try to open a specific Airspy device by serial number.
@@ -81,13 +82,14 @@ impl Airspy {
     /// [`Error::NotFound`] if no unopened Airspy has that serial; otherwise
     /// libairspy's status.
     pub fn open_serial(serial_number: u64) -> Result<Self> {
-        Self::open_with(|device| ffi::airspy_open_sn(device, serial_number))
+        let mut device = ptr::null_mut();
+        let status = ffi::airspy_open_sn(&mut device, serial_number);
+        Self::from_open(status, device)
     }
 
-    /// Run a libairspy open call and take ownership of the handle it returns.
-    fn open_with(open: impl FnOnce(&mut *mut ffi::AirspyDevice) -> c_int) -> Result<Self> {
-        let mut device = ptr::null_mut();
-        Error::check(open(&mut device))?;
+    /// Take ownership of the handle a libairspy open call returned.
+    fn from_open(status: c_int, device: *mut ffi::AirspyDevice) -> Result<Self> {
+        Error::check(status)?;
         // libairspy reports success only alongside a handle.
         let ptr = NonNull::new(device).ok_or(Error::Other)?;
         Ok(Self {
