@@ -123,6 +123,7 @@ asn1 = { path = "pki/asn1", version = "0.1.0", default-features = false }
 x509 = { path = "pki/x509", version = "0.1.0", default-features = false }
 pki = { path = "pki/validation", version = "0.1.0", default-features = false }
 compression = { path = "codecs/compression", version = "0.1.0", default-features = false }
+rfus = { path = "types/rfus", version = "0.1.0", default-features = false }
 # unpublished device crates shared by the drivers
 hal = { path = "devices/hal", version = "0.0.0", default-features = false }
 lp8758 = { path = "devices/sdr/chips/lp8758", version = "0.0.0", default-features = false }

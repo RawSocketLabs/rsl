@@ -14,6 +14,21 @@ pub struct LibVersion {
 }
 
 impl LibVersion {
+    /// The first version whose `airspy_stop_rx` always joins the callback
+    /// threads: 1.0.10 skips the join once a USB failure cleared `streaming`,
+    /// and 1.0.12 joins whenever a stop was requested. 1.0.11 is unverified.
+    const STOP_ALWAYS_JOINS: Self = Self {
+        major: 1,
+        minor: 0,
+        revision: 12,
+    };
+
+    /// Whether a stop or close of this version always joins the callback
+    /// threads, so state the callbacks read may be freed afterwards.
+    pub(crate) fn stop_always_joins(self) -> bool {
+        self >= Self::STOP_ALWAYS_JOINS
+    }
+
     /// Fetch the version of the libairspy C library this process linked.
     #[must_use]
     pub fn linked() -> Self {
@@ -45,5 +60,17 @@ mod tests {
             revision: 6,
         };
         assert!(v >= oldest);
+    }
+
+    #[test]
+    fn only_releases_from_1_0_12_always_join() {
+        let version = |revision| LibVersion {
+            major: 1,
+            minor: 0,
+            revision,
+        };
+        assert!(!version(10).stop_always_joins());
+        assert!(!version(11).stop_always_joins());
+        assert!(version(12).stop_always_joins());
     }
 }
