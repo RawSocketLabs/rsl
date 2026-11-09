@@ -450,68 +450,64 @@ class ReleasePathTests(unittest.TestCase):
         self.assertEqual(commands[-2:], ['release-plz release-pr --git-token "$RELEASE_PLZ_TOKEN"',
                                          "python3 scripts/ci/circleci.py sync-release"])
 
-    def test_sync_release_fast_forwards_the_release_branch_once(self):
+    def test_sync_release_commits_through_the_api_on_the_fetched_tip_only(self):
         git = lambda *args, cwd: subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
                                                 text=True).stdout.strip()
         # The throwaway repositories ignore the host's global and system git configuration.
-        isolated = mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"})
+        isolated = mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+                                                "RELEASE_PLZ_TOKEN": "token"})
         with isolated, tempfile.TemporaryDirectory(prefix="rsl-sync-release-") as directory:
             directory = Path(directory)
             origin, clone = directory / "origin.git", directory / "clone"
             git("init", "--bare", "--initial-branch=main", str(origin), cwd=directory)
             git("clone", str(origin), str(clone), cwd=directory)
-            git("config", "user.name", "release-plz", cwd=clone)
-            git("config", "user.email", "release-plz@users.noreply.github.com", cwd=clone)
-            (clone / "Cargo.lock").write_text("old\n")
+            (clone / "a").mkdir()
+            (clone / "a" / "Cargo.lock").write_text("old\n")
             git("add", ".", cwd=clone)
-            # GitHub commits release-plz's change as web-flow; only its author is the token owner.
-            with mock.patch.dict(os.environ, {"GIT_COMMITTER_NAME": "GitHub", "GIT_COMMITTER_EMAIL": "noreply@github.com"}):
-                git("-c", "user.name=Owner", "-c", "user.email=owner@example.invalid",
-                    "commit", "-m", "chore: release", cwd=clone)
+            git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-m", "chore: release", cwd=clone)
             git("push", "origin", "HEAD:refs/heads/main", "HEAD:refs/heads/release-plz-x", cwd=clone)
             head = git("rev-parse", "HEAD", cwd=clone)
-            pr = {"number": 1, "head": {"ref": "release-plz-x", "sha": head,
+            pr = {"number": 1, "head": {"ref": "release-plz-x", "sha": "stale",
                                         "repo": {"full_name": circleci.REPOSITORY}},
                   "base": {"ref": circleci.TRUNK, "repo": {"full_name": circleci.REPOSITORY}}}
 
             def rewrite(tree):
-                lockfile = Path(tree) / "Cargo.lock"
-                if lockfile.read_text() == "new\n":
-                    return []
-                lockfile.write_text("new\n")
-                return ["Cargo.lock"]
+                (Path(tree) / "a" / "Cargo.lock").write_text("new\n")
+                return ["a/Cargo.lock"]
 
             cwd = os.getcwd()
             try:
                 os.chdir(clone)
-                with (mock.patch.object(circleci, "github", return_value=[pr]),
-                      mock.patch.object(circleci, "release_policy", return_value="release-plz-"),
-                      mock.patch.object(circleci.release_sync, "sync", side_effect=rewrite)):
-                    circleci.sync_release(clone, directory / "ci")
-                    synced = git("rev-parse", "refs/heads/release-plz-x", cwd=origin)
-                    self.assertEqual(git("rev-parse", f"{synced}^", cwd=origin), head)
-                    self.assertEqual(git("log", "-1", "--format=%s|%an <%ae>|%cn <%ce>", synced, cwd=origin),
-                                     "chore: sync detached lockfiles to the released versions"
-                                     "|Owner <owner@example.invalid>|Owner <owner@example.invalid>")
-                    circleci.sync_release(clone, directory / "ci2")
-                    self.assertEqual(git("rev-parse", "refs/heads/release-plz-x", cwd=origin), synced)
-
-                def race(tree):
-                    # release-plz rewrites the branch after this job fetched it.
-                    git("commit", "--allow-empty", "-m", "chore: release", cwd=clone)
-                    git("push", "--force", "origin", "HEAD:refs/heads/release-plz-x", cwd=clone)
-                    (Path(tree) / "Cargo.lock").write_text("raced\n")
-                    return ["Cargo.lock"]
-
-                with (mock.patch.object(circleci, "github", return_value=[pr]),
-                      mock.patch.object(circleci, "release_policy", return_value="release-plz-"),
-                      mock.patch.object(circleci.release_sync, "sync", side_effect=race),
-                      self.assertRaises(subprocess.CalledProcessError)):
-                    circleci.sync_release(clone, directory / "ci3")
-                self.assertEqual(git("rev-parse", "refs/heads/release-plz-x", cwd=origin),
-                                 git("rev-parse", "HEAD", cwd=clone))
+                for sync, calls in ((rewrite, 1), (lambda tree: [], 0)):
+                    with (self.subTest(changes=calls),
+                          mock.patch.object(circleci, "github", return_value=[pr]),
+                          mock.patch.object(circleci, "release_policy", return_value="release-plz-"),
+                          mock.patch.object(circleci.release_sync, "sync", side_effect=sync),
+                          mock.patch.object(circleci, "graphql",
+                                            return_value={"createCommitOnBranch": {"commit": {"oid": "x"}}}) as api):
+                        circleci.sync_release(clone, directory / f"ci{calls}")
+                        self.assertEqual(api.call_count, calls)
+                        if calls:
+                            query, variables, token = api.call_args.args
+                            self.assertEqual((query, token), (circleci.COMMIT_ON_BRANCH, "token"))
+                            self.assertEqual(variables, {"input": {
+                                "branch": {"repositoryNameWithOwner": circleci.REPOSITORY,
+                                           "branchName": "release-plz-x"},
+                                "message": {"headline": "chore: sync detached lockfiles to the released versions"},
+                                "fileChanges": {"additions": [{"path": "a/Cargo.lock", "contents": "bmV3Cg=="}]},
+                                # The tip Git fetched, never the API's possibly stale head SHA.
+                                "expectedHeadOid": head,
+                            }})
             finally:
                 os.chdir(cwd)
+
+    def test_graphql_errors_fail_the_job(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            {"data": None, "errors": [{"message": "Expected branch to point to x"}]}).encode()
+        with mock.patch.object(circleci.urllib.request, "urlopen", return_value=response), \
+                self.assertRaisesRegex(RuntimeError, "Expected branch"):
+            circleci.graphql("q", {}, "token")
 
     def test_decisions_halt_but_failures_fail(self):
         script = circleci.skip_unless("x", "decide")["run"]["command"]

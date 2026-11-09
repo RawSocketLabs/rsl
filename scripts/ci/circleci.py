@@ -10,6 +10,7 @@ the coverage receipt. On the trunk, `release` publishes a qualified release-plz 
 """
 
 import argparse
+import base64
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ import re
 import subprocess
 import sys
 import tomllib
+import urllib.error
 import urllib.request
 
 from gate import coverage_report, validate_plan
@@ -458,12 +460,36 @@ def is_release_merge(pr, sha, prefix):
     return bool(pr["merged_at"] and pr["merge_commit_sha"] == sha and is_release_pr(pr, prefix))
 
 
+COMMIT_ON_BRANCH = """mutation($input: CreateCommitOnBranchInput!) {
+  createCommitOnBranch(input: $input) { commit { oid } }
+}"""
+
+
+def graphql(query, variables, token):
+    """One GitHub GraphQL call; GraphQL reports failures in the body, so they raise here."""
+    request = urllib.request.Request("https://api.github.com/graphql", method="POST",
+                                     data=json.dumps({"query": query, "variables": variables}).encode(),
+                                     headers={"Authorization": f"Bearer {token}",
+                                              "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            body = json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"GitHub GraphQL HTTP {error.code}: {error.read().decode(errors='replace')}") from error
+    if body.get("errors"):
+        raise RuntimeError(f"GitHub GraphQL: {body['errors']}")
+    return body["data"]
+
+
 def sync_release(root, temp):
     """Commit the open release PR's detached lockfile versions onto its branch (see
-    `release_sync`). Runs the trunk's tooling over the branch's files; pushes only by
-    fast-forward, so a branch release-plz moved meanwhile fails this run, not the branch."""
-    pulls = [pr for pr in github(f"repos/{REPOSITORY}/pulls", os.environ.get("RELEASE_PLZ_TOKEN"))
-             if is_release_pr(pr, release_policy(root))]
+    `release_sync`). Runs the trunk's tooling over the branch's files. The commit goes through
+    GitHub's API, as release-plz's does: CircleCI refused (`block-unregistered-user`) pipelines
+    for pushed sync commits, while release-plz's API commits (committer GitHub) run. The
+    API applies it only on the fetched tip, so a branch release-plz moved meanwhile fails this
+    run, not the branch."""
+    token = os.environ["RELEASE_PLZ_TOKEN"]
+    pulls = [pr for pr in github(f"repos/{REPOSITORY}/pulls", token) if is_release_pr(pr, release_policy(root))]
     if not pulls:
         print("No open release PR")
         return
@@ -474,19 +500,21 @@ def sync_release(root, temp):
     tree = temp / "release-branch"
     subprocess.run(["git", "fetch", "origin", f"refs/heads/{branch}"], check=True)
     subprocess.run(["git", "worktree", "add", "--detach", str(tree), "FETCH_HEAD"], check=True)
-    for lockfile in release_sync.sync(tree):
-        print(f"Synced {lockfile}")
-    git = ["git", "-C", str(tree)]
-    if not subprocess.run([*git, "status", "--porcelain"], check=True, stdout=subprocess.PIPE).stdout:
+    head = subprocess.run(["git", "-C", str(tree), "rev-parse", "HEAD"], check=True,
+                          stdout=subprocess.PIPE, text=True).stdout.strip()
+    changed = release_sync.sync(tree)
+    if not changed:
         print(f"{branch}: detached lockfiles already match")
         return
-    # Author it as release-plz's own commit: CircleCI blocks pipelines for commit authors it does
-    # not know (`block-unregistered-user`), and the job's `release-plz` identity is a stranger's.
-    name, email = subprocess.run([*git, "log", "-1", "--format=%an%x00%ae"], check=True,
-                                 stdout=subprocess.PIPE, text=True).stdout.rstrip("\n").split("\0")
-    subprocess.run([*git, "-c", f"user.name={name}", "-c", f"user.email={email}", "commit", "--all",
-                    "--message", "chore: sync detached lockfiles to the released versions"], check=True)
-    subprocess.run([*git, "push", "origin", f"HEAD:refs/heads/{branch}"], check=True)
+    additions = [{"path": path, "contents": base64.b64encode((tree / path).read_bytes()).decode()}
+                 for path in changed]
+    data = graphql(COMMIT_ON_BRANCH, {"input": {
+        "branch": {"repositoryNameWithOwner": REPOSITORY, "branchName": branch},
+        "message": {"headline": "chore: sync detached lockfiles to the released versions"},
+        "fileChanges": {"additions": additions},
+        "expectedHeadOid": head,
+    }}, token)
+    print(f"{branch}: synced {', '.join(changed)} as {data['createCommitOnBranch']['commit']['oid']}")
 
 
 def trunk_tip():
