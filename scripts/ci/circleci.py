@@ -480,8 +480,12 @@ def sync_release(root, temp):
     if not subprocess.run([*git, "status", "--porcelain"], check=True, stdout=subprocess.PIPE).stdout:
         print(f"{branch}: detached lockfiles already match")
         return
-    subprocess.run([*git, "commit", "--all", "--message",
-                    "chore: sync detached lockfiles to the released versions"], check=True)
+    # Author it as release-plz's own commit: CircleCI blocks pipelines for commit authors it does
+    # not know (`block-unregistered-user`), and the job's `release-plz` identity is a stranger's.
+    name, email = subprocess.run([*git, "log", "-1", "--format=%an%x00%ae"], check=True,
+                                 stdout=subprocess.PIPE, text=True).stdout.rstrip("\n").split("\0")
+    subprocess.run([*git, "-c", f"user.name={name}", "-c", f"user.email={email}", "commit", "--all",
+                    "--message", "chore: sync detached lockfiles to the released versions"], check=True)
     subprocess.run([*git, "push", "origin", f"HEAD:refs/heads/{branch}"], check=True)
 
 

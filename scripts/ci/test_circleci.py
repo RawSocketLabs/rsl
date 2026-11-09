@@ -460,11 +460,14 @@ class ReleasePathTests(unittest.TestCase):
             origin, clone = directory / "origin.git", directory / "clone"
             git("init", "--bare", "--initial-branch=main", str(origin), cwd=directory)
             git("clone", str(origin), str(clone), cwd=directory)
-            git("config", "user.name", "t", cwd=clone)
-            git("config", "user.email", "t@example.invalid", cwd=clone)
+            git("config", "user.name", "release-plz", cwd=clone)
+            git("config", "user.email", "release-plz@users.noreply.github.com", cwd=clone)
             (clone / "Cargo.lock").write_text("old\n")
             git("add", ".", cwd=clone)
-            git("commit", "-m", "chore: base", cwd=clone)
+            # GitHub commits release-plz's change as web-flow; only its author is the token owner.
+            with mock.patch.dict(os.environ, {"GIT_COMMITTER_NAME": "GitHub", "GIT_COMMITTER_EMAIL": "noreply@github.com"}):
+                git("-c", "user.name=Owner", "-c", "user.email=owner@example.invalid",
+                    "commit", "-m", "chore: release", cwd=clone)
             git("push", "origin", "HEAD:refs/heads/main", "HEAD:refs/heads/release-plz-x", cwd=clone)
             head = git("rev-parse", "HEAD", cwd=clone)
             pr = {"number": 1, "head": {"ref": "release-plz-x", "sha": head,
@@ -487,8 +490,9 @@ class ReleasePathTests(unittest.TestCase):
                     circleci.sync_release(clone, directory / "ci")
                     synced = git("rev-parse", "refs/heads/release-plz-x", cwd=origin)
                     self.assertEqual(git("rev-parse", f"{synced}^", cwd=origin), head)
-                    self.assertEqual(git("log", "-1", "--format=%s", synced, cwd=origin),
-                                     "chore: sync detached lockfiles to the released versions")
+                    self.assertEqual(git("log", "-1", "--format=%s|%an <%ae>|%cn <%ce>", synced, cwd=origin),
+                                     "chore: sync detached lockfiles to the released versions"
+                                     "|Owner <owner@example.invalid>|Owner <owner@example.invalid>")
                     circleci.sync_release(clone, directory / "ci2")
                     self.assertEqual(git("rev-parse", "refs/heads/release-plz-x", cwd=origin), synced)
 

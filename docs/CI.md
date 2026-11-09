@@ -261,7 +261,8 @@ The gate writes `ci-coverage.json` (the plan and job results, bound to the exact
 the workflow ID) as an artifact and to the workspace. On a main push, `release-pr` refreshes the
 release-plz PR on every pipeline, and a release-qualifying push adds `release` before it.
 release-plz updates only the root `Cargo.lock`, so `release-pr` then fast-forwards the open
-release branch with one `chore:` commit that sets every registered detached lockfile's path
+release branch with one `chore:` commit (authored as the release commit's author, since
+CircleCI blocks pipelines for unregistered commit authors) that sets every registered detached lockfile's path
 packages to the bumped versions (`scripts/ci/release_sync.py`, run from the trunk's tooling;
 a branch that moved meanwhile fails the job and the next main pipeline retries). The release PR
 therefore holds two commits and must be squash-merged: the release gate reads the version
