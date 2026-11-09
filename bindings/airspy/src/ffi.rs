@@ -89,8 +89,8 @@ pub(crate) use fake::{
     airspy_start_rx, airspy_stop_rx,
 };
 
-// SAFETY: every signature in this block and the one below matches airspy.h for libairspy 1.0.6 and later.
-// The `safe` items need only a live handle. `AirspyDevice` is never
+// SAFETY: every signature in this block and the one below matches airspy.h
+// for libairspy 1.0.6 and later. The `safe` items need only a live handle. `AirspyDevice` is never
 // constructed, and `Airspy::handle` is the only source of a
 // `&mut AirspyDevice`, so every such reference names a live handle. Their
 // value arguments only reach USB control requests or are clamped (the gains),
@@ -134,7 +134,8 @@ unsafe extern "C" {
     pub(crate) safe fn airspy_board_id_name(board_id: c_int) -> *const c_char;
 }
 
-// The calls `fake` stands in for under Miri.
+// SAFETY: as the block above. These are the calls `fake` stands in for under
+// Miri.
 #[cfg(not(all(miri, test)))]
 #[link(name = "airspy")]
 unsafe extern "C" {
@@ -153,7 +154,8 @@ unsafe extern "C" {
     /// creating a thread fails, it returns with `streaming` set but threads
     /// missing, and the next stop or close joins a thread that was never
     /// created. That is undefined behaviour inside libairspy, and no caller
-    /// can avoid it; libairspy's master joins only threads it started.
+    /// can avoid it; upstream 1a50792 (reporting 1.0.12) joins only threads
+    /// it started.
     pub(crate) fn airspy_start_rx(
         device: &mut AirspyDevice,
         callback: unsafe extern "C" fn(*mut airspy_transfer_t) -> c_int,

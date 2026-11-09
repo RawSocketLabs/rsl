@@ -33,16 +33,16 @@ rustdoc on `receive`, `discard` and `start_rx` is the contract; in short:
   `Error::StreamingStopped` after the queued samples.
 - On libairspy before 1.0.11, a USB failure can leave libairspy's threads
   running: the device then refuses to start again and its handle is leaked
-  rather than closed. Each session there also leaks a small allocation.
-- Only the common C transfer prefix is read, so both 1.0.6 and newer layouts
-  work.
+  rather than closed. This is best-effort: a failure racing the stop goes
+  undetected. Each session there also leaks a small allocation.
 
 ## Migrating from upstream 0.4.0
 
 - `Airspy::new()` / `from_serial()` are `Airspy::open()` / `open_serial(serial)`.
   The no-op `init()` and `exit()` are gone; opening and dropping manage lifetime.
 - `start_rx(capacity)` takes the device by value and returns a `Receiver`;
-  `receive`, `stop` and `is_streaming` live on it (above). `stop` returns the
+  `receive`, `discard`, `stop`, `is_streaming` and the tuning setters live on
+  it. `stop` returns the
   device, and `receive` takes a `Duration`. `Airspy`, `Receiver` and
   `StartError` are `Send`.
 - `FFIError` is `Error`, with named native failures (`Busy`,

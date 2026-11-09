@@ -53,6 +53,7 @@ impl LibVersion {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn links_supported_libairspy() {
         let v = LibVersion::linked();

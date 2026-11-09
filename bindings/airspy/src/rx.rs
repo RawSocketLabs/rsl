@@ -9,8 +9,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 use thiserror::Error as ThisError;
 
-/// Receive capacity used by the crate example, in samples; about 26 ms at
-/// 10 Msps.
+/// A capacity for a reader that drains continuously: 262,144 samples (2 MiB),
+/// about 26 ms at 10 Msps.
 pub const DEFAULT_RX_CAPACITY: usize = 262_144;
 
 /// Samples awaiting delivery, plus the size of a gap not yet reported.
@@ -214,13 +214,16 @@ impl Airspy {
     /// The device comes back inside [`StartError`] with:
     /// - [`Error::InvalidParameter`] for a zero capacity;
     /// - libairspy's status if the sample type is rejected or streaming fails
-    ///   to start. A failed start is stopped again on a best-effort basis; see
-    ///   `ffi::airspy_start_rx` for the libairspy 1.0.6 to 1.0.10 crash this
-    ///   cannot prevent;
+    ///   to start. On libairspy 1.0.6 to 1.0.10, a start that fails partway
+    ///   can crash inside libairspy when it is stopped; no caller can prevent
+    ///   it;
     /// - [`Error::StreamingStopped`] if, on libairspy before 1.0.11, an
     ///   earlier stop found the stream already ended by a USB failure.
     ///   libairspy's threads may still be running, so the device cannot
     ///   receive again in this process, and dropping it leaks its handle.
+    ///   Best-effort: a USB failure that races the stop goes undetected, and
+    ///   restarting or dropping the device is then undefined behaviour inside
+    ///   libairspy.
     pub fn start_rx(mut self, capacity: usize) -> std::result::Result<Receiver, StartError> {
         match self.start_session(capacity) {
             Ok(()) => Ok(Receiver { device: self }),
@@ -277,8 +280,10 @@ impl Airspy {
             }
             state.leak_in_case_stop_skips_join();
         }
-        // `state` is released after this stop has joined the threads.
-        Error::check(ffi::airspy_stop_rx(self.handle()))
+        let stopped = Error::check(ffi::airspy_stop_rx(self.handle()));
+        // Released only now that the stop has joined the threads reading it.
+        drop(state);
+        stopped
     }
 
     /// Whether libairspy reports this device streaming.
@@ -354,7 +359,7 @@ impl Receiver {
     ///
     /// False after a USB failure ended the stream. After the callback asked to
     /// stop (only on a poisoned lock), releases 1.0.6 to 1.0.10 still report
-    /// true until `stop`; libairspy's master reports false.
+    /// true until `stop`; 1.0.11 and later report false.
     pub fn is_streaming(&mut self) -> bool {
         self.device.is_streaming()
     }
@@ -638,6 +643,7 @@ mod tests {
         let mut rx = failed.device.start_rx(DEFAULT_RX_CAPACITY).unwrap();
         assert!(rx.receive(&mut samples, TIMEOUT).unwrap() > 0);
     }
+
     /// The session lifecycle against `ffi::fake`, whose callback thread reads
     /// the real `ctx` pointer, so Miri sees any read of freed state.
     #[cfg(miri)]

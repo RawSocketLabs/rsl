@@ -6,7 +6,9 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// Invalid parameter.
+    /// libairspy rejected a parameter, or this crate did: a zero receive
+    /// capacity, an empty receive slice, an unadvertised sample rate, or a
+    /// frequency above `u32::MAX` Hz.
     #[error("invalid parameter")]
     InvalidParameter,
     /// Device not found.
@@ -21,19 +23,22 @@ pub enum Error {
     /// Operation is unsupported.
     #[error("operation is unsupported")]
     Unsupported,
-    /// Usb operation failed.
+    /// A USB operation failed.
     #[error("USB operation failed")]
     LibUsb,
-    /// Thread operation failed.
+    /// libairspy failed a thread operation, or the receive buffer's lock was
+    /// poisoned.
     #[error("thread operation failed")]
     Thread,
     /// Streaming thread failed.
     #[error("streaming thread failed")]
     StreamingThread,
-    /// Streaming has stopped.
+    /// Streaming has stopped: libairspy ended the stream, or on libairspy
+    /// before 1.0.11 a USB failure left the device unable to start again.
     #[error("streaming has stopped")]
     StreamingStopped,
-    /// Unspecified libairspy failure.
+    /// An unspecified libairspy failure, or a malformed reply: a null handle
+    /// from a successful open, or a firmware string without a NUL.
     #[error("unspecified libairspy failure")]
     Other,
     /// No samples arrived within the receive deadline.
