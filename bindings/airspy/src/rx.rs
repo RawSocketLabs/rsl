@@ -109,9 +109,13 @@ impl RxState {
             .map_err(|_| Error::Thread)?;
         let count = samples.len().min(buffer.samples.len());
         if count > 0 {
-            for (out, sample) in samples.iter_mut().zip(buffer.samples.drain(..count)) {
-                *out = sample;
-            }
+            // Two slice copies, since the ring may wrap; draining a prefix of
+            // `Copy` samples then only moves the head.
+            let (front, back) = buffer.samples.as_slices();
+            let split = count.min(front.len());
+            samples[..split].copy_from_slice(&front[..split]);
+            samples[split..count].copy_from_slice(&back[..count - split]);
+            buffer.samples.drain(..count);
             return Ok(count);
         }
         // Queued samples come first, so the gap is reported where it happened.
@@ -536,6 +540,26 @@ mod tests {
         state.push(&[after]).unwrap();
         assert_eq!(state.receive(&mut output, Duration::ZERO), Ok(1));
         assert_eq!(output[0], after);
+    }
+
+    #[test]
+    fn receive_reads_in_order_across_the_ring_wrap() {
+        let state = state();
+        let sample = |i: u8| Complex::new(f32::from(i), 0.0);
+        let first: Vec<_> = (0..6).map(sample).collect();
+        let second: Vec<_> = (6..12).map(sample).collect();
+        state.push(&first).unwrap();
+        let mut output = [Complex::default(); CAPACITY];
+        assert_eq!(state.receive(&mut output[..4], Duration::ZERO), Ok(4));
+        // Eight queued samples now wrap past the end of the ring's storage.
+        state.push(&second).unwrap();
+        {
+            let buffer = state.buffer.lock().unwrap();
+            assert_ne!(buffer.samples.as_slices().1.len(), 0, "the queue wraps");
+        }
+        assert_eq!(state.receive(&mut output, Duration::ZERO), Ok(CAPACITY));
+        let expected: Vec<_> = (4..12).map(sample).collect();
+        assert_eq!(output.as_slice(), expected.as_slice());
     }
 
     #[test]
