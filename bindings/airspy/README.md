@@ -23,12 +23,14 @@ See the [crate-level documentation](src/lib.rs) for a complete capture example.
 `start_rx(capacity)` takes the device and returns a `Receiver` that owns it
 for the session. Call `receive(&mut samples, timeout)` on it with an
 `airspy::Complex<f32>` slice (re-exported from `num-complex`). The returned
-count is the filled prefix; the tail is untouched, and an empty slice is `Error::InvalidParameter`. The
-tuning setters (frequency, gains, AGC, RF bias) also work on the `Receiver`
-while streaming; a sample-rate change needs `stop()` and a restart. `stop()`
-joins the callback threads and hands the device back; dropping the `Receiver`
-instead closes the device and discards the stop status. A failed `start_rx`
-returns the device inside `StartError`, so the caller can try again.
+count is the filled prefix; the tail is untouched, and an empty slice is
+`Error::InvalidParameter`. The tuning setters (frequency, gains, AGC, RF bias)
+also work on the `Receiver` while streaming; a sample-rate change needs
+`stop()` and a restart. `stop()` joins the callback threads and hands the
+device back (except after a USB failure on libairspy before 1.0.12; see
+below); dropping the `Receiver` instead closes the device and discards the
+stop status. A failed `start_rx` returns the device inside `StartError`, so
+the caller can try again.
 
 - Reception buffers at most `capacity` IQ samples, eight bytes each,
   allocated when the session starts. `DEFAULT_RX_CAPACITY` (262,144 samples,

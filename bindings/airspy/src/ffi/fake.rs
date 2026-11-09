@@ -4,7 +4,7 @@
 //! release before 1.0.12 skips the join after a USB failure.
 
 use super::{
-    AIRSPY_ERROR_THREAD, AIRSPY_SUCCESS, AIRSPY_TRUE, AirspyDevice, RX_CONTINUE, SampleType,
+    AIRSPY_ERROR_LIBUSB, AIRSPY_SUCCESS, AIRSPY_TRUE, AirspyDevice, RX_CONTINUE, SampleType,
     airspy_lib_version_t, airspy_transfer_t,
 };
 use std::cell::{Cell, RefCell};
@@ -19,8 +19,8 @@ thread_local! {
     pub(crate) static REVISION: Cell<u32> = const { Cell::new(12) };
     /// Whether started callback threads deliver samples or stay silent.
     pub(crate) static DELIVER: Cell<bool> = const { Cell::new(true) };
-    /// Whether start fails after its threads are running, ending the stream
-    /// as a USB failure would.
+    /// Whether start fails before creating threads, as a failed control
+    /// transfer does, leaving `streaming` clear.
     pub(crate) static FAIL_START: Cell<bool> = const { Cell::new(false) };
     /// This test thread's open fake devices, keyed by handle address. The
     /// handle is a leaked byte, so no Rust reference to it ever covers the
@@ -48,9 +48,6 @@ struct Device {
     session: Option<Session>,
     /// Cleared by start, set by a simulated USB failure.
     usb_failed: bool,
-    /// The context the last start registered, kept as a pointer so it keeps
-    /// its provenance.
-    ctx: Option<SendPtr>,
     /// The handle's allocation, with the provenance that frees it.
     alloc: Option<SendPtr>,
 }
@@ -153,9 +150,11 @@ pub(crate) unsafe fn airspy_start_rx(
         with(device, |device| device.session.is_none()),
         "airspy_start_rx with an unjoined callback thread"
     );
+    if FAIL_START.get() {
+        return AIRSPY_ERROR_LIBUSB;
+    }
     let running = Arc::new(AtomicBool::new(true));
     let deliver = DELIVER.get();
-    let failed = FAIL_START.get();
     let ctx = SendPtr(rx_ctx);
     let thread = thread::spawn({
         let running = Arc::clone(&running);
@@ -182,22 +181,10 @@ pub(crate) unsafe fn airspy_start_rx(
         }
     });
     with(device, |device| {
-        device.usb_failed = failed;
-        device.ctx = Some(SendPtr(rx_ctx));
+        device.usb_failed = false;
         device.session = Some(Session { running, thread });
     });
-    if failed {
-        AIRSPY_ERROR_THREAD
-    } else {
-        AIRSPY_SUCCESS
-    }
-}
-
-/// The context pointer the device's last start registered.
-pub(crate) fn last_ctx(device: &mut AirspyDevice) -> *mut c_void {
-    with(device, |device| {
-        device.ctx.as_ref().map_or(ptr::null_mut(), SendPtr::get)
-    })
+    AIRSPY_SUCCESS
 }
 
 pub(crate) fn airspy_stop_rx(device: &mut AirspyDevice) -> c_int {

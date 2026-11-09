@@ -247,17 +247,19 @@ impl Airspy {
         // An Arc, because moving a Box asserts unique access and would
         // invalidate the pointer libairspy's threads read through.
         let ctx = Arc::as_ptr(&state).cast_mut().cast::<c_void>();
-        // Held before starting, so a failed start is still ended.
-        self.session = Some(Arc::clone(&state));
         // SAFETY: rx_cb only reads `ctx` as `&RxState`. `state` outlives the
-        // callback threads: `end_session` joins them before releasing it, and
+        // callback threads: a failed start joins them below while `state` is
+        // still held, and `end_session` joins them before releasing it, or
         // leaks it where the stop may not join.
         if let Err(error) = Error::check(unsafe { ffi::airspy_start_rx(self.handle(), rx_cb, ctx) })
         {
-            // Join threads created before a partial startup failure.
-            let _ = self.end_session();
+            // Join threads created before a partial startup failure. A failed
+            // start leaves `streaming` set whenever it created threads, so this
+            // stop joins them, and it never orphans the device.
+            let _ = Error::check(ffi::airspy_stop_rx(self.handle()));
             return Err(error);
         }
+        self.session = Some(Arc::clone(&state));
         Ok(state)
     }
 
@@ -335,6 +337,10 @@ impl Receiver {
     }
 
     /// Stop reception, join the callback threads and hand the device back.
+    ///
+    /// On libairspy before 1.0.12, after a USB failure, the stop cannot join
+    /// libairspy's threads: the device comes back, but its `start_rx` returns
+    /// [`Error::StreamingStopped`] and dropping it leaks the handle.
     ///
     /// # Errors
     ///
@@ -683,23 +689,32 @@ mod tests {
         }
 
         #[test]
-        fn old_releases_leak_the_state_of_a_failed_start() {
+        fn old_releases_restart_after_a_healthy_stop() {
+            fake::REVISION.set(10);
+            let device = Airspy::open().unwrap();
+            let mut rx = device.start_rx(CAPACITY).unwrap();
+            let first = receive_some(&mut rx);
+            let device = rx.stop().unwrap();
+            let mut rx = device.start_rx(CAPACITY).unwrap();
+            let second = receive_some(&mut rx);
+            drop(rx);
+            // Joined, so nothing runs on them, but each stop leaked its shell.
+            reclaim(&first);
+            reclaim(&second);
+        }
+
+        #[test]
+        fn old_releases_retry_after_a_failed_start() {
             fake::REVISION.set(10);
             fake::FAIL_START.set(true);
             let device = Airspy::open().unwrap();
-            let mut failed = device.start_rx(CAPACITY).unwrap_err();
-            assert_eq!(failed.error, Error::Thread);
-            let ctx = fake::last_ctx(failed.device.handle()).cast::<RxState>();
+            let failed = device.start_rx(CAPACITY).unwrap_err();
+            assert_eq!(failed.error, Error::LibUsb);
             fake::FAIL_START.set(false);
-            let failed = failed.device.start_rx(CAPACITY).unwrap_err();
-            assert_eq!(failed.error, Error::StreamingStopped);
-            drop(failed);
-            fake::close_leaked();
-            // SAFETY: the failed start leaked exactly one reference to `ctx`.
-            let state = unsafe { Arc::from_raw(ctx) };
-            let weak = Arc::downgrade(&state);
-            drop(state);
-            assert!(weak.upgrade().is_none());
+            let mut rx = failed.device.start_rx(CAPACITY).unwrap();
+            let state = receive_some(&mut rx);
+            drop(rx);
+            reclaim(&state);
         }
 
         #[test]
