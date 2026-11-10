@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.9.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.8.0...bitsandbytes-v0.9.0) - 2026-11-10
+
+### Fixed
+
+- *(bitsandbytes)* [**breaking**] close the review's five correctness findings
+
+### Other
+
+- *(bitsandbytes)* pin the LSB padding mask and record release evidence
+- restore CI facts and settle the review's nits
+- *(bitsandbytes)* bring the docs up to 0.8.0
+- describe the codecs directory as part of the rsl workspace
+- replace GitHub Actions and act with CircleCI and a local runner on one pinned image
+- drop the rsl- prefix from crate names
+- move crates into domain groups
+
 ## [0.8.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.7.1...bitsandbytes-v0.8.0) - 2026-10-08
 
 ### Added
