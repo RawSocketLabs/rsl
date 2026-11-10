@@ -5,6 +5,7 @@
 
 use std::io;
 use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use rtlsdr::control::{BusError, ControlPort, Setup};
@@ -12,8 +13,13 @@ use rtlsdr_sim::{Divergence, Replay, ReplayError, Trace};
 
 use crate::wire::control;
 
-/// A trace being played back.
-pub(crate) struct ReplayPort {
+/// A trace being played back; clone it to finish the session while a `Device` owns the
+/// port.
+#[derive(Clone)]
+pub(crate) struct ReplayPort(Arc<Mutex<Playback>>);
+
+/// The playback state behind a [`ReplayPort`].
+struct Playback {
     /// The playback.
     replay: Replay,
 
@@ -24,17 +30,28 @@ pub(crate) struct ReplayPort {
 impl ReplayPort {
     /// Plays `trace` back.
     pub(crate) fn new(trace: Trace) -> Self {
-        Self {
+        Self(Arc::new(Mutex::new(Playback {
             replay: Replay::new(trace),
             divergence: None,
-        }
+        })))
     }
 
     /// Ends the session: the first divergence, or the trace's unplayed remainder.
-    pub(crate) fn finish(self) -> Result<(), Divergence> {
-        self.divergence.map_or_else(|| self.replay.finish(), Err)
+    pub(crate) fn finish(&self) -> Result<(), Divergence> {
+        let playback = self.playback();
+        playback
+            .divergence
+            .clone()
+            .map_or_else(|| playback.replay.finish(), Err)
     }
 
+    /// Locks the playback.
+    fn playback(&self) -> MutexGuard<'_, Playback> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl Playback {
     /// A recorded stall as the seam reports it; a divergence is also kept for the test.
     fn failed(&mut self, error: ReplayError) -> BusError {
         match error {
@@ -55,9 +72,11 @@ impl ControlPort for ReplayPort {
         data: &mut [u8],
         _timeout: Duration,
     ) -> Result<usize, BusError> {
-        self.replay
+        let mut playback = self.playback();
+        playback
+            .replay
             .control_in(control(setup, true), data)
-            .map_err(|error| self.failed(error))
+            .map_err(|error| playback.failed(error))
     }
 
     fn control_out(
@@ -66,9 +85,11 @@ impl ControlPort for ReplayPort {
         data: &[u8],
         _timeout: Duration,
     ) -> Result<(), BusError> {
-        self.replay
+        let mut playback = self.playback();
+        playback
+            .replay
             .control_out(control(setup, false), data)
-            .map_err(|error| self.failed(error))
+            .map_err(|error| playback.failed(error))
     }
 
     fn rx_start(&mut self, _transfer_len: usize, _depth: NonZeroUsize) -> Result<(), BusError> {

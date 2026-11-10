@@ -6,3 +6,4 @@
 pub(crate) mod pending;
 pub mod r820t2;
 pub mod rtl2832u;
+pub mod sequence;

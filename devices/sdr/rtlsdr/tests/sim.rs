@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use rtlsdr::control::{BusError, ControlPort};
 use rtlsdr::r820t2::{Registers, field};
-use rtlsdr::{Device, Error};
 use rtlsdr_sim::{Op, SimDongle, Transfer};
 use sim_port::SimPort;
 use synthetic::{TIMEOUT, TUNER_REQUEST, setup, wiring};
@@ -20,16 +19,6 @@ use synthetic::{TIMEOUT, TUNER_REQUEST, setup, wiring};
 /// A fresh dongle on the synthetic wiring.
 fn port() -> SimPort {
     SimPort::new(SimDongle::new(wiring()))
-}
-
-#[test]
-fn opening_refuses_with_the_open_gap_before_touching_the_dongle() {
-    let port = port();
-    let Err(Error::Gap(gap)) = Device::open(Box::new(port.clone())) else {
-        panic!("the open sequence is not evidenced, so open must refuse");
-    };
-    assert_eq!(gap.ledger_id(), "RTL-GAP-07");
-    assert!(port.dongle().trace().is_empty(), "nothing reaches the port");
 }
 
 #[test]

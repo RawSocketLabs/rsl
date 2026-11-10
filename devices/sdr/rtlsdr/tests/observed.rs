@@ -1,5 +1,5 @@
 //! The `RTL-OBS` rows in `PROVENANCE.md` hold over every committed capture trace: the
-//! evidence, checked against the constants that cite it. Rows 01 to 07; RTL-OBS-08's bulk
+//! evidence, checked against the constants that cite it. Rows 01 to 07, over all four; RTL-OBS-08's bulk
 //! stream is not in the traces, which hold control transfers only.
 
 use rtlsdr::r820t2::registers::I2C_ADDRESS;
@@ -13,11 +13,12 @@ use rtlsdr_sim::{Control, Direction, Trace, Transfer};
 const GATE_OTHER: u8 = 0x14;
 
 /// The traces taken from the V5's captures.
-fn traces() -> [Trace; 3] {
+fn traces() -> [Trace; 4] {
     [
         include_str!("fixtures/gplobs-v5-0001.trace"),
         include_str!("fixtures/gplobs-v5-0002.trace"),
         include_str!("fixtures/gplobs-v5-0003.trace"),
+        include_str!("fixtures/gplobs-v5-0004.trace"),
     ]
     .map(|text| Trace::parse(text).expect("the fixture parses"))
 }
@@ -125,7 +126,7 @@ fn every_paged_write_is_followed_by_the_post_write_read() {
             );
         }
     }
-    assert_eq!(writes, 198, "RTL-OBS-04 counts 198 paged writes");
+    assert_eq!(writes, 247, "RTL-OBS-04 counts 247 paged writes");
 }
 
 #[test]
@@ -144,6 +145,8 @@ fn addressed_blocks_are_only_written() {
 #[test]
 fn every_tuner_read_follows_a_write_of_register_0_and_only_absent_addresses_stall() {
     let tuner = Location::i2c(I2C_ADDRESS).expect("a 7-bit address");
+    let eeprom = Location::i2c(0x50).expect("a 7-bit address");
+    let absent = [0x64, 0x63].map(|address| Location::i2c(address).expect("a 7-bit address"));
     let mut reads = 0;
     for trace in traces() {
         let transfers = trace.transfers();
@@ -162,17 +165,22 @@ fn every_tuner_read_follows_a_write_of_register_0_and_only_absent_addresses_stal
                         "RTL-OBS-06: a tuner read without register 0 written first, line {line}"
                     );
                 }
-                // Absent addresses, and the tool's teardown (RTL-OBS-07), stall.
-                Transfer::Stall { .. } => {}
-                _ => assert_eq!(
-                    control.value,
-                    tuner.value(),
-                    "RTL-OBS-06: only absent addresses stall, line {line}"
+                // Absent addresses stall, and so does the tuner in rtl_sdr's teardown
+                // (RTL-OBS-07).
+                Transfer::Stall { .. } => assert!(
+                    control.value == tuner.value()
+                        || absent.iter().any(|at| at.value() == control.value),
+                    "RTL-OBS-06: a stall at an unrecorded address, line {line}"
+                ),
+                // Only the tuner and, in rtl_eeprom's session, the EEPROM answer.
+                _ => assert!(
+                    [tuner.value(), eeprom.value()].contains(&control.value),
+                    "RTL-OBS-06: an unrecorded address answered, line {line}"
                 ),
             }
         }
     }
-    assert_eq!(reads, 28, "every tuner read in the three captures");
+    assert_eq!(reads, 32, "every tuner read in the four captures");
 }
 
 #[test]
@@ -203,7 +211,7 @@ fn the_tuner_is_reached_only_while_the_gate_is_open() {
         }
     }
     assert_eq!(
-        checked, 200,
-        "RTL-OBS-07 counts 200 completed tuner transfers"
+        checked, 248,
+        "RTL-OBS-07 counts 248 completed tuner transfers"
     );
 }

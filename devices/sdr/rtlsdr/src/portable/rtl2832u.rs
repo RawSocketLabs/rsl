@@ -5,9 +5,9 @@
 //! product strings tell them apart. How the host addresses the dongle's registers and the
 //! tuner's I2C port comes from captures of librtlsdr's traffic on the `NESDR SMArt v5`
 //! (`GPLOBS-V5-0001` to `-0003`, class GPLOBS): every vendor transfer, the paged register
-//! block, the addressed blocks, the I2C block and the tuner gate. The init order, the
-//! register meanings and the stream setup are still to come (`RTL-GAP-07`, `RTL-GAP-09` to
-//! `RTL-GAP-11`); block names here are this crate's own, by `wIndex`.
+//! block, the addressed blocks, the I2C block and the tuner gate; the open and close are in
+//! [`super::sequence`]. The register meanings and the stream setup are still to come
+//! (`RTL-GAP-09` to `RTL-GAP-11`); block names here are this crate's own, by `wIndex`.
 
 /// A USB device identity, as a descriptor dump shows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -91,6 +91,12 @@ pub enum Block {
     /// Block 2 (`0x3000`, `0x300b` written).
     Two = 2,
 }
+
+/// Paged-block page 0. prov: RTL-OBS-03
+pub const PAGE_0: Page = Page(0);
+
+/// Paged-block page 1. prov: RTL-OBS-03
+pub const PAGE_1: Page = Page(1);
 
 /// Where a vendor transfer lands: its `wValue` and its read `wIndex` ([`WRITE`] clear).
 /// Built only by the constructors below, so a page stays below `0x10`.

@@ -34,13 +34,14 @@ never a guessed number. Vendor documents stay outside the repo; cite them by pag
 - `src/access.rs`: `Access`, registers and tuner I2C over a borrowed port: paged-block
   writes with their read-back, addressed-block (`Block`) writes, the tuner gate, I2C by `I2cAddress`;
   the encoding is `rtl2832u`'s (`RTL-OBS-01` to `RTL-OBS-07`).
-- `src/device.rs`: `Device`, whose `open` refuses with `RTL-GAP-07` before touching the
-  port.
+- `src/device.rs`: `Device`: `open` and `close` run `sequence::{OPEN, CLOSE}` through
+  `Access`; `open` runs the V5's and refuses a board it can tell is another (`RTL-GAP-07`).
 - `src/transport/usb.rs` (feature `usb`, Linux): `UsbPort`, the seam over `usb`. The caller
   passes VID:PID (or a `usb::DeviceInfo` picked by serial or port path), interface and bulk
   IN endpoint; `rtl2832u` holds the owner's dongles' (DESC rows), but the port hard-codes none.
 - `src/portable/`: no I/O, imports within the tree (no `no_std` witness yet).
-  `pending.rs`: `Pending<T>`/`Gap`. `rtl2832u.rs`: the demodulator's placeholders.
+  `pending.rs`: `Pending<T>`/`Gap`. `rtl2832u.rs`: the dongle's identities and wire
+  encoding. `sequence.rs`: the captured open and close as `Step` tables (`RTL-OBS-09`, `-10`).
   `r820t2/`: the tuner, from the register description only — `registers` (I2C framing,
   `Registers` image, page writes, LSB-first reads; only registers read from the chip may
   be written, `R820-GAP-08`), `field` (every field T1-2 and T1-3 name), `setting` (typed
@@ -53,8 +54,9 @@ never a guessed number. Vendor documents stay outside the repo; cite them by pag
   session; included by `#[path]`. `tests/provenance.rs` checks the ledger against the code.
 - `tests/fixtures/synthetic-{session,stall}.trace`: hand-written, SYNTHETIC, never evidence.
   `gplobs-v5-000N.trace`: the V5 captures' vendor transfers, generated from the pcaps
-  (`-tuner-probe` and `-teardown` are cuts of 0001 and 0002); `tests/observed.rs` checks
-  the `RTL-OBS` rows over them, `tests/access.rs` replays the cuts.
+  (`-tuner-probe`, `-open-close` and `-teardown` are cuts of 0001 and 0002; 0004 is
+  whole); `tests/observed.rs` checks the `RTL-OBS` rows over them, `tests/access.rs` and
+  `tests/device.rs` replay them.
 
 ## Rules
 
