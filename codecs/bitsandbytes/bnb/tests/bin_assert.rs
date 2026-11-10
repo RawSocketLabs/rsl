@@ -204,4 +204,20 @@ mod macro_ {
         assert_eq!(it.by_ref().count(), 2);
         assert!(it.next().is_none(), "stays stopped after the padding");
     }
+
+    // LSB-first, the unread tail is the final byte's high bits.
+    #[bin(little, bits = lsb)]
+    #[derive(Debug, PartialEq)]
+    struct TwoLsb {
+        #[br(assert(v != u2::new(0)))]
+        v: u2,
+    }
+
+    #[test]
+    fn lsb_padding_is_the_high_bits_of_the_final_byte() {
+        // Messages fill from bit 0 up: 01, 01, then a zero high nibble of padding.
+        assert_eq!(TwoLsb::decode_all(&[0b0000_0101]).unwrap().len(), 2);
+        // 01, 00, 01, 01: the second fails the guard with nonzero high bits left over.
+        assert!(TwoLsb::decode_all(&[0b0101_0001]).is_err());
+    }
 }

@@ -1559,3 +1559,23 @@ footer extended to the default-order, `decode_all` and `PositionOverflow` change
 The hot-path changes are one `checked_add` in `BitWriter::write_bits` and one in
 `StreamBitReader::read_bits`, a mask in `BitEnum::from_bits`, and every typed read and write
 now taking the type's declared order from a trait const (resolved at compile time). Not benchmarked.
+
+### Verification (2026-11-09, release tier)
+
+- `scripts/ci-local.sh release --product bitsandbytes --base 7db0cfb6` on `902a68f8`: all 33
+  jobs passed, including the bnb suite, MSRV, `no_std`, package, public API (snapshot
+  unchanged), semver-checks (against 0.8.0, `release_type = "patch"`: the public API is
+  unchanged; the breaks are behaviour and wire bytes, which it cannot see), the downstream
+  SDR/socks/network consumers, and short campaigns of both bnb fuzz targets. A first run
+  based on the `bitsandbytes-v0.8.0` tag stopped at commitlint on four older commits by
+  other authors.
+- `cargo mutants -p bitsandbytes --all-features --in-diff` (the runtime diff): 75 mutants,
+  60 caught, 6 unviable, 1 timeout (`read_buffered -> Ok(1)` loops, so detected), 8 missed.
+  Three missed mutants, in the LSB branch of `is_padding`, were a real gap, closed by
+  `bin_assert.rs::lsb_padding_is_the_high_bits_of_the_final_byte`; a re-run caught all 13
+  `is_padding` mutants. The other five are equivalent: `aligned_run -> None` and its bound
+  mutants only disable the fast path, whose per-byte fallback returns the same values,
+  errors and cursor, and the `read_slice` bound mutant differs only past the 32-bit bound.
+- Not run: the S5 tests on a 32-bit target (the i686 build of the test dependencies needs a
+  C cross-compiler; the library compiles for i686), mutants in the macro crate (its own
+  tests do not exercise the expansion), longer fuzz campaigns, and benchmarks.
