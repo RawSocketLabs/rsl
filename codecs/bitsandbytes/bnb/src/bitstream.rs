@@ -131,7 +131,8 @@ impl EnumDispatchError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ErrorKind {
-    /// Ran past the end of a finite input (a slice): `needed` bits were requested,
+    /// Ran past the end of a finite input (a slice, or a `BufSource` whose reader hit
+    /// EOF): `needed` bits were requested,
     /// `remaining` were left. Definitive — distinct from [`Incomplete`](ErrorKind::Incomplete).
     UnexpectedEof {
         /// Bits requested.
@@ -643,6 +644,24 @@ pub struct Layout {
     pub byte: ByteOrder,
 }
 
+/// `raw` (a `T` value's bits) reordered for the wire: `T`'s own declared byte order if it has
+/// one, else the cursor's `byte`. Its own inverse, so read and write share it.
+#[inline]
+fn value_byte_order<T: Bits>(raw: u128, bit: BitOrder, byte: ByteOrder) -> u128 {
+    apply_byte_order(raw, T::BITS, bit, T::__BNB_BYTE_ORDER.unwrap_or(byte))
+}
+
+/// `len` bytes as a bit count. Where `usize` cannot count that many bits (a 32-bit target with
+/// 512 MiB or more) it saturates at the last whole byte that fits, so such a buffer reads as
+/// ending there: reads past it fail and seeks are refused, never a wrapped short length.
+#[inline]
+const fn bits_in(len: usize) -> usize {
+    match len.checked_mul(8) {
+        Some(bits) => bits,
+        None => usize::MAX & !7,
+    }
+}
+
 /// Reverses the low `bits / 8` bytes of `raw` when the declared byte order differs from the
 /// bit order's **natural** layout, and the width is a whole number of bytes (byte order
 /// applies only to byte-multiple values); a no-op otherwise. It is its own inverse, so read
@@ -826,7 +845,7 @@ impl<'a> BitReader<'a> {
     /// Bits not yet consumed.
     #[must_use]
     pub fn remaining_bits(&self) -> usize {
-        self.bytes.len() * 8 - self.bit_pos
+        bits_in(self.bytes.len()) - self.bit_pos
     }
 
     /// Borrows and consumes the next `n` whole bytes without copying.
@@ -848,7 +867,7 @@ impl<'a> BitReader<'a> {
         let end = start
             .checked_add(n)
             .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
-        if end > self.bytes.len() {
+        if end > bits_in(self.bytes.len()) / 8 {
             return Err(BitError::new(
                 ErrorKind::UnexpectedEof {
                     needed: n.saturating_mul(8),
@@ -895,11 +914,8 @@ impl<'a> BitReader<'a> {
     #[inline]
     pub fn read<T: Bits>(&mut self) -> Result<T, BitError> {
         let raw = self.read_bits(T::BITS)?;
-        Ok(T::from_bits(apply_byte_order(
-            raw,
-            T::BITS,
-            self.order,
-            self.byte,
+        Ok(T::from_bits(value_byte_order::<T>(
+            raw, self.order, self.byte,
         )))
     }
 
@@ -910,7 +926,7 @@ impl<'a> BitReader<'a> {
     /// # Errors
     /// [`ErrorKind::UnexpectedEof`] if `pos` is past the end of the buffer.
     pub fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
-        let end = self.bytes.len() * 8;
+        let end = bits_in(self.bytes.len());
         if pos > end {
             return Err(BitError::new(
                 ErrorKind::UnexpectedEof {
@@ -1042,15 +1058,20 @@ impl BitWriter {
     /// Appends the low `n` (`<= 128`) bits of `value`, in the writer's bit order.
     ///
     /// # Errors
-    /// [`ErrorKind::TooWide`] if `n > 128`.
+    /// [`ErrorKind::TooWide`] if `n > 128`; [`ErrorKind::PositionOverflow`] if the output
+    /// would hold more bits than `usize` can count.
     #[inline]
     pub fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
         let n = n as usize;
         if n > 128 {
             return Err(BitError::new(ErrorKind::TooWide { width: n }, self.bit_pos));
         }
+        let end = self
+            .bit_pos
+            .checked_add(n)
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
         emit_bits(&mut self.bytes, self.bit_pos, value, n, self.order);
-        self.bit_pos += n;
+        self.bit_pos = end;
         Ok(())
     }
 
@@ -1061,7 +1082,7 @@ impl BitWriter {
     /// As [`write_bits`](Self::write_bits).
     #[inline]
     pub fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
-        let raw = apply_byte_order(value.into_bits(), T::BITS, self.order, self.byte);
+        let raw = value_byte_order::<T>(value.into_bits(), self.order, self.byte);
         self.write_bits(raw, T::BITS)
     }
 
@@ -1130,9 +1151,8 @@ pub trait Source: sealed::Sealed {
     #[inline]
     fn read<T: Bits>(&mut self) -> Result<T, BitError> {
         let raw = self.read_bits(T::BITS)?;
-        Ok(T::from_bits(apply_byte_order(
+        Ok(T::from_bits(value_byte_order::<T>(
             raw,
-            T::BITS,
             self.bit_order(),
             self.byte_order(),
         )))
@@ -1561,12 +1581,7 @@ pub trait Sink: sealed::Sealed {
     /// As [`write_bits`](Sink::write_bits).
     #[inline]
     fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
-        let raw = apply_byte_order(
-            value.into_bits(),
-            T::BITS,
-            self.bit_order(),
-            self.byte_order(),
-        );
+        let raw = value_byte_order::<T>(value.into_bits(), self.bit_order(), self.byte_order());
         self.write_bits(raw, T::BITS)
     }
 
@@ -1666,8 +1681,11 @@ impl<'a> BitReader<'a> {
             return None;
         }
         let start = self.bit_pos / 8;
-        let run = self.bytes.get(start..start.checked_add(n)?)?;
-        self.bit_pos += n * 8;
+        let end = start
+            .checked_add(n)
+            .filter(|&end| end <= bits_in(self.bytes.len()) / 8)?;
+        let run = self.bytes.get(start..end)?;
+        self.bit_pos = end * 8;
         Some(run)
     }
 }
@@ -1696,15 +1714,21 @@ impl Sink for BitWriter {
         self.scratch.as_deref_mut()
     }
     // An aligned cursor sits exactly at the end of the buffer, and whole aligned bytes write
-    // identically in both bit orders, so the run is appended as-is. Writing never fails.
+    // identically in both bit orders, so the run is appended as-is. It fails only when the
+    // output would hold more bits than `usize` can count.
     #[inline]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), BitError> {
         if self.bit_pos % 8 != 0 {
             return write_bytes_per_byte(self, bytes);
         }
         debug_assert_eq!(self.bit_pos / 8, self.bytes.len());
+        let end = bytes
+            .len()
+            .checked_mul(8)
+            .and_then(|bits| self.bit_pos.checked_add(bits))
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
         self.bytes.extend_from_slice(bytes);
-        self.bit_pos += bytes.len() * 8;
+        self.bit_pos = end;
         Ok(())
     }
 }
@@ -2096,7 +2120,9 @@ impl<T: BitEncode> EncodeWith<()> for T {
 
 /// Decode every message from `bytes` into a `Vec`, with the message's own byte/bit order baked
 /// in — bit-aware, so messages that don't end on byte boundaries reassemble correctly. Backs
-/// `Type::decode_all`. The buffer must hold whole messages (a partial tail is an error).
+/// `Type::decode_all`. Whole bytes must hold whole messages; a sub-byte tail in the final byte
+/// that does not decode is padding, as in [`decode_exact`]. A tail that does decode (a message
+/// narrower than a byte) is kept: padding and such a message cannot be told apart.
 ///
 /// # Errors
 /// The first decode [`BitError`] (e.g. a truncated trailing message).
@@ -2106,7 +2132,11 @@ pub fn decode_all<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<Vec<T>, 
     let mut out = Vec::new();
     while r.remaining_bits() > 0 {
         let before = r.bit_pos();
-        let item = T::bit_decode(&mut r)?;
+        let item = match T::bit_decode(&mut r) {
+            Ok(item) => item,
+            Err(e) if is_padding(bytes, before, layout.bit, &e) => break,
+            Err(e) => return Err(e),
+        };
         if r.bit_pos() == before {
             break; // a zero-width `T` makes no progress — stop without pushing a spurious
             // element (and without spinning forever).
@@ -2116,8 +2146,27 @@ pub fn decode_all<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<Vec<T>, 
     Ok(out)
 }
 
+/// Whether a failed decode that started at bit `at` only ran into the final byte's padding:
+/// fewer than 8 bits were left, and the decode either ran out of them or they are all zero.
+/// Any other failure on a nonzero tail is a real rejection and is reported.
+fn is_padding(bytes: &[u8], at: usize, bit: BitOrder, error: &BitError) -> bool {
+    let Some(&last) = bytes.last() else {
+        return false;
+    };
+    if bits_in(bytes.len()) - at >= 8 {
+        return false;
+    }
+    // The unread bits of the final byte: the low ones under MSB-first, the high ones under LSB.
+    let unread = match bit {
+        BitOrder::Msb => 0xFF >> (at % 8),
+        BitOrder::Lsb => 0xFF << (at % 8),
+    };
+    matches!(error.kind, ErrorKind::UnexpectedEof { .. }) || last & unread == 0
+}
+
 /// A lazy iterator decoding successive `T` from `bytes` (layout baked in) until the buffer is
-/// drained, ending after the first error if one occurs. Backs `Type::decode_iter`.
+/// drained, ending after the first error if one occurs. Backs `Type::decode_iter`. A sub-byte
+/// tail that does not decode ends it cleanly, as in [`decode_all`].
 #[doc(hidden)]
 pub fn decode_iter<T: BitDecode>(
     bytes: &[u8],
@@ -2134,6 +2183,10 @@ pub fn decode_iter<T: BitDecode>(
             Ok(v) => {
                 stopped = r.bit_pos() == before; // stop if a zero-width message made no progress
                 Some(Ok(v))
+            }
+            Err(e) if is_padding(bytes, before, layout.bit, &e) => {
+                stopped = true;
+                None
             }
             Err(e) => {
                 stopped = true;
@@ -2456,7 +2509,8 @@ impl<R: std::io::Read> StreamBitReader<R> {
     ///
     /// # Errors
     /// [`ErrorKind::TooWide`] if `n > 128`; [`ErrorKind::Incomplete`] if the
-    /// source runs out mid-field. Either carries the bit offset. A failed read may
+    /// source runs out mid-field; [`ErrorKind::PositionOverflow`] once the stream has
+    /// delivered more bits than `usize` can count. Each carries the bit offset. A failed read may
     /// have consumed input; do not retry the field on this reader. Use `BitBuf`
     /// when the caller needs transactional incremental attempts.
     pub fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
@@ -2467,6 +2521,9 @@ impl<R: std::io::Read> StreamBitReader<R> {
             ));
         }
         let at = self.pos;
+        let end = at
+            .checked_add(n as usize)
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, at))?;
         // Consume the leftover bits of the current byte, then whole bytes, honoring the
         // source's bit order so a streaming read matches the slice-backed sources exactly
         // (`extract_bits`). The accumulator never holds more than `n` (<= 128) bits, so it
@@ -2509,7 +2566,7 @@ impl<R: std::io::Read> StreamBitReader<R> {
             placed += take;
             need -= take;
         }
-        self.pos += n as usize;
+        self.pos = end;
         Ok(result)
     }
 
@@ -2521,9 +2578,8 @@ impl<R: std::io::Read> StreamBitReader<R> {
     /// As [`read_bits`](Self::read_bits).
     pub fn read<T: Bits>(&mut self) -> Result<T, BitError> {
         let raw = self.read_bits(T::BITS)?;
-        Ok(T::from_bits(apply_byte_order(
+        Ok(T::from_bits(value_byte_order::<T>(
             raw,
-            T::BITS,
             self.layout.bit,
             self.layout.byte,
         )))
@@ -2554,7 +2610,9 @@ impl<R: std::io::Read> Source for StreamBitReader<R> {
 /// stream by seeking within the retained buffer, reading more on demand. It is
 /// **bounded** — a retention `cap` (default 64 KiB) past which it errors
 /// [`ErrorKind::BufferFull`] rather than buffering unboundedly. The
-/// "continuously-receiving peer that also needs to seek" case.
+/// "continuously-receiving peer that also needs to seek" case. Once the reader returns
+/// EOF, a read past the retained bytes is [`ErrorKind::UnexpectedEof`], as on a slice;
+/// for input that may still grow, push into a [`BitBuf`] instead.
 ///
 /// # Examples
 ///
@@ -2653,9 +2711,12 @@ impl<R: std::io::Read> Source for BufSource<R> {
         let byte_end = end.div_ceil(8);
         self.fill_to(byte_end)?;
         if self.buf.len() < byte_end {
+            // `fill_to` stops short only at the reader's EOF, so the input is finite and
+            // finished: report it as a slice would, letting dispatch fall through.
             return Err(BitError::new(
-                ErrorKind::Incomplete {
-                    needed: Some(byte_end - self.buf.len()),
+                ErrorKind::UnexpectedEof {
+                    needed: n as usize,
+                    remaining: bits_in(self.buf.len()).saturating_sub(self.bit_pos),
                 },
                 self.bit_pos,
             ));
@@ -2872,7 +2933,7 @@ impl BitBuf {
     /// The number of unconsumed bits currently buffered.
     #[must_use]
     pub fn bit_len(&self) -> usize {
-        self.buf.len() * 8 - self.cursor
+        bits_in(self.buf.len()) - self.cursor
     }
 
     /// Whether no unconsumed bits remain.
@@ -3003,7 +3064,7 @@ impl BitBuf {
             return Err(BitError::new(ErrorKind::NotByteAligned, self.cursor));
         }
         let start = self.cursor / 8;
-        let n = out.len().min(self.buf.len() - start);
+        let n = out.len().min(self.bit_len() / 8);
         out[..n].copy_from_slice(&self.buf[start..start + n]);
         self.cursor += n * 8;
         Ok(n)
@@ -3528,6 +3589,34 @@ pub use bytes_io::{BytesReader, BytesWriter};
 mod unit {
     use super::*;
     use crate::{u4, u12};
+
+    #[test]
+    fn bits_in_saturates_at_the_last_whole_byte_instead_of_wrapping() {
+        assert_eq!(bits_in(0), 0);
+        assert_eq!(bits_in(3), 24);
+        assert_eq!(bits_in(usize::MAX / 8), usize::MAX / 8 * 8);
+        assert_eq!(bits_in(usize::MAX / 8 + 1), usize::MAX & !7);
+        assert_eq!(bits_in(usize::MAX), usize::MAX & !7);
+    }
+
+    #[test]
+    fn writer_and_stream_positions_fail_at_the_bound_instead_of_wrapping() {
+        let mut w = BitWriter::new();
+        w.bit_pos = usize::MAX - 3;
+        assert_eq!(
+            w.write_bits(0, 8).unwrap_err().kind,
+            ErrorKind::PositionOverflow
+        );
+        assert_eq!(w.bit_pos, usize::MAX - 3);
+
+        let mut r = StreamBitReader::new(&[0xFFu8][..]);
+        r.pos = usize::MAX - 3;
+        assert_eq!(
+            r.read_bits(8).unwrap_err().kind,
+            ErrorKind::PositionOverflow
+        );
+        assert_eq!(r.pos, usize::MAX - 3);
+    }
 
     #[test]
     fn unaligned_round_trip() {
@@ -5102,6 +5191,49 @@ mod component {
             assert_eq!(collected.unwrap(), vec![w, w]);
         }
 
+        #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq, Clone, Copy)]
+        struct Twelve {
+            v: u12,
+        }
+
+        #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq, Clone, Copy)]
+        struct Nibble {
+            v: u4,
+        }
+
+        #[test]
+        fn decode_all_and_iter_treat_an_undecodable_sub_byte_tail_as_padding() {
+            let t = Twelve { v: u12::new(0xABC) };
+            let bytes = t.to_bytes().unwrap();
+            assert_eq!(bytes, [0xAB, 0xC0]);
+            assert_eq!(Twelve::decode_exact(&bytes).unwrap(), t);
+            for wire in [bytes, vec![0xAB, 0xCF]] {
+                assert_eq!(Twelve::decode_all(&wire).unwrap(), vec![t]);
+                let collected: Result<Vec<_>, _> = Twelve::decode_iter(&wire).collect();
+                assert_eq!(collected.unwrap(), vec![t]);
+            }
+
+            // A whole trailing byte is not padding: a truncated message still errors.
+            let wire = [0xAB, 0xCA, 0xBC, 0x00];
+            assert!(matches!(
+                Twelve::decode_all(&wire).unwrap_err().kind,
+                ErrorKind::UnexpectedEof { .. }
+            ));
+            let last = Twelve::decode_iter(&wire).last().unwrap();
+            assert!(matches!(
+                last.unwrap_err().kind,
+                ErrorKind::UnexpectedEof { .. }
+            ));
+        }
+
+        #[test]
+        fn decode_all_keeps_a_sub_byte_message_in_the_final_byte() {
+            let nibbles = [Nibble { v: u4::new(0xA) }, Nibble { v: u4::new(0xB) }];
+            assert_eq!(Nibble::decode_all(&[0xAB]).unwrap(), nibbles);
+            let collected: Result<Vec<_>, _> = Nibble::decode_iter(&[0xAB]).collect();
+            assert_eq!(collected.unwrap(), nibbles);
+        }
+
         #[test]
         fn decode_all_of_a_zero_width_type_yields_nothing() {
             use bnb::{BitDecode, BitError, Layout, Source};
@@ -5356,17 +5488,20 @@ mod component {
         }
 
         #[test]
-        fn running_out_mid_field_is_incomplete() {
-            // Only one byte is available, but a 16-bit read needs two — the stream ends (EOF)
-            // partway through, which is the streaming "need more" signal, not a definitive EOF.
+        fn running_out_mid_field_at_eof_is_unexpected_eof() {
+            // Only one byte is available, but a 16-bit read needs two. The reader has hit
+            // EOF, so no more bytes can arrive: the shortfall is definitive, as on a slice.
             let mut src = BufSource::new(Chunked {
                 data: vec![0xAB],
                 pos: 0,
             });
-            assert!(matches!(
+            assert_eq!(
                 src.read_bits(16).unwrap_err().kind,
-                ErrorKind::Incomplete { .. }
-            ));
+                ErrorKind::UnexpectedEof {
+                    needed: 16,
+                    remaining: 8
+                }
+            );
         }
 
         #[test]

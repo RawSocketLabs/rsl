@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: field `mode` has a #[bits] slot wider than its type's Bits::BITS
+  --> tests/ui/bitfield_slot_wider_than_type.rs:20:11
+   |
+20 |     mode: Mode, // a 2-bit enum in a 3-bit slot
+   |           ^^^^ evaluation of `_` failed here

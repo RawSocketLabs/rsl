@@ -15,7 +15,7 @@
 //!
 //! Run with: `cargo run -p bitsandbytes --example tcp`
 
-use bnb::{BufSource, Source, bin};
+use bnb::{BufSource, ErrorKind, Source, bin};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -61,15 +61,17 @@ fn serve(stream: &TcpStream) -> std::io::Result<()> {
     let mut writer = stream; // &TcpStream: Write — the same underlying socket
     loop {
         // Distinguish a clean close from corruption. When the peer hangs up *between*
-        // messages, the next decode fails with `Incomplete` at exactly the bit position
+        // messages, the next decode fails with `UnexpectedEof` at exactly the bit position
         // where the message would have started — no byte of it ever arrived. An
-        // `Incomplete` past that position means the connection died mid-message, and any
+        // `UnexpectedEof` past that position means the connection died mid-message, and any
         // other kind (`BadMagic`, `Io`, …) is a framing/transport fault — those are real
         // errors and must be surfaced, not silently treated as end-of-stream.
         let start = reader.bit_pos();
         let req = match Message::decode(&mut reader) {
             Ok(req) => req,
-            Err(e) if e.is_incomplete() && e.at == start => break, // clean close
+            Err(e) if matches!(e.kind, ErrorKind::UnexpectedEof { .. }) && e.at == start => {
+                break; // clean close
+            }
             Err(e) => panic!("server: framing/transport error: {e}"),
         };
         info!(?req, "server ← request");

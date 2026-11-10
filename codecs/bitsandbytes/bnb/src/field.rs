@@ -97,6 +97,13 @@ pub trait Bits: Copy {
     /// Reconstruct from the low [`BITS`](Bits::BITS) bits of `raw`; any higher
     /// bits are ignored.
     fn from_bits(raw: u128) -> Self;
+
+    /// The byte order this type declares for itself, overriding the cursor's whenever it is
+    /// read or written; `None` (the default) takes the cursor's. `#[bitfield]` and
+    /// `#[bitflags]` set it from `bytes = big|little`, so a nested value has the same bytes
+    /// as its own `to_bytes` however a message reaches it (plain field, `map`, `magic`).
+    #[doc(hidden)]
+    const __BNB_BYTE_ORDER: Option<ByteOrder> = None;
 }
 
 impl Bits for bool {
@@ -250,7 +257,9 @@ pub trait Bitfield: Bits + Sized {
     /// remainder being reserved/padding).
     const WIDTH: u32;
 
-    /// The byte order in which the backing integer is serialized.
+    /// The byte order in which the backing integer is serialized. A hand-written impl must
+    /// also set the matching hidden `Bits` order (the macros do); `impl_bits!` cannot, so such
+    /// a type is read and written nested in the enclosing message's order.
     const BYTE_ORDER: ByteOrder;
 
     /// The bit packing order of the declared fields.

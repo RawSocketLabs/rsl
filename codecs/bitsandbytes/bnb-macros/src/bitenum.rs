@@ -211,7 +211,7 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         quote!(Self::__bnb_from_bits(raw))
     } else {
         quote! {
-            match raw {
+            match raw & Self::__BNB_MASK {
                 #(#from_unit,)*
                 other => unreachable!(
                     "non-exhaustive BitEnum {} has no variant for discriminant {} and no #[catch_all]",
@@ -239,6 +239,13 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
             }
         };
         impl #name {
+            /// The low `Bits::BITS` bits: `from_bits` reads only those, so stray high bits
+            /// never reach the discriminant match.
+            const __BNB_MASK: u128 = {
+                let width = <#width as #bits_path>::BITS;
+                if width >= 128 { u128::MAX } else { (1u128 << width) - 1 }
+            };
+
             // Const-dispatch seam (see `Bits`): the `Bits::from_bits`/`into_bits`
             // contract as inherent `const fn`s, so this enum works as a field of a
             // `#[bitfield]` whose accessors are `const`. The trait impl delegates
@@ -255,7 +262,7 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
             #[doc(hidden)]
             #[inline]
             #vis const fn __bnb_from_bits(raw: u128) -> Self {
-                match raw {
+                match raw & Self::__BNB_MASK {
                     #(#from_unit,)*
                     #from_wild,
                 }

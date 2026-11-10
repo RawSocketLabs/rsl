@@ -285,6 +285,16 @@ mod macro_ {
     }
 
     #[test]
+    fn from_bits_ignores_bits_above_the_enum_width() {
+        // `Bits::from_bits` is public; stray high bits must not reach the discriminant match
+        // (an exhaustive enum's match has no arm for them and would panic).
+        assert_eq!(Exhaustive::from_bits(0b110), Exhaustive::Two);
+        assert_eq!(Exhaustive::from_bits(u128::MAX), Exhaustive::Three);
+        assert_eq!(WithCatch::from_bits(0b111), WithCatch::Rest(u2::new(3)));
+        assert_eq!(Incomplete::from_bits(0b101), Incomplete::One);
+    }
+
+    #[test]
     fn catch_all_preserves_every_unrepresented_value() {
         assert_eq!(WithCatch::from_bits(0), WithCatch::Zero);
         assert_eq!(WithCatch::from_bits(2), WithCatch::Rest(u2::new(2)));

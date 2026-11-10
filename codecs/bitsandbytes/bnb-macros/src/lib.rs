@@ -164,7 +164,9 @@ pub(crate) fn const_into_bits(
 /// explicit `#[bits(A..=B)]` range (which also fixes its absolute offset); or,
 /// by default, `<FieldType as bnb::Bits>::BITS`. Use widths/inference for
 /// automatic layout, or ranges on **every** field for fully manual layout — the
-/// two styles cannot be mixed in one struct.
+/// two styles cannot be mixed in one struct. An explicit width may be narrower than
+/// the field type's `Bits::BITS` but never wider (a compile error), since the getter
+/// could otherwise produce bits the type cannot hold; `#[view]` fields are exempt.
 ///
 /// ## Generated API
 ///

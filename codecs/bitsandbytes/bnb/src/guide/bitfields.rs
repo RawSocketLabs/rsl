@@ -54,7 +54,9 @@
 //! independent steps. (At the `#[bin]` *message* layer the two instead compose by the
 //! natural-layout rule — a byte-multiple value is byte-swapped only when the declared byte
 //! order differs from the bit order's natural layout; see the
-//! [`bin_codec`](super::bin_codec) guide.) The same fields, packed `msb`, declared with two
+//! [`bin_codec`](super::bin_codec) guide.) Nested as a `#[bin]` field, a bitfield (or
+//! `#[bitflags]` set) keeps its declared byte order rather than the message's, so its bytes
+//! in the message are its standalone `to_bytes`. The same fields, packed `msb`, declared with two
 //! different byte orders — `to_bytes` honors each declaration:
 //!
 //! ```

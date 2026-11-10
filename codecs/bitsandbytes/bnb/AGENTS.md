@@ -278,6 +278,9 @@ confusion, not remove it).
   enforces it). A bitfield's `Bits::BITS` is the **declared total** width, not
   the backing width — that's what makes sub-byte nesting (`OpCode` = 5 bits in a
   `u8`) compose correctly.
+- An explicit `#[bits(N)]`/`#[bits(A..=B)]` slot must not be wider than its field type's
+  `Bits::BITS` (a per-field `const _` assert; `#[view]` fields exempt). A `BitEnum`'s
+  `from_bits` also masks its input to the enum width, so stray high bits never panic.
 - A fixed-length message implements `FixedBitLen` (its `BIT_LEN` sizes a nested
   region); a `count`-bearing (variable-length) message does **not**.
 

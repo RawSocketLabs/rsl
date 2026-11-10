@@ -9,9 +9,10 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::{Attribute, Ident, ItemStruct, LitInt, Path, Token, Type, parse_macro_input};
 
 use crate::builder::{self, BField, BuildKind, FieldDefault};
@@ -317,6 +318,25 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
         };
         quote!(const #w: u32 = #expr;)
     });
+
+    // An explicit slot wider than its type's `Bits::BITS` would hand `from_bits` bits the
+    // type cannot hold: a `BitEnum` getter then panics and a primitive silently truncates.
+    // A `#[view]` field stores raw bits of its own width, so its logical type is not checked.
+    let slot_fits: Vec<TokenStream2> = fields
+        .iter()
+        .filter(|f| f.view.is_none() && !matches!(f.spec, Spec::Inferred))
+        .map(|f| {
+            let w = width_ident(f);
+            let ty = &f.ty;
+            let ident = &f.ident;
+            quote_spanned! {ty.span()=>
+                const _: () = assert!(
+                    #name::#w <= <#ty as #bits_path>::BITS,
+                    concat!("field `", stringify!(#ident), "` has a #[bits] slot wider than its type's Bits::BITS"),
+                );
+            }
+        })
+        .collect();
 
     // 2. Total declared width: sum of field widths (auto) or backing width (manual).
     let width_expr = if manual {
@@ -702,6 +722,9 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
 
         impl #bits_path for #name {
             const BITS: u32 = Self::WIDTH;
+            // Read and written in its declared order wherever it is nested (see `Bits`).
+            const __BNB_BYTE_ORDER: ::core::option::Option<#bnb::__private::ByteOrder> =
+                ::core::option::Option::Some(#bnb::__private::ByteOrder::#byte_order_variant);
             #[inline]
             fn into_bits(self) -> u128 {
                 self.__bnb_into_bits()
@@ -738,6 +761,8 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
                 value.value
             }
         }
+
+        #(#slot_fits)*
 
         // Force the width-fit assert. `__BITS_FIT` is an associated const, which Rust
         // only const-evaluates when referenced, so a free `const _` that uses it makes

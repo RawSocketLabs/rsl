@@ -6,7 +6,7 @@
 
 mod macro_ {
     use bnb::bitstream::ErrorKind;
-    use bnb::{BitDecode, BitEncode, bin, u4};
+    use bnb::{BitDecode, BitEncode, bin, u2, u4};
 
     /// The pure-guard shape that used to require `try_map` + an identity `bw(map)`.
     #[bin(big)]
@@ -180,5 +180,28 @@ mod macro_ {
         let mut r = BitReader::new(&bytes);
         let err = Raw::bit_decode(&mut r).unwrap_err();
         assert_eq!(err.field, Some("body"));
+    }
+
+    // `decode_all`/`decode_iter` treat only a run-out or all-zero sub-byte tail as padding: a
+    // nonzero tail that a guard rejects is reported, and the iterator stays stopped.
+    #[bin]
+    #[derive(Debug, PartialEq)]
+    struct Two {
+        #[br(assert(v != u2::new(0)))]
+        v: u2,
+    }
+
+    #[test]
+    fn a_rejected_sub_byte_tail_is_an_error_not_padding() {
+        // 01 | 00 | 01 | 01: the second message fails the guard with bits left over.
+        let wire = [0b01_00_01_01];
+        assert!(Two::decode_all(&wire).is_err());
+
+        // 01 | 01 | 00 | 00: the guard fails on the all-zero tail, which is padding.
+        let padded = [0b01_01_00_00];
+        assert_eq!(Two::decode_all(&padded).unwrap().len(), 2);
+        let mut it = Two::decode_iter(&padded);
+        assert_eq!(it.by_ref().count(), 2);
+        assert!(it.next().is_none(), "stays stopped after the padding");
     }
 }

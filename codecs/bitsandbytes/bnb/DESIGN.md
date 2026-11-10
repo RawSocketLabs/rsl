@@ -1528,3 +1528,34 @@ anything about the new impls; the breaking classification above rests on coheren
 the scratch-crate E0119. `scripts/ci-act.sh pre-push` runs before publishing. Independent
 reviewer: four blocking findings (semver disposition, conflict list, test module, missing
 evidence), all fixed here.
+
+## 18. Review correctness fixes S1–S5 (0.9.0, breaking)
+
+Five findings from the 2026-11 multi-lens review, fixed one per commit. Baseline:
+`30c654e8` (`origin/main`).
+
+### Findings ledger
+
+| Finding | Consequence | Disposition and regression check |
+|---|---|---|
+| S1, High, pre-existing: a `BitEnum` field in a `#[bits(N)]` slot wider than the enum handed the getter bits the enum has no variant for. | The const getter panicked on decoded or `from_raw` input; a primitive in a wider slot silently truncated. | A per-field `const _` assert rejects a slot wider than the type's `Bits::BITS` (`#[view]` fields exempt), and `BitEnum::from_bits` masks its input to the enum width. Source break for any such declaration; the whole `rsl` workspace has none. `tests/ui/bitfield_slot_wider_than_type.rs`, `comprehensive.rs::from_bits_ignores_bits_above_the_enum_width`. |
+| S2, Medium, pre-existing: `BufSource` reported a short read after its reader's EOF as `Incomplete`. | Enum magic dispatch stopped instead of falling through to the next variant or catch-all, so the same bytes decoded differently over a slice and over a reader. | Returns `UnexpectedEof` once the reader has hit EOF, as the `ErrorKind` contract states for finite input. Behaviour change: code that detected a clean close by `is_incomplete()` must match `UnexpectedEof` (the `tcp` example is updated). `bin_enum.rs::a_short_tail_at_eof_dispatches_to_the_catch_all_on_every_finite_source` covers slice, `BitReader`, `SeekReader`, `BufSource` and `BitBuf::pull_eof`. `StreamBitReader` still reports `Incomplete` at EOF, documented as its forward-only contract. |
+| S3, Medium, pre-existing: a nested `#[bitfield]`/`#[bitflags]` was read and written in the enclosing message's byte order, contradicting the documented declared order. | A `bytes = little` register inside a `#[bin(big)]` message had different bytes than its own `to_bytes`. | `Bits` gains a hidden, defaulted `__BNB_BYTE_ORDER: Option<ByteOrder>` (default `None`); `#[bitfield]` and `#[bitflags]` set it from `bytes = …`, and every typed read and write (`Source::read`, `Sink::write`, the `BitReader`/`BitWriter`/`StreamBitReader` inherent forms) uses it over the cursor's order. Fixing it at the trait rather than in the leaf codec also covers `map`/`try_map`/`bw(map)`, `magic`, `WireLen` and custom codecs, which a first draft missed (review). `BitEnum` and `impl_bits!` types keep the cursor's order. Wire change wherever the two orders differ, including the default `big` inside a `little` message; no in-tree crate nests one (every in-tree bitfield and flag set is big/MSB, and the only little `#[bin]`, netlink, nests none). `bin_byte_order.rs::nested_bitfield_keeps_its_declared_byte_order` (sub-byte offset included) and `::declared_byte_order_holds_through_map_and_lsb_messages`. |
+| S4, Low, pre-existing: `decode_all`/`decode_iter` treated the padding bits of a final partial byte as a truncated message. | `T::decode_all(&t.to_bytes()?)` failed for any `T` whose width is not a byte multiple, though `decode_exact` accepted the same bytes. | When fewer than 8 bits are left and the decode fails by running out of them (`UnexpectedEof`), or the unread bits are all zero, iteration ends cleanly; any other failure on a nonzero tail is still reported, and `decode_iter` stays stopped. A tail that decodes is kept, so messages narrower than a byte are not dropped; padding that happens to decode as such a message is indistinguishable, as before. A closed magic enum reports running out of bits as `NoMatchingVariant`, so after one only a zero tail counts as padding (what `to_bytes` writes). Deviates from the plan's "stop on any sub-byte tail", which would drop a genuine final sub-byte message. `entry::decode_all_and_iter_treat_an_undecodable_sub_byte_tail_as_padding`, `entry::decode_all_keeps_a_sub_byte_message_in_the_final_byte`, `bin_assert.rs::a_rejected_sub_byte_tail_is_an_error_not_padding`. |
+| Low, pre-existing, out of scope: the generated `__bnb_from_bits` of `#[bitfield]`/`#[bitflags]` stores `raw as Backing` without masking to `WIDTH`, so bits above a narrower-than-backing bitfield's width survive `Bits::from_bits`, against the trait's "higher bits are ignored". | A stray high bit is retained in the backing integer (dual-use retention, not a panic). | Recorded for a follow-up; not changed here. |
+| S5, Low, pre-existing: `len * 8` and unchecked position increments overflow on 32-bit targets at 512 MiB. | A wrapped, short bit length (wrong `remaining_bits`/`bit_len`/seek bound) or a debug panic. | `bits_in` saturates byte-to-bit conversion at the last whole byte that fits, used by `remaining_bits`, `seek_to_bit`, `read_slice`, the aligned-run fast path, `BufSource`, `BitBuf::bit_len` and the `net`-gated `BitBuf::read_buffered`; `BitWriter::write_bits`/`write_bytes` and `StreamBitReader::read_bits` return `PositionOverflow` at the bound. `unit::bits_in_saturates_at_the_last_whole_byte_instead_of_wrapping`, `unit::writer_and_stream_positions_fail_at_the_bound_instead_of_wrapping` (host-run; the bound is simulated by setting the cursor). |
+
+Each regression test was confirmed to fail with its fix reverted (S1 by the new compile
+error, S2–S4 by reverting the runtime change).
+
+Independent review of the first draft: one blocking finding (S3 fixed only the leaf codec,
+so `map`/`magic` paths still used the message's order), fixed by moving the order onto
+`Bits`; two should-fix findings (S4 swallowed real rejections on a nonzero tail, and
+`decode_iter` could resume after its padding `None`), fixed; the commit's `BREAKING CHANGE`
+footer extended to the default-order, `decode_all` and `PositionOverflow` changes.
+
+### Performance
+
+The hot-path changes are one `checked_add` in `BitWriter::write_bits` and one in
+`StreamBitReader::read_bits`, a mask in `BitEnum::from_bits`, and every typed read and write
+now taking the type's declared order from a trait const (resolved at compile time). Not benchmarked.

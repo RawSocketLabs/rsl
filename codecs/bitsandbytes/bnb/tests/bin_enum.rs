@@ -384,6 +384,52 @@ mod macro_ {
         assert_eq!(Frame::peek_variant(&unk).unwrap(), FrameKind::Unknown);
     }
 
+    // ── A short tail at finite EOF is a mismatch for every source, not a "need more" that
+    //    would stop dispatch on a reader at EOF while a slice falls through. ──
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum Probe {
+        #[bin(magic = b"PING")]
+        Ping,
+        #[bin(magic = b"BYE")]
+        Bye,
+        #[catch_all]
+        Unknown {
+            #[br(count = 2)]
+            raw: Vec<u8>,
+        },
+    }
+
+    #[test]
+    fn a_short_tail_at_eof_dispatches_to_the_catch_all_on_every_finite_source() {
+        use bnb::{BitBuf, BitReader, BufSource, SeekReader};
+        use std::io::Cursor;
+
+        let wire = b"PI";
+        let unknown = Probe::Unknown {
+            raw: b"PI".to_vec(),
+        };
+        assert_eq!(Probe::decode_exact(wire).unwrap(), unknown, "slice");
+        assert_eq!(
+            Probe::decode(&mut BitReader::new(wire)).unwrap(),
+            unknown,
+            "BitReader"
+        );
+        assert_eq!(
+            Probe::decode(&mut SeekReader::new(Cursor::new(wire))).unwrap(),
+            unknown,
+            "SeekReader"
+        );
+        assert_eq!(
+            Probe::decode(&mut BufSource::new(&wire[..])).unwrap(),
+            unknown,
+            "BufSource"
+        );
+        let mut buf = BitBuf::new();
+        buf.push(wire).unwrap();
+        assert_eq!(buf.pull_eof::<Probe>().unwrap(), Some(unknown), "BitBuf");
+    }
+
     // ── A typed fallback: magic variants, then a no-magic/no-tag variant parsed when none
     //    matches (parsing from the unconsumed position). ──
     #[bin(big)]

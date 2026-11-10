@@ -246,6 +246,9 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
 
         impl #bnb::__private::Bits for #name {
             const BITS: u32 = <#backing>::BITS;
+            // Read and written in its declared order wherever it is nested (see `Bits`).
+            const __BNB_BYTE_ORDER: ::core::option::Option<#bnb::__private::ByteOrder> =
+                ::core::option::Option::Some(#bnb::__private::ByteOrder::#byte_order_variant);
             #[inline]
             fn into_bits(self) -> u128 { self.__bnb_into_bits() }
             #[inline]
