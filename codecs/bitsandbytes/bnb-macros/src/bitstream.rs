@@ -3488,7 +3488,9 @@ enum VariantRole {
 
 /// One typed equality in a conjunctive variant tag.
 struct NamedTag {
+    /// The `ctx` parameter this condition compares.
     name: Ident,
+    /// The constant it must equal: an integer literal (range-checked) or a typed expression.
     value: syn::Expr,
 }
 
@@ -3504,6 +3506,9 @@ impl Parse for NamedTag {
 }
 
 impl NamedTag {
+    /// The condition's value as a constant of the parameter type `ty`. An integer literal goes
+    /// through `ty`'s `Bits` conversion with a round-trip assert, so `ty` must be a `Bits` type
+    /// named directly (`u8`, `u6`, a `BitEnum`); other values are used as written.
     fn typed_value(&self, ty: &Type) -> TokenStream2 {
         let value = &self.value;
         if matches!(value, syn::Expr::Lit(lit) if matches!(lit.lit, syn::Lit::Int(_))) {
@@ -3515,7 +3520,13 @@ impl NamedTag {
                 __VALUE
             })
         } else {
-            quote!({ const __VALUE: #ty = #value; __VALUE })
+            // `(7)` is the documented form for a literal of a non-`Bits` type: type-checked,
+            // so out of range is an error, and its parentheses are not the user's mistake.
+            quote!({
+                #[allow(unused_parens, unused_braces)]
+                const __VALUE: #ty = #value;
+                __VALUE
+            })
         }
     }
 }
@@ -3525,6 +3536,7 @@ struct VariantDispatch<'a> {
     variant: &'a syn::Variant,
     /// `#[bin(tag = V)]` — the selector value to match against.
     tag: Option<syn::Expr>,
+    /// `#[bin(tag(name = V, ...))]` — conjunctive conditions over named `ctx` parameters.
     named_tags: Vec<NamedTag>,
     /// `#[bin(magic = M)]` — the wire signature.
     magic: Option<Magic>,
@@ -4027,6 +4039,13 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     // writes back its captured magic.
     let mut encode_arms = Vec::new();
     let mut accessor_arms = Vec::new();
+    let ctx_param_names: Vec<&Ident> = args.ctx.iter().map(|(n, _)| n).collect();
+    // Whether any arm reads a ctx param, which selects `encode_with` over plain `BitEncode`.
+    // A stored field the arm's pattern binds (a fallback or catch-all field, a captured
+    // selector) shadows the param of the same name for the whole arm, so its mentions are
+    // not context reads. A `temp` field is not in the pattern: it is bound later by its own
+    // `calc`, which may read the param, so it shadows nothing.
+    let mut arms_read_ctx = false;
     for v in &dispatch.variants {
         let is_tail = matches!(v.role(), VariantRole::Fallback | VariantRole::CatchAll);
         let cap = if is_tail { tail_capture.clone() } else { None };
@@ -4052,7 +4071,22 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         } else {
             quote!()
         };
-        encode_arms.push(quote!(#pat => { #write_disc #(#writes)* }));
+        let arm = quote!(#pat => { #write_disc #(#writes)* });
+        let bound: Vec<Ident> = v
+            .variant
+            .fields
+            .iter()
+            .zip(variant_bind_idents(&v.variant.fields))
+            .filter(|(f, _)| !field_is_temp(f))
+            .map(|(_, id)| id)
+            .collect();
+        let read_names: Vec<&Ident> = ctx_param_names
+            .iter()
+            .copied()
+            .filter(|n| !bound.contains(n))
+            .collect();
+        arms_read_ctx |= tokens_mention(arm.clone(), &read_names);
+        encode_arms.push(arm);
 
         if gen_accessor && !has_named_tags {
             let acc = if is_tail {
@@ -4488,8 +4522,8 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     // actually reads a ctx param (a `calc`/`bw(map)`/`ctx`-forward naming one) — then it
     // gets `encode_with`/`to_bytes_with` instead. Either way it impls `EncodeWith` so a
     // parent can forward to it.
-    let ctx_param_names: Vec<&Ident> = args.ctx.iter().map(|(n, _)| n).collect();
-    let enum_encode_uses_ctx = is_ctx_type && tokens_mention(encode_body.clone(), &ctx_param_names);
+    let enum_encode_uses_ctx =
+        is_ctx_type && (arms_read_ctx || tokens_mention(quote!(#prefix_write), &ctx_param_names));
 
     let decode = if !want_decode {
         quote!()
@@ -4617,6 +4651,8 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         quote! {
             impl #bnb::BitEncode for #name {
                 const LAYOUT: #bnb::Layout = #layout;
+                // A catch-all's captured selectors are bound by the arm but never written.
+                #[allow(unused_variables)]
                 fn bit_encode<K: #bnb::__private::Sink>(
                     &self,
                     __bnb_w: &mut K,

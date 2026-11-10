@@ -203,7 +203,9 @@
 //! with `#[br(ctx { … })]`; standalone, `decode_with`/`decode_with_exact` take a `…Ctx`
 //! (built positionally with `…Ctx::new`). `ctx` is **decode-only**: encode stays a plain
 //! `to_bytes()` unless the *write* side actually reads a ctx param (a keyed `bw(map)`,
-//! `calc`, or `write_with`), in which case the type gets `to_bytes_with`/`encode_with`:
+//! `calc`, or `write_with`), in which case the type gets `to_bytes_with`/`encode_with`.
+//! A stored field with the same name as a ctx param shadows it, so naming that field is
+//! not a context read:
 //!
 //! ```
 //! use bnb::bin;

@@ -53,7 +53,7 @@ mod macro_ {
                     other => panic!("wrong variant: {other:?}"),
                 }
                 assert_eq!((body.fid(), body.code()), (fid, code));
-                assert_eq!(body.to_bytes_with(BodyCtx { fid, code }).unwrap(), [0xa5]);
+                assert_eq!(body.to_bytes().unwrap(), [0xa5]);
             }
         }
     }
@@ -85,6 +85,78 @@ mod macro_ {
             parent.to_bytes_with(ParentCtx { length: 1 }).unwrap(),
             bytes
         );
+    }
+
+    // Variant-arm aliases: one source is the enum's ctx param (passed by value), the other a
+    // stored sibling (a match-bound reference). Forwarding the ctx param reads context on
+    // encode, so this enum keeps `to_bytes_with`.
+    #[bin(ctx(length: u8))]
+    #[derive(Debug, PartialEq, Eq)]
+    enum Framed {
+        #[bin(magic = 0x01u8)]
+        Pair {
+            n: u8,
+            #[br(ctx { code = length })]
+            head: Child,
+            #[br(ctx { code = n })]
+            tail: Child,
+        },
+    }
+
+    #[test]
+    fn variant_alias_sources_resolve_from_ctx_and_siblings() {
+        let bytes = [0x01, 0x02, 0x11, 0x22, 0x33];
+        let value = Framed::decode_with_exact(&bytes, FramedCtx { length: 1 }).unwrap();
+        let Framed::Pair { n, head, tail } = &value;
+        assert_eq!(
+            (*n, head.bytes.as_slice(), tail.bytes.as_slice()),
+            (2, &[0x11][..], &[0x22, 0x33][..])
+        );
+        assert_eq!(value.to_bytes_with(FramedCtx { length: 1 }).unwrap(), bytes);
+    }
+
+    // A `temp` field is not bound by the arm's pattern, so its `calc` reading the ctx param
+    // of the same name is a real context read: the enum keeps `to_bytes_with`.
+    #[bin(ctx(code: u8))]
+    #[derive(Debug, PartialEq, Eq)]
+    enum Echo {
+        #[bin(magic = 0x01u8)]
+        Code {
+            #[br(temp)]
+            #[bw(calc = code)]
+            code: u8,
+        },
+    }
+
+    #[test]
+    fn temp_calc_reading_ctx_keeps_encode_with() {
+        let value = Echo::decode_with_exact(&[0x01, 0x09], EchoCtx { code: 9 }).unwrap();
+        assert_eq!(value, Echo::Code {});
+        assert_eq!(
+            value.to_bytes_with(EchoCtx { code: 9 }).unwrap(),
+            [0x01, 0x09]
+        );
+    }
+
+    // A primitive behind a `type` alias takes a parenthesized, type-checked constant.
+    type Code = u8;
+
+    #[bin(ctx(code: Code))]
+    #[derive(Debug, PartialEq, Eq)]
+    enum AliasedBody {
+        #[bin(tag(code = (7)))]
+        Known(u8),
+        #[catch_all]
+        Unknown { code: Code, raw: u8 },
+    }
+
+    #[test]
+    fn an_aliased_primitive_selector_takes_a_typed_constant() {
+        let known = AliasedBody::decode_with_exact(&[0x55], AliasedBodyCtx { code: 7 }).unwrap();
+        assert_eq!(known, AliasedBody::Known(0x55));
+        let other = AliasedBody::decode_with_exact(&[0x55], AliasedBodyCtx { code: 8 }).unwrap();
+        assert_eq!(other.code(), 8);
+        assert_eq!(other.to_bytes().unwrap(), [0x55]);
     }
 
     #[bin(ctx(fid: u8, code: u6))]
@@ -149,7 +221,7 @@ mod macro_ {
                 flags: u2::new(3)
             }
         );
-        assert_eq!(value.to_bytes_with(ctx()).unwrap(), [b'P', 0xab, 0xff]);
+        assert_eq!(value.to_bytes().unwrap(), [b'P', 0xab, 0xff]);
         let known = WithFallback::decode_with_exact(
             &[b'P', 0xab],
             WithFallbackCtx {

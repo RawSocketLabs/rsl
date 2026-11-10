@@ -134,6 +134,10 @@
 //! Conditions use typed constant equality; the first matching variant wins.
 //! Integer literals are converted to their context type at compile time, with
 //! a round-trip assertion rejecting narrowing, including through `uN` aliases.
+//! That conversion needs a `Bits` type named directly (`u8`, `u6`, a `BitEnum`):
+//! for a `type` alias of a primitive, a signed integer or `usize`, parenthesize the
+//! value (`code = (7)`): it is then type-checked as a constant of the declared type,
+//! so an out-of-range value is still a compile error (`as` would truncate silently).
 //! Other values must be constant expressions of the declared context type.
 //!
 //! ```
@@ -167,7 +171,9 @@
 //! The catch-all must have named fields for each selector; these capture context
 //! without consuming or emitting wire bits, regardless of field order. Codec
 //! directives on captured fields are rejected. Other fields encode normally.
-//! Without a typed fallback, each selector gets a same-named accessor. Additional
+//! Without a typed fallback, each selector gets a same-named accessor
+//! (`pub fn fid(&self)`); a user method of the same name on the enum is a compile
+//! error, so rename the context parameter if one clashes. Additional
 //! context parameters may serve payload decoding but receive no accessor.
 //! Named tags cannot mix with legacy `tag =` or per-variant `magic`; an enum-level
 //! magic prefix remains supported. A typed fallback has no selector accessors.

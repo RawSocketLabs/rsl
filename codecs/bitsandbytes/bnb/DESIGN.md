@@ -1610,9 +1610,16 @@ focused named-tag tests (7 passed), the full package tests (including UI and
 Rustdoc), strict all-target Clippy, and formatting. libsdr uses its pinned
 1.97.1 standard gate and separately exercises zero-allocation DMR reception.
 The reviewer approved the final fixes by inspection; no benchmark improvement
-is claimed. The full container pre-push/release gate, MSRV/bare-metal matrix,
-fuzzing, mutation testing, and controlled throughput measurements have not run.
-The owner authorized a review commit and PR on 2026-11-09. The local CI
-runner requires a clean committed tree, so its pre-push gate follows the
-review commit. This change is not a release-qualified candidate; no merge,
-tag, or registry release is authorized.
+is claimed. The container pre-push gate later passed for `580d8f20`, and the
+owner authorized merging and releasing it with 0.9.0 on 2026-11-10.
+
+A second independent review (2026-11-10) found, and the follow-up commit fixed:
+
+| Severity | Location / consequence | Disposition and regression evidence |
+| --- | --- | --- |
+| Should-fix | Enum encode's context scan included match patterns, so a stored field named like a ctx param (a named-tag catch-all's captured selector, a typed fallback or catch-all field) looked like a context read: such an enum lost plain `to_bytes()`, and adding a catch-all changed the encode API | Owner decision (2026-11-10): fix it in 0.9.0 rather than a later breaking release. A stored field the arm's pattern binds shadows the param for that arm and is excluded from the scan; a `temp` field, bound later by its own `calc`, is not (`temp_calc_reading_ctx_keeps_encode_with`). The plain `bit_encode` allows the unused captured bindings. Breaking for existing enums of that shape: they gain a plain `BitEncode` and `to_bytes`, and lose the inherent `encode_with`/`to_bytes_with`. In-tree, DNS `RData` (`Custom { rtype, .. }`) did, so its hand-written context-free `BitEncode` (E0119 against the generated one) is removed; the generated impl does the same thing |
+| Should-fix | Variant-arm alias sources (ctx param, stored sibling) untested | `variant_alias_sources_resolve_from_ctx_and_siblings` |
+| Should-fix (docs) | Integer literals need a directly named `Bits` type; aliases of primitives, signed integers and `usize` fail with an unspanned error | Restriction and the `(7)` workaround (type-checked, unlike a truncating `as`) documented in `guide::dispatch`; accepting bare literals is additive and left for 0.9.x |
+| Nit | Selector accessors can clash with user methods | Documented in `guide::dispatch` |
+| Nit, recorded | Identical condition sets on two variants compile silently; the overflow assert is reported at the enum attribute; no UI cases for magic + named tags, a tuple catch-all, empty `tag()`, or a duplicate `tag` | Follow-ups, not changed |
+| Note | `tokens_mention` now ignores `name:` labels, so a ctx struct whose only mention was a label switches from `encode_with` to a plain `BitEncode` | Listed in the 0.9.0 breaking-change notes |
