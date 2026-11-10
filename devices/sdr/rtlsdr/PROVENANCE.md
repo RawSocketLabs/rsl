@@ -9,8 +9,8 @@ and `rtlsdr-sim` has a row here, and every such constant in code names its row w
 source or anything derived from one is read, searched or quoted, and recollection of such
 sources is not evidence: librtlsdr/osmocom rtl-sdr and forks, the Linux kernel's
 rtl28xxu/rtl2832/r820t/e4000/fc001x drivers, rtl-sdr-rs, pyrtlsdr internals, SDR++/gqrx.
-Captures of librtlsdr's USB traffic are allowed but tagged GPLOBS and never a row's sole
-source (`CAPTURES.md`).
+Captures of librtlsdr's USB traffic are allowed, tagged GPLOBS, and may be a row's sole
+source (owner's decision, 2026-11-09; `CAPTURES.md`).
 
 ## Classes
 
@@ -20,7 +20,7 @@ source (`CAPTURES.md`).
 | DESC | A USB descriptor dump of an owner's dongle (`lsusb -v`, sysfs), cited by capture id |
 | CAP | A usbmon/Wireshark capture of the vendor's Windows software, cited by capture id + sha256 |
 | EXP | An experiment on the owner's hardware, cited by its recorded procedure and result |
-| GPLOBS | A capture of librtlsdr's traffic: corroboration only, never the sole source |
+| GPLOBS | A capture of librtlsdr's traffic (its behaviour only, never its source), cited by capture id + sha256; may stand alone since 2026-11-09 |
 | GAP | Not evidenced; the code holds a refusing placeholder or nothing |
 
 ## Documents
@@ -86,16 +86,26 @@ source (`CAPTURES.md`).
 | R820-GAP-10 | none | ? | image (IMR) calibration procedure | GAP | needs CAP or EXP | agent, 2026-10-19 | — |
 | R820-GAP-11 | none | ? | the R828D (Blog V4): I2C address, identity byte, register differences | GAP | no datasheet found (`SOURCES.md`); needs CAP of the V4 | agent, 2026-10-19 | — |
 
+## RTL2832U and dongle rows
+
+`DESC-V4-0001` is the Blog V4's descriptor dump (`lsusb -v` and sysfs, 2026-11-09; files and
+SHA-256s in `references/rtlsdr-captures/SOURCES.md`, outside the repo). Its device strings:
+manufacturer `RTLSDRBlog`, product `Blog V4`.
+
+| ID | Rust item | Value | Meaning | Class | Source | Recorded | Corroboration |
+|---|---|---|---|---|---|---|---|
+| RTL-DESC-01 | `rtl2832u::BLOG_V4_ID` | `0bda:2838` | Blog V4 `idVendor`:`idProduct` (bcdDevice 1.00, USB 2.00 high speed, one configuration) | DESC | DESC-V4-0001 lsusb (sha256 9524c469…) device descriptor; sysfs `7-4/idVendor`, `idProduct` | agent, 2026-11-09 | sysfs agrees with lsusb |
+| RTL-DESC-02 | `rtl2832u::BLOG_V4_STREAM` | interface 0, endpoint `0x81` | interface 0 (class/subclass/protocol ff/ff/ff) has one endpoint: bulk IN `0x81`, wMaxPacketSize 512; interface 1 (ff/ff/ff) has none; both are named "Bulk-In, Interface" | DESC | DESC-V4-0001 lsusb interface and endpoint descriptors; sysfs `7-4:1.0/ep_81`, `7-4:1.1` | agent, 2026-11-09 | sysfs agrees with lsusb. That interface 0's endpoint carries the samples is from its being the only data endpoint, not yet a capture |
+
 ## RTL2832U and dongle gaps
 
-No admissible RTL2832U source is held. These come from the owner's RTL-SDR Blog V4 (R828D)
+No admissible RTL2832U document is held. These come from the owner's RTL-SDR Blog V4 (R828D)
 and "V5" dongles: descriptor dumps (DESC) and captures (CAP), per `CAPTURES.md`.
 
 | ID | Rust item | Value | Meaning | Class | Source | Recorded | Corroboration |
 |---|---|---|---|---|---|---|---|
-| RTL-GAP-01 | `rtl2832u::BLOG_V4_ID: Pending<UsbId>` | ? | Blog V4 VID:PID | GAP | needs DESC | agent, 2026-10-19 | — |
 | RTL-GAP-02 | `rtl2832u::V5_ID: Pending<UsbId>` | ? | V5 VID:PID | GAP | needs DESC | agent, 2026-10-19 | — |
-| RTL-GAP-03 | `rtl2832u::STREAM_INTERFACE: Pending<UsbInterface>` | ? | interface number and bulk IN endpoint of the sample stream | GAP | needs DESC | agent, 2026-10-19 | — |
+| RTL-GAP-03 | `rtl2832u::V5_STREAM: Pending<UsbInterface>` | ? | the V5's interface number and bulk IN endpoint of the sample stream (the V4's: `RTL-DESC-02`) | GAP | needs DESC | agent, 2026-10-19 | — |
 | RTL-GAP-04 | none (sim takes it as `Wiring`) | ? | vendor `bmRequestType`/`bRequest` codes for register access | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-05 | none (sim takes it as `Wiring`) | ? | how a register's address and block map onto `wValue`/`wIndex` | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-06 | none (sim takes it as `Wiring::gate`) | ? | the I2C repeater gate's register and bit | GAP | needs CAP | agent, 2026-10-19 | — |
@@ -104,7 +114,7 @@ and "V5" dongles: descriptor dumps (DESC) and captures (CAP), per `CAPTURES.md`.
 | RTL-GAP-09 | none | ? | the bulk stream's sample format | GAP | needs CAP + EXP | agent, 2026-10-19 | — |
 | RTL-GAP-10 | none | ? | sample-rate and IF/resampler programming | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-11 | none | ? | each board's tuner and demodulator crystal frequency | GAP | needs EXP (board inspection) or DESC/CAP | agent, 2026-10-19 | — |
-| RTL-GAP-12 | `control::ControlPort` (its shape) | assumed | that the dongle is controlled by vendor control transfers on endpoint 0 and streams samples on one bulk IN endpoint | GAP | needs DESC + CAP | agent, 2026-10-20 | — |
+| RTL-GAP-12 | `control::ControlPort` (its shape) | assumed | that the dongle is controlled by vendor control transfers on endpoint 0 and streams samples on one bulk IN endpoint | GAP | needs CAP (control); the bulk IN half is `RTL-DESC-02` | agent, 2026-10-20 | DESC-V4-0001: endpoint 0 plus one bulk IN endpoint, and no other, on the V4 |
 | RTL-GAP-13 | rtlsdr-sim `Wiring` (its shape: `gate` is optional) | assumed | that the host reaches the tuner's I2C port through the demodulator, behind a gate the demodulator controls | GAP | needs CAP | agent, 2026-10-20 | — |
 | RTL-GAP-14 | rtlsdr-sim `Wiring::route` (its shape) | assumed | that a control transfer's setup alone (`bmRequestType`, `bRequest`, `wValue`, `wIndex`) picks the register store, the tuner or a stall, and the tuner's first register is in the setup or the data stage's first byte | GAP | needs CAP | agent, 2026-10-20 | — |
 

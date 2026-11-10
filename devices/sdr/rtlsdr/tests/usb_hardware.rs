@@ -1,8 +1,8 @@
 //! Opt-in USB smoke: opens and claims a real dongle through `transport::usb::UsbPort`.
 //!
-//! Blacklist `dvb_usb_rtl28xxu` first (`CAPTURES.md`). None of the identifiers is
-//! evidenced yet (`RTL-GAP-01` to `RTL-GAP-03`), so the caller supplies all three from
-//! the dongle's own descriptors (`lsusb -v`):
+//! Blacklist `dvb_usb_rtl28xxu` first (`CAPTURES.md`). The caller supplies all three
+//! identifiers from the dongle's own descriptors (`lsusb -v`); the Blog V4's are
+//! `RTL-DESC-01` and `RTL-DESC-02` (`0bda:2838`, interface 0, endpoint `0x81`):
 //!
 //! ```sh
 //! RSL_RTLSDR_USB_DEVICE=vvvv:pppp RSL_RTLSDR_USB_INTERFACE=0 RSL_RTLSDR_USB_RX_ENDPOINT=0x81 \

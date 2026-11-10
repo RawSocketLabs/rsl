@@ -56,8 +56,9 @@ never a guessed number. Vendor documents stay outside the repo; cite them by pag
 - Tests cite the ledger row their vector comes from. The sim's tuner model is written from
   the document independently of `src/portable/r820t2`, so the seam tests cross-check them
   (except where both rest on one reading of the document: `R820-DS-04`).
-- Captures and traces derived from them stay out of the repo until the owner approves
-  (CAPTURES.md). A GPLOBS capture is never a row's sole source.
+- Raw captures stay out of the repo; traces derived from them are approved for
+  `tests/fixtures/` (CAPTURES.md). A GPLOBS capture may be a row's sole source (owner,
+  2026-11-09); the licensing rule still bars reading librtlsdr's source.
 - Hardware tests are `#[ignore]`d and need the env vars in `tests/usb_hardware.rs`; blacklist
   `dvb_usb_rtl28xxu` first.
 

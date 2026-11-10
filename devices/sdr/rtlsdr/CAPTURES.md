@@ -20,7 +20,8 @@ R828D, and the "V5") and cited in `PROVENANCE.md`. The licensing rule there appl
 ## Descriptors (class DESC)
 
 `lsusb -v -d VID:PID` and the sysfs attributes of the device and its interfaces
-(`/sys/bus/usb/devices/<port>/…`). These give `RTL-GAP-01` to `RTL-GAP-03`.
+(`/sys/bus/usb/devices/<port>/…`). These give the identity and stream interface rows: the V4's are `RTL-DESC-01` and
+`RTL-DESC-02` (`DESC-V4-0001`); the V5's are still `RTL-GAP-02` and `RTL-GAP-03`.
 
 ## Traffic captures (class CAP, or GPLOBS)
 
@@ -28,14 +29,16 @@ R828D, and the "V5") and cited in `PROVENANCE.md`. The licensing rule there appl
   pcapng), or Wireshark with USBPcap on Windows.
 - Allowed subjects:
   - **The vendor's Windows software** (class CAP): a row may rest on it alone.
-  - **librtlsdr** (class GPLOBS): observing its USB traffic is allowed, but such a capture
-    is corroboration only, never a row's sole source, and nothing is read from its source.
+  - **librtlsdr** (class GPLOBS): observing its USB traffic is allowed and, by the owner's
+    decision of 2026-11-09, a row may rest on it alone (no vendor software is known for the
+    V4's R828D). Only its traffic is evidence: nothing is read from its source, and its
+    behaviour is described in the ledger's own words, never in its identifiers.
 - One session per capture, with the procedure written down (what was started, tuned or
   changed, and when) so each transfer can be tied to an action.
 
 ## Storage and citation
 
-- Capture files are **not committed** until the owner approves. Keep them outside the
+- Capture files are **never committed**. Keep them outside the
   repository, for example `~/work/orgs/rsl/references/rtlsdr-captures/`, with a
   `SOURCES.md` there listing for each: capture id, file name, SHA-256, dongle, tool,
   subject (vendor software or librtlsdr), procedure, date, who.
@@ -47,7 +50,7 @@ R828D, and the "V5") and cited in `PROVENANCE.md`. The licensing rule there appl
 
 `rtlsdr-sim`'s `Trace` format (`sim/src/replay.rs`) holds one control transfer per line,
 completed or stalled, under a header naming the capture id and its SHA-256. A trace extracted from a capture is
-a derived file: it too stays outside the repository until the owner approves, and then
-lands under `tests/fixtures/` with `synthetic: no`. The only traces committed now,
+a derived file, which the owner approved for committing (2026-11-09): it lands under
+`tests/fixtures/` with `synthetic: no`. The only traces committed now,
 `tests/fixtures/synthetic-{session,stall}.trace`, are SYNTHETIC: written by hand to test
 the harness, and never evidence.
