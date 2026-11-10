@@ -1,0 +1,21 @@
+# Derived from capture GPLOBS-V5-0016, transfers #184 to #196: its last tune (rtl_sdr -f 433920000 -s 2048000 -g 20.7).
+# Vendor control transfers only, in order; the host stack's standard descriptor requests
+# and the bulk stream are omitted. Generated from the pcap by a script; not edited by hand.
+rtlsdr-trace 1
+capture: GPLOBS-V5-0016
+sha256: 41feff88f929cf00fbccae514baacb3060b57c7213eeff07f74dfd5ef000f83b
+synthetic: no
+---
+out 40 00 0120 0011 18
+in c0 00 0120 000a 0001 09
+out 40 00 0034 0610 1730
+out 40 00 0034 0610 1a61
+out 40 00 0034 0610 1b00
+out 40 00 0034 0610 00
+in c0 00 0034 0600 0005 6901fdff67
+out 40 00 0034 0610 1044bb8031cb0b7e
+out 40 00 0034 0610 00
+in c0 00 0034 0600 0003 69013f
+out 40 00 0034 0610 1a69
+out 40 00 0120 0011 10
+in c0 00 0120 000a 0001 09

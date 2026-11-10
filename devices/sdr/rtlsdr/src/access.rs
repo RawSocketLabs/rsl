@@ -81,7 +81,15 @@ impl<'port> Access<'port> {
     ///
     /// Any transport failure.
     pub fn set_gate(&mut self, open: bool) -> Result<(), BusError> {
-        let byte = if open { GATE_OPEN } else { GATE_CLOSED };
+        self.write_gate(if open { GATE_OPEN } else { GATE_CLOSED })
+    }
+
+    /// Writes `byte` to the gate register, whatever its other bits do.
+    ///
+    /// # Errors
+    ///
+    /// Any transport failure.
+    pub fn write_gate(&mut self, byte: u8) -> Result<(), BusError> {
         self.write_paged_at(GATE, &[byte])
     }
 

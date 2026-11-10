@@ -12,8 +12,10 @@
 //! (feature `usb`), register and tuner I2C access over it ([`access::Access`], encoded as
 //! [`rtl2832u`] records from captures), a [`Device`] that opens and closes the
 //! `NESDR SMArt v5` with its captured sequences ([`sequence`]; other boards' are not
-//! evidenced), and the R820T2 register maths the register description defines ([`r820t2`]). Tuning, sample rate, gain and the stream, the
-//! register meanings and the V4's R828D are still gaps; see `CAPTURES.md`.
+//! evidenced) and sets its sample rate, frequency and gain with plans fitted to its
+//! captures ([`v5`]), and the R820T2 register maths the register description defines
+//! ([`r820t2`]). The stream's sample format and the V4's R828D are still gaps; see
+//! `CAPTURES.md`.
 #![forbid(unsafe_code)]
 
 pub mod access;
@@ -27,4 +29,4 @@ pub mod transport;
 pub use device::Device;
 pub use error::Error;
 pub use portable::pending::{Gap, Pending};
-pub use portable::{r820t2, rtl2832u, sequence};
+pub use portable::{r820t2, rtl2832u, sequence, v5};
