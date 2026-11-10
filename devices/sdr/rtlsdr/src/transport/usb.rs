@@ -1,8 +1,7 @@
 //! [`ControlPort`] over the owned Linux usbfs backend (`usb`).
 //!
-//! The caller names the dongle, its interface and its bulk IN endpoint (the Blog V4's are
-//! `rtl2832u::BLOG_V4_ID` and `BLOG_V4_STREAM`; the V5's are `RTL-GAP-02` and `RTL-GAP-03`),
-//! so nothing here hard-codes one. Claiming
+//! The caller names the dongle, its interface and its bulk IN endpoint (`rtl2832u` holds the
+//! Blog V4's and the `NESDR SMArt v5`'s), so nothing here hard-codes one. Claiming
 //! the interface detaches any kernel driver bound to it; `CAPTURES.md` still requires
 //! `dvb_usb_rtl28xxu` to be blacklisted before hardware work.
 

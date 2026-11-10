@@ -1,7 +1,7 @@
 # rtlsdr — capture policy
 
 How RTL2832U evidence is gathered from the owner's dongles (RTL-SDR Blog V4 with an
-R828D, and the "V5") and cited in `PROVENANCE.md`. The licensing rule there applies.
+R828D, and the Nooelec NESDR SMArt v5, the "V5") and cited in `PROVENANCE.md`. The licensing rule there applies.
 
 ## Before any capture or hardware test
 
@@ -21,7 +21,7 @@ R828D, and the "V5") and cited in `PROVENANCE.md`. The licensing rule there appl
 
 `lsusb -v -d VID:PID` and the sysfs attributes of the device and its interfaces
 (`/sys/bus/usb/devices/<port>/…`). These give the identity and stream interface rows: the V4's are `RTL-DESC-01` and
-`RTL-DESC-02` (`DESC-V4-0001`); the V5's are still `RTL-GAP-02` and `RTL-GAP-03`.
+`RTL-DESC-02` (`DESC-V4-0001`), the V5's `RTL-DESC-03` and `RTL-DESC-04` (`DESC-V5-0001`).
 
 ## Traffic captures (class CAP, or GPLOBS)
 

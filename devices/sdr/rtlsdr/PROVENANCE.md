@@ -90,22 +90,24 @@ source (owner's decision, 2026-11-09; `CAPTURES.md`).
 
 `DESC-V4-0001` is the Blog V4's descriptor dump (`lsusb -v` and sysfs, 2026-11-09; files and
 SHA-256s in `references/rtlsdr-captures/SOURCES.md`, outside the repo). Its device strings:
-manufacturer `RTLSDRBlog`, product `Blog V4`.
+manufacturer `RTLSDRBlog`, product `Blog V4`. `DESC-V5-0001` is the owner's "V5", a Nooelec
+NESDR SMArt v5 (manufacturer `Nooelec`, product `NESDR SMArt v5`), dumped the same way the same
+day. The two share `idVendor`:`idProduct`; only their strings tell them apart.
 
 | ID | Rust item | Value | Meaning | Class | Source | Recorded | Corroboration |
 |---|---|---|---|---|---|---|---|
 | RTL-DESC-01 | `rtl2832u::BLOG_V4_ID` | `0bda:2838` | Blog V4 `idVendor`:`idProduct` (bcdDevice 1.00, USB 2.00 high speed, one configuration) | DESC | DESC-V4-0001 lsusb (sha256 9524c469…) device descriptor; sysfs `7-4/idVendor`, `idProduct` | agent, 2026-11-09 | sysfs agrees with lsusb |
 | RTL-DESC-02 | `rtl2832u::BLOG_V4_STREAM` | interface 0, endpoint `0x81` | interface 0 (class/subclass/protocol ff/ff/ff) has one endpoint: bulk IN `0x81`, wMaxPacketSize 512; interface 1 (ff/ff/ff) has none; both are named "Bulk-In, Interface" | DESC | DESC-V4-0001 lsusb interface and endpoint descriptors; sysfs `7-4:1.0/ep_81`, `7-4:1.1` | agent, 2026-11-09 | sysfs agrees with lsusb. That interface 0's endpoint carries the samples is from its being the only data endpoint, not yet a capture |
+| RTL-DESC-03 | `rtl2832u::V5_ID` | `0bda:2838` | NESDR SMArt v5 `idVendor`:`idProduct` (bcdDevice 1.00, USB 2.00 high speed, one configuration) | DESC | DESC-V5-0001 lsusb (sha256 acef8c33…) device descriptor; sysfs `7-4/idVendor`, `idProduct` | agent, 2026-11-09 | sysfs agrees with lsusb; equal to `RTL-DESC-01` |
+| RTL-DESC-04 | `rtl2832u::V5_STREAM` | interface 0, endpoint `0x81` | one interface (ff/ff/ff) with one endpoint: bulk IN `0x81`, wMaxPacketSize 512; unlike the V4, no second interface | DESC | DESC-V5-0001 lsusb interface and endpoint descriptors; sysfs `7-4:1.0/ep_81` | agent, 2026-11-09 | sysfs agrees with lsusb. As `RTL-DESC-02`, that it carries the samples is not yet a capture |
 
 ## RTL2832U and dongle gaps
 
 No admissible RTL2832U document is held. These come from the owner's RTL-SDR Blog V4 (R828D)
-and "V5" dongles: descriptor dumps (DESC) and captures (CAP), per `CAPTURES.md`.
+and Nooelec NESDR SMArt v5 dongles: descriptor dumps (DESC) and captures (CAP), per `CAPTURES.md`.
 
 | ID | Rust item | Value | Meaning | Class | Source | Recorded | Corroboration |
 |---|---|---|---|---|---|---|---|
-| RTL-GAP-02 | `rtl2832u::V5_ID: Pending<UsbId>` | ? | V5 VID:PID | GAP | needs DESC | agent, 2026-10-19 | — |
-| RTL-GAP-03 | `rtl2832u::V5_STREAM: Pending<UsbInterface>` | ? | the V5's interface number and bulk IN endpoint of the sample stream (the V4's: `RTL-DESC-02`) | GAP | needs DESC | agent, 2026-10-19 | — |
 | RTL-GAP-04 | none (sim takes it as `Wiring`) | ? | vendor `bmRequestType`/`bRequest` codes for register access | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-05 | none (sim takes it as `Wiring`) | ? | how a register's address and block map onto `wValue`/`wIndex` | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-06 | none (sim takes it as `Wiring::gate`) | ? | the I2C repeater gate's register and bit | GAP | needs CAP | agent, 2026-10-19 | — |
