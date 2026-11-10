@@ -1,5 +1,6 @@
 //! The ledger and the code agree: every `prov:` tag in `rtlsdr` and `rtlsdr-sim` names a
-//! `PROVENANCE.md` row, every DS and DESC row is tagged somewhere, every GAP row that names
+//! `PROVENANCE.md` row, every DS, DESC and GPLOBS row is
+//! tagged somewhere, every GAP row that names
 //! code is referenced by it, every identifier a row's Rust-item column names exists, and every
 //! module-level `const` and `static` outside the tests carries a `prov:` tag.
 
@@ -114,12 +115,14 @@ fn every_prov_tag_names_a_ledger_row() {
 }
 
 #[test]
-fn every_ds_and_desc_row_is_tagged_and_every_gap_naming_code_is_referenced() {
+fn every_evidenced_row_is_tagged_and_every_gap_naming_code_is_referenced() {
     let code = code();
     let tags = tags(&code);
     for row in rows() {
         match row.class.as_str() {
-            "DS" | "DESC" => assert!(tags.contains(&row.id), "{} has no prov tag in code", row.id),
+            "DS" | "DESC" | "GPLOBS" => {
+                assert!(tags.contains(&row.id), "{} has no prov tag in code", row.id);
+            }
             "GAP" if !row.item.starts_with("none") => {
                 assert!(
                     code.contains(&row.id),

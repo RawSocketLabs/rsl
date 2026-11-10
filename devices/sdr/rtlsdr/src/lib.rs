@@ -8,14 +8,15 @@
 //! which refuses at runtime with its ledger row ([`Gap`]) instead of guessing.
 //!
 //! What exists: the transport seam ([`control::ControlPort`]: vendor control transfers, a
-//! bulk RX stream and time; that shape is assumed pending `RTL-GAP-12`), its usbfs
-//! implementation (feature `usb`), a [`Device`] whose
-//! open waits on the captures, and the R820T2 register maths the register description
-//! defines ([`r820t2`]). Everything about the RTL2832U side (identifiers, request codes,
-//! register map, how the tuner is reached, init order) awaits descriptors and USB
-//! captures; see `CAPTURES.md`.
+//! bulk RX stream and time, as the captures show, `RTL-OBS-08`), its usbfs implementation
+//! (feature `usb`), register and tuner I2C access over it ([`access::Access`], encoded as
+//! [`rtl2832u`] records from captures), a [`Device`] whose open still waits on its
+//! sequence (`RTL-GAP-07`), and the R820T2 register maths the register description defines
+//! ([`r820t2`]). The register meanings, init order and stream setup are still gaps; see
+//! `CAPTURES.md`.
 #![forbid(unsafe_code)]
 
+pub mod access;
 pub mod control;
 mod device;
 mod error;

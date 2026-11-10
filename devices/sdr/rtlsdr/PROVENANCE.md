@@ -36,11 +36,11 @@ source (owner's decision, 2026-11-09; `CAPTURES.md`).
 
 | ID | Rust item | Value | Meaning | Class | Source | Recorded | Corroboration |
 |---|---|---|---|---|---|---|---|
-| R820-DS-01 | `r820t2::registers::I2C_ADDRESS` | `0x1A` | 7-bit I2C slave address; write byte 0x34, read byte 0x35 | DS | R820T2-RD p. 2, §1.1, Table 1-1 | agent, 2026-10-19 | none yet (DESC/CAP of V4 pending; the V4 carries an R828D, `R820-GAP-11`) |
+| R820-DS-01 | `r820t2::registers::I2C_ADDRESS` | `0x1A` | 7-bit I2C slave address; write byte 0x34, read byte 0x35 | DS | R820T2-RD p. 2, §1.1, Table 1-1 | agent, 2026-10-19 | GPLOBS-V5-0001 #91, #92: the V5's tuner answers at `0x34` = `0x1a` << 1 (RTL-OBS-06); the V4's R828D still `R820-GAP-11` |
 | R820-DS-02 | `registers::REGISTER_COUNT`; sim `tuner::REGISTER_COUNT` | 32 | registers R0-R31 | DS | R820T2-RD p. 5, §1.2 "Total 32 registers"; T1-2 rows 0x00-0x1F | agent, 2026-10-19 | none yet |
 | R820-DS-03 | `Registers::page_write`; sim `R820t2::write` | first byte = register address, then consecutive registers | I2C write mode (page write) | DS | R820T2-RD p. 3, Figure 1-1 | agent, 2026-10-19 | none yet |
-| R820-DS-04 | `Registers::from_read`; sim `R820t2::read` | read from R0 on; each byte LSB first, so an MSB-first master sees it bit-reversed | I2C read mode | DS | R820T2-RD p. 4, "Reading data transmission begins from core register 0 … transmitted from LSB to MSB" | agent, 2026-10-19 | none yet. The bit reversal is this crate's reading of "LSB to MSB" against I2C's normal MSB-first byte order (NXP UM10204, *I2C-bus specification and user manual*, §3.1.5 "Byte format"; not yet held under `references/`). The driver (`Registers::from_read`) and the sim (`R820t2::read`) share this one reading, so their cross-check cannot catch it; a capture of an R0 read (expect 0x69 on the wire) confirms or refutes it |
-| R820-DS-05 | `registers::CHIP_ID`; sim `tuner::CHIP_ID` | `0x96` | R0's fixed content, the read-mode reference check point | DS | R820T2-RD p. 4 (text), T1-2 row R0 (B7..B0 = 1 0 0 1 0 1 1 0) | agent, 2026-10-19 | none yet |
+| R820-DS-04 | `Registers::from_read`; sim `R820t2::read` | read from R0 on; each byte LSB first, so an MSB-first master sees it bit-reversed | I2C read mode | DS | R820T2-RD p. 4, "Reading data transmission begins from core register 0 … transmitted from LSB to MSB" | agent, 2026-10-19 | Confirmed on the wire. The bit reversal was this crate's reading of "LSB to MSB" against I2C's normal MSB-first byte order (NXP UM10204, *I2C-bus specification and user manual*, §3.1.5 "Byte format"; not yet held under `references/`). The driver (`Registers::from_read`) and the sim (`R820t2::read`) share this one reading, so their cross-check cannot catch it; GPLOBS-V5-0001 #92 reads `0x69` for R0, confirming it |
+| R820-DS-05 | `registers::CHIP_ID`; sim `tuner::CHIP_ID` | `0x96` | R0's fixed content, the read-mode reference check point | DS | R820T2-RD p. 4 (text), T1-2 row R0 (B7..B0 = 1 0 0 1 0 1 1 0) | agent, 2026-10-19 | GPLOBS-V5-0001 #92 (`0x69` on the wire) |
 | R820-DS-06 | `registers::FIRST_WRITABLE`; sim `tuner::FIRST_WRITABLE` | `0x05` | R0-R4 are read-only (T1-2 column R/W "R"); R5-R31 "W/R" | DS | R820T2-RD T1-2 p. 5; p. 3 calls R0-R4 "reserved for internal use only" yet "can be written by I2C write command": the code follows T1-2 and refuses such writes | agent, 2026-10-19 | none yet |
 | R820-DS-07 | `field::VCO_INDICATOR`, `field::RF_INDICATOR` | R2[6:0], R3[7:0] | read-only indicators | DS | R820T2-RD T1-2 p. 5 | agent, 2026-10-19 | none; encodings `R820-GAP-09` |
 | R820-DS-10 | `field::{PWD_LT, PWD_LNA1, LNA_GAIN_MODE, LNA_GAIN}`, `setting::LnaGainMode` | R5[7], [5], [4] (0 auto, 1 manual), [3:0] (0 min..15 max) | loop-through power, LNA1 power, LNA gain mode, LNA manual gain | DS | R820T2-RD T1-3 p. 6; T1-2 p. 5 | agent, 2026-10-19 | none yet |
@@ -101,6 +101,28 @@ day. The two share `idVendor`:`idProduct`; only their strings tell them apart.
 | RTL-DESC-03 | `rtl2832u::V5_ID` | `0bda:2838` | NESDR SMArt v5 `idVendor`:`idProduct` (bcdDevice 1.00, USB 2.00 high speed, one configuration) | DESC | DESC-V5-0001 lsusb (sha256 acef8c33…) device descriptor; sysfs `7-4/idVendor`, `idProduct` | agent, 2026-11-09 | sysfs agrees with lsusb; equal to `RTL-DESC-01` |
 | RTL-DESC-04 | `rtl2832u::V5_STREAM` | interface 0, endpoint `0x81` | one interface (ff/ff/ff) with one endpoint: bulk IN `0x81`, wMaxPacketSize 512; unlike the V4, no second interface | DESC | DESC-V5-0001 lsusb interface and endpoint descriptors; sysfs `7-4:1.0/ep_81` | agent, 2026-11-09 | sysfs agrees with lsusb. As `RTL-DESC-02`, that it carries the samples is not yet a capture |
 
+## RTL2832U observed rows
+
+From librtlsdr's traffic on the NESDR SMArt v5 (class GPLOBS, sole source by the owner's
+decision of 2026-11-09): `GPLOBS-V5-0001` (`rtl_test -t`, sha256 24ec1126…, 198 vendor
+transfers), `GPLOBS-V5-0002` (`rtl_sdr` 100 MHz, 2.048 MS/s, auto gain, sha256 8c8ac8f4…,
+208) and `GPLOBS-V5-0003` (`rtl_sdr` 433.92 MHz, 1.024 MS/s, 20.7 dB, sha256 f7697563…,
+229); files and procedures in `references/rtlsdr-captures/SOURCES.md`. Transfer numbers are
+the vendor transfers' order in each capture, as in its trace under `tests/fixtures/`
+(`gplobs-v5-000N.trace`). Each row held in all three captures, without exception. The
+names (paged block, block, gate) are this crate's own.
+
+| ID | Rust item | Value | Meaning | Class | Source | Recorded | Corroboration |
+|---|---|---|---|---|---|---|---|
+| RTL-OBS-01 | `rtl2832u::REQUEST_TYPE`, `rtl2832u::VENDOR_REQUEST` | `0x40` out / `0xc0` in; `bRequest` `0x00` | every register and I2C access is a vendor control transfer to the device with request 0 | GPLOBS | GPLOBS-V5-0001 to -0003, all 635 vendor transfers | agent, 2026-11-09 | USB 2.0 Table 9-2 reads `0x40`/`0xc0` as vendor, device, out/in |
+| RTL-OBS-02 | `rtl2832u::WRITE`, `Location::write_index` | `wIndex` bit 4 | set on every write, clear on every read of the same place (I2C: `0x0610` / `0x0600`; paged page 1 written at `0x0011`, page `0x0a` read at `0x000a`) | GPLOBS | as RTL-OBS-01 | agent, 2026-11-09 | — |
+| RTL-OBS-03 | `rtl2832u::PAGED_VALUE`, `rtl2832u::Page`, `Location::paged` | `wValue` = register << 8, plus `0x20`; `wIndex` low nibble = page | the paged block (`wIndex` high byte 0): pages 0, 1 written, page `0x0a` read; multi-byte writes carry consecutive bytes (page 1 register `0x9f`, 2 bytes, GPLOBS-V5-0001 #172) | GPLOBS | GPLOBS-V5-0001 #7 on; 198 paged writes over the three | agent, 2026-11-09 | — |
+| RTL-OBS-04 | `rtl2832u::POST_WRITE_READ` | page `0x0a`, register `0x01`, 1 byte | read right after every paged-block write (198 of 198, the two that stall in `rtl_sdr`'s teardown included), always answering `0x09`; its purpose is not known, so the driver repeats it, after a stalled write too | GPLOBS | GPLOBS-V5-0001 #8 on | agent, 2026-11-09 | — |
+| RTL-OBS-05 | `rtl2832u::Block`, `Location::block` | `wValue` = 16-bit address; `wIndex` = block << 8 | blocks 1 (`0x2000`, `0x2148`, `0x2158`) and 2 (`0x3000`, `0x300b`) are written by address; no read of either is seen, so their read encoding is the I2C block's by inference | GPLOBS | GPLOBS-V5-0001 #1 to #6 | agent, 2026-11-09 | — |
+| RTL-OBS-06 | `rtl2832u::I2C_BLOCK`, `Location::i2c` | block 6; `wValue` = 7-bit address << 1 | the tuner's I2C port: a write's data is a register then its values (R820-DS-03), a read returns n bytes from R0 on after a 1-byte write of register 0; the tuner answers at `0x34` (`0x1a`, R820-DS-01); addresses with no device stall (`0xc8`, `0xc6` before it) | GPLOBS | GPLOBS-V5-0001 #87 to #92 | agent, 2026-11-09 | R0 reads `0x69` on the wire, R820-DS-04/05's `0x96` LSB first |
+| RTL-OBS-07 | `rtl2832u::GATE`, `GATE_OPEN`, `GATE_CLOSED` | page 1, register `0x01`: `0x18` / `0x10` | written `0x18` before the tuner's traffic and `0x10` after (and `0x14` twice per session, bit 2's meaning unknown); every one of the 200 completed transfers to `0x34` happens while the last completed write there had bit 3 set (two more, and two gate writes, stall in `rtl_sdr`'s teardown) | GPLOBS | GPLOBS-V5-0001 #85 (open), #141 (close) | agent, 2026-11-09 | — |
+| RTL-OBS-08 | `control::ControlPort` (its shape) | — | the dongle is controlled by vendor control transfers on endpoint 0 and streams on bulk IN `0x81` (`RTL-DESC-02`, `-04`); `rtl_sdr` reads 262144-byte bulk transfers there | GPLOBS | GPLOBS-V5-0002, -0003 bulk URBs | agent, 2026-11-09 | DESC-V4-0001, DESC-V5-0001 |
+
 ## RTL2832U and dongle gaps
 
 No admissible RTL2832U document is held. These come from the owner's RTL-SDR Blog V4 (R828D)
@@ -108,17 +130,10 @@ and Nooelec NESDR SMArt v5 dongles: descriptor dumps (DESC) and captures (CAP), 
 
 | ID | Rust item | Value | Meaning | Class | Source | Recorded | Corroboration |
 |---|---|---|---|---|---|---|---|
-| RTL-GAP-04 | none (sim takes it as `Wiring`) | ? | vendor `bmRequestType`/`bRequest` codes for register access | GAP | needs CAP | agent, 2026-10-19 | — |
-| RTL-GAP-05 | none (sim takes it as `Wiring`) | ? | how a register's address and block map onto `wValue`/`wIndex` | GAP | needs CAP | agent, 2026-10-19 | — |
-| RTL-GAP-06 | none (sim takes it as `Wiring::gate`) | ? | the I2C repeater gate's register and bit | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-07 | `Device::open` (refuses with this row) | ? | the open: init order and values | GAP | needs CAP | agent, 2026-10-19 | — |
-| RTL-GAP-08 | none (sim takes it as `Wiring::route`, `Route::Tuner`) | ? | how a tuner I2C transaction rides the vendor requests | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-09 | none | ? | the bulk stream's sample format | GAP | needs CAP + EXP | agent, 2026-10-19 | — |
 | RTL-GAP-10 | none | ? | sample-rate and IF/resampler programming | GAP | needs CAP | agent, 2026-10-19 | — |
 | RTL-GAP-11 | none | ? | each board's tuner and demodulator crystal frequency | GAP | needs EXP (board inspection) or DESC/CAP | agent, 2026-10-19 | — |
-| RTL-GAP-12 | `control::ControlPort` (its shape) | assumed | that the dongle is controlled by vendor control transfers on endpoint 0 and streams samples on one bulk IN endpoint | GAP | needs CAP (control); the bulk IN half is `RTL-DESC-02` | agent, 2026-10-20 | DESC-V4-0001: endpoint 0 plus one bulk IN endpoint, and no other, on the V4 |
-| RTL-GAP-13 | rtlsdr-sim `Wiring` (its shape: `gate` is optional) | assumed | that the host reaches the tuner's I2C port through the demodulator, behind a gate the demodulator controls | GAP | needs CAP | agent, 2026-10-20 | — |
-| RTL-GAP-14 | rtlsdr-sim `Wiring::route` (its shape) | assumed | that a control transfer's setup alone (`bmRequestType`, `bRequest`, `wValue`, `wIndex`) picks the register store, the tuner or a stall, and the tuner's first register is in the setup or the data stage's first byte | GAP | needs CAP | agent, 2026-10-20 | — |
 
 ## Not ledgered
 
@@ -126,4 +141,4 @@ Synthetic test values (`tests/common/synthetic.rs`, `tests/fixtures/synthetic-*.
 `rtlsdr-sim`'s format and wiring tests) are invented for the harness, labelled SYNTHETIC,
 and never cited here. `bmRequestType`'s direction and type bits in the tests' adapters are
 from USB 2.0 §9.3.1, Table 9-2; the usb port's own bit handling is `usb`'s. A constant that
-is no device fact (the trace format's own first line) is tagged `prov: none`.
+is no device fact (the trace format's own first line, the driver's control timeout) is tagged `prov: none`.

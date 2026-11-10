@@ -1,10 +1,10 @@
 //! The transport seam: what a USB backend, a simulator or a capture replay must provide.
 //!
-//! **Unstable.** The seam's shape is an assumption, pending descriptors and captures
-//! (`RTL-GAP-12`): that the dongle is controlled by vendor control transfers on endpoint 0
-//! and streams samples on one bulk IN endpoint. A port moves one control transfer at a
-//! time and keeps their order; which requests carry which accesses is the driver's
-//! business (all GAP rows in `PROVENANCE.md` so far), not the port's.
+//! **Unstable.** The seam's shape is what the descriptors and captures show (`RTL-OBS-08`):
+//! the dongle is controlled by vendor control transfers on endpoint 0 and streams samples
+//! on one bulk IN endpoint. A port moves one control transfer at a time and keeps their
+//! order; which requests carry which accesses is the driver's business
+//! ([`crate::access`]), not the port's.
 
 use std::num::NonZeroUsize;
 use std::time::Duration;
@@ -28,7 +28,7 @@ pub struct Setup {
     pub index: u16,
 }
 
-/// One dongle's control endpoint, sample stream and time.
+/// One dongle's control endpoint, sample stream and time. prov: RTL-OBS-08
 pub trait ControlPort: Send {
     /// A control transfer reading into `data`, waiting up to `timeout`; returns the bytes
     /// the device sent.

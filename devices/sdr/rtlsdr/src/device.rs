@@ -9,7 +9,7 @@ pub struct Device {
     /// The dongle's transport.
     #[expect(
         dead_code,
-        reason = "driven once the open sequence (RTL-GAP-07) is evidenced"
+        reason = "driven once the open sequence (RTL-GAP-07) is ported"
     )]
     port: Box<dyn ControlPort>,
 }

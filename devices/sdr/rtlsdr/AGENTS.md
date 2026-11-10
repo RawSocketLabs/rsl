@@ -24,19 +24,21 @@ never a guessed number. Vendor documents stay outside the repo; cite them by pag
 | Path | Crate | Role |
 |------|-------|------|
 | `.` | `rtlsdr` (unpublished, root workspace member) | The driver, on `hal` (`BusError`) and, behind feature `usb`, `usb` |
-| `sim/` | `rtlsdr-sim` (unpublished, root workspace member) | Dongle model at the control seam: a generic register store, an R820T2 register file behind an optional gate bit (shape assumed, `RTL-GAP-13`), routed by a caller-supplied function of the setup (`RTL-GAP-14`), a bulk RX feed, virtual clock, op trace; and the `Trace` format and `Replay` harness |
+| `sim/` | `rtlsdr-sim` (unpublished, root workspace member) | Dongle model at the control seam: a generic register store, an R820T2 register file behind an optional gate bit, routed by a caller-supplied function of the setup (shape as captured, `RTL-OBS-06`, `RTL-OBS-07`), a bulk RX feed, virtual clock, op trace; and the `Trace` format and `Replay` harness |
 
 ## Driver layout
 
 - `src/control.rs`: `ControlPort`, the seam: vendor control IN/OUT, a bulk RX stream
-  (`rx_start`/`rx_read`/`rx_stop`), sleep; that shape is assumed (`RTL-GAP-12`). Like
-  `limesdr`'s, it is not `hal::Bus`: which transfers carry which access is the driver's
-  (all GAP rows so far).
+  (`rx_start`/`rx_read`/`rx_stop`), sleep; the shape the captures show (`RTL-OBS-08`). Like
+  `limesdr`'s, it is not `hal::Bus`: which transfers carry which access is the driver's.
+- `src/access.rs`: `Access`, registers and tuner I2C over a borrowed port: paged-block
+  writes with their read-back, addressed-block (`Block`) writes, the tuner gate, I2C by `I2cAddress`;
+  the encoding is `rtl2832u`'s (`RTL-OBS-01` to `RTL-OBS-07`).
 - `src/device.rs`: `Device`, whose `open` refuses with `RTL-GAP-07` before touching the
   port.
 - `src/transport/usb.rs` (feature `usb`, Linux): `UsbPort`, the seam over `usb`. The caller
   passes VID:PID (or a `usb::DeviceInfo` picked by serial or port path), interface and bulk
-  IN endpoint; none is hard-coded until DESC rows exist.
+  IN endpoint; `rtl2832u` holds the owner's dongles' (DESC rows), but the port hard-codes none.
 - `src/portable/`: no I/O, imports within the tree (no `no_std` witness yet).
   `pending.rs`: `Pending<T>`/`Gap`. `rtl2832u.rs`: the demodulator's placeholders.
   `r820t2/`: the tuner, from the register description only — `registers` (I2C framing,
@@ -49,7 +51,10 @@ never a guessed number. Vendor documents stay outside the repo; cite them by pag
 - `tests/common/`: `SimPort` and `ReplayPort` (the seam over the sim and over a `Replay`),
   `wire.rs` (their shared setup conversion) and `synthetic.rs`, the SYNTHETIC wiring and
   session; included by `#[path]`. `tests/provenance.rs` checks the ledger against the code.
-- `tests/fixtures/synthetic-{session,stall}.trace`: the only committed traces, SYNTHETIC.
+- `tests/fixtures/synthetic-{session,stall}.trace`: hand-written, SYNTHETIC, never evidence.
+  `gplobs-v5-000N.trace`: the V5 captures' vendor transfers, generated from the pcaps
+  (`-tuner-probe` and `-teardown` are cuts of 0001 and 0002); `tests/observed.rs` checks
+  the `RTL-OBS` rows over them, `tests/access.rs` replays the cuts.
 
 ## Rules
 

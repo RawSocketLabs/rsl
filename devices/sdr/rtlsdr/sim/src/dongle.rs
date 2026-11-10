@@ -6,11 +6,11 @@ use std::fmt;
 use crate::trace::{Control, Direction, Op, Transfer};
 use crate::tuner::{R820t2, TunerRefusal};
 
-/// Which control transfers reach what. The model's whole shape (a register store keyed by
+/// Which control transfers reach what. The model's shape (a register store keyed by
 /// `wValue`/`wIndex`, a tuner reached through a control transfer's data stage, an optional
-/// gate bit, and a target chosen by the setup alone) is an assumption pending captures
-/// (`RTL-GAP-04` to `RTL-GAP-06`, `RTL-GAP-08`, `RTL-GAP-13`, `RTL-GAP-14`), as are its
-/// numbers; tests supply a synthetic wiring.
+/// gate bit, and a target chosen by the setup alone) matches the captures (`RTL-OBS-01` to
+/// `RTL-OBS-07`); the numbers come from the caller, a synthetic wiring or the driver's
+/// recorded constants.
 #[derive(Clone, Copy, Debug)]
 pub struct Wiring {
     /// Where each control transfer goes, from its setup alone.

@@ -1,6 +1,6 @@
 //! SYNTHETIC wiring and session for exercising the seam, the simulator and the replay
 //! harness. **Not RTL2832U values**: the request codes and gate location are invented
-//! for the harness (the real ones are `RTL-GAP-04` to `RTL-GAP-06`). The only real facts
+//! for the harness (the real ones are `RTL-OBS-01` to `RTL-OBS-07`). The only real facts
 //! used are the R820T2's, through `rtlsdr::r820t2`, and `bmRequestType`'s vendor-type
 //! encoding from USB 2.0 §9.3.1 (Table 9-2): type bits 6:5 = 2.
 

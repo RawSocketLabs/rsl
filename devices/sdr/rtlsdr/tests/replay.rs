@@ -1,5 +1,5 @@
-//! The replay harness: a driver session against a recorded trace. Only SYNTHETIC fixtures
-//! exist until the owner approves captures (`CAPTURES.md`).
+//! The replay harness: a driver session against a recorded trace, here the SYNTHETIC
+//! fixtures (captured ones are replayed in `access.rs`).
 
 #[path = "common/replay_port.rs"]
 mod replay_port;

@@ -1,0 +1,17 @@
+# Derived from capture GPLOBS-V5-0001 (librtlsdr rtl_test -t on the NESDR SMArt v5).
+# Vendor control transfers only, in order; the host stack's standard descriptor requests
+# and the bulk stream are omitted. Transfers #85 to #92 only (gate open, two stalled probes,
+# the tuner's R0 read), cut from gplobs-v5-0001.trace by script; not edited by hand.
+rtlsdr-trace 1
+capture: GPLOBS-V5-0001
+sha256: 24ec1126db0036ae5ed3c4a61bdcdd46ade1ee381661f73fa83b41b292867800
+synthetic: no
+---
+out 40 00 0120 0011 18
+in c0 00 0120 000a 0001 09
+stall out 40 00 00c8 0610
+stall in c0 00 00c8 0600
+stall out 40 00 00c6 0610
+stall in c0 00 00c6 0600
+out 40 00 0034 0610 00
+in c0 00 0034 0600 0001 69

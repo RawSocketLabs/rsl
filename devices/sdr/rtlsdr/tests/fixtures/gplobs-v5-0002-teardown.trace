@@ -1,0 +1,14 @@
+# Derived from capture GPLOBS-V5-0002 (librtlsdr rtl_sdr, 100 MHz, 2.048 MS/s, auto gain, on the NESDR SMArt v5).
+# Vendor control transfers only, in order; the host stack's standard descriptor requests
+# and the bulk stream are omitted. Transfers #203 to #207 only (rtl_sdr's teardown: a stalled
+# gate write still followed by its read-back), cut from gplobs-v5-0002.trace by script.
+rtlsdr-trace 1
+capture: GPLOBS-V5-0002
+sha256: 8c8ac8f40e55139e920564611de4a39668eae3ffd03d3518911e641efb94f308
+synthetic: no
+---
+stall out 40 00 0120 0011
+in c0 00 0120 000a 0001 09
+stall out 40 00 0034 0610
+out 40 00 0120 0011 10
+in c0 00 0120 000a 0001 09
