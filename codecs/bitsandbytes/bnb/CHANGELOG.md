@@ -28,6 +28,26 @@ Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 - drop the rsl- prefix from crate names
 - move crates into domain groups
 
+### Migration
+
+- A `#[bitfield]` field whose `#[bits(N)]` slot is wider than its type's `Bits::BITS` no longer
+  compiles (a `BitEnum` getter used to panic on the extra bits). Narrow the slot or widen the type.
+- `BufSource` returns `ErrorKind::UnexpectedEof`, not `Incomplete`, for a read past its reader's
+  EOF. Match `UnexpectedEof` to detect a clean close.
+- A nested `#[bitfield]`/`#[bitflags]` of 16 bits or more is read and written in its own byte
+  order (declared, or the default big) wherever it is nested, so inside a message of the other
+  order its wire bytes are now its standalone `to_bytes`. Declare `bytes = …` to match the message
+  to keep the old bytes.
+- `decode_all`/`decode_iter` treat a sub-byte tail that runs out or is all zero as padding, so
+  they return `Ok` where they used to error.
+- `BitWriter::write_bits`/`write_bytes` and `StreamBitReader::read_bits` can return
+  `PositionOverflow` once a position no longer fits `usize` (32-bit targets).
+- A `#[bin(ctx(...))]` enum whose only encode-side mentions of a ctx parameter are same-named
+  variant fields (or `ctx { name = source }` alias labels) now gets a plain `BitEncode` and
+  `to_bytes`, and no longer has the inherent `encode_with`/`to_bytes_with`; its `EncodeWith` impl
+  remains. Call `to_bytes()` or `EncodeWith::encode_with`, and delete any hand-written
+  `BitEncode` impl for such a type, which now conflicts with the generated one.
+
 ## [0.8.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.7.1...bitsandbytes-v0.8.0) - 2026-10-08
 
 ### Added
