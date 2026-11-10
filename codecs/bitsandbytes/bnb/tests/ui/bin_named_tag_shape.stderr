@@ -1,0 +1,35 @@
+error: every named tag must match the same set of ctx parameters exactly once
+ --> tests/ui/bin_named_tag_shape.rs:8:5
+  |
+8 |     Second(u8),
+  |     ^^^^^^
+
+error: duplicate named tag condition
+  --> tests/ui/bin_named_tag_shape.rs:13:27
+   |
+13 |     #[bin(tag(fid = 0x00, fid = 0x01))]
+   |                           ^^^
+
+error: catch-all is missing selector field `fid`
+  --> tests/ui/bin_named_tag_shape.rs:22:5
+   |
+22 |     Unknown { code: u8, raw: u8 },
+   |     ^^^^^^^
+
+error: captured selector fields consume no wire bits and cannot have codec directives
+  --> tests/ui/bin_named_tag_shape.rs:30:15
+   |
+30 |     Unknown { #[br(temp)] fid: u8, code: u8, raw: u8 },
+   |               ^^^^^^^^^^^^^^^^^^^
+
+error: a named tag must name a ctx parameter
+  --> tests/ui/bin_named_tag_shape.rs:35:15
+   |
+35 |     #[bin(tag(other = 0x00, code = 0x00))]
+   |               ^^^^^
+
+error: named tags cannot be mixed with tag = or variant magic dispatch
+  --> tests/ui/bin_named_tag_shape.rs:42:5
+   |
+42 |     First(u8),
+   |     ^^^^^

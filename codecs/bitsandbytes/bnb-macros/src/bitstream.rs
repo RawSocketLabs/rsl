@@ -46,6 +46,26 @@ impl Parse for CtxParam {
     }
 }
 
+/// A context argument, either shorthand `name` or an alias `name = source`.
+#[derive(Clone)]
+struct CtxArg {
+    name: Ident,
+    source: Ident,
+}
+
+impl Parse for CtxArg {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name: Ident = input.parse()?;
+        let source = if input.peek(Token![=]) {
+            input.parse::<Token![=]>()?;
+            input.parse()?
+        } else {
+            name.clone()
+        };
+        Ok(Self { name, source })
+    }
+}
+
 /// The generated context-struct name for a type/ident — `Foo` ⇒ `FooCtx`.
 fn ctx_struct_ident(name: &Ident) -> Ident {
     format_ident!("{}Ctx", name)
@@ -232,7 +252,7 @@ struct FieldBr {
     count: Option<syn::Expr>,
     /// `ctx { a, b }` — pass context to a nested `ctx` message's `decode_with`/
     /// `encode_with`. Each name is a parent field or the parent's own ctx param.
-    ctx: Option<Vec<Ident>>,
+    ctx: Option<Vec<CtxArg>>,
     /// `#[br(temp)]` — read into a local (usable by a later `count`/`ctx`) but do
     /// **not** store the field; `#[bin]` strips it from the struct. Pairs with
     /// `#[bw(calc = …)]` for the write side.
@@ -401,7 +421,7 @@ impl syn::parse::Parse for AutoLenSpec {
 /// because `if` is a keyword and can't be read as a meta path ident.
 enum BrDirective {
     Count(syn::Expr),
-    Ctx(Vec<Ident>),
+    Ctx(Vec<CtxArg>),
     Temp,
     If(syn::Expr),
     Map(syn::Expr),
@@ -459,7 +479,7 @@ impl Parse for BrDirective {
                 "ctx" => {
                     let content;
                     syn::braced!(content in input);
-                    let names = Punctuated::<Ident, Token![,]>::parse_terminated(&content)?;
+                    let names = Punctuated::<CtxArg, Token![,]>::parse_terminated(&content)?;
                     Ok(BrDirective::Ctx(names.into_iter().collect()))
                 }
                 "map" => {
@@ -845,12 +865,17 @@ fn enum_try_str_debug(
 /// names are locals, so all stay shorthand.
 fn ctx_literal(
     ctx_ty: &TokenStream2,
-    names: &[Ident],
+    names: &[CtxArg],
     field_set: Option<&[&Ident]>,
 ) -> TokenStream2 {
-    let inits = names.iter().map(|n| match field_set {
-        Some(fields) if fields.contains(&n) => quote!(#n: self.#n),
-        _ => quote!(#n),
+    let inits = names.iter().map(|arg| {
+        let n = &arg.name;
+        let source = &arg.source;
+        match field_set {
+            Some(fields) if fields.contains(&source) => quote!(#n: self.#source),
+            _ if n == source => quote!(#n),
+            _ => quote!(#n: #source),
+        }
     });
     quote!(#ctx_ty { #(#inits),* })
 }
@@ -1565,9 +1590,31 @@ fn gen_decode(
 /// positioning, or a `ctx { … }` forward passing a param down) with no false negatives;
 /// over-detection is harmless (it would merely keep `encode_with`).
 fn tokens_mention(ts: TokenStream2, names: &[&Ident]) -> bool {
+    let tokens: Vec<_> = ts.into_iter().collect();
+    let colon = |index| matches!(tokens.get(index), Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == ':');
+    tokens.iter().enumerate().any(|(index, tt)| match tt {
+        // In `ChildCtx { target: source }`, only the source can read parent context.
+        // Keep path prefixes (`name::...`) and shorthand fields as references.
+        proc_macro2::TokenTree::Ident(id) => {
+            (!colon(index + 1) || colon(index + 2)) && names.contains(&id)
+        }
+        proc_macro2::TokenTree::Group(g) => {
+            if index > 0 && matches!(&tokens[index - 1], proc_macro2::TokenTree::Punct(p) if p.as_char() == '!') {
+                // Macro argument syntax is opaque: `n: Type` can still expand to a read of n.
+                tokens_mention_any(g.stream(), names)
+            } else {
+                tokens_mention(g.stream(), names)
+            }
+        },
+        _ => false,
+    })
+}
+
+/// Conservative reference scan for opaque macro arguments, including nested groups.
+fn tokens_mention_any(ts: TokenStream2, names: &[&Ident]) -> bool {
     ts.into_iter().any(|tt| match tt {
-        proc_macro2::TokenTree::Ident(id) => names.iter().any(|n| **n == id),
-        proc_macro2::TokenTree::Group(g) => tokens_mention(g.stream(), names),
+        proc_macro2::TokenTree::Ident(id) => names.contains(&&id),
+        proc_macro2::TokenTree::Group(g) => tokens_mention_any(g.stream(), names),
         _ => false,
     })
 }
@@ -3135,12 +3182,16 @@ fn variant_path_fields(
 /// a match-bound `&FieldTy`, so it is dereferenced (`*n`); a `temp` local or an enum
 /// `ctx` parameter is already a value (`n`). (The struct dual, [`ctx_literal`], uses
 /// `self.n` for stored fields instead.)
-fn ctx_literal_variant(ctx_ty: &TokenStream2, names: &[Ident], stored: &[Ident]) -> TokenStream2 {
-    let inits = names.iter().map(|n| {
-        if stored.contains(n) {
-            quote!(#n: *#n)
-        } else {
+fn ctx_literal_variant(ctx_ty: &TokenStream2, names: &[CtxArg], stored: &[Ident]) -> TokenStream2 {
+    let inits = names.iter().map(|arg| {
+        let n = &arg.name;
+        let source = &arg.source;
+        if stored.contains(source) {
+            quote!(#n: *#source)
+        } else if n == source {
             quote!(#n)
+        } else {
+            quote!(#n: #source)
         }
     });
     quote!(#ctx_ty { #(#inits),* })
@@ -3435,11 +3486,46 @@ enum VariantRole {
     CatchAll,
 }
 
+/// One typed equality in a conjunctive variant tag.
+struct NamedTag {
+    name: Ident,
+    value: syn::Expr,
+}
+
+impl Parse for NamedTag {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name = input.parse()?;
+        input.parse::<Token![=]>()?;
+        Ok(Self {
+            name,
+            value: input.parse()?,
+        })
+    }
+}
+
+impl NamedTag {
+    fn typed_value(&self, ty: &Type) -> TokenStream2 {
+        let value = &self.value;
+        if matches!(value, syn::Expr::Lit(lit) if matches!(lit.lit, syn::Lit::Int(_))) {
+            let converted = crate::const_from_bits(ty, &quote!(#value as u128));
+            let restored = crate::const_into_bits(ty, &quote!(__VALUE));
+            quote!({
+                const __VALUE: #ty = #converted;
+                const _: () = assert!(#restored == #value as u128, "tag literal does not fit its context type");
+                __VALUE
+            })
+        } else {
+            quote!({ const __VALUE: #ty = #value; __VALUE })
+        }
+    }
+}
+
 /// One variant's dispatch directives.
 struct VariantDispatch<'a> {
     variant: &'a syn::Variant,
     /// `#[bin(tag = V)]` — the selector value to match against.
     tag: Option<syn::Expr>,
+    named_tags: Vec<NamedTag>,
     /// `#[bin(magic = M)]` — the wire signature.
     magic: Option<Magic>,
     catch_all: bool,
@@ -3450,7 +3536,10 @@ impl VariantDispatch<'_> {
         if self.catch_all {
             VariantRole::CatchAll
         } else {
-            match (self.tag.is_some(), self.magic.is_some()) {
+            match (
+                self.tag.is_some() || !self.named_tags.is_empty(),
+                self.magic.is_some(),
+            ) {
                 (true, true) => VariantRole::TagAndMagic,
                 (true, false) => VariantRole::TagOnly,
                 (false, true) => VariantRole::MagicOnly,
@@ -3494,6 +3583,7 @@ impl<'a> EnumDispatch<'a> {
         let mut fallbacks = 0u32;
         for v in &e.variants {
             let mut tag = None;
+            let mut named_tags = Vec::new();
             let mut magic = None;
             let mut catch_all = false;
             for a in &v.attrs {
@@ -3502,7 +3592,22 @@ impl<'a> EnumDispatch<'a> {
                 } else if a.path().is_ident("bin") {
                     a.parse_nested_meta(|m| {
                         if m.path.is_ident("tag") {
-                            tag = Some(m.value()?.parse()?);
+                            if !named_tags.is_empty() {
+                                return Err(m.error("duplicate tag directive"));
+                            }
+                            if m.input.peek(syn::token::Paren) {
+                                let content;
+                                syn::parenthesized!(content in m.input);
+                                named_tags =
+                                    Punctuated::<NamedTag, Token![,]>::parse_terminated(&content)?
+                                        .into_iter()
+                                        .collect();
+                                if named_tags.is_empty() {
+                                    return Err(m.error("a named tag needs at least one condition"));
+                                }
+                            } else {
+                                tag = Some(m.value()?.parse()?);
+                            }
                             Ok(())
                         } else if m.path.is_ident("magic") {
                             let expr: syn::Expr = m.value()?.parse()?;
@@ -3519,13 +3624,16 @@ impl<'a> EnumDispatch<'a> {
             let vd = VariantDispatch {
                 variant: v,
                 tag,
+                named_tags,
                 magic,
                 catch_all,
             };
             match vd.role() {
                 VariantRole::CatchAll => catch_alls += 1,
                 VariantRole::Fallback => fallbacks += 1,
-                VariantRole::TagOnly | VariantRole::TagAndMagic if selector.is_none() => {
+                VariantRole::TagOnly | VariantRole::TagAndMagic
+                    if selector.is_none() && vd.named_tags.is_empty() =>
+                {
                     return Err(syn::Error::new_spanned(
                         &v.ident,
                         "a variant with `tag = …` needs the enum to declare the selector via `#[bin(tag = <ctx-param>)]`",
@@ -3552,6 +3660,82 @@ impl<'a> EnumDispatch<'a> {
             prefix,
             variants,
         })
+    }
+
+    /// Validate the conjunctive form separately so legacy tag/magic dispatch is unchanged.
+    fn named_selectors(&self, ctx: &[(Ident, Type)]) -> syn::Result<Vec<(Ident, Type)>> {
+        let Some(first) = self.variants.iter().find(|v| !v.named_tags.is_empty()) else {
+            return Ok(Vec::new());
+        };
+        let mut selectors = Vec::new();
+        for tag in &first.named_tags {
+            if selectors.iter().any(|(n, _)| n == &tag.name) {
+                return Err(syn::Error::new_spanned(
+                    &tag.name,
+                    "duplicate named tag condition",
+                ));
+            }
+            let param = ctx.iter().find(|(n, _)| n == &tag.name).ok_or_else(|| {
+                syn::Error::new_spanned(&tag.name, "a named tag must name a ctx parameter")
+            })?;
+            selectors.push(param.clone());
+        }
+        for v in &self.variants {
+            if self.selector.is_some() || v.tag.is_some() || v.magic.is_some() {
+                return Err(syn::Error::new_spanned(
+                    &v.variant.ident,
+                    "named tags cannot be mixed with tag = or variant magic dispatch",
+                ));
+            }
+            if v.catch_all {
+                if !v.named_tags.is_empty() {
+                    return Err(syn::Error::new_spanned(
+                        &v.variant.ident,
+                        "a catch-all cannot have tag conditions",
+                    ));
+                }
+                if !matches!(v.variant.fields, Fields::Named(_)) {
+                    return Err(syn::Error::new_spanned(
+                        &v.variant.ident,
+                        "a named-tag catch-all needs named fields for each selector",
+                    ));
+                }
+                for (name, _) in &selectors {
+                    let field = v
+                        .variant
+                        .fields
+                        .iter()
+                        .find(|f| f.ident.as_ref() == Some(name))
+                        .ok_or_else(|| {
+                            syn::Error::new_spanned(
+                                &v.variant.ident,
+                                format!("catch-all is missing selector field `{name}`"),
+                            )
+                        })?;
+                    if field
+                        .attrs
+                        .iter()
+                        .any(|a| ["br", "bw", "brw"].iter().any(|n| a.path().is_ident(n)))
+                    {
+                        return Err(syn::Error::new_spanned(
+                            field,
+                            "captured selector fields consume no wire bits and cannot have codec directives",
+                        ));
+                    }
+                }
+            } else if !v.named_tags.is_empty()
+                && (v.named_tags.len() != selectors.len()
+                    || selectors.iter().any(|(n, _)| {
+                        v.named_tags.iter().filter(|tag| &tag.name == n).count() != 1
+                    }))
+            {
+                return Err(syn::Error::new_spanned(
+                    &v.variant.ident,
+                    "every named tag must match the same set of ctx parameters exactly once",
+                ));
+            }
+        }
+        Ok(selectors)
     }
 
     /// The width uniformity of the **dispatching** magics (magic-only variants). A magic
@@ -3609,6 +3793,7 @@ fn variant_field_codec(
     name: &Ident,
     v: &syn::Variant,
     catch_capture: Option<&TokenStream2>,
+    named_capture: &[(Ident, Type)],
 ) -> syn::Result<(Vec<TokenStream2>, TokenStream2, Vec<TokenStream2>)> {
     let vid = &v.ident;
     let idents = variant_bind_idents(&v.fields);
@@ -3633,7 +3818,13 @@ fn variant_field_codec(
     for (i, f) in v.fields.iter().enumerate() {
         let id = &idents[i];
         let br = parse_field_br(f)?;
-        if is_catch && i == 0 {
+        if let Some((name, ty)) = named_capture
+            .iter()
+            .find(|(n, _)| f.ident.as_ref() == Some(n))
+        {
+            let field_ty = &f.ty;
+            reads.push(quote!(let #id: #field_ty = { let __captured: #ty = #name; __captured };));
+        } else if is_catch && i == 0 {
             if br.temp {
                 return Err(syn::Error::new_spanned(
                     f,
@@ -3651,7 +3842,11 @@ fn variant_field_codec(
 
     let mut writes = Vec::new();
     for (i, f) in v.fields.iter().enumerate() {
-        if is_catch && i == 0 {
+        if (is_catch && i == 0)
+            || named_capture
+                .iter()
+                .any(|(n, _)| f.ident.as_ref() == Some(n))
+        {
             continue; // the captured discriminant — the dispatch emits it
         }
         let id = &idents[i];
@@ -3728,8 +3923,11 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     let prefix = args.magic.as_ref().map(parse_magic).transpose()?;
     let dispatch = EnumDispatch::parse(e, args.tag.clone(), prefix)?;
 
+    let named_selectors = dispatch.named_selectors(&args.ctx)?;
+    let has_named_tags = !named_selectors.is_empty();
+
     // Dispatch mode + the variants that form the "nothing matched" tail.
-    let has_selector = dispatch.selector.is_some();
+    let has_selector = dispatch.selector.is_some() || has_named_tags;
     let magic_dispatch = dispatch
         .variants
         .iter()
@@ -3805,7 +4003,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     // unmatched selector (`__other`, tag), or nothing (peek path — the magic stays in the
     // catch-all's own fields).
     let tail_variant = fallback_variant.or(catch_variant);
-    let tail_capture: Option<TokenStream2> = if fallback_variant.is_some() {
+    let tail_capture: Option<TokenStream2> = if fallback_variant.is_some() || has_named_tags {
         None
     } else if catch_variant.is_some() {
         if use_peek {
@@ -3832,7 +4030,12 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     for v in &dispatch.variants {
         let is_tail = matches!(v.role(), VariantRole::Fallback | VariantRole::CatchAll);
         let cap = if is_tail { tail_capture.clone() } else { None };
-        let (_, pat, writes) = variant_field_codec(name, v.variant, cap.as_ref())?;
+        let (_, pat, writes) = variant_field_codec(
+            name,
+            v.variant,
+            cap.as_ref(),
+            if v.catch_all { &named_selectors } else { &[] },
+        )?;
 
         let write_disc = if v.role() == VariantRole::CatchAll && cap.is_some() && magic_dispatch {
             let first = &variant_bind_idents(&v.variant.fields)[0];
@@ -3851,7 +4054,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         };
         encode_arms.push(quote!(#pat => { #write_disc #(#writes)* }));
 
-        if gen_accessor {
+        if gen_accessor && !has_named_tags {
             let acc = if is_tail {
                 let first = &variant_bind_idents(&v.variant.fields)[0];
                 quote!(*#first)
@@ -3892,7 +4095,12 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         #bnb::__private::Source::bit_pos(__bnb_r),
     ).in_field(#disc_field));
     let tail_body = if let Some(tv) = tail_variant {
-        let (reads, ctor, _) = variant_field_codec(name, tv.variant, tail_capture.as_ref())?;
+        let (reads, ctor, _) = variant_field_codec(
+            name,
+            tv.variant,
+            tail_capture.as_ref(),
+            if tv.catch_all { &named_selectors } else { &[] },
+        )?;
         quote! {{
             #(#reads)*
             ::core::result::Result::Ok(#ctor)
@@ -3922,7 +4130,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     unreachable!("peek path validated to byte-string magics");
                 };
                 let bytes = bytes.iter();
-                let (reads, ctor, _) = variant_field_codec(name, v.variant, None)?;
+                let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
                 chain = quote! {
                     if #bnb::__private::match_magic(__bnb_r, &[#(#bytes),*])? {
                         #(#reads)*
@@ -3940,7 +4148,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         for v in dispatch.variants.iter().rev() {
             if v.role() == VariantRole::MagicOnly {
                 let c = v.magic.as_ref().unwrap().const_expr();
-                let (reads, ctor, _) = variant_field_codec(name, v.variant, None)?;
+                let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
                 chain = quote! {
                     if __m == #c {
                         #(#reads)*
@@ -3952,7 +4160,33 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         quote!(#read #chain)
     };
 
-    let dispatch_decode = if has_selector {
+    let dispatch_decode = if has_named_tags {
+        let mut chain = tail_body.clone();
+        for v in dispatch
+            .variants
+            .iter()
+            .rev()
+            .filter(|v| !v.named_tags.is_empty())
+        {
+            let conditions = named_selectors.iter().map(|(name, ty)| {
+                let tag = v
+                    .named_tags
+                    .iter()
+                    .find(|t| &t.name == name)
+                    .expect("validated selector set");
+                let value = tag.typed_value(ty);
+                quote!(#name == #value)
+            });
+            let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
+            chain = quote! {
+                if #(#conditions)&&* {
+                    #(#reads)*
+                    ::core::result::Result::Ok(#ctor)
+                } else #chain
+            };
+        }
+        chain
+    } else if has_selector {
         // Tag dispatch (incl. hybrid): match the selector; an unmatched selector falls to
         // the magic block (hybrid) or the tail body (pure tag).
         let sel = dispatch
@@ -3967,7 +4201,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     .magic
                     .as_ref()
                     .map(|m| m.verify(&v.variant.ident.to_string()));
-                let (reads, ctor, _) = variant_field_codec(name, v.variant, None)?;
+                let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
                 arms.push(quote! {
                     #tagval => {
                         #verify
@@ -4058,6 +4292,36 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     // single discriminant to report (variable-width magic, or a typed fallback).
     let accessor_fn = if !gen_accessor {
         quote!()
+    } else if has_named_tags {
+        let methods = named_selectors
+            .iter()
+            .map(|(selector, ty)| {
+                let arms = dispatch
+                    .variants
+                    .iter()
+                    .map(|v| {
+                        let (_, pat, _) = variant_field_codec(name, v.variant, None, &[])?;
+                        let value = if v.catch_all {
+                            quote!(*#selector)
+                        } else {
+                            v.named_tags
+                                .iter()
+                                .find(|t| &t.name == selector)
+                                .expect("validated selector set")
+                                .typed_value(ty)
+                        };
+                        Ok(quote!(#pat => #value,))
+                    })
+                    .collect::<syn::Result<Vec<_>>>()?;
+                let doc = format!("The `{selector}` context value this variant dispatches as.");
+                Ok(quote! {
+                    #[doc = #doc]
+                    #[allow(unused_variables)]
+                    pub fn #selector(&self) -> #ty { match self { #(#arms)* } }
+                })
+            })
+            .collect::<syn::Result<Vec<_>>>()?;
+        quote!(impl #name { #(#methods)* })
     } else if magic_dispatch {
         let magic_ty = dispatch
             .uniform_magic_read_type()
@@ -4101,7 +4365,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             continue; // the catch-all isn't an explicit target — use `decode`/`decode_with`
         }
         let mname = format_ident!("decode_as_{}", snake_case(&v.variant.ident));
-        let (reads, ctor, _) = variant_field_codec(name, v.variant, None)?;
+        let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
         let magic_verify = v
             .magic
             .as_ref()
@@ -4135,7 +4399,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     }
     // `decode_tagged(selector, bytes)` — sugar for a tag-dispatched enum whose only
     // context is the selector.
-    if !magic_dispatch && want_decode && args.ctx.len() == 1 {
+    if !magic_dispatch && !has_named_tags && want_decode && args.ctx.len() == 1 {
         let sel = dispatch
             .selector
             .as_ref()

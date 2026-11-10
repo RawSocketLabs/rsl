@@ -1579,3 +1579,40 @@ now taking the type's declared order from a trait const (resolved at compile tim
 - Not run: the S5 tests on a 32-bit target (the i686 build of the test dependencies needs a
   C cross-compiler; the library compiles for i686), mutants in the macro crate (its own
   tests do not exercise the expansion), longer fuzz campaigns, and benchmarks.
+
+## Named context dispatch trial (2026-11-09)
+
+Baseline: `eca60e6b9868165c5658bdcb2a7ca1a51f9ca2fa`; branch
+`feat/named-context-tags`. The libsdr DMR trial is the representative consumer.
+`ctx { child = source }` aliases identifiers without conflating parent scope
+and child member names. `tag(fid = ..., code = ...)` compares typed constants
+conjunctively, in declaration order, with the same selector set on every tagged
+variant. Integer literals have a const round-trip range check. Named catch-all
+fields capture selectors without reading/writing bits; generated per-selector
+accessors let parents reconstruct header fields. This removes libsdr's packed
+FID/opcode dispatch key without introducing another wire schema.
+
+The existing single-tag and magic paths remain available. Mixing named tags
+with those dispatch forms is rejected; enum-level prefixes and typed fallbacks
+remain supported. No runtime library API or dependency feature changes.
+
+Independent reviewer findings in `bnb-macros/src/bitstream.rs`, all introduced
+in this candidate and fixed before final review:
+
+| Severity | Location / consequence | Disposition and regression evidence |
+| --- | --- | --- |
+| Blocking | `NamedTag::typed_value`: suffixed integer literals failed type checking | Normalize to `u128`; aliased `u6` maximum `0x3fu8` succeeds; UI case rejects `0x40` |
+| Blocking | `tokens_mention`: alias target label falsely required encode context | Ignore ordinary field labels; `DecodeOnlyParent` encodes without irrelevant context |
+| Blocking | Label filtering hid references in opaque macro arguments | Preserve conservative recursive scanning inside macro groups; `MacroContext` covers nested arguments |
+
+Validation uses host Rust/Cargo 1.99.1, default features, both affected packages:
+focused named-tag tests (7 passed), the full package tests (including UI and
+Rustdoc), strict all-target Clippy, and formatting. libsdr uses its pinned
+1.97.1 standard gate and separately exercises zero-allocation DMR reception.
+The reviewer approved the final fixes by inspection; no benchmark improvement
+is claimed. The full container pre-push/release gate, MSRV/bare-metal matrix,
+fuzzing, mutation testing, and controlled throughput measurements have not run.
+The owner authorized a review commit and PR on 2026-11-09. The local CI
+runner requires a clean committed tree, so its pre-push gate follows the
+review commit. This change is not a release-qualified candidate; no merge,
+tag, or registry release is authorized.

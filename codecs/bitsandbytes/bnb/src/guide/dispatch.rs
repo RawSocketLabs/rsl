@@ -127,6 +127,55 @@
 //! assert!(Msg::decode_with_exact(&[b'X', b'X', 0, 0, 0, 0], MsgCtx { kind: 1 }).is_err());
 //! ```
 //!
+//! # Named tags — all context conditions must match
+//!
+//! Use `tag(name = value, ...)` to select on several already-parsed fields.
+//! Every tagged variant names the same set of context parameters (order is free).
+//! Conditions use typed constant equality; the first matching variant wins.
+//! Integer literals are converted to their context type at compile time, with
+//! a round-trip assertion rejecting narrowing, including through `uN` aliases.
+//! Other values must be constant expressions of the declared context type.
+//!
+//! ```
+//! use bnb::{bin, u2, u6};
+//! #[bin(ctx(fid: u8, code: u6))]
+//! enum Body {
+//!     #[bin(tag(fid = 0x00, code = 0x07))]
+//!     Standard(u8),
+//!     #[catch_all]
+//!     Unknown { fid: u8, code: u6, raw: u8 },
+//! }
+//! #[bin]
+//! struct Packet {
+//!     flags: u2,
+//!     #[br(temp)]
+//!     #[bw(calc = self.body.code())]
+//!     opcode: u6,
+//!     #[br(temp)]
+//!     #[bw(calc = self.body.fid())]
+//!     feature_set_id: u8,
+//!     #[br(ctx { fid = feature_set_id, code = opcode })]
+//!     body: Body,
+//! }
+//! let bytes = [0xc7, 0x10, 0xab];
+//! let packet = Packet::decode_exact(&bytes).unwrap();
+//! assert_eq!(packet.body.fid(), 0x10);
+//! assert_eq!(packet.body.code(), u6::new(0x07));
+//! assert_eq!(packet.to_bytes().unwrap(), bytes);
+//! ```
+//!
+//! The catch-all must have named fields for each selector; these capture context
+//! without consuming or emitting wire bits, regardless of field order. Codec
+//! directives on captured fields are rejected. Other fields encode normally.
+//! Without a typed fallback, each selector gets a same-named accessor. Additional
+//! context parameters may serve payload decoding but receive no accessor.
+//! Named tags cannot mix with legacy `tag =` or per-variant `magic`; an enum-level
+//! magic prefix remains supported. A typed fallback has no selector accessors.
+//!
+//! Context aliases accept identifiers: `child_name = parent_name`; shorthand
+//! `name` remains supported. Encoding resolves the source against stored parent
+//! fields or local temporary/context parameters, just like shorthand arguments.
+//!
 //! # Variable-width magics and a typed fallback
 //!
 //! Byte-string magics may differ in length: dispatch probes in declaration order,

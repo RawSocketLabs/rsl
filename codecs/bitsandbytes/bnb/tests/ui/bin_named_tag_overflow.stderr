@@ -1,0 +1,11 @@
+error[E0080]: evaluation panicked: tag literal does not fit its context type
+ --> tests/ui/bin_named_tag_overflow.rs:5:1
+  |
+5 | #[bin(ctx(fid: u8, code: Opcode))]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `Message::code::_` failed here
+
+error[E0080]: evaluation panicked: tag literal does not fit its context type
+ --> tests/ui/bin_named_tag_overflow.rs:5:1
+  |
+5 | #[bin(ctx(fid: u8, code: Opcode))]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `Message::decode_with::_` failed here
