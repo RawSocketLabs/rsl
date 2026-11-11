@@ -25,6 +25,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -1068,7 +1069,7 @@ fn enum_try_str_debug(
                 let binds: Vec<&syn::Ident> =
                     stored.iter().filter_map(|f| f.ident.as_ref()).collect();
                 let calls = stored.iter().map(|f| {
-                    let id = f.ident.as_ref().unwrap();
+                    let id = f.ident.as_ref().expect("invariant: a named field");
                     if field_is_try_str(f) {
                         quote!(.field(::core::stringify!(#id), &#bnb::__private::TryStr(#id)))
                     } else {
@@ -2825,7 +2826,10 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
         } else if let Some(map) = &args.map {
             quote!(#bnb::__private::decode_mapped_msg(__bnb_r, #map))
         } else {
-            let tm = args.try_map.as_ref().unwrap();
+            let tm = args
+                .try_map
+                .as_ref()
+                .expect("invariant: closure-form decode has `map` or `try_map`");
             quote!(#bnb::__private::decode_try_mapped_msg(__bnb_r, #tm))
         };
         let prefix_decoders = prefix_methods(&quote!(#vis), &layout);
@@ -2882,7 +2886,10 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
                 |__v: &#name| -> #wire { ::core::convert::Into::into(__v) }
             ))
         } else {
-            let bw = args.bw_map.as_ref().unwrap();
+            let bw = args
+                .bw_map
+                .as_ref()
+                .expect("invariant: closure-form encode has `bw_map`");
             quote!(#bnb::__private::encode_mapped_msg(__bnb_w, self, #bw))
         };
         quote! {
@@ -3694,6 +3701,14 @@ impl Magic {
         }
     }
 
+    /// The magic's kind, for a diagnostic ("… is a byte string").
+    fn describe(&self) -> &'static str {
+        match self {
+            Magic::Bytes(_) => "a byte string",
+            Magic::Int { .. } => "an integer",
+        }
+    }
+
     /// The type this magic is read into: `[u8; N]` for a byte string, the unsigned
     /// integer type for an int.
     fn read_type(&self) -> TokenStream2 {
@@ -3883,6 +3898,8 @@ struct VariantDispatch<'a> {
     named_tags: Vec<NamedTag>,
     /// `#[bin(magic = M)]` — the wire signature.
     magic: Option<Magic>,
+    /// The `magic` literal's span (the call site when there is none), for diagnostics.
+    magic_span: proc_macro2::Span,
     catch_all: bool,
 }
 
@@ -3902,6 +3919,40 @@ impl VariantDispatch<'_> {
             }
         }
     }
+}
+
+/// Checks a dispatching (magic-only) variant's constant against the earlier ones. They are
+/// all read as one type, so a byte string and an integer cannot be mixed. A tag variant's
+/// magic is a signature checked after selection, so it is not compared.
+fn check_dispatch_magic(
+    earlier: &[VariantDispatch<'_>],
+    vd: &VariantDispatch<'_>,
+) -> syn::Result<()> {
+    let magic = vd.magic.as_ref().expect("invariant: MagicOnly has a magic");
+    let name = &vd.variant.ident;
+    for first in earlier
+        .iter()
+        .filter(|p| p.role() == VariantRole::MagicOnly)
+    {
+        let prior = first
+            .magic
+            .as_ref()
+            .expect("invariant: MagicOnly has a magic");
+        let first = &first.variant.ident;
+        if prior.kind() != magic.kind() {
+            return Err(syn::Error::new(
+                vd.magic_span,
+                format!(
+                    "variant `{name}`'s `magic` is {}, but variant `{first}`'s is {}: an \
+                     enum's dispatching magics are all read as one type. Write every one as \
+                     a byte string (`b\"\\x01\"`) or every one as an integer (`0x42u8`)",
+                    magic.describe(),
+                    prior.describe()
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The uniformity of the variant magic widths — decides single-read vs peek dispatch.
@@ -3940,6 +3991,7 @@ impl<'a> EnumDispatch<'a> {
             let mut tag = None;
             let mut named_tags = Vec::new();
             let mut magic = None;
+            let mut magic_span = proc_macro2::Span::call_site();
             let mut catch_all = false;
             for a in &v.attrs {
                 if a.path().is_ident("catch_all") {
@@ -3967,6 +4019,7 @@ impl<'a> EnumDispatch<'a> {
                         } else if m.path.is_ident("magic") {
                             let expr: syn::Expr = m.value()?.parse()?;
                             magic = Some(parse_magic(&expr)?);
+                            magic_span = expr.span();
                             Ok(())
                         } else {
                             Err(m.error(
@@ -3981,6 +4034,7 @@ impl<'a> EnumDispatch<'a> {
                 tag,
                 named_tags,
                 magic,
+                magic_span,
                 catch_all,
             };
             match vd.role() {
@@ -3994,6 +4048,7 @@ impl<'a> EnumDispatch<'a> {
                         "a variant with `tag = …` needs the enum to declare the selector via `#[bin(tag = <ctx-param>)]`",
                     ));
                 }
+                VariantRole::MagicOnly => check_dispatch_magic(&variants, &vd)?,
                 _ => {}
             }
             variants.push(vd);
@@ -4251,9 +4306,11 @@ fn variant_field_codec(
     Ok((reads, path, writes))
 }
 
-/// `CamelCase` → `snake_case`, for the generated `decode_as_<variant>` methods.
+/// `CamelCase` → `snake_case`, for the generated `decode_as_<variant>` methods. A raw
+/// identifier contributes its unprefixed name (`r#Type` → `type`): the result is spliced
+/// into a longer identifier, where an `r#` would not be one.
 fn snake_case(ident: &Ident) -> String {
-    let s = ident.to_string();
+    let s = ident.unraw().to_string();
     let mut out = String::with_capacity(s.len() + 4);
     for (i, ch) in s.char_indices() {
         if ch.is_ascii_uppercase() {
@@ -4407,7 +4464,8 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     let rep_magic = dispatch
         .variants
         .iter()
-        .find_map(|v| (v.role() == VariantRole::MagicOnly).then(|| v.magic.as_ref().unwrap()));
+        .filter(|v| v.role() == VariantRole::MagicOnly)
+        .find_map(|v| v.magic.as_ref());
 
     // The "nothing matched" tail: a typed fallback (parse the unconsumed bytes — no
     // capture), else a `#[catch_all]` capturing the read magic (`__m`, single-read), the
@@ -4561,7 +4619,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         let mut chain = tail_body.clone();
         for v in dispatch.variants.iter().rev() {
             if v.role() == VariantRole::MagicOnly {
-                let Magic::Bytes(bytes) = v.magic.as_ref().unwrap() else {
+                let Some(Magic::Bytes(bytes)) = v.magic.as_ref() else {
                     unreachable!("peek path validated to byte-string magics");
                 };
                 let bytes = bytes.iter();
@@ -4582,7 +4640,11 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         let mut chain = tail_body.clone();
         for v in dispatch.variants.iter().rev() {
             if v.role() == VariantRole::MagicOnly {
-                let c = v.magic.as_ref().unwrap().const_expr();
+                let c = v
+                    .magic
+                    .as_ref()
+                    .expect("invariant: MagicOnly has a magic")
+                    .const_expr();
                 let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
                 chain = quote! {
                     if __m == #c {
@@ -4631,7 +4693,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         let mut arms = Vec::new();
         for v in &dispatch.variants {
             if matches!(v.role(), VariantRole::TagOnly | VariantRole::TagAndMagic) {
-                let tagval = v.tag.as_ref().unwrap();
+                let tagval = v
+                    .tag
+                    .as_ref()
+                    .expect("invariant: a tag variant outside named-tag dispatch has `tag = V`");
                 let verify = v
                     .magic
                     .as_ref()
@@ -4871,7 +4936,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             let mut chain = quote!({ #tail_kind });
             for v in dispatch.variants.iter().rev() {
                 if v.role() == VariantRole::MagicOnly {
-                    let Magic::Bytes(bytes) = v.magic.as_ref().unwrap() else {
+                    let Some(Magic::Bytes(bytes)) = v.magic.as_ref() else {
                         unreachable!("peek path validated to byte-string magics");
                     };
                     let bytes = bytes.iter();
@@ -4887,7 +4952,11 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             let mut chain = quote!({ #tail_kind });
             for v in dispatch.variants.iter().rev() {
                 if v.role() == VariantRole::MagicOnly {
-                    let c = v.magic.as_ref().unwrap().const_expr();
+                    let c = v
+                        .magic
+                        .as_ref()
+                        .expect("invariant: MagicOnly has a magic")
+                        .const_expr();
                     let k = &v.variant.ident;
                     chain = quote!(if __m == #c { ::core::result::Result::Ok(#kind_name::#k) } else #chain);
                 }

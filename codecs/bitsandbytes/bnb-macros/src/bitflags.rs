@@ -10,6 +10,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::{Attribute, Ident, ItemStruct, LitInt, Token, Type, parse_macro_input};
 
@@ -308,7 +309,12 @@ fn collect_flags(item: &ItemStruct, backing_bits: u32) -> syn::Result<Vec<Flag>>
             ));
         }
         next_bit = bit + 1;
-        let konst = Ident::new(&ident.to_string().to_ascii_uppercase(), ident.span());
+        // The const is named from the unprefixed field name: upper-casing a raw identifier's
+        // text (`r#type` -> `R#TYPE`) is not an identifier, and `Ident::new` panics on it.
+        let konst = Ident::new(
+            &ident.unraw().to_string().to_ascii_uppercase(),
+            ident.span(),
+        );
         flags.push(Flag {
             ident,
             konst,

@@ -599,4 +599,21 @@ mod macro_ {
         );
         assert_eq!(f.to_bytes().unwrap(), bytes);
     }
+
+    // A raw-identifier variant: `decode_as_<variant>` is named from the unprefixed name.
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum RawVariant {
+        #[bin(magic = 1u8)]
+        r#Type(u8),
+    }
+
+    #[test]
+    fn a_raw_identifier_variant_gets_an_unprefixed_decode_helper() {
+        assert_eq!(
+            RawVariant::decode_as_type(&[1, 7]).unwrap(),
+            RawVariant::r#Type(7)
+        );
+        assert_eq!(RawVariant::r#Type(7).to_bytes().unwrap(), [1, 7]);
+    }
 }

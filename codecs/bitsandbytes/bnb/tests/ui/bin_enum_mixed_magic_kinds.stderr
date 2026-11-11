@@ -1,0 +1,5 @@
+error: variant `Bytes`'s `magic` is a byte string, but variant `Int`'s is an integer: an enum's dispatching magics are all read as one type. Write every one as a byte string (`b"\x01"`) or every one as an integer (`0x42u8`)
+ --> tests/ui/bin_enum_mixed_magic_kinds.rs:9:19
+  |
+9 |     #[bin(magic = b"B")]
+  |                   ^^^^

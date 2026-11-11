@@ -169,4 +169,21 @@ mod macro_ {
         assert!(f.a() && f.top());
         assert_eq!((f - W32::A), W32::TOP);
     }
+
+    // A raw identifier is a legal field name: the flag const is the unprefixed name in
+    // upper case (`r#type` -> `TYPE`), and the accessors keep the name.
+    #[bitflags(u8)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct RawNames {
+        r#type: bool,
+        r#loop: bool,
+    }
+
+    #[test]
+    fn a_raw_identifier_flag_gets_an_unprefixed_const() {
+        let f = RawNames::TYPE | RawNames::LOOP;
+        assert!(f.r#type() && f.r#loop());
+        assert_eq!(f.with_type(false), RawNames::LOOP);
+        assert_eq!(RawNames::empty().with_loop(true).bits(), 0b10);
+    }
 }
