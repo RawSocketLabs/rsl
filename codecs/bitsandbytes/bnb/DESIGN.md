@@ -519,13 +519,18 @@ Bitfields are plain shift/mask on a single backing integer — fully monomorphiz
 `bitvec`, no per-field heap, no runtime field tables. Benchmarked against the crates it
 collapses (`bitbybit`, `modular-bitfield`) and a hand-written shift/mask baseline on an
 identical DNS-shaped 16-bit field, `bnb` matches `bitbybit`, beats `modular-bitfield`,
-and is within noise of hand-written (pack ~870 ps, unpack ~190 ps). The stream codec
-takes a byte-aligned fast path — when a read/write is byte-aligned (the common case for
-headers and `[u8; N]` payloads) it copies whole bytes instead of shifting one bit at a
-time (~2–3× on aligned data); sub-byte reads fall through to the general bit loop. Byte
-runs (`Vec<u8>`, `[u8; N]`) go further: a byte-aligned run is one slice copy (§16). The
-generated accessors and the runtime read/write methods are `#[inline]` so they inline
-across crate boundaries.
+and is within about 4% of hand-written (pack ~873 ps against ~843 ps, unpack ~428 ps
+against ~434 ps; the earlier "unpack ~190 ps" was the benchmark harness folding its input,
+§19). The stream codec works per touched byte, never per bit. A byte-aligned read or write
+(the common case for headers and `[u8; N]` payloads) concatenates whole bytes, and a read of
+at most eight bits is taken from the one or two bytes it touches. On the slice reader those
+two paths and the bounds check are forced inline into generated decoders, where a field's
+constant width folds them down. A wider read that starts or ends inside a byte gathers the
+bytes it touches into one `u128` window and shifts the field out; an unaligned write ORs
+into each touched byte the bits that fall there. Both live in functions kept out of line so
+the inlined paths stay small (§19 has the measurements behind these choices). Byte runs
+(`Vec<u8>`, `[u8; N]`) go further: a byte-aligned run is one slice copy (§16). The generated
+accessors are `#[inline]` so they inline across crate boundaries.
 
 ## 11. Incremental decoding and lossless handoff (0.5.0)
 

@@ -703,8 +703,10 @@ fn apply_byte_order(raw: u128, bits: u32, bit: BitOrder, byte: ByteOrder) -> u12
 /// ([`BitReader`], [`BufSource`], [`SeekReader`], [`BufSeekReader`]). The caller must have bounds-checked
 /// `pos + n <= buf.len() * 8` and `n <= 128`.
 ///
-/// **Fast path:** when the read is byte-aligned (`pos % 8 == 0` and `n % 8 == 0`) the
-/// bytes are accumulated whole — one iteration per byte, not per bit (≈8× fewer).
+/// Work is per touched byte, never per bit. A byte-aligned read (`pos % 8 == 0` and
+/// `n % 8 == 0`) concatenates its bytes directly, a field of at most eight bits is taken
+/// from the one or two bytes it touches, and any other read goes through
+/// [`extract_unaligned_bits`].
 #[inline]
 fn extract_bits(buf: &[u8], pos: usize, n: usize, order: BitOrder) -> u128 {
     if pos % 8 == 0 && n % 8 == 0 {
@@ -727,30 +729,84 @@ fn extract_bits(buf: &[u8], pos: usize, n: usize, order: BitOrder) -> u128 {
         }
         return acc;
     }
-    // General path: one bit at a time (handles sub-byte offsets/widths).
-    let mut acc = 0u128;
+    // A field of at most eight bits touches one or two bytes: cheap enough to keep inline,
+    // where a generated decoder's constant width folds it to a load, a shift and a mask.
+    if n != 0 && n <= 8 {
+        let lead = pos % 8;
+        let end = lead + n;
+        let first = u16::from(buf[pos / 8]);
+        let second = if end > 8 {
+            u16::from(buf[pos / 8 + 1])
+        } else {
+            0
+        };
+        let field = match order {
+            BitOrder::Msb => ((first << 8) | second) >> (16 - end),
+            BitOrder::Lsb => ((second << 8) | first) >> lead,
+        };
+        return u128::from(field & (0xFF >> (8 - n)));
+    }
+    extract_unaligned_bits(buf, pos, n, order)
+}
+
+/// The general case of [`extract_bits`]: a read that starts or ends inside a byte. It
+/// gathers the bytes the field touches into one window and shifts the field out of it.
+///
+/// Kept out of line so the byte-aligned path its callers inline stays small: with this
+/// folded in, byte-aligned decode measured 8% slower (DESIGN §19).
+#[inline(never)]
+fn extract_unaligned_bits(buf: &[u8], pos: usize, n: usize, order: BitOrder) -> u128 {
+    if n == 0 {
+        return 0;
+    }
+    // The field starts `lead` bits into its first byte and touches `span.len()` bytes.
+    // That is at most 17 (128 bits from a non-zero offset), one more than a `u128` window
+    // holds, so a 17th byte is folded in separately.
+    let lead = pos % 8;
+    let span = &buf[pos / 8..(pos + n).div_ceil(8)];
+    let (window_bytes, overflow) = span.split_at(span.len().min(16));
+    let mask = u128::MAX >> (128 - n);
     match order {
+        // The window is the bytes as one big-endian number: the field's first bit is the
+        // highest, `lead` bits below the window's top.
         BitOrder::Msb => {
-            for k in 0..n {
-                let p = pos + k;
-                acc = (acc << 1) | u128::from((buf[p >> 3] >> (7 - (p & 7))) & 1);
-            }
+            let window = window_bytes
+                .iter()
+                .fold(0u128, |acc, &byte| (acc << 8) | u128::from(byte));
+            let field = match overflow.first() {
+                // `tail` bits of the field spill into the 17th byte, as its high bits.
+                Some(&last) => {
+                    let tail = lead + n - 128;
+                    (window << tail) | u128::from(last >> (8 - tail))
+                }
+                None => window >> (window_bytes.len() * 8 - lead - n),
+            };
+            field & mask
         }
+        // The window is the bytes as one little-endian number: the field's first bit is
+        // `lead` bits above the window's bottom.
         BitOrder::Lsb => {
-            for k in 0..n {
-                let p = pos + k;
-                acc |= u128::from((buf[p >> 3] >> (p & 7)) & 1) << k;
-            }
+            let window = window_bytes
+                .iter()
+                .rev()
+                .fold(0u128, |acc, &byte| (acc << 8) | u128::from(byte));
+            let field = match overflow.first() {
+                // A 17th byte implies `lead > 0`; its low bits are the field's top ones.
+                Some(&last) => (window >> lead) | (u128::from(last) << (128 - lead)),
+                None => window >> lead,
+            };
+            field & mask
         }
     }
-    acc
 }
 
 /// Appends the low `n` (`<= 128`) bits of `value` to `out` at absolute bit offset
-/// `bit_pos`, in `order` — the write dual of [`extract_bits`], used by [`BitWriter`].
+/// `bit_pos`, in `order` — the write dual of [`extract_bits`], used by [`BitWriter`]. The
+/// cursor must not be past the end of `out` (`bit_pos / 8 <= out.len()`).
 ///
-/// **Fast path:** when appending byte-aligned at the end (`bit_pos % 8 == 0`,
-/// `n % 8 == 0`, cursor at `out.len()`) the bytes are pushed whole, one per byte.
+/// Work is per touched byte, never per bit. Appending byte-aligned at the end
+/// (`bit_pos % 8 == 0`, `n % 8 == 0`, cursor at `out.len()`) pushes the bytes whole; any
+/// other write goes through [`emit_unaligned_bits`].
 #[inline]
 #[allow(clippy::cast_possible_truncation)] // Extract one low byte of the shifted carrier at a time.
 fn emit_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize, order: BitOrder) {
@@ -770,21 +826,36 @@ fn emit_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize, order: Bi
         }
         return;
     }
-    for k in 0..n {
-        let p = bit_pos + k;
-        // MSB-first emits the field's high bit first (i = n-1-k); LSB-first emits its
-        // low bit first (i = k) into the byte's low bit.
-        let (i, shift) = match order {
-            BitOrder::Msb => (n - 1 - k, 7 - (p & 7)),
-            BitOrder::Lsb => (k, p & 7),
-        };
-        let byte_idx = p >> 3;
+    emit_unaligned_bits(out, bit_pos, value, n, order);
+}
+
+/// The general case of [`emit_bits`]: a write that starts or ends inside a byte, or lands
+/// on bytes already present. It ORs into each touched byte the run of bits that falls
+/// there. Out of line for the same reason as [`extract_unaligned_bits`].
+#[inline(never)]
+#[allow(clippy::cast_possible_truncation)] // Each chunk is masked to at most eight bits.
+fn emit_unaligned_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize, order: BitOrder) {
+    // `take` bits go into each touched byte, starting `lead` bits in.
+    let mut pos = bit_pos;
+    let mut remaining = n;
+    while remaining > 0 {
+        let lead = pos % 8;
+        let take = (8 - lead).min(remaining);
+        let byte_idx = pos / 8;
         if byte_idx == out.len() {
             out.push(0);
         }
-        if (value >> i) & 1 != 0 {
-            out[byte_idx] |= 1 << shift;
-        }
+        let low_bits = (1u128 << take) - 1;
+        out[byte_idx] |= match order {
+            // MSB-first emits the field's high bits first, into the byte's high end.
+            BitOrder::Msb => {
+                (((value >> (remaining - take)) & low_bits) as u8) << (8 - lead - take)
+            }
+            // LSB-first emits the field's low bits first, into the byte's low end.
+            BitOrder::Lsb => (((value >> (n - remaining)) & low_bits) as u8) << lead,
+        };
+        pos += take;
+        remaining -= take;
     }
 }
 
@@ -890,24 +961,35 @@ impl<'a> BitReader<'a> {
     /// # Errors
     /// [`ErrorKind::TooWide`] if `n > 128`; [`ErrorKind::UnexpectedEof`] if fewer
     /// than `n` bits remain. Either carries the current bit offset.
-    #[inline]
+    // Forced inline: it is a bounds check, the byte-aligned fast path and two calls, and a
+    // generated decoder passes a constant width, so the check and the path fold at each
+    // field. Left to its heuristics the optimizer flipped between builds (DESIGN §19).
+    #[expect(clippy::inline_always, reason = "measured: DESIGN §19")]
+    #[inline(always)]
     pub fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let n = n as usize;
-        if n > 128 {
-            return Err(BitError::new(ErrorKind::TooWide { width: n }, self.bit_pos));
-        }
-        if n > self.remaining_bits() {
-            return Err(BitError::new(
-                ErrorKind::UnexpectedEof {
-                    needed: n,
-                    remaining: self.remaining_bits(),
-                },
-                self.bit_pos,
-            ));
+        if n > 128 || n > self.remaining_bits() {
+            return Err(self.read_error(n));
         }
         let acc = extract_bits(self.bytes, self.bit_pos, n, self.order);
         self.bit_pos += n;
         Ok(acc)
+    }
+
+    /// The error for a refused [`read_bits`](Self::read_bits) of `n` bits: too wide, or
+    /// past the end. Out of line and cold so the inlined read carries one call for both.
+    #[cold]
+    #[inline(never)]
+    fn read_error(&self, n: usize) -> BitError {
+        let kind = if n > 128 {
+            ErrorKind::TooWide { width: n }
+        } else {
+            ErrorKind::UnexpectedEof {
+                needed: n,
+                remaining: self.remaining_bits(),
+            }
+        };
+        BitError::new(kind, self.bit_pos)
     }
 
     /// Reads one [`Bits`] value of its declared width, applying the byte order to a
@@ -1430,6 +1512,19 @@ impl sealed::Sealed for IncrementalReader<'_> {}
 impl SeekSource for IncrementalReader<'_> {}
 
 impl IncrementalReader<'_> {
+    /// The retry signal for a read that is `missing` bits short of the buffered input:
+    /// what [`shortfall`](Self::shortfall) makes of the reader's end-of-input error.
+    #[cold]
+    #[inline(never)]
+    fn incomplete(&self, missing: usize) -> BitError {
+        BitError::new(
+            ErrorKind::Incomplete {
+                needed: Some(missing.div_ceil(8)),
+            },
+            self.0.bit_pos(),
+        )
+    }
+
     fn shortfall(mut error: BitError) -> BitError {
         if let ErrorKind::UnexpectedEof { needed, remaining } = error.kind {
             error.kind = ErrorKind::Incomplete {
@@ -1441,8 +1536,16 @@ impl IncrementalReader<'_> {
 }
 
 impl Source for IncrementalReader<'_> {
+    // Inline, so a generated decoder's constant width reaches the reader's fast paths. The
+    // shortfall is built directly rather than converted from the reader's end-of-input
+    // error: one out-of-line construction instead of a build, a move and a rewrite.
+    #[inline]
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
-        self.0.read_bits(n).map_err(Self::shortfall)
+        let remaining = self.0.remaining_bits();
+        if n <= 128 && n as usize > remaining {
+            return Err(self.incomplete(n as usize - remaining));
+        }
+        self.0.read_bits(n)
     }
 
     fn bit_pos(&self) -> usize {
@@ -1638,7 +1741,9 @@ impl<K: Sink> std::io::Write for SinkWriter<'_, K> {
 impl sealed::Sealed for BitReader<'_> {}
 
 impl Source for BitReader<'_> {
-    #[inline]
+    // Forced for the same reason as the inherent method it forwards to.
+    #[expect(clippy::inline_always, reason = "measured: DESIGN §19")]
+    #[inline(always)]
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         BitReader::read_bits(self, n)
     }
@@ -3627,6 +3732,108 @@ pub use bytes_io::{BytesReader, BytesWriter};
 mod unit {
     use super::*;
     use crate::{u4, u12};
+
+    /// The original one-bit-per-iteration extraction: slow, and simple enough to be the
+    /// reference the byte-wise [`extract_bits`] is checked against.
+    fn extract_bits_bitwise(buf: &[u8], pos: usize, n: usize, order: BitOrder) -> u128 {
+        (0..n).fold(0u128, |acc, k| {
+            let p = pos + k;
+            match order {
+                BitOrder::Msb => (acc << 1) | u128::from((buf[p / 8] >> (7 - p % 8)) & 1),
+                BitOrder::Lsb => acc | (u128::from((buf[p / 8] >> (p % 8)) & 1) << k),
+            }
+        })
+    }
+
+    /// The original one-bit-per-iteration emission, the reference for [`emit_bits`].
+    fn emit_bits_bitwise(
+        out: &mut Vec<u8>,
+        bit_pos: usize,
+        value: u128,
+        n: usize,
+        order: BitOrder,
+    ) {
+        for k in 0..n {
+            let p = bit_pos + k;
+            let (bit, shift) = match order {
+                BitOrder::Msb => (n - 1 - k, 7 - p % 8),
+                BitOrder::Lsb => (k, p % 8),
+            };
+            if p / 8 == out.len() {
+                out.push(0);
+            }
+            if (value >> bit) & 1 != 0 {
+                out[p / 8] |= 1 << shift;
+            }
+        }
+    }
+
+    /// A fixed xorshift stream, so the differential tests see the same bytes every run.
+    fn noise(state: &mut u64) -> u64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        *state
+    }
+
+    #[test]
+    fn extract_bits_matches_the_bitwise_reference_at_every_offset_and_width() {
+        let mut state = 0x9E37_79B9_7F4A_7C15;
+        for _ in 0..8 {
+            // 19 bytes: a 128-bit field starting up to 23 bits in.
+            let noisy: Vec<u8> = (0..19)
+                .map(|_| noise(&mut state).to_le_bytes()[0])
+                .collect();
+            for order in [BitOrder::Msb, BitOrder::Lsb] {
+                for pos in 0..24 {
+                    for n in 0..=128 {
+                        // Exactly as long as the read needs, so one that reaches for a
+                        // byte past its last touched one is out of bounds.
+                        let buf = &noisy[..usize::div_ceil(pos + n, 8)];
+                        assert_eq!(
+                            extract_bits(buf, pos, n, order),
+                            extract_bits_bitwise(buf, pos, n, order),
+                            "{order:?} pos {pos} n {n}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn emit_bits_matches_the_bitwise_reference_at_every_offset_and_width() {
+        let mut state = 0xD1B5_4A32_D192_ED03;
+        for _ in 0..8 {
+            let value = u128::from(noise(&mut state)) << 64 | u128::from(noise(&mut state));
+            for order in [BitOrder::Msb, BitOrder::Lsb] {
+                for bit_pos in 0..24 {
+                    for n in 0..=128 {
+                        // Appending: the buffer ends in the cursor's byte, whose unwritten
+                        // bits are zero. Overwriting: the bytes exist and hold noise, which
+                        // a write ORs into and must otherwise leave alone.
+                        let mut appended = vec![0xFF; bit_pos / 8];
+                        if bit_pos % 8 != 0 {
+                            appended.push(match order {
+                                BitOrder::Msb => 0xFF << (8 - bit_pos % 8),
+                                BitOrder::Lsb => 0xFF >> (8 - bit_pos % 8),
+                            });
+                        }
+                        let mut overwritten = appended.clone();
+                        while overwritten.len() < 20 {
+                            overwritten.push(noise(&mut state).to_le_bytes()[0]);
+                        }
+                        for start in [appended, overwritten] {
+                            let (mut fast, mut reference) = (start.clone(), start);
+                            emit_bits(&mut fast, bit_pos, value, n, order);
+                            emit_bits_bitwise(&mut reference, bit_pos, value, n, order);
+                            assert_eq!(fast, reference, "{order:?} bit_pos {bit_pos} n {n}");
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn writers_stay_send_so_an_encode_can_move_across_threads() {

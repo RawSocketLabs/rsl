@@ -1,9 +1,9 @@
-//! Codec throughput: encode/decode through the native bit codec, over two shapes —
-//! a **DMR burst** (`108|48|108` bits, fully unaligned: the general per-bit path)
-//! and a **byte-aligned packet** (whole-byte fields + a `[u8; N]` payload: the
-//! byte-aligned fast path, which copies whole bytes instead of shifting per bit).
+//! Codec throughput: encode/decode through the native bit codec, over three shapes —
+//! a **DMR burst** (`108|48|108` bits, fully unaligned: the wide unaligned path), a
+//! **byte-aligned packet** (whole-byte fields + a `[u8; N]` payload: the byte-aligned fast
+//! path), and a **sub-byte run** (fields of 1 to 7 bits in both bit orders: the narrow path).
 
-use bnb::{BitDecode, BitEncode, BitEnum, u4, u48, u108};
+use bnb::{BitDecode, BitEncode, BitEnum, u1, u2, u3, u4, u5, u6, u7, u48, u108};
 use criterion::{Criterion, criterion_group};
 use std::hint::black_box;
 
@@ -84,6 +84,57 @@ fn bench_byte_aligned(c: &mut Criterion) {
     });
     g.bench_function("decode", |b| {
         b.iter(|| Packet::decode_exact(black_box(&bytes)).unwrap());
+    });
+    g.finish();
+}
+
+/// Eighteen fields of one to seven bits (72 bits): flag-and-nibble headers, where every
+/// read and write is narrower than a byte and most straddle a byte boundary.
+macro_rules! sub_byte_run {
+    ($name:ident $(, $order:meta)?) => {
+        #[derive(BitDecode, BitEncode, Copy, Clone)]
+        $(#[$order])?
+        struct $name {
+            a: u1,
+            b: u7,
+            c: u3,
+            d: u5,
+            e: u2,
+            f: u6,
+            g: u4,
+            h: u4,
+            i: u5,
+            j: u3,
+            k: u7,
+            l: u1,
+            m: u6,
+            n: u2,
+            o: u3,
+            p: u3,
+            q: u6,
+            r: u4,
+        }
+    };
+}
+sub_byte_run!(SubByteMsb);
+sub_byte_run!(SubByteLsb, bit_stream(bits = lsb));
+
+fn bench_sub_byte(c: &mut Criterion) {
+    let bytes = [0xA5, 0x3C, 0x96, 0x0F, 0xF0, 0x5A, 0xC3, 0x69, 0x81];
+    let mut g = c.benchmark_group("sub_byte");
+    let msb = SubByteMsb::decode_exact(&bytes).unwrap();
+    g.bench_function("msb_encode", |b| {
+        b.iter(|| black_box(&msb).to_bytes().unwrap());
+    });
+    g.bench_function("msb_decode", |b| {
+        b.iter(|| SubByteMsb::decode_exact(black_box(&bytes)).unwrap());
+    });
+    let lsb = SubByteLsb::decode_exact(&bytes).unwrap();
+    g.bench_function("lsb_encode", |b| {
+        b.iter(|| black_box(&lsb).to_bytes().unwrap());
+    });
+    g.bench_function("lsb_decode", |b| {
+        b.iter(|| SubByteLsb::decode_exact(black_box(&bytes)).unwrap());
     });
     g.finish();
 }
@@ -202,17 +253,22 @@ fn probe_bytes(valid: bool) {
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = bench_codec, bench_byte_aligned, bench_dispatch
+    targets = bench_codec, bench_byte_aligned, bench_sub_byte, bench_dispatch
 }
 
 /// Fixed-work buffered probe for `perf stat` instruction counts, entered only with
-/// `BNB_DISPATCH_PROBE=buffered`: 1,000,000 whole-frame drains of 16 messages each.
+/// `BNB_DISPATCH_PROBE=buffered`: 1,000,000 drains of 16 messages each, fed whole frames,
+/// or `BNB_DISPATCH_PROBE_CHUNK` bytes at a time (1 makes four of every five attempts fail).
 #[inline(never)]
 fn probe_buffered() {
+    let chunk = std::env::var("BNB_DISPATCH_PROBE_CHUNK")
+        .ok()
+        .and_then(|chunk| chunk.parse().ok())
+        .unwrap_or(5);
     let corpus = [1, 0, 0, 0, 7].repeat(16);
     let mut buffer = bnb::BitBuf::bounded(80);
     for _ in 0..1_000_000 {
-        drain(&mut buffer, black_box(&corpus), 5);
+        drain(&mut buffer, black_box(&corpus), chunk);
     }
 }
 
