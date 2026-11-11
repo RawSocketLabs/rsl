@@ -250,10 +250,47 @@ fn probe_bytes(valid: bool) {
     }
 }
 
+/// Eight byte-string magics of mixed length (two to six bytes) with distinct first bytes:
+/// dispatch tries them in declaration order, so the last variant pays for seven misses.
+#[bnb::bin(big)]
+enum MixedMagic {
+    #[bin(magic = b"AB")]
+    First(u32),
+    #[bin(magic = b"CDE")]
+    Second(u32),
+    #[bin(magic = b"FGHI")]
+    Third(u32),
+    #[bin(magic = b"JK")]
+    Fourth(u32),
+    #[bin(magic = b"LMNOP")]
+    Fifth(u32),
+    #[bin(magic = b"QRS")]
+    Sixth(u32),
+    #[bin(magic = b"TUVWXY")]
+    Seventh(u32),
+    #[bin(magic = b"Z0")]
+    Eighth(u32),
+}
+
+/// Mixed-width byte-string dispatch from a slice: the first declared variant against the
+/// eighth. Slice only: a second `BitBuf` user in this executable changes how the buffered
+/// probe below is inlined, and with it the instruction counts it exists to compare.
+fn bench_mixed_magic(c: &mut Criterion) {
+    let mut group = c.benchmark_group("mixed_magic");
+    let first = &b"AB\0\0\0\x07"[..];
+    let eighth = &b"Z0\0\0\0\x07"[..];
+    for (name, bytes) in [("slice_first", first), ("slice_eighth", eighth)] {
+        group.bench_function(name, |b| {
+            b.iter(|| black_box(MixedMagic::decode_exact(black_box(bytes))));
+        });
+    }
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = bench_codec, bench_byte_aligned, bench_sub_byte, bench_dispatch
+    targets = bench_codec, bench_byte_aligned, bench_sub_byte, bench_dispatch, bench_mixed_magic
 }
 
 /// Fixed-work buffered probe for `perf stat` instruction counts, entered only with
