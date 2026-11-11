@@ -1450,8 +1450,13 @@ pub fn bnb::framing::BinCodec<T>::decode_eof(&mut self, &mut bytes::bytes_mut::B
 impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::framing::BinCodec<T>
 pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
 pub fn bnb::framing::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
+impl<T> core::clone::Clone for bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::clone(&self) -> Self
 impl<T> core::default::Default for bnb::framing::BinCodec<T>
 pub fn bnb::framing::BinCodec<T>::default() -> Self
+impl<T> core::fmt::Debug for bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T> core::marker::Copy for bnb::framing::BinCodec<T>
 impl<T> core::marker::Freeze for bnb::framing::BinCodec<T>
 impl<T> core::marker::Send for bnb::framing::BinCodec<T> where T: core::marker::Send
 impl<T> core::marker::Sync for bnb::framing::BinCodec<T> where T: core::marker::Sync
@@ -1467,12 +1472,18 @@ pub fn bnb::framing::BinCodec<T>::try_from(U) -> core::result::Result<T, <T as c
 impl<T, U> core::convert::TryInto<U> for bnb::framing::BinCodec<T> where U: core::convert::TryFrom<T>
 pub type bnb::framing::BinCodec<T>::Error = <U as core::convert::TryFrom<T>>::Error
 pub fn bnb::framing::BinCodec<T>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::framing::BinCodec<T> where T: core::clone::Clone
+pub type bnb::framing::BinCodec<T>::Owned = T
+pub fn bnb::framing::BinCodec<T>::clone_into(&self, &mut T)
+pub fn bnb::framing::BinCodec<T>::to_owned(&self) -> T
 impl<T> core::any::Any for bnb::framing::BinCodec<T> where T: 'static + ?core::marker::Sized
 pub fn bnb::framing::BinCodec<T>::type_id(&self) -> core::any::TypeId
 impl<T> core::borrow::Borrow<T> for bnb::framing::BinCodec<T> where T: ?core::marker::Sized
 pub fn bnb::framing::BinCodec<T>::borrow(&self) -> &T
 impl<T> core::borrow::BorrowMut<T> for bnb::framing::BinCodec<T> where T: ?core::marker::Sized
 pub fn bnb::framing::BinCodec<T>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::framing::BinCodec<T> where T: core::clone::Clone
+pub unsafe fn bnb::framing::BinCodec<T>::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for bnb::framing::BinCodec<T>
 pub fn bnb::framing::BinCodec<T>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::framing::BinCodec<T>
@@ -2505,8 +2516,13 @@ pub fn bnb::framing::BinCodec<T>::decode_eof(&mut self, &mut bytes::bytes_mut::B
 impl<T: bnb::bitstream::BitEncode> tokio_util::codec::encoder::Encoder<T> for bnb::framing::BinCodec<T>
 pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
 pub fn bnb::framing::BinCodec<T>::encode(&mut self, T, &mut bytes::bytes_mut::BytesMut) -> core::result::Result<(), std::io::error::Error>
+impl<T> core::clone::Clone for bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::clone(&self) -> Self
 impl<T> core::default::Default for bnb::framing::BinCodec<T>
 pub fn bnb::framing::BinCodec<T>::default() -> Self
+impl<T> core::fmt::Debug for bnb::framing::BinCodec<T>
+pub fn bnb::framing::BinCodec<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T> core::marker::Copy for bnb::framing::BinCodec<T>
 impl<T> core::marker::Freeze for bnb::framing::BinCodec<T>
 impl<T> core::marker::Send for bnb::framing::BinCodec<T> where T: core::marker::Send
 impl<T> core::marker::Sync for bnb::framing::BinCodec<T> where T: core::marker::Sync
@@ -2522,12 +2538,18 @@ pub fn bnb::framing::BinCodec<T>::try_from(U) -> core::result::Result<T, <T as c
 impl<T, U> core::convert::TryInto<U> for bnb::framing::BinCodec<T> where U: core::convert::TryFrom<T>
 pub type bnb::framing::BinCodec<T>::Error = <U as core::convert::TryFrom<T>>::Error
 pub fn bnb::framing::BinCodec<T>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for bnb::framing::BinCodec<T> where T: core::clone::Clone
+pub type bnb::framing::BinCodec<T>::Owned = T
+pub fn bnb::framing::BinCodec<T>::clone_into(&self, &mut T)
+pub fn bnb::framing::BinCodec<T>::to_owned(&self) -> T
 impl<T> core::any::Any for bnb::framing::BinCodec<T> where T: 'static + ?core::marker::Sized
 pub fn bnb::framing::BinCodec<T>::type_id(&self) -> core::any::TypeId
 impl<T> core::borrow::Borrow<T> for bnb::framing::BinCodec<T> where T: ?core::marker::Sized
 pub fn bnb::framing::BinCodec<T>::borrow(&self) -> &T
 impl<T> core::borrow::BorrowMut<T> for bnb::framing::BinCodec<T> where T: ?core::marker::Sized
 pub fn bnb::framing::BinCodec<T>::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for bnb::framing::BinCodec<T> where T: core::clone::Clone
+pub unsafe fn bnb::framing::BinCodec<T>::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for bnb::framing::BinCodec<T>
 pub fn bnb::framing::BinCodec<T>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::framing::BinCodec<T>

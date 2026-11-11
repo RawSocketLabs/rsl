@@ -44,6 +44,7 @@
 use crate::bitstream::encode_to_vec;
 use crate::{BitDecode, BitEncode};
 use bytes::{Buf, BytesMut};
+use core::fmt;
 use core::marker::PhantomData;
 use std::io;
 use tokio_util::codec::{Decoder, Encoder};
@@ -63,6 +64,22 @@ impl<T> BinCodec<T> {
 impl<T> Default for BinCodec<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// Hand-written: a derive would demand the same trait of the message type `T`, which the
+// stateless codec never stores.
+impl<T> Clone for BinCodec<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for BinCodec<T> {}
+
+impl<T> fmt::Debug for BinCodec<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("BinCodec")
     }
 }
 
@@ -120,6 +137,15 @@ mod component {
     use bnb::bin;
     use bytes::BytesMut;
     use tokio_util::codec::{Decoder, Encoder};
+
+    #[test]
+    fn the_codec_is_copy_and_debug_whatever_the_message_type_is() {
+        // A message type with none of these traits must not take them away from its codec.
+        struct Opaque;
+        let codec = BinCodec::<Opaque>::new();
+        let copy = codec;
+        assert_eq!(format!("{codec:?} {copy:?}"), "BinCodec BinCodec");
+    }
 
     #[test]
     fn padded_subbyte_frames_consume_the_whole_final_byte() {
