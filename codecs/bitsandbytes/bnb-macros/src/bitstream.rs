@@ -245,7 +245,7 @@ fn single_generic<'a>(ty: &'a syn::Type, wrapper: &str) -> Option<&'a syn::Type>
 }
 
 /// Parsed field-level `#[br(...)]` directives.
-#[derive(Default)]
+#[derive(Clone, Default)]
 #[allow(clippy::struct_excessive_bools)] // Independent presence flags in the field grammar.
 struct FieldBr {
     /// `count = <expr>` — element count for a `Vec<T>` (may name an earlier field).
@@ -1135,6 +1135,9 @@ struct WriteSite<'a> {
     variant: bool,
     /// The stored (non-`temp`) fields, for resolving a `ctx { … }` pass.
     stored: &'a [&'a Ident],
+    /// Every field with its directives, in declaration order — for a `bytes(<sibling>)`
+    /// probe, which replays the sibling's own write.
+    fields: &'a [(&'a syn::Field, &'a FieldBr)],
 }
 
 impl WriteSite<'_> {
@@ -1188,14 +1191,75 @@ fn field_write_stmt(
 ) -> syn::Result<TokenStream2> {
     let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
     let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
-    // A `restore_position` field is a read-side peek (it overlaps later data), so it
-    // is not written — the overlapping field emits those bytes.
-    let core = if br.restore_position {
-        quote!()
-    } else {
-        field_write_core(f, br, site, spec)?
-    };
+    let core = field_write_core(f, br, site, spec)?;
     Ok(quote!(#pre #core #post))
+}
+
+/// The encoded byte length of the sibling `source`, measured where the field `at` (the
+/// `auto_len` length, or the field holding it) is written: `source`'s **own** write statement
+/// run against a scratch sink, so whatever shapes its bytes (`write_with`, `bw(map)`, `ctx`,
+/// `if`, a `Vec`, a `count_prefix`) shapes the measure identically.
+///
+/// The probe runs before the fields after `at` are written, so it first binds the `temp`
+/// values declared between `at` and `source` (a tag in a length-type-value layout, say) for
+/// the source's write to read, exactly as the real encode will have by then.
+fn bytes_probe(
+    at: &Ident,
+    source: &Ident,
+    site: WriteSite<'_>,
+    spec: bool,
+) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
+    let position = |id: &Ident| {
+        site.fields
+            .iter()
+            .position(|(f, _)| f.ident.as_ref() == Some(id))
+    };
+    let Some(index) = position(source) else {
+        return Err(syn::Error::new_spanned(
+            source,
+            format!("`auto_len` measures `{source}`, which is not a field of this message"),
+        ));
+    };
+    let (f, br) = site.fields[index];
+    // A `count_prefix` source is two wire fields, the injected count and the elements; the
+    // measure covers both, so the count's own write is replayed too.
+    let prefix_id = format_ident!("__bnb_count_{}", source);
+    let prefix_write = match position(&prefix_id) {
+        Some(prefix) => {
+            let (f, br) = site.fields[prefix];
+            field_write_core(f, br, site, spec)?
+        }
+        None => quote!(),
+    };
+    let between = site
+        .fields
+        .get(position(at).map_or(index, |at| at + 1)..index)
+        .unwrap_or(&[]);
+    let temps = between
+        .iter()
+        .filter(|(f, _)| f.ident.as_ref() != Some(&prefix_id))
+        .filter_map(|(f, br)| {
+            let calc = br.calc.as_ref().filter(|_| br.temp)?;
+            let (id, ty) = (f.ident.as_ref()?, &f.ty);
+            Some(quote!(let #id: #ty = #calc;))
+        });
+    // A source that is itself an `auto_len` length is probed as stored, so a chained rule
+    // keeps failing loudly on an unresolved `Auto` (and two lengths cannot recurse).
+    let mut stored = br.clone();
+    stored.auto_len = None;
+    let write = field_write_core(f, &stored, site, spec)?;
+    Ok(quote! {{
+        // A probe encode: the byte length is independent of the writer's order.
+        let mut __bnb_probe = #bnb::__private::BitWriter::new();
+        {
+            let __bnb_w = &mut __bnb_probe;
+            #(#temps)*
+            #prefix_write
+            #write
+        }
+        __bnb_probe.bit_len().div_ceil(8)
+    }})
 }
 
 /// The core encode statement (without positioning) — the single write generator for struct
@@ -1212,6 +1276,11 @@ fn field_write_core(
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
     let (place, by_ref, value) = (site.place(id), site.by_ref(id), site.value(id));
+    // A `restore_position` field is a read-side peek (it overlaps later data), so it
+    // is not written — the overlapping field emits those bytes.
+    if br.restore_position {
+        return Ok(quote!());
+    }
     // `#[reserved]` on the **canonical** path: write the spec value (type zero, or the
     // `reserved_with` expression). On the verbatim (default) path a reserved field falls
     // through and writes its stored value like any field.
@@ -1295,16 +1364,7 @@ fn field_write_core(
                 let source = site.place(field);
                 quote!(#source.len())
             }
-            AutoTarget::Bytes(field) => {
-                let source = site.by_ref(field);
-                quote! {{
-                // A probe encode: the byte length is independent of the writer's order.
-                let mut __probe = #bnb::__private::BitWriter::new();
-                #bnb::__private::BitEncode::bit_encode(#source, &mut __probe)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
-                __probe.bit_len().div_ceil(8)
-                }}
-            }
+            AutoTarget::Bytes(field) => bytes_probe(id, field, site, spec)?,
         };
         // Only an `Auto` value computes the measure (a `bytes(x)` probe encode is not
         // free); a `Set(n)` override is written verbatim, skipping the measure entirely.
@@ -1739,28 +1799,24 @@ fn field_write_stmt_auto(
     }
     let bnb = crate::bnb_path();
     let ty = &f.ty;
-    let fills = targeting.iter().map(|s| {
+    let mut fills = Vec::new();
+    for s in targeting {
         let nested = &s.nested;
         let source = &s.source;
         let measure = if s.kind == "bytes" {
-            quote! {{
-                let mut __probe = #bnb::__private::BitWriter::new();
-                #bnb::__private::BitEncode::bit_encode(&self.#source, &mut __probe)
-                    .map_err(|e| e.in_field(::core::stringify!(#nested)))?;
-                __probe.bit_len().div_ceil(8)
-            }}
+            bytes_probe(id, source, site, spec)?
         } else {
             quote!(self.#source.len())
         };
         // Only an `Auto` nested value computes the measure (a `bytes` probe isn't free); a
         // `Set(n)` override is kept verbatim.
-        quote! {
+        fills.push(quote! {
             if #bnb::__private::WireLen::is_auto(&__auto.#nested) {
                 __auto.#nested = __auto.#nested.resolve_count(#measure)
                     .map_err(|e| e.in_field(::core::stringify!(#nested)))?;
             }
-        }
-    });
+        });
+    }
     // Preserve the field's positioning (the decode side applies it too — dropping it here
     // would desync the streams).
     let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
@@ -1846,9 +1902,11 @@ fn gen_encode(
         .filter(|(_, br)| !br.temp)
         .map(|(f, _)| f.ident.as_ref().expect("named field"))
         .collect();
+    let all: Vec<(&syn::Field, &FieldBr)> = fields.named.iter().zip(&brs).collect();
     let site = WriteSite {
         variant: false,
         stored: &field_set,
+        fields: &all,
     };
     let writes = fields
         .named
@@ -3819,10 +3877,20 @@ fn variant_field_codec(
     }
 
     // An enum has no canonical encode, so every variant write is the verbatim pass.
+    // Each field is named like its match-arm binding, so the shared generator addresses
+    // that local.
+    let mut named = Vec::new();
+    for (f, id) in v.fields.iter().zip(&idents) {
+        let mut nf = f.clone();
+        nf.ident = Some(id.clone());
+        named.push((nf, parse_field_br(f)?));
+    }
+    let all: Vec<(&syn::Field, &FieldBr)> = named.iter().map(|(f, br)| (f, br)).collect();
     let stored: Vec<&Ident> = stored_idents.iter().collect();
     let site = WriteSite {
         variant: true,
         stored: &stored,
+        fields: &all,
     };
     let mut writes = Vec::new();
     for (i, f) in v.fields.iter().enumerate() {
@@ -3833,10 +3901,8 @@ fn variant_field_codec(
         {
             continue; // the captured discriminant — the dispatch emits it
         }
-        // Named like its match-arm binding, so the shared generator addresses that local.
-        let mut nf = f.clone();
-        nf.ident = Some(idents[i].clone());
-        writes.push(field_write_stmt(&nf, &parse_field_br(f)?, site, false)?);
+        let (nf, br) = all[i];
+        writes.push(field_write_stmt(nf, br, site, false)?);
     }
 
     Ok((reads, path, writes))

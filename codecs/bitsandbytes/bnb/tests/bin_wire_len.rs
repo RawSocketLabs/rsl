@@ -4,7 +4,7 @@
 
 mod macro_ {
     use bnb::prelude::*; // `.bytes()` positioning helper for the `pad_before` test
-    use bnb::{WireLen, bin};
+    use bnb::{BitError, Sink, Source, WireLen, bin};
 
     // Element-count prefix: `len` auto-derives from `items.len()`.
     #[bin(big)]
@@ -58,8 +58,7 @@ mod macro_ {
 
     // Byte-length prefix: `nbytes` auto-derives from the *encoded byte length* of a nested
     // variable-length message (its own `count_prefix` makes its size vary) — the real
-    // `bytes(x)` case (DNS `rdlength` over `RData`). `bytes` requires the target to impl
-    // `BitEncode` (a nested message/leaf, not a bare `Vec`).
+    // `bytes(x)` case (DNS `rdlength` over `RData`).
     #[bin(big)]
     #[derive(Debug, PartialEq)]
     struct Inner {
@@ -205,5 +204,300 @@ mod macro_ {
         let wire = m.to_bytes().unwrap();
         assert_eq!(&wire[2..4], &[0x00, 99], "the forged qdcount is written");
         assert_eq!(&wire[4..6], &[0x00, 1], "ancount still auto-derives");
+    }
+
+    // `bytes(x)` measures `x` with `x`'s **own** write statement, so the length always equals
+    // the bytes actually written — whatever directive shapes them.
+
+    // A custom codec that is wider than the field type: a 2-byte marker, then the `u32`.
+    fn parse_marked<S: Source>(r: &mut S) -> Result<u32, BitError> {
+        let _marker: u16 = r.read()?;
+        r.read()
+    }
+
+    #[allow(clippy::trivially_copy_pass_by_ref)] // write_with requires a borrowed field.
+    fn write_marked<K: Sink>(v: &u32, w: &mut K) -> Result<(), BitError> {
+        w.write(0xCAFE_u16)?;
+        w.write(*v)
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    struct CustomBody {
+        #[bw(auto_len = bytes(body))]
+        len: WireLen<u8>,
+        #[br(parse_with = parse_marked)]
+        #[bw(write_with = write_marked)]
+        body: u32,
+    }
+
+    #[test]
+    fn bytes_measures_a_write_with_source_as_written() {
+        let c = CustomBody {
+            len: WireLen::auto(),
+            body: 7,
+        };
+        let wire = c.to_bytes().unwrap();
+        assert_eq!(wire, [6, 0xCA, 0xFE, 0, 0, 0, 7]);
+        assert_eq!(usize::from(wire[0]), wire.len() - 1);
+
+        let back = CustomBody::decode_exact(&wire).unwrap();
+        assert_eq!(back.len, WireLen::set(6));
+        assert_eq!(back.to_bytes().unwrap(), wire);
+    }
+
+    // The shipped varint codec: one byte on the wire for a small `u32`, not four.
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    struct VarintBody {
+        #[bw(auto_len = bytes(size))]
+        len: WireLen<u8>,
+        #[br(parse_with = bnb::codecs::leb128::parse)]
+        #[bw(write_with = bnb::codecs::leb128::write)]
+        size: u32,
+    }
+
+    #[test]
+    fn bytes_measures_a_leb128_source_as_written() {
+        for (size, body) in [(5_u32, &[0x05][..]), (300, &[0xAC, 0x02][..])] {
+            let v = VarintBody {
+                len: WireLen::auto(),
+                size,
+            };
+            let wire = v.to_bytes().unwrap();
+            assert_eq!(usize::from(wire[0]), body.len());
+            assert_eq!(&wire[1..], body);
+
+            let back = VarintBody::decode_exact(&wire).unwrap();
+            assert_eq!(back.size, size);
+            assert_eq!(back.to_bytes().unwrap(), wire);
+        }
+    }
+
+    // `bw(map)`: the wire repr (`u16`) is narrower than the field type (`u32`).
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    struct MappedBody {
+        #[bw(auto_len = bytes(value))]
+        len: WireLen<u8>,
+        #[br(map = |raw: u16| u32::from(raw))]
+        #[bw(map = |v: &u32| u16::try_from(*v).unwrap())]
+        value: u32,
+    }
+
+    #[test]
+    fn bytes_measures_a_bw_map_source_as_written() {
+        let m = MappedBody {
+            len: WireLen::auto(),
+            value: 0x0102,
+        };
+        let wire = m.to_bytes().unwrap();
+        assert_eq!(wire, [2, 0x01, 0x02]);
+
+        let back = MappedBody::decode_exact(&wire).unwrap();
+        assert_eq!(back.value, 0x0102);
+        assert_eq!(back.to_bytes().unwrap(), wire);
+    }
+
+    // A `ctx` source is measured through its `ctx { … }` pass (here a `temp` computed
+    // before the length is written).
+    #[bin(big, ctx(n: u8))]
+    #[derive(Debug, PartialEq)]
+    struct Blob {
+        #[br(count = n)]
+        bytes: Vec<u8>,
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    struct CtxBody {
+        #[br(temp)]
+        #[bw(calc = u8::try_from(self.body.bytes.len()).unwrap())]
+        n: u8,
+        #[bw(auto_len = bytes(body))]
+        len: WireLen<u8>,
+        #[br(ctx { n })]
+        body: Blob,
+    }
+
+    #[test]
+    fn bytes_measures_a_ctx_source_as_written() {
+        let c = CtxBody {
+            len: WireLen::auto(),
+            body: Blob {
+                bytes: vec![7, 8, 9],
+            },
+        };
+        let wire = c.to_bytes().unwrap();
+        assert_eq!(wire, [3, 3, 7, 8, 9]);
+
+        let back = CtxBody::decode_exact(&wire).unwrap();
+        assert_eq!(back.body, c.body);
+        assert_eq!(back.to_bytes().unwrap(), wire);
+    }
+
+    // The cross-struct rule probes the same way.
+    #[bin(big)]
+    #[derive(Clone, Debug, PartialEq)]
+    struct LenHdr {
+        len: WireLen<u8>,
+    }
+
+    #[bin(big, auto_len(hdr.len = bytes(body)))]
+    #[derive(Debug, PartialEq)]
+    struct CrossCustom {
+        hdr: LenHdr,
+        #[br(parse_with = parse_marked)]
+        #[bw(write_with = write_marked)]
+        body: u32,
+    }
+
+    #[test]
+    fn cross_struct_bytes_measures_a_write_with_source_as_written() {
+        let c = CrossCustom {
+            hdr: LenHdr {
+                len: WireLen::auto(),
+            },
+            body: 7,
+        };
+        let wire = c.to_bytes().unwrap();
+        assert_eq!(wire, [6, 0xCA, 0xFE, 0, 0, 0, 7]);
+
+        let back = CrossCustom::decode_exact(&wire).unwrap();
+        assert_eq!(back.hdr.len, WireLen::set(6));
+        assert_eq!(back.to_bytes().unwrap(), wire);
+    }
+
+    // A chained rule — the measured sibling is itself an `auto_len` length — is probed as
+    // stored: an unresolved `Auto` there is an error, never a guessed length.
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    struct Chained {
+        #[bw(auto_len = bytes(inner))]
+        outer: WireLen<u8>,
+        #[bw(auto_len = count(items))]
+        inner: WireLen<u16>,
+        #[br(count = inner.to_count())]
+        items: Vec<u8>,
+    }
+
+    #[test]
+    fn chained_auto_len_fails_loudly_on_an_unresolved_source() {
+        let unresolved = Chained {
+            outer: WireLen::auto(),
+            inner: WireLen::auto(),
+            items: vec![9],
+        };
+        assert!(unresolved.to_bytes().is_err());
+
+        let resolved = Chained {
+            outer: WireLen::auto(),
+            inner: WireLen::set(1),
+            items: vec![9],
+        };
+        assert_eq!(resolved.to_bytes().unwrap(), [2, 0x00, 0x01, 9]);
+    }
+
+    // Length, type, value: the tag is a `temp` computed *after* the length it sits behind,
+    // and the body's `ctx` reads it. The probe binds the tag itself, as the real encode will.
+    #[bin(big, ctx(kind: u8))]
+    #[derive(Debug, PartialEq)]
+    struct TaggedBody {
+        #[br(count = kind)]
+        data: Vec<u8>,
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    struct LengthTypeValue {
+        #[bw(auto_len = bytes(body))]
+        len: WireLen<u8>,
+        #[br(temp)]
+        #[bw(calc = u8::try_from(self.body.data.len()).unwrap())]
+        kind: u8,
+        #[br(ctx { kind })]
+        body: TaggedBody,
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum TaggedLengthTypeValue {
+        #[bin(magic = 1u8)]
+        Only {
+            #[bw(auto_len = bytes(body))]
+            len: WireLen<u8>,
+            #[br(temp)]
+            #[bw(calc = u8::try_from(body.data.len()).unwrap())]
+            kind: u8,
+            #[br(ctx { kind })]
+            body: TaggedBody,
+        },
+    }
+
+    #[test]
+    fn bytes_measures_a_source_whose_ctx_reads_a_temp_declared_after_the_length() {
+        let message = LengthTypeValue {
+            len: WireLen::auto(),
+            body: TaggedBody { data: vec![7, 8] },
+        };
+        let wire = message.to_bytes().unwrap();
+        assert_eq!(wire, [2, 2, 7, 8]);
+        assert_eq!(
+            LengthTypeValue::decode_exact(&wire).unwrap().body,
+            message.body
+        );
+
+        let variant = TaggedLengthTypeValue::Only {
+            len: WireLen::auto(),
+            body: TaggedBody { data: vec![7, 8] },
+        };
+        assert_eq!(variant.to_bytes().unwrap(), [1, 2, 2, 7, 8]);
+    }
+
+    // A `count_prefix` field is its prefix plus its elements on the wire; `bytes` of it
+    // covers both.
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    struct PrefixedBody {
+        #[bw(auto_len = bytes(items))]
+        len: WireLen<u8>,
+        #[brw(count_prefix = u16)]
+        items: Vec<u8>,
+    }
+
+    #[test]
+    fn bytes_of_a_count_prefix_source_includes_the_prefix() {
+        let message = PrefixedBody {
+            len: WireLen::auto(),
+            items: vec![7, 8, 9],
+        };
+        let wire = message.to_bytes().unwrap();
+        assert_eq!(wire, [5, 0, 3, 7, 8, 9]);
+        assert_eq!(
+            PrefixedBody::decode_exact(&wire).unwrap().items,
+            message.items
+        );
+    }
+
+    // The probe's own locals live under the reserved `__bnb_` prefix, so a field with an
+    // ordinary dunder name is still measured (it used to be shadowed by the probe writer).
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum ProbeNamed {
+        #[bin(magic = 1u8)]
+        Only {
+            #[bw(auto_len = bytes(__probe))]
+            len: WireLen<u8>,
+            __probe: u16,
+        },
+    }
+
+    #[test]
+    fn a_variant_source_named_like_a_probe_local_is_still_measured() {
+        let message = ProbeNamed::Only {
+            len: WireLen::auto(),
+            __probe: 7,
+        };
+        assert_eq!(message.to_bytes().unwrap(), [1, 2, 0, 7]);
     }
 }

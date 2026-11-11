@@ -1,0 +1,5 @@
+error: `auto_len` measures `bodi`, which is not a field of this message
+ --> tests/ui/bin_auto_len_bytes_source.rs:7:27
+  |
+7 |     #[bw(auto_len = bytes(bodi))]
+  |                           ^^^^
