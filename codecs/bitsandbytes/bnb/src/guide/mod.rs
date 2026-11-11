@@ -19,6 +19,7 @@
 //! 13. [`dual_use`] — compliant by default, deliberately violatable.
 //! 14. [`composition`] — how the pieces nest and size each other.
 //! 15. [`migrating`] — coming from `binrw` / `modular-bitfield` / `num_enum`.
+//! 16. [`upgrading`] — what changes in your code between `bnb` releases.
 //!
 //! # How the crate fits together
 //!
@@ -53,3 +54,4 @@ pub mod mapping;
 pub mod migrating;
 pub mod numbers;
 pub mod quick_start;
+pub mod upgrading;

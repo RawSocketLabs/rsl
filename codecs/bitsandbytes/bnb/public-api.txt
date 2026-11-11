@@ -1507,6 +1507,7 @@ pub mod bnb::guide::mapping
 pub mod bnb::guide::migrating
 pub mod bnb::guide::numbers
 pub mod bnb::guide::quick_start
+pub mod bnb::guide::upgrading
 pub mod bnb::int
 pub struct bnb::int::UInt<T, const N: usize>
 impl<const N: usize> bnb::UInt<u128, N>
