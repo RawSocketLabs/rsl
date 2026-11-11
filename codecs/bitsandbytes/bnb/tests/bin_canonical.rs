@@ -100,6 +100,48 @@ mod macro_ {
         assert_eq!(re, verbatim);
     }
 
+    /// A parent with no `reserved`/`calc` field of its own, wrapping one that has them.
+    #[bin(big)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct Envelope {
+        #[reserved]
+        rsv: u8, // spec value: 0
+        inner: Msg,
+    }
+
+    #[test]
+    fn canonical_form_covers_own_fields_and_leaves_nested_messages_as_stored() {
+        // The documented contract (DESIGN §5.2): canonicalization is per message, not deep.
+        let stale = Msg {
+            tag: u4::new(0xA),
+            rsv: u4::new(0xF),
+            check: 0x99,
+            payload: 0x10,
+        };
+        let envelope = Envelope {
+            rsv: 0x7F,
+            inner: stale.clone(),
+        };
+
+        // The parent's own reserved byte is normalized; the child's bytes go out as stored.
+        assert_eq!(
+            envelope.to_canonical_bytes().unwrap(),
+            [0x00, 0xAF, 0x99, 0x10]
+        );
+        // The helpers report on the parent's own fields only.
+        assert_eq!(envelope.canonical_diff(), ["rsv"]);
+        let canonical = envelope.clone().to_canonical();
+        assert!(canonical.is_canonical());
+        assert_eq!(canonical.inner, stale);
+
+        // A fully canonical encoding comes from canonicalizing the child first.
+        let deep = Envelope {
+            inner: envelope.inner.to_canonical(),
+            ..envelope
+        };
+        assert_eq!(deep.to_canonical_bytes().unwrap(), [0x00, 0xA0, 0x11, 0x10]);
+    }
+
     #[test]
     fn struct_literal_constructs_from_all_stored_fields() {
         // A struct literal names every stored field (reserved + calc included) — the direct

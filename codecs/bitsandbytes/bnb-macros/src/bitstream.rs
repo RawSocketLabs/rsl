@@ -1902,8 +1902,10 @@ fn gen_encode(
             impl #name {
                 #[doc = "Encode the **canonical** form to a `Vec<u8>`: reserved fields written as their"]
                 #[doc = "spec value and `calc` fields recomputed (ignoring the stored values), so the"]
-                #[doc = "result is always spec-compliant. (`to_bytes` is verbatim — it writes exactly"]
-                #[doc = "what is stored.) To emit this form over a `std::io::Write`, encode the"]
+                #[doc = "result is spec-compliant for this message's own fields. (`to_bytes` is verbatim"]
+                #[doc = "— it writes exactly what is stored.) Nested messages and `Vec` elements are"]
+                #[doc = "written as stored: canonicalize them first if they carry `reserved`/`calc`"]
+                #[doc = "fields of their own. To emit this form over a `std::io::Write`, encode the"]
                 #[doc = "canonical copy: `value.to_canonical().encode(&mut w)`."]
                 pub fn to_canonical_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                     #bnb::__private::encode_to_vec_with(
@@ -1929,7 +1931,8 @@ fn gen_encode(
                     __d
                 }
 
-                #[doc = "Whether `self` is already in canonical form (no reserved/`calc` field differs)."]
+                #[doc = "Whether `self` is already in canonical form (none of its own reserved/`calc`"]
+                #[doc = "fields differs; nested messages are not inspected)."]
                 pub fn is_canonical(&self) -> bool {
                     self.canonical_diff().is_empty()
                 }

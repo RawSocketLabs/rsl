@@ -228,7 +228,12 @@ the union.
 A message has two **encode forms**. `to_bytes` is **verbatim** — exactly what's stored, so
 `decode → to_bytes` round-trips byte-for-byte and a deliberately-wrong field goes on the
 wire as-is (dual-use). `to_canonical_bytes` is **canonical** — `reserved` fields written as
-their spec value and `calc` fields recomputed, always spec-compliant. The two differ only
+their spec value and `calc` fields recomputed, spec-compliant for the message's own fields.
+Canonicalization is **per message, not deep**: a nested message or `Vec` element is written as
+stored, and the parent's `is_canonical`/`canonical_diff` do not inspect it (the macro cannot
+tell which field types are messages, and there is no in-memory canonicalization trait to
+forward to); canonicalize such a child first. Deep canonicalization is an open item for the
+1.0 API review ([`ROADMAP.md`](ROADMAP.md) §C). The two differ only
 when a message has a `reserved` or non-`temp` `calc` field (a `temp`+`calc` field is never
 stored, so it always recomputes and creates no gap), so `to_canonical_bytes` and the
 in-memory helpers `to_canonical`/`canonical_diff`/`is_canonical` are generated only then.

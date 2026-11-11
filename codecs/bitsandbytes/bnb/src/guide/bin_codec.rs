@@ -325,7 +325,9 @@
 //!   stay, a stored `calc` value is written as-is. This is the faithful inverse of `decode`:
 //!   `decode` then `to_bytes` is byte-for-byte identical.
 //! - **`to_canonical_bytes()` is canonical** — `reserved` fields are written as their spec
-//!   value and `calc` fields are recomputed, so the result is always spec-compliant.
+//!   value and `calc` fields are recomputed, so the message's own fields are spec-compliant.
+//!   Canonicalization is **per message**: a nested message or `Vec` element is written as
+//!   stored, so canonicalize a child that has `reserved`/`calc` fields of its own first.
 //!
 //! The two differ only when a message has a `reserved` or non-`temp` `calc` field — so
 //! `to_canonical_bytes` (and the three helpers below) are generated **only then**; otherwise

@@ -222,7 +222,8 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   are **verbatim**: they emit exactly what's stored (retained `reserved`, stored non-`temp`
   `calc`) — never silently rewriting the caller's bytes, and `decode → to_bytes` is
   byte-identical. `to_canonical_bytes` and `canonical_bit_encode` are **canonical**: reserved
-  → spec value, `calc` → recomputed, so the result is always spec-compliant. `canonical_bit_encode`
+  → spec value, `calc` → recomputed, so the message's **own** fields are spec-compliant (not deep:
+  a nested message or `Vec` element is written as stored — canonicalize it first). `canonical_bit_encode`
   is a **defaulted method on `BitEncode`** (`fn canonical_bit_encode(..) { self.bit_encode(..) }`),
   overridden by the derive **only** when a message has a `reserved` or non-`temp` `calc` field
   (else verbatim == canonical) — there is no separate `CanonicalEncode` trait. There is **no

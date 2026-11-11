@@ -321,7 +321,10 @@ blocks 1.0.
       encode-model parity** (#70 — collapses to a cheap delegating impl, since there's no carried mode
       to mirror) and the **serde-derive boundary on `reserved`/`calc` types** (serde derives now work,
       since there's no longer a non-`Serialize` injected field). Still to weigh before the freeze:
-      whether `canonical_diff` earns its slot. **Newer surface to
+      whether `canonical_diff` earns its slot, and whether canonicalization should be **deep**
+      (today it is per message: nested messages and `Vec` elements are written as stored and not
+      inspected by `is_canonical`; a deep form needs an in-memory canonicalization hook on
+      `BitEncode` and the helper surface on every message — `DESIGN.md` §5.2). **Newer surface to
       scrutinize:** the **two struct-mapping forms** (closures `map`/`bw_map` vs the conversion-trait
       `wire`/`try_wire`) deliver the same capability two ways — keep both or converge? — and the
       `BitBuf` bounded quartet (`bounded`/`push`/`grow`/`capacity` + `CapacityError`) is fresh
