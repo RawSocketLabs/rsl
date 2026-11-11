@@ -10,6 +10,94 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 
 [`bnb::guide`]: https://docs.rs/bitsandbytes/latest/bnb/guide/
 
+## 0.10.0 — whole-crate review (release candidate)
+
+- [x] The fixes, measurements and owner decisions of the 2026-11-10 review
+      ([`DESIGN.md` §19](DESIGN.md#19-whole-crate-review-fixes-0100-breaking)); what a user
+      changes is in [`bnb::guide::upgrading`](src/guide/upgrading.rs).
+- [x] Release qualification against 0.9.0 in major mode, with the reviewed API delta
+      (`api-delta-0.10-*.txt`: nothing removed).
+- [x] Out-of-tree consumer check: libsdr at `32467d37` builds with no source change against
+      the candidate (only its version requirement moves), every test outcome is identical
+      (758 + 160 + 24 + 782 + 187 across its five suites), and its standalone Full LC decode
+      consumer is 12–18% faster (clean 71.3 → 60.1 ns, message correction 106.1 → 87.4 ns,
+      parity correction 84.5 → 74.2 ns; ten alternating pinned runs, ranges do not overlap;
+      instructions −20.5%). Its end-to-end receiver benchmark does not move (53.99 → 53.63 ms,
+      overlapping).
+- [ ] Deliver: green `ci/circleci: rsl` on the branch, fast-forward `main`, the release-plz
+      version PR, archive verification and detached fuzz lockfile refresh per
+      [`docs/RELEASING.md`](../docs/RELEASING.md), publish.
+- [ ] After publication: `.github/ci/bnb.toml` back to `baseline = "0.10.0"`,
+      `release_type = "patch"`; libsdr moves its requirement from the 0.8.0 review pin to
+      `0.10.0`.
+
+## Next — 0.10.x additions, then the 0.11 error-type release
+
+Start when 0.10.0 is published. The 0.10.x items are additive (no source break) and ship as
+they are ready; 0.11.0 is one deliberate breaking release for the error types.
+
+### 0.10.x, in this order
+
+1. **Decode depth budget.** The one remaining way input can abort a process: a message type
+   that contains itself recurses natively to an input-chosen depth (`DESIGN.md` §11.4).
+   - Outcome: a nested decode past the limit returns a new `ErrorKind` (the enum is
+     `#[non_exhaustive]`, so this is additive) instead of overflowing the stack.
+   - To settle first, with a design review because it touches `Source`: where the counter
+     lives (a defaulted hook on `Source` entered by generated code, or a counter the generated
+     decoder threads itself); which decodes count (every nested `#[bin]` message, since the
+     macro cannot see indirect recursion, or only where a type can reach itself); the default
+     limit and how a caller changes it; that an incremental attempt restarts the count.
+   - Gate: the instruction probe unchanged for messages that do not nest, a measured cost for
+     those that do (`dmr_frame` nests), and a fuzz target over a recursive type that asserts
+     an error where today there is an abort.
+2. **A frame cap for `BinCodec`.** `BinCodec::with_max_frame(bytes)`: fail once more than
+   that is buffered and the message is still incomplete. Default unlimited, so existing code
+   is unchanged; the codec stays stateless (the cap is configuration).
+3. **Transport readers for read-only types.** `net::read_message`, `MessageStream` and
+   `BinCodec` require `BitEncode` only to learn the layout. Give them `_with` forms (layout
+   and context supplied) or bound them on the hidden `DecodeLayout` that 0.10 introduced, so a
+   `#[bin(read_only)]` type works through every transport.
+4. **Performance left open by §19:** the `incremental_envelope` cases (profile the
+   failing-attempt path; the cost is copies of the 80-byte error, so re-measure after 0.11
+   if that lands first); the runtime file split with `#[inline]` decisions on
+   `try_pull_with`/`decode_attempt` measured one at a time; a benchmark for direct
+   constant-width `read_bits`/`write_bits` loops before tuning them.
+5. **Verification debt:** `cargo mutants --in-diff` over the 0.9.0..0.10.0 runtime diff; the
+   unit suite on a 32-bit target; fuzz shapes not yet covered (LSB and little-endian layouts,
+   `parse_with` codecs, `LimitedSource`, `decode_prefix`, `BinCodec`, a recursive type); run
+   the examples' assertions in CI; pin the CI image's toolchain to `rust-toolchain.toml` so
+   trybuild snapshots cannot drift.
+
+### 0.11.0 — error types (breaking, once)
+
+Why one release: both changes below break `ErrorKind`, and §C already wants the error types
+reviewed before the 1.0 freeze. Facts at 0.10.0: `BitError` is 80 bytes (align 16) because
+`BadMagic` holds two `u128`; it derives `Clone`, `PartialEq` and `Eq`; `Convert { message:
+String }` is built at 12 sites in the runtime and macros and matched at 10 sites in this
+workspace (dns, rtltcp, socks).
+
+Decisions, one at a time, each written up before code:
+
+1. **What "typed" means for `Convert`.** (a) Split the conversions the crate itself raises
+   into their own variants (invalid UTF-8, width, count overflow, a failed `assert`, a
+   `validate` rejection, builder errors), keeping `Convert { message }` for a user's
+   `try_map`/`parse_with` error: matchable, still `Clone + Eq`, no allocation change, works
+   in `no_std`. (b) Carry the user's error as a source so `Error::source()` works: needs an
+   `Arc` (not available on targets without atomics) and gives up derived `Eq`. (c) Both, with
+   (b) behind `std`. Lean: (a), and (b) only on a consumer's request.
+2. **`BadMagic`'s size.** Box the pair (measured: 48 bytes, decoder frame 1784 → 1128 B, no
+   success-path change) or store what dispatch read as bytes with a length, which needs no
+   allocation on the error path. Measure both on the failing paths, where a smaller error
+   should also remove the store-forwarding stall found in §19.
+3. **Names for the variants 0.10.x adds** (depth, frame cap): choose them with decision 1 in
+   view so 0.11 does not rename them.
+4. **Whether `field` becomes a path** (the innermost field name today), only if a consumer
+   needs it.
+
+Process: design review of decisions 1 and 2 before implementation (a public type family
+changes); the semver gate in major mode with `api-delta-0.11-*.txt`; migrate the in-tree
+match sites; a 0.10 → 0.11 section in `guide::upgrading`; the libsdr check repeated.
+
 ## 0.8.0 — prefix decoding, bulk byte runs, bitfield `From`
 
 - [x] Stateless slice prefix decoding ([`DESIGN.md` §15](DESIGN.md#15-stateless-slice-prefix-decoding-080)),

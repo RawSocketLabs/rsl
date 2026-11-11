@@ -1797,10 +1797,18 @@ Run on the series as it stands before this record (2026-11-11, rustc 1.99.1):
   changed: `BitWriter::with_scratch`, both writers now `Send`).
 - Every regression test named above was seen to fail with its fix reverted or mutated by
   hand. `cargo mutants` was not re-run over the diff.
-- Not run at the time of writing: `scripts/ci-local.sh pre-push`, fuzz campaigns beyond
-  type-checking the targets, semver-checks, a 32-bit run of the unit suite (the library and
-  a probe of the pointer-sized conversions build and run for `i686-unknown-linux-musl`),
-  and libsdr's own benchmark against this series.
+- `scripts/ci-local.sh pre-push` on `f3ba0b34`: commitlint over the series, policy, and the
+  16 routine check jobs passed (the workspace job ran 1,484 tests).
+- `scripts/ci-local.sh release --product bitsandbytes` on `f3ba0b34`: 31 jobs passed
+  (MSRV, bare-metal `no_std`, public API, packaging, the bnb and socks suites, both bnb fuzz
+  targets, the SDR and network consumers); semver-checks failed in patch mode against 0.8.0
+  on `BinCodec` gaining `Copy`. The gate now runs against 0.9.0 in major mode with the
+  reviewed `api-delta-0.10-*.txt` (nothing removed), and passes.
+- libsdr at `32467d37` against `f3ba0b34`: no source change needed, identical test outcomes,
+  standalone Full LC decode 12–18% faster, receiver benchmark unchanged (ROADMAP, 0.10.0).
+- Not run: a 32-bit run of the unit suite (the library and a probe of the pointer-sized
+  conversions build and run for `i686-unknown-linux-musl`), `cargo mutants`, and fuzz
+  campaigns longer than the release tier's.
 
 ## Named context dispatch trial (2026-11-09)
 
