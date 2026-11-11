@@ -1126,14 +1126,64 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     }
 }
 
+/// Where an encode statement finds its message's fields: a struct through `self`, an enum
+/// variant through the locals its match arm binds (each a `&FieldTy`). The one seam between
+/// the struct and variant write paths — everything else in [`field_write_core`] is shared.
+#[derive(Clone, Copy)]
+struct WriteSite<'a> {
+    /// Whether this is an enum variant's match arm (else a struct's `self`).
+    variant: bool,
+    /// The stored (non-`temp`) fields, for resolving a `ctx { … }` pass.
+    stored: &'a [&'a Ident],
+}
+
+impl WriteSite<'_> {
+    /// The field as a method receiver: `self.f`, or the bound `f` (auto-deref'd).
+    fn place(self, id: &Ident) -> TokenStream2 {
+        if self.variant {
+            quote!(#id)
+        } else {
+            quote!(self.#id)
+        }
+    }
+
+    /// The field as a `&FieldTy`: `&self.f`, or the bound `f`.
+    fn by_ref(self, id: &Ident) -> TokenStream2 {
+        if self.variant {
+            quote!(#id)
+        } else {
+            quote!(&self.#id)
+        }
+    }
+
+    /// The (`Copy`) field by value: `self.f`, or `*f`.
+    fn value(self, id: &Ident) -> TokenStream2 {
+        if self.variant {
+            quote!(*#id)
+        } else {
+            quote!(self.#id)
+        }
+    }
+
+    /// The `ctx { … }` literal for a field of this message ([`ctx_literal`] or its
+    /// variant dual).
+    fn ctx_literal(self, ctx_ty: &TokenStream2, names: &[CtxArg]) -> TokenStream2 {
+        if self.variant {
+            ctx_literal_variant(ctx_ty, names, self.stored)
+        } else {
+            ctx_literal(ctx_ty, names, Some(self.stored))
+        }
+    }
+}
+
 /// The encode statement for one field, wrapped with any `pad_*`/`align_*`. `Vec<T>`
 /// writes every element; the count is implied by `len()` (a separate length field
-/// is the user's, often `calc`'d). `field_set` is the parent's field names, for
-/// resolving a `ctx { … }` pass.
+/// is the user's, often `calc`'d). `site` says how the message's fields are named
+/// (a struct's `self.f`, or an enum variant arm's bound `f`).
 fn field_write_stmt(
     f: &syn::Field,
     br: &FieldBr,
-    field_set: &[&Ident],
+    site: WriteSite<'_>,
     spec: bool,
 ) -> syn::Result<TokenStream2> {
     let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
@@ -1143,22 +1193,25 @@ fn field_write_stmt(
     let core = if br.restore_position {
         quote!()
     } else {
-        field_write_core(f, br, field_set, spec)?
+        field_write_core(f, br, site, spec)?
     };
     Ok(quote!(#pre #core #post))
 }
 
-/// The core encode statement (without positioning).
+/// The core encode statement (without positioning) — the single write generator for struct
+/// fields and enum-variant fields alike (`site` names the field values). `spec` selects the
+/// canonical pass; an enum has none, so its variants always pass `false`.
 #[allow(clippy::too_many_lines)] // One ordered dispatch over mutually exclusive wire directives.
 fn field_write_core(
     f: &syn::Field,
     br: &FieldBr,
-    field_set: &[&Ident],
+    site: WriteSite<'_>,
     spec: bool,
 ) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let id = f.ident.as_ref().expect("named field");
     let ty = &f.ty;
+    let (place, by_ref, value) = (site.place(id), site.by_ref(id), site.value(id));
     // `#[reserved]` on the **canonical** path: write the spec value (type zero, or the
     // `reserved_with` expression). On the verbatim (default) path a reserved field falls
     // through and writes its stored value like any field.
@@ -1205,7 +1258,7 @@ fn field_write_core(
             });
         }
         // Verbatim (default): write the stored value exactly as it is.
-        return Ok(quote!(#bnb::__private::Sink::write(__bnb_w, self.#id)
+        return Ok(quote!(#bnb::__private::Sink::write(__bnb_w, #value)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
     }
     // A `temp` field is never stored, so it cannot be written without a `calc`.
@@ -1219,13 +1272,13 @@ fn field_write_core(
     // needs the inverse `#[bw(map = …)]` to be encodable.
     if let Some(bw_map) = &br.bw_map {
         return Ok(
-            quote!(#bnb::__private::write_mapped(__bnb_w, &self.#id, #bw_map)
+            quote!(#bnb::__private::write_mapped(__bnb_w, #by_ref, #bw_map)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         );
     }
     // `write_with`: the escape hatch — a custom `f(&self.field, w) -> Result<()>`.
     if let Some(f) = &br.write_with {
-        return Ok(quote!((#f)(&self.#id, __bnb_w)
+        return Ok(quote!((#f)(#by_ref, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
     }
     // `auto_len = count(x)|bytes(x)`: a `WireLen<T>` field. `Set(n)` writes `n` verbatim
@@ -1238,22 +1291,28 @@ fn field_write_core(
     // preserve (like a `temp` `calc`), so deriving it on the verbatim path is correct.
     if let Some(target) = &br.auto_len {
         let measure = match target {
-            AutoTarget::Count(field) => quote!(self.#field.len()),
-            AutoTarget::Bytes(field) => quote! {{
+            AutoTarget::Count(field) => {
+                let source = site.place(field);
+                quote!(#source.len())
+            }
+            AutoTarget::Bytes(field) => {
+                let source = site.by_ref(field);
+                quote! {{
                 // A probe encode: the byte length is independent of the writer's order.
                 let mut __probe = #bnb::__private::BitWriter::new();
-                #bnb::__private::BitEncode::bit_encode(&self.#field, &mut __probe)
+                #bnb::__private::BitEncode::bit_encode(#source, &mut __probe)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
                 __probe.bit_len().div_ceil(8)
-            }},
+                }}
+            }
         };
         // Only an `Auto` value computes the measure (a `bytes(x)` probe encode is not
         // free); a `Set(n)` override is written verbatim, skipping the measure entirely.
         return Ok(quote! {
             {
-                let __resolved = match &self.#id {
-                    #bnb::__private::WireLen::Set(_) => ::core::clone::Clone::clone(&self.#id),
-                    #bnb::__private::WireLen::Auto => self.#id.resolve_count(#measure)
+                let __resolved = match #by_ref {
+                    #bnb::__private::WireLen::Set(_) => ::core::clone::Clone::clone(#by_ref),
+                    #bnb::__private::WireLen::Auto => #place.resolve_count(#measure)
                         .map_err(|e| e.in_field(::core::stringify!(#id)))?,
                 };
                 <#ty as #bnb::__private::BitEncode>::bit_encode(&__resolved, __bnb_w)
@@ -1282,7 +1341,7 @@ fn field_write_core(
         let write_inner = quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__v, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
         return Ok(quote! {
-            if let ::core::option::Option::Some(__v) = &self.#id {
+            if let ::core::option::Option::Some(__v) = #by_ref {
                 #write_inner
             }
         });
@@ -1292,32 +1351,32 @@ fn field_write_core(
             // Context-free: the element type's `encode_slice` (a byte run is one bulk write),
             // the dual of the `decode_vec` read path.
             return Ok(
-                quote!(<#elem as #bnb::__private::BitEncode>::encode_slice(&self.#id, __bnb_w)
+                quote!(<#elem as #bnb::__private::BitEncode>::encode_slice(#by_ref, __bnb_w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
             );
         };
         let elem_ctx = ctx_struct_ty(elem)?;
-        let lit = ctx_literal(&elem_ctx, names, Some(field_set));
+        let lit = site.ctx_literal(&elem_ctx, names);
         Ok(quote! {
-            for __e in &self.#id {
+            for __e in #by_ref {
                 <#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         })
     } else if let Some(names) = &br.ctx {
         let child_ctx = ctx_struct_ty(ty)?;
-        let lit = ctx_literal(&child_ctx, names, Some(field_set));
+        let lit = site.ctx_literal(&child_ctx, names);
         Ok(
-            quote!(<#ty as #bnb::EncodeWith<#child_ctx>>::encode_with(&self.#id, __bnb_w, #lit)
+            quote!(<#ty as #bnb::EncodeWith<#child_ctx>>::encode_with(#by_ref, __bnb_w, #lit)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         )
     } else if byte_array_len(f).is_some() {
-        Ok(quote!(#bnb::__private::write_byte_array(&self.#id, __bnb_w)
+        Ok(quote!(#bnb::__private::write_byte_array(#by_ref, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
     } else {
         // Uniform codec: a leaf or a nested message both encode via `BitEncode`.
         Ok(
-            quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(&self.#id, __bnb_w)
+            quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(#by_ref, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
         )
     }
@@ -1645,14 +1704,14 @@ fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
 fn field_write_stmt_auto(
     f: &syn::Field,
     br: &FieldBr,
-    field_set: &[&Ident],
+    site: WriteSite<'_>,
     spec: bool,
     auto_len: &[AutoLenSpec],
 ) -> syn::Result<TokenStream2> {
     let id = f.ident.as_ref().expect("named field");
     let targeting: Vec<&AutoLenSpec> = auto_len.iter().filter(|s| &s.field == id).collect();
     if targeting.is_empty() {
-        return field_write_stmt(f, br, field_set, spec);
+        return field_write_stmt(f, br, site, spec);
     }
     // An `auto_len` target is written via a clone-and-fill, which can't compose with a
     // codec-overriding directive on the same field (they'd be silently dropped, breaking the
@@ -1787,11 +1846,15 @@ fn gen_encode(
         .filter(|(_, br)| !br.temp)
         .map(|(f, _)| f.ident.as_ref().expect("named field"))
         .collect();
+    let site = WriteSite {
+        variant: false,
+        stored: &field_set,
+    };
     let writes = fields
         .named
         .iter()
         .zip(&brs)
-        .map(|(f, br)| field_write_stmt_auto(f, br, &field_set, false, &attrs.auto_len))
+        .map(|(f, br)| field_write_stmt_auto(f, br, site, false, &attrs.auto_len))
         .collect::<syn::Result<Vec<_>>>()?;
 
     // `ctx` is **decode-only** by default: if the generated encode body references a ctx
@@ -1854,7 +1917,7 @@ fn gen_encode(
             .named
             .iter()
             .zip(&brs)
-            .map(|(f, br)| field_write_stmt_auto(f, br, &field_set, true, &attrs.auto_len))
+            .map(|(f, br)| field_write_stmt_auto(f, br, site, true, &attrs.auto_len))
             .collect::<syn::Result<Vec<_>>>()?;
 
         // In-memory canonicalization helpers (`to_canonical`/`canonical_diff`/
@@ -3152,8 +3215,8 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
 // `tag` selector drawn from a `ctx` param (never on the wire), or a hybrid of the two;
 // each variant is a mini-struct whose fields reuse the `#[br]`/`#[bw]` grammar.
 // `#[catch_all]` preserves an unknown discriminant and its payload (dual-use). Decode
-// reuses `field_read_stmt` (it reads into locals, so it is variant-agnostic); encode needs
-// a local-based writer because the struct writer is `self.#id`-coupled.
+// reuses `field_read_stmt` (it reads into locals, so it is variant-agnostic); encode reuses
+// `field_write_stmt` with a variant `WriteSite` (the match-bound locals instead of `self`).
 // ---------------------------------------------------------------------------
 
 /// The bind idents for a variant's fields — the field's own ident (named) or a
@@ -3186,11 +3249,11 @@ fn variant_path_fields(
 /// a match-bound `&FieldTy`, so it is dereferenced (`*n`); a `temp` local or an enum
 /// `ctx` parameter is already a value (`n`). (The struct dual, [`ctx_literal`], uses
 /// `self.n` for stored fields instead.)
-fn ctx_literal_variant(ctx_ty: &TokenStream2, names: &[CtxArg], stored: &[Ident]) -> TokenStream2 {
+fn ctx_literal_variant(ctx_ty: &TokenStream2, names: &[CtxArg], stored: &[&Ident]) -> TokenStream2 {
     let inits = names.iter().map(|arg| {
         let n = &arg.name;
         let source = &arg.source;
-        if stored.contains(source) {
+        if stored.contains(&source) {
             quote!(#n: *#source)
         } else if n == source {
             quote!(#n)
@@ -3199,107 +3262,6 @@ fn ctx_literal_variant(ctx_ty: &TokenStream2, names: &[CtxArg], stored: &[Ident]
         }
     });
     quote!(#ctx_ty { #(#inits),* })
-}
-
-/// The encode statement for one variant field, addressing the **match-bound local**
-/// `id` (a `&FieldTy`) rather than `self.#id`. Mirrors [`field_write_core`] for the
-/// variant world: `calc`/`temp`/`ctx` resolve sibling names against `stored` (the
-/// arm's bound stored fields), which a variant `ctx` literal dereferences.
-fn variant_field_write(
-    f: &syn::Field,
-    br: &FieldBr,
-    id: &Ident,
-    stored: &[Ident],
-) -> syn::Result<TokenStream2> {
-    let bnb = crate::bnb_path();
-    let ty = &f.ty;
-    let pre = pad_write_tokens(br.align_before, br.pad_before.as_ref());
-    let post = pad_write_tokens(br.align_after, br.pad_after.as_ref());
-    // `restore_position`: a read-side peek — the overlapping field owns the bytes.
-    if br.restore_position {
-        return Ok(quote!(#pre #post));
-    }
-    // `calc`: write a computed value. A `temp` field isn't in the match pattern, so bind
-    // its value to a **named** local (so a later `ctx`/field can resolve it); a non-temp
-    // `calc` field is in the pattern, so use a throwaway. The expr sees stored siblings as
-    // references (use `s.len()` / `*s`), like a struct `calc` sees `self.s`.
-    if let Some(calc) = &br.calc {
-        let core = if br.temp {
-            quote! {
-                let #id: #ty = #calc;
-                #bnb::__private::Sink::write(__bnb_w, #id)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
-            }
-        } else {
-            quote! {{
-                let __v: #ty = #calc;
-                #bnb::__private::Sink::write(__bnb_w, __v)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
-            }}
-        };
-        return Ok(quote!(#pre #core #post));
-    }
-    if br.temp {
-        return Err(syn::Error::new_spanned(
-            f,
-            "a `#[br(temp)]` variant field is not stored, so it needs `#[bw(calc = <expr>)]` to encode",
-        ));
-    }
-    // `ctx { … }` on a single nested ctx-message (the `Vec<_>` case is handled below):
-    // resolve the passed names against the arm's stored siblings (deref'd) and enum ctx
-    // params / temp locals (by value).
-    if let (Some(names), None) = (&br.ctx, vec_elem(f)) {
-        let child_ctx = ctx_struct_ty(ty)?;
-        let lit = ctx_literal_variant(&child_ctx, names, stored);
-        let core = quote!(<#ty as #bnb::EncodeWith<#child_ctx>>::encode_with(#id, __bnb_w, #lit)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
-        return Ok(quote!(#pre #core #post));
-    }
-    let core = if br.ignore {
-        quote!()
-    } else if let Some(bw_map) = &br.bw_map {
-        quote!(#bnb::__private::write_mapped(__bnb_w, #id, #bw_map)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-    } else if let Some(wf) = &br.write_with {
-        quote!((#wf)(#id, __bnb_w).map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-    } else if br.map.is_some() || br.try_map.is_some() {
-        return Err(syn::Error::new_spanned(
-            f,
-            "a `#[br(map = …)]`/`#[br(try_map = …)]` variant field needs the inverse `#[bw(map = <f>)]`",
-        ));
-    } else if br.parse_with.is_some() {
-        return Err(syn::Error::new_spanned(
-            f,
-            "a `#[br(parse_with = …)]` variant field needs the inverse `#[bw(write_with = <f>)]`",
-        ));
-    } else if br.cond.is_some() {
-        let inner = option_elem(f).ok_or_else(|| {
-            syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>`")
-        })?;
-        let write_inner = quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__v, __bnb_w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
-        quote!(if let ::core::option::Option::Some(__v) = #id { #write_inner })
-    } else if let Some(elem) = vec_elem(f) {
-        if let Some(names) = &br.ctx {
-            let elem_ctx = ctx_struct_ty(elem)?;
-            let lit = ctx_literal_variant(&elem_ctx, names, stored);
-            quote!(for __e in #id {
-                <#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
-            })
-        } else {
-            quote!(<#elem as #bnb::__private::BitEncode>::encode_slice(#id, __bnb_w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-        }
-    } else if byte_array_len(f).is_some() {
-        quote!(#bnb::__private::write_byte_array(#id, __bnb_w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-    } else {
-        // Uniform codec: a leaf or a nested message both encode via `BitEncode`.
-        quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(#id, __bnb_w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;)
-    };
-    Ok(quote!(#pre #core #post))
 }
 
 // ---------------------------------------------------------------------------
@@ -3856,6 +3818,12 @@ fn variant_field_codec(
         }
     }
 
+    // An enum has no canonical encode, so every variant write is the verbatim pass.
+    let stored: Vec<&Ident> = stored_idents.iter().collect();
+    let site = WriteSite {
+        variant: true,
+        stored: &stored,
+    };
     let mut writes = Vec::new();
     for (i, f) in v.fields.iter().enumerate() {
         if (is_catch && i == 0)
@@ -3865,9 +3833,10 @@ fn variant_field_codec(
         {
             continue; // the captured discriminant — the dispatch emits it
         }
-        let id = &idents[i];
-        let br = parse_field_br(f)?;
-        writes.push(variant_field_write(f, &br, id, &stored_idents)?);
+        // Named like its match-arm binding, so the shared generator addresses that local.
+        let mut nf = f.clone();
+        nf.ident = Some(idents[i].clone());
+        writes.push(field_write_stmt(&nf, &parse_field_br(f)?, site, false)?);
     }
 
     Ok((reads, path, writes))
