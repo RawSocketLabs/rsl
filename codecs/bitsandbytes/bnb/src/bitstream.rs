@@ -2377,34 +2377,6 @@ pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], 
     Ok(arr)
 }
 
-/// Peeks up to `max` bytes without consuming them — reads them, then rewinds. Returns
-/// however many are available (fewer than `max` at end-of-input). No longer emitted:
-/// `bitsandbytes-macros` 0.2–0.4 called it for variable-width `#[bin]` enum magic
-/// dispatch, which now goes through [`match_magic`]. It is bound on plain [`Source`],
-/// so a forward-only source fails at runtime with [`ErrorKind::NotSeekable`].
-///
-/// # Errors
-/// [`ErrorKind::NotSeekable`] if the source can't rewind; other read errors propagate
-/// after rewinding.
-#[doc(hidden)]
-#[allow(clippy::cast_possible_truncation)] // Every successful peek read is exactly eight bits.
-pub fn peek_bytes<S: Source>(r: &mut S, max: usize) -> Result<Vec<u8>, BitError> {
-    let start = r.bit_pos();
-    let mut out = Vec::with_capacity(max);
-    for _ in 0..max {
-        match r.read_bits(8) {
-            Ok(b) => out.push(b as u8),
-            Err(error) if matches!(error.kind, ErrorKind::UnexpectedEof { .. }) => break,
-            Err(error) => {
-                r.seek_to_bit(start)?;
-                return Err(error);
-            }
-        }
-    }
-    r.seek_to_bit(start)?;
-    Ok(out)
-}
-
 /// Match one byte-string magic in declaration order, consuming it only on a full match.
 /// A finite EOF rules out this candidate; incremental exhaustion with a matching prefix
 /// requests more input before any later candidate or fallback can be selected.
