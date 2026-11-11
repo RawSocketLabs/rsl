@@ -1,7 +1,8 @@
 //! Variant fields of a `#[bin]` enum take the struct field directives through the **same**
 //! write generator: one round-trip per directive, asserting the exact bytes. An enum encodes
-//! verbatim (it has no canonical form), so a stored `calc`/`reserved` value is written as
-//! stored and `decode → to_bytes` is byte-identical.
+//! verbatim (it has no canonical form), so a stored `reserved` value is written as stored and
+//! `decode → to_bytes` is byte-identical. (A stored `calc` would never run, so it is rejected:
+//! `tests/ui/bin_enum_variant_stored_calc.rs`.)
 
 mod macro_ {
     use bnb::prelude::*;
@@ -26,12 +27,6 @@ mod macro_ {
             flag: u8,
             #[br(if(flag != 0))]
             extra: Option<u16>,
-        },
-        #[bin(magic = 0x02u8)]
-        StoredCalc {
-            #[bw(calc = u8::try_from(body.len()).unwrap())]
-            len: u8,
-            body: [u8; 2],
         },
         #[bin(magic = 0x03u8)]
         TempCalc {
@@ -133,18 +128,6 @@ mod macro_ {
                 extra: None,
             },
             &[0x01, 0x00],
-        );
-    }
-
-    #[test]
-    fn variant_stored_calc_is_written_verbatim() {
-        // A stored length that disagrees with the body survives decode → to_bytes untouched.
-        round_trip(
-            &Field::StoredCalc {
-                len: 9,
-                body: [0xAA, 0xBB],
-            },
-            &[0x02, 0x09, 0xAA, 0xBB],
         );
     }
 

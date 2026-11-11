@@ -1,0 +1,5 @@
+error: `#[bw(calc = …)]` on a stored enum-variant field would never run: a variant is encoded as stored and an enum has no canonical form. Add `#[br(temp)]` so the value is computed on every encode instead of stored, or move the variant's fields into a `#[bin]` struct, whose `to_canonical_bytes` recomputes a stored `calc`
+ --> tests/ui/bin_enum_variant_stored_calc.rs:9:14
+  |
+9 |         #[bw(calc = this_is_never_compiled())]
+  |              ^^^^

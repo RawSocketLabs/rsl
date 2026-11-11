@@ -27,6 +27,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::{
     Data, DeriveInput, Fields, FieldsNamed, Ident, ItemStruct, Token, Type, parse_macro_input,
 };
@@ -334,6 +335,238 @@ struct FieldBr {
     /// `BitDecode`), so no `br` side is needed here. The same-struct counterpart to the
     /// struct-level `#[bin(auto_len(...))]` (which targets a *nested* field); same keyword.
     auto_len: Option<AutoTarget>,
+    /// Every directive as written (one of the `D_*` names, `#[reserved]` included), in source
+    /// order with its keyword span: what [`check_field_directives`] reads to reject a
+    /// duplicate or a conflicting pair at the directive itself.
+    seen: Vec<(&'static str, proc_macro2::Span)>,
+}
+
+impl FieldBr {
+    /// The span of the directive `name` (a `D_*` constant) where the field carries it.
+    fn span_of(&self, name: &str) -> proc_macro2::Span {
+        self.seen
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map_or_else(proc_macro2::Span::call_site, |(_, span)| *span)
+    }
+}
+
+// The field directives as the user writes them: the names diagnostics print and
+// `FIELD_CONFLICTS` is keyed by.
+const D_COUNT: &str = "#[br(count = …)]";
+const D_CTX: &str = "#[br(ctx { … })]";
+const D_TEMP: &str = "#[br(temp)]";
+const D_IF: &str = "#[br(if(…))]";
+const D_MAP: &str = "#[br(map = …)]";
+const D_TRY_MAP: &str = "#[br(try_map = …)]";
+const D_PARSE_WITH: &str = "#[br(parse_with = …)]";
+const D_PAD_BEFORE: &str = "#[br(pad_before = …)]";
+const D_PAD_AFTER: &str = "#[br(pad_after = …)]";
+const D_ALIGN_BEFORE: &str = "#[br(align_before)]";
+const D_ALIGN_AFTER: &str = "#[br(align_after)]";
+const D_RESTORE_POSITION: &str = "#[br(restore_position)]";
+const D_SEEK: &str = "#[br(seek = …)]";
+const D_DBG: &str = "#[br(dbg)]";
+const D_ASSERT: &str = "#[br(assert(…))]";
+const D_BR_CALC: &str = "#[br(calc = …)]";
+const D_BW_CALC: &str = "#[bw(calc = …)]";
+const D_BW_MAP: &str = "#[bw(map = …)]";
+const D_WRITE_WITH: &str = "#[bw(write_with = …)]";
+const D_AUTO_LEN: &str = "#[bw(auto_len = …)]";
+const D_IGNORE: &str = "#[brw(ignore)]";
+const D_VARIABLE: &str = "#[brw(variable)]";
+const D_RESERVED: &str = "#[reserved]";
+
+/// Field directives that cannot share a field: `(directive, the directives it conflicts
+/// with, why — and what to write instead)`. Every pair here used to drop one of the two
+/// silently or make the read and write sides disagree. Pairs absent from the table compose:
+/// positioning, `dbg`, `assert` and `variable` wrap or annotate any field, a read-side and a
+/// write-side directive each own their direction, and `count` + `ctx` is a `Vec` of
+/// context-taking elements.
+const FIELD_CONFLICTS: &[(&str, &[&str], &str)] = &[
+    (
+        D_IGNORE,
+        &[
+            D_COUNT,
+            D_CTX,
+            D_TEMP,
+            D_IF,
+            D_MAP,
+            D_TRY_MAP,
+            D_PARSE_WITH,
+            D_BW_CALC,
+            D_BW_MAP,
+            D_WRITE_WITH,
+            D_AUTO_LEN,
+            D_RESERVED,
+        ],
+        "an ignored field is neither read nor written, so the other directive would never \
+         run; remove `ignore`, or remove the other directive",
+    ),
+    (
+        D_BR_CALC,
+        &[
+            D_COUNT,
+            D_CTX,
+            D_TEMP,
+            D_IF,
+            D_MAP,
+            D_TRY_MAP,
+            D_PARSE_WITH,
+            D_BW_CALC,
+            D_BW_MAP,
+            D_WRITE_WITH,
+            D_AUTO_LEN,
+            D_SEEK,
+            D_RESTORE_POSITION,
+            D_RESERVED,
+        ],
+        "`#[br(calc = …)]` computes the field on decode and writes nothing on encode, so a \
+         directive that reads, maps, seeks, writes or reserves the same field has nothing to \
+         act on; keep only the `calc` (padding and alignment may stay)",
+    ),
+    (
+        D_IF,
+        &[D_MAP, D_TRY_MAP, D_PARSE_WITH],
+        "`if` reads the `Option`'s inner type with that type's own codec, so the conversion \
+         would be silently dropped; put the conversion on the inner type (a `#[bin(map = …)]` \
+         or `#[bin(codec = …)]` type) and keep `if` on the `Option<Inner>` field",
+    ),
+    (
+        D_IF,
+        &[D_COUNT],
+        "`if` reads the `Option`'s inner type with that type's own codec, and a `Vec` has \
+         none; use a plain `Vec<_>` field with `count = if <cond> { <n> } else { 0 }`",
+    ),
+    (
+        D_IF,
+        &[D_CTX],
+        "`if` reads the `Option`'s inner type with that type's own codec, so the context \
+         would not be passed; make the field a plain child and pass the condition to it as \
+         context",
+    ),
+    (
+        D_MAP,
+        &[D_TRY_MAP],
+        "keep one: `map` for an infallible conversion, `try_map` for a fallible one",
+    ),
+    (
+        D_PARSE_WITH,
+        &[D_MAP, D_TRY_MAP],
+        "the `map` would win and `parse_with` would be silently dropped; do the conversion \
+         inside the `parse_with` function, or drop `parse_with`",
+    ),
+    (
+        D_COUNT,
+        &[D_MAP, D_TRY_MAP, D_PARSE_WITH],
+        "a mapped or custom-parsed field is read by its closure's wire type or by its \
+         function, so the count would be silently dropped; drop `count` and size the read \
+         inside a `parse_with` function, or read the counted `Vec` into a `#[br(temp)]` field \
+         and derive this one with `#[br(calc = …)]`",
+    ),
+    (
+        D_CTX,
+        &[D_MAP, D_TRY_MAP, D_PARSE_WITH],
+        "a mapped or custom-parsed field is read by its closure's wire type or by its \
+         function, so the context would be silently dropped; drop `ctx` and pass the values \
+         to a `parse_with` closure, which can name the earlier fields directly",
+    ),
+    (
+        D_BW_CALC,
+        &[D_BW_MAP, D_WRITE_WITH],
+        "`calc` writes its value with the field type's own codec, so the custom writer would \
+         be silently dropped; give the field a type whose codec is the custom one (a \
+         `#[bin(codec = …)]` newtype) and compute that type in `calc`",
+    ),
+    (
+        D_BW_CALC,
+        &[D_AUTO_LEN],
+        "both compute the written value, and the `calc` would win; `auto_len` already \
+         derives the length, so drop the `calc`",
+    ),
+    (
+        D_BW_MAP,
+        &[D_WRITE_WITH],
+        "`#[bw(map = …)]` would win and `write_with` would be silently dropped; keep one",
+    ),
+    (
+        D_AUTO_LEN,
+        &[D_BW_MAP, D_WRITE_WITH],
+        "the custom writer would win and the length would never be derived; an `auto_len` \
+         length is a plain `WireLen<T>` field, so drop the custom writer",
+    ),
+    (
+        D_AUTO_LEN,
+        &[D_TEMP],
+        "an `auto_len` length is a stored `WireLen<T>` field; drop `temp`, or keep the \
+         length unstored with `#[br(temp)]` and `#[bw(calc = …)]`",
+    ),
+    (
+        D_RESTORE_POSITION,
+        &[D_BW_CALC, D_BW_MAP, D_WRITE_WITH, D_AUTO_LEN],
+        "a `restore_position` field is a read-side peek and is never written (the field it \
+         overlaps writes those bytes), so the write-side directive would be silently dropped; \
+         remove it",
+    ),
+    (
+        D_RESERVED,
+        &[
+            D_TEMP,
+            D_COUNT,
+            D_CTX,
+            D_IF,
+            D_MAP,
+            D_TRY_MAP,
+            D_PARSE_WITH,
+            D_BW_CALC,
+            D_BW_MAP,
+            D_WRITE_WITH,
+            D_AUTO_LEN,
+        ],
+        "a reserved field is a plain stored value that the canonical encoder writes as its \
+         spec value, bypassing the other directive; drop `reserved` (a \
+         `#[builder(default = …)]` still gives the field a default), or drop the other \
+         directive",
+    ),
+];
+
+/// Rejects a field directive given twice and the pairs in [`FIELD_CONFLICTS`], spanned at
+/// the later of the two. The one place a field's directive *combination* is validated;
+/// `assert` alone may repeat (its guards run in order).
+fn check_field_directives(seen: &[(&'static str, proc_macro2::Span)]) -> syn::Result<()> {
+    for (i, (name, span)) in seen.iter().enumerate() {
+        for (earlier, _) in &seen[..i] {
+            if earlier == name {
+                if *name == D_ASSERT {
+                    continue;
+                }
+                return Err(syn::Error::new(
+                    *span,
+                    format!("`{name}` is given more than once on this field; keep one"),
+                ));
+            }
+            let conflict = FIELD_CONFLICTS.iter().find(|(a, others, _)| {
+                (a == name && others.contains(earlier)) || (a == earlier && others.contains(name))
+            });
+            if let Some((_, _, why)) = conflict {
+                return Err(syn::Error::new(
+                    *span,
+                    format!("`{earlier}` and `{name}` cannot be combined on one field: {why}"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A parsed item with the span of its first token (a directive's keyword), for diagnostics.
+struct At<T>(proc_macro2::Span, T);
+
+impl<T: Parse> Parse for At<T> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let span = input.span();
+        Ok(At(span, input.parse()?))
+    }
 }
 
 /// The derivation target of a `#[bw(auto_len = …)]` [`WireLen`](bnb::WireLen) field — a sibling
@@ -438,6 +671,30 @@ enum BrDirective {
     Calc(syn::Expr),
 }
 
+impl BrDirective {
+    /// The directive as the user writes it (a `D_*` name), for [`FieldBr::seen`].
+    fn name(&self) -> &'static str {
+        match self {
+            BrDirective::Count(_) => D_COUNT,
+            BrDirective::Ctx(_) => D_CTX,
+            BrDirective::Temp => D_TEMP,
+            BrDirective::If(_) => D_IF,
+            BrDirective::Map(_) => D_MAP,
+            BrDirective::TryMap(_) => D_TRY_MAP,
+            BrDirective::ParseWith(_) => D_PARSE_WITH,
+            BrDirective::PadBefore(_) => D_PAD_BEFORE,
+            BrDirective::PadAfter(_) => D_PAD_AFTER,
+            BrDirective::AlignBefore => D_ALIGN_BEFORE,
+            BrDirective::AlignAfter => D_ALIGN_AFTER,
+            BrDirective::RestorePosition => D_RESTORE_POSITION,
+            BrDirective::Seek(_) => D_SEEK,
+            BrDirective::Dbg => D_DBG,
+            BrDirective::Assert(..) => D_ASSERT,
+            BrDirective::Calc(_) => D_BR_CALC,
+        }
+    }
+}
+
 impl Parse for BrDirective {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         if input.peek(Token![if]) {
@@ -519,7 +776,8 @@ impl Parse for BrDirective {
     }
 }
 
-/// Parses a field's `#[br(count = …, ctx { … }, temp, if(…))]` and `#[bw(calc = …)]`.
+/// Parses a field's `#[br(...)]`/`#[bw(...)]`/`#[brw(...)]` directives and validates their
+/// combination ([`check_field_directives`]).
 fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
     // The codec reads/writes through a generated source `__bnb_r` and sink `__bnb_w` — names
     // hygienic enough that a user field (even one named `r` or `w`) never shadows them, so
@@ -528,8 +786,9 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
     for attr in &f.attrs {
         if attr.path().is_ident("br") {
             let directives =
-                attr.parse_args_with(Punctuated::<BrDirective, Token![,]>::parse_terminated)?;
-            for d in directives {
+                attr.parse_args_with(Punctuated::<At<BrDirective>, Token![,]>::parse_terminated)?;
+            for At(span, d) in directives {
+                br.seen.push((d.name(), span));
                 match d {
                     BrDirective::Count(e) => br.count = Some(e),
                     BrDirective::Ctx(names) => br.ctx = Some(names),
@@ -551,16 +810,21 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
             }
         } else if attr.path().is_ident("bw") {
             attr.parse_nested_meta(|meta| {
+                let span = meta.path.span();
                 if meta.path.is_ident("calc") {
+                    br.seen.push((D_BW_CALC, span));
                     br.calc = Some(meta.value()?.parse()?);
                     Ok(())
                 } else if meta.path.is_ident("map") {
+                    br.seen.push((D_BW_MAP, span));
                     br.bw_map = Some(meta.value()?.parse()?);
                     Ok(())
                 } else if meta.path.is_ident("write_with") {
+                    br.seen.push((D_WRITE_WITH, span));
                     br.write_with = Some(meta.value()?.parse()?);
                     Ok(())
                 } else if meta.path.is_ident("auto_len") {
+                    br.seen.push((D_AUTO_LEN, span));
                     br.auto_len = Some(parse_auto_target(&meta.value()?.parse()?)?);
                     Ok(())
                 } else {
@@ -572,9 +836,11 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
         } else if attr.path().is_ident("brw") {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("ignore") {
+                    br.seen.push((D_IGNORE, meta.path.span()));
                     br.ignore = true;
                     Ok(())
                 } else if meta.path.is_ident("variable") {
+                    br.seen.push((D_VARIABLE, meta.path.span()));
                     br.variable = true;
                     Ok(())
                 } else if meta.path.is_ident("count_prefix") {
@@ -592,38 +858,11 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                     ))
                 }
             })?;
+        } else if attr.path().is_ident("reserved") || attr.path().is_ident("reserved_with") {
+            br.seen.push((D_RESERVED, attr.path().span()));
         }
     }
-    if br.map.is_some() && br.try_map.is_some() {
-        return Err(syn::Error::new_spanned(
-            f,
-            "`#[br(map = …)]` and `#[br(try_map = …)]` are mutually exclusive",
-        ));
-    }
-    // `#[br(calc)]` reads no wire bits and is not stored-to-wire, so it cannot combine
-    // with any directive that reads, maps, positions, or writes the same field.
-    if br.br_calc.is_some()
-        && (br.count.is_some()
-            || br.ctx.is_some()
-            || br.temp
-            || br.cond.is_some()
-            || br.map.is_some()
-            || br.try_map.is_some()
-            || br.parse_with.is_some()
-            || br.calc.is_some()
-            || br.bw_map.is_some()
-            || br.write_with.is_some()
-            || br.auto_len.is_some()
-            || br.ignore
-            || br.seek.is_some()
-            || br.restore_position)
-    {
-        return Err(syn::Error::new_spanned(
-            f,
-            "`#[br(calc = …)]` computes the field on decode and writes nothing on encode, \
-             so it cannot combine with a reading, mapping, positioning, or writing directive",
-        ));
-    }
+    check_field_directives(&br.seen)?;
     Ok(br)
 }
 
@@ -3854,6 +4093,16 @@ fn variant_field_codec(
     for (i, f) in v.fields.iter().enumerate() {
         let id = &idents[i];
         let br = parse_field_br(f)?;
+        if br.calc.is_some() && !br.temp {
+            return Err(syn::Error::new(
+                br.span_of(D_BW_CALC),
+                "`#[bw(calc = …)]` on a stored enum-variant field would never run: a variant \
+                 is encoded as stored and an enum has no canonical form. Add `#[br(temp)]` so \
+                 the value is computed on every encode instead of stored, or move the \
+                 variant's fields into a `#[bin]` struct, whose `to_canonical_bytes` \
+                 recomputes a stored `calc`",
+            ));
+        }
         if let Some((name, ty)) = named_capture
             .iter()
             .find(|(n, _)| f.ident.as_ref() == Some(n))

@@ -1,0 +1,47 @@
+error: `#[br(if(…))]` and `#[br(map = …)]` cannot be combined on one field: `if` reads the `Option`'s inner type with that type's own codec, so the conversion would be silently dropped; put the conversion on the inner type (a `#[bin(map = …)]` or `#[bin(codec = …)]` type) and keep `if` on the `Option<Inner>` field
+ --> tests/ui/bin_directive_conflict.rs:9:25
+  |
+9 |     #[br(if(flag != 0), map = |x: u8| u16::from(x))]
+  |                         ^^^
+
+error: `#[bw(calc = …)]` and `#[bw(map = …)]` cannot be combined on one field: `calc` writes its value with the field type's own codec, so the custom writer would be silently dropped; give the field a type whose codec is the custom one (a `#[bin(codec = …)]` newtype) and compute that type in `calc`
+  --> tests/ui/bin_directive_conflict.rs:17:20
+   |
+17 |     #[bw(calc = 1, map = |v: &u8| *v + 1)]
+   |                    ^^^
+
+error: `#[reserved]` and `#[br(temp)]` cannot be combined on one field: a reserved field is a plain stored value that the canonical encoder writes as its spec value, bypassing the other directive; drop `reserved` (a `#[builder(default = …)]` still gives the field a default), or drop the other directive
+  --> tests/ui/bin_directive_conflict.rs:25:10
+   |
+25 |     #[br(temp)]
+   |          ^^^^
+
+error: `#[brw(ignore)]` and `#[br(count = …)]` cannot be combined on one field: an ignored field is neither read nor written, so the other directive would never run; remove `ignore`, or remove the other directive
+  --> tests/ui/bin_directive_conflict.rs:35:10
+   |
+35 |     #[br(count = n)]
+   |          ^^^^^
+
+error: `#[br(count = …)]` and `#[br(map = …)]` cannot be combined on one field: a mapped or custom-parsed field is read by its closure's wire type or by its function, so the count would be silently dropped; drop `count` and size the read inside a `parse_with` function, or read the counted `Vec` into a `#[br(temp)]` field and derive this one with `#[br(calc = …)]`
+  --> tests/ui/bin_directive_conflict.rs:43:21
+   |
+43 |     #[br(count = n, map = |x: [u8; 2]| x.to_vec())]
+   |                     ^^^
+
+error: `#[br(restore_position)]` and `#[bw(write_with = …)]` cannot be combined on one field: a `restore_position` field is a read-side peek and is never written (the field it overlaps writes those bytes), so the write-side directive would be silently dropped; remove it
+  --> tests/ui/bin_directive_conflict.rs:53:10
+   |
+53 |     #[bw(write_with = bnb::codecs::leb128::write)]
+   |          ^^^^^^^^^^
+
+error: `#[reserved]` and `#[bw(calc = …)]` cannot be combined on one field: a reserved field is a plain stored value that the canonical encoder writes as its spec value, bypassing the other directive; drop `reserved` (a `#[builder(default = …)]` still gives the field a default), or drop the other directive
+  --> tests/ui/bin_directive_conflict.rs:62:10
+   |
+62 |     #[bw(calc = 7)]
+   |          ^^^^
+
+error: `#[br(calc = …)]` and `#[br(map = …)]` cannot be combined on one field: `#[br(calc = …)]` computes the field on decode and writes nothing on encode, so a directive that reads, maps, seeks, writes or reserves the same field has nothing to act on; keep only the `calc` (padding and alignment may stay)
+  --> tests/ui/bin_directive_conflict.rs:71:22
+   |
+71 |     #[br(calc = raw, map = |x: u8| x)]
+   |                      ^^^
