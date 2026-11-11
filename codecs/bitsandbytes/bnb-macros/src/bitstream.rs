@@ -185,6 +185,18 @@ fn parse_bit_stream(input: &DeriveInput) -> syn::Result<BitStreamAttrs> {
     Ok(attrs)
 }
 
+/// The hidden `DecodeLayout` impl a decode-only (`read_only`) `#[bin]` type carries: its
+/// layout, which otherwise lives on the `BitEncode` it does not implement, so the type can
+/// still be the wire type of a decode-only mapped struct.
+fn decode_layout_impl(name: &Ident, layout: &TokenStream2) -> TokenStream2 {
+    let bnb = crate::bnb_path();
+    quote! {
+        impl #bnb::__private::DecodeLayout for #name {
+            const LAYOUT: #bnb::__private::Layout = #layout;
+        }
+    }
+}
+
 /// The runtime [`Layout`](bnb::Layout) (bit + byte order) for the struct.
 fn layout_token(attrs: &BitStreamAttrs) -> TokenStream2 {
     let bnb = crate::bnb_path();
@@ -2782,7 +2794,18 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
     }
 
     let wire = mapped_wire_type(args)?;
-    let layout = quote!(<#wire as #bnb::__private::BitEncode>::LAYOUT);
+    // The slice entry points bake in the wire type's layout. An encodable mapped struct takes
+    // it from the wire type's `BitEncode`, which it requires anyway. A decode-only one must
+    // not require that impl, so it asks through the autoref probe, which also accepts the
+    // `DecodeLayout` a `#[bin(read_only)]` wire type carries.
+    let layout = if has_encode {
+        quote!(<#wire as #bnb::__private::BitEncode>::LAYOUT)
+    } else {
+        quote!({
+            use #bnb::__private::WireLayoutDispatch as _;
+            (&#bnb::__private::WireLayoutProbe::<#wire>(::core::marker::PhantomData)).layout()
+        })
+    };
 
     let decode_ts = if has_decode {
         let decode_call = if from_form {
@@ -3082,9 +3105,11 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
     // No `FixedBitLen` is emitted: a codec's wire form is assumed variable-length. A
     // fixed-width codec opts in with the one-line manual impl (same doctrine as the
     // mapped path above); a variable one embeds in a fixed parent via `#[brw(variable)]`.
+    let decode_layout = (!has_encode).then(|| decode_layout_impl(name, &layout));
     Ok(quote! {
         #s
         #decode_ts
+        #decode_layout
         #encode_ts
         #from_ts
     })
@@ -3366,6 +3391,10 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     } else {
         gen_encode(&s.ident, full_fields, &attrs)?
     };
+    // A decode-only message has no `BitEncode` to carry its layout (a `ctx` one has no
+    // `BitDecode` either, so cannot be a wire type).
+    let decode_layout = (args.read_only && args.ctx.is_empty())
+        .then(|| decode_layout_impl(&s.ident, &layout_token(&attrs)));
 
     // The emitted struct: drop `#[br(temp)]` fields (not stored) and strip codec-only
     // field attributes (they are not registered helper attrs here — the codec is
@@ -3551,6 +3580,7 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         #validate_methods
         #builder
         #decode
+        #decode_layout
         #encode
     })
 }
@@ -4109,16 +4139,27 @@ impl<'a> EnumDispatch<'a> {
     }
 }
 
+/// The codec directions an item generates: `read_only` drops `encode`, `write_only` drops
+/// `decode`. A dropped direction's statements are not generated at all, so it asks nothing
+/// of the fields (no write inverse on a read-only type, no `count` on a write-only one).
+#[derive(Clone, Copy)]
+struct Directions {
+    decode: bool,
+    encode: bool,
+}
+
 /// Field-level decode/encode for one variant: the per-field reads + the path-with-fields
 /// (used as both the decode constructor and the encode pattern) + the per-field writes.
 /// For a `#[catch_all]`, `catch_capture` is the discriminant expression bound into the
 /// first field on read; that field is omitted from `writes` (the dispatch emits it).
-/// `#[br(temp)]` fields are read but dropped from the variant (mirrors a struct).
+/// `#[br(temp)]` fields are read but dropped from the variant (mirrors a struct). The reads
+/// are empty when `dirs.decode` is off, and the writes when `dirs.encode` is.
 fn variant_field_codec(
     name: &Ident,
     v: &syn::Variant,
     catch_capture: Option<&TokenStream2>,
     named_capture: &[(Ident, Type)],
+    dirs: Directions,
 ) -> syn::Result<(Vec<TokenStream2>, TokenStream2, Vec<TokenStream2>)> {
     let vid = &v.ident;
     let idents = variant_bind_idents(&v.fields);
@@ -4168,7 +4209,8 @@ fn variant_field_codec(
             }
             let cap = catch_capture.expect("catch capture present");
             reads.push(quote!(let #id = #cap;));
-        } else {
+        } else if dirs.decode {
+            // (A write-only enum reads nothing, so asks nothing read-side of the field.)
             let mut nf = f.clone();
             nf.ident = Some(id.clone());
             reads.push(field_read_stmt(&nf, &br)?);
@@ -4201,7 +4243,9 @@ fn variant_field_codec(
             continue; // the captured discriminant — the dispatch emits it
         }
         let (nf, br) = all[i];
-        writes.push(field_write_stmt(nf, br, site, false)?);
+        if dirs.encode {
+            writes.push(field_write_stmt(nf, br, site, false)?);
+        }
     }
 
     Ok((reads, path, writes))
@@ -4254,6 +4298,11 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         "does nothing on a `#[bin]` enum, which has no generated builder — remove it (it \
          suppresses the builder of a `#[bin]` struct)",
     )?;
+
+    let dirs = Directions {
+        decode: !args.write_only,
+        encode: !args.read_only,
+    };
 
     // Desugar `#[brw(count_prefix = <Ty>)]` in each struct-style variant before dispatch
     // parsing / codegen see the fields. Tuple variants are rejected: the injected length
@@ -4404,6 +4453,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             v.variant,
             cap.as_ref(),
             if v.catch_all { &named_selectors } else { &[] },
+            dirs,
         )?;
 
         let write_disc = if v.role() == VariantRole::CatchAll && cap.is_some() && magic_dispatch {
@@ -4484,6 +4534,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             tv.variant,
             tail_capture.as_ref(),
             if tv.catch_all { &named_selectors } else { &[] },
+            dirs,
         )?;
         quote! {{
             #(#reads)*
@@ -4514,7 +4565,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     unreachable!("peek path validated to byte-string magics");
                 };
                 let bytes = bytes.iter();
-                let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
+                let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
                 chain = quote! {
                     if #bnb::__private::match_magic(__bnb_r, &[#(#bytes),*])? {
                         #(#reads)*
@@ -4532,7 +4583,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         for v in dispatch.variants.iter().rev() {
             if v.role() == VariantRole::MagicOnly {
                 let c = v.magic.as_ref().unwrap().const_expr();
-                let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
+                let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
                 chain = quote! {
                     if __m == #c {
                         #(#reads)*
@@ -4561,7 +4612,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 let value = tag.typed_value(ty);
                 quote!(#name == #value)
             });
-            let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
+            let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
             chain = quote! {
                 if #(#conditions)&&* {
                     #(#reads)*
@@ -4585,7 +4636,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     .magic
                     .as_ref()
                     .map(|m| m.verify(&v.variant.ident.to_string()));
-                let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
+                let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
                 arms.push(quote! {
                     #tagval => {
                         #verify
@@ -4661,8 +4712,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         auto_len: Vec::new(), // struct-only (rejected above)
     };
     let layout = layout_token(&attrs);
-    let want_decode = !args.write_only;
-    let want_encode = !args.read_only;
+    let (want_decode, want_encode) = (dirs.decode, dirs.encode);
     let is_ctx_type = !args.ctx.is_empty();
     let ctx_binds: Vec<TokenStream2> = args
         .ctx
@@ -4684,7 +4734,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     .variants
                     .iter()
                     .map(|v| {
-                        let (_, pat, _) = variant_field_codec(name, v.variant, None, &[])?;
+                        let (_, pat, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
                         let value = if v.catch_all {
                             quote!(*#selector)
                         } else {
@@ -4745,11 +4795,13 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     let ctx_name = ctx_struct_ident(name);
     let mut helper_methods = Vec::new();
     for v in &dispatch.variants {
-        if v.role() == VariantRole::CatchAll {
-            continue; // the catch-all isn't an explicit target — use `decode`/`decode_with`
+        if v.role() == VariantRole::CatchAll || !want_decode {
+            // The catch-all isn't an explicit target (use `decode`/`decode_with`), and a
+            // write-only enum has no decoders at all.
+            continue;
         }
         let mname = format_ident!("decode_as_{}", snake_case(&v.variant.ident));
-        let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[])?;
+        let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
         let magic_verify = v
             .magic
             .as_ref()
@@ -5023,6 +5075,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         }
     };
 
+    // As for a struct: a decode-only enum carries its layout without a `BitEncode`.
+    let decode_layout =
+        (want_decode && !want_encode && !is_ctx_type).then(|| decode_layout_impl(name, &layout));
+
     let ctx_struct = if is_ctx_type {
         let decls = args.ctx.iter().map(|(n, t)| {
             let doc = format!("The `{n}` context parameter.");
@@ -5135,6 +5191,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         #accessor_fn
         #helpers
         #decode
+        #decode_layout
         #encode
     })
 }

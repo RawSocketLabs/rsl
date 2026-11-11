@@ -263,6 +263,37 @@ pub mod __private {
     #[cfg(feature = "std")]
     pub use ::tracing;
 
+    /// The layout of a decode-only (`#[bin(read_only)]`) type, which has no `BitEncode` to
+    /// carry `LAYOUT`. Emitted by `#[bin]` for generated code; not a stable API.
+    pub trait DecodeLayout {
+        /// The bit and byte order the type's slice entry points decode in.
+        const LAYOUT: Layout;
+    }
+
+    /// Concrete-site autoref dispatch for a decode-only wire-mapped `#[bin]` struct: its wire
+    /// type's layout comes from that type's `BitEncode` when it has one, else from the
+    /// [`DecodeLayout`] of a `#[bin(read_only)]` wire type — so reading through a wire type
+    /// never requires it to encode. Not a stable API.
+    pub struct WireLayoutProbe<W>(pub ::core::marker::PhantomData<fn() -> W>);
+
+    /// The layout sources [`WireLayoutProbe`] resolves between, in priority order.
+    pub trait WireLayoutDispatch {
+        /// The wire type's layout.
+        fn layout(self) -> Layout;
+    }
+
+    impl<W: BitEncode> WireLayoutDispatch for &WireLayoutProbe<W> {
+        fn layout(self) -> Layout {
+            W::LAYOUT
+        }
+    }
+
+    impl<W: DecodeLayout> WireLayoutDispatch for &&WireLayoutProbe<W> {
+        fn layout(self) -> Layout {
+            W::LAYOUT
+        }
+    }
+
     /// Adaptive byte-buffer formatter for the `#[bin]` `#[try_str]` field hint: renders a
     /// buffer that is **valid UTF-8** as a quoted, escaped string (`"hello"`, `"a\nb"`) and any
     /// buffer with a non-UTF-8 byte as **hex bytes** (`[de, ad, be, ef]`). All-or-nothing — it
