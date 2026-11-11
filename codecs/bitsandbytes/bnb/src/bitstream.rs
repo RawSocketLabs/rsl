@@ -2712,7 +2712,8 @@ impl<R: std::io::Read> BufSource<R> {
     }
 
     /// Reads from `inner` until the retained bytes reach stream byte `byte_end` (or
-    /// EOF/cap), never past it.
+    /// EOF/cap), never past it. An [`Interrupted`](std::io::ErrorKind::Interrupted) read is
+    /// retried; any other reader error is [`ErrorKind::Io`].
     fn fill_to(&mut self, byte_end: usize) -> Result<(), BitError> {
         while self.base + self.buf.len() < byte_end && !self.eof {
             if self.buf.len() >= self.cap {
@@ -2730,6 +2731,11 @@ impl<R: std::io::Read> BufSource<R> {
                     self.eof = true;
                 }
                 Ok(got) => self.buf.truncate(start + got),
+                // Nothing was read: go round again, as the `read_exact` behind the other
+                // readers does.
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                    self.buf.truncate(start);
+                }
                 Err(e) => {
                     self.buf.truncate(start);
                     return Err(BitError::new(ErrorKind::Io(e.kind()), self.bit_pos));
@@ -5708,6 +5714,30 @@ mod component {
                     remaining: 8
                 }
             );
+        }
+
+        #[test]
+        fn an_interrupted_read_is_retried() {
+            /// Fails the first read with `Interrupted`, as a signal would, then serves `data`.
+            struct InterruptedOnce {
+                interrupted: bool,
+                data: &'static [u8],
+            }
+            impl std::io::Read for InterruptedOnce {
+                fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                    if !self.interrupted {
+                        self.interrupted = true;
+                        return Err(std::io::ErrorKind::Interrupted.into());
+                    }
+                    self.data.read(buf)
+                }
+            }
+            let mut src = BufSource::new(InterruptedOnce {
+                interrupted: false,
+                data: &[0xAB, 0xCD],
+            });
+            assert_eq!(src.read_bits(16).unwrap(), 0xABCD);
+            assert_eq!(src.bit_pos(), 16);
         }
 
         #[test]
