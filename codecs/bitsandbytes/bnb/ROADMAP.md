@@ -389,6 +389,17 @@ blocks 1.0.
       open after bulk byte runs (DESIGN.md §16): on `main` at `2e247e38`, the socks
       `session_reads` profile samples `read_limit` at ~5% and `BitBuf::push` at ~18%,
       the latter mostly from its one-byte fragment cases.
+- [ ] **Incremental envelope path** — the byte-wise read commit left four
+      `incremental_envelope` cases 2–6% slower (3 to 94 ns per envelope; accepted,
+      `DESIGN.md` §19). Profile the failing-attempt path the way the one-byte-chunk case was
+      (store-forwarding on the 80-byte error) and recover it.
+- [ ] **Split `bnb/src/bitstream.rs` into modules.** Built and rejected once: the move
+      changed how the incremental pull path is compiled in consumers (12–23% slower,
+      `DESIGN.md` §19). Needs measured `#[inline]` decisions on `try_pull_with` /
+      `decode_attempt` first; the macro crate's split is done.
+- [ ] Direct calls to `read_bits`/`write_bits` with a constant width in a hand-written loop
+      fold less than they did where the old read happened to inline (`DESIGN.md` §19). No
+      in-tree code does this; add a bench before tuning it.
 - [ ] Macro compile-time / codegen-bloat sanity check — still open (a `cargo build
       --timings` / expanded-output size pass on a representative multi-message crate).
 

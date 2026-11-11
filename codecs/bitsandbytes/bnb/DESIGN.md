@@ -1596,6 +1596,212 @@ now taking the type's declared order from a trait const (resolved at compile tim
   C cross-compiler; the library compiles for i686), mutants in the macro crate (its own
   tests do not exercise the expansion), longer fuzz campaigns, and benchmarks.
 
+## 19. Whole-crate review fixes (0.10.0, breaking)
+
+Findings from the 2026-11-10 five-lens review of 0.9.0 (soundness, performance, API, tests,
+style; two rounds, every finding re-checked by an independent verifier with an executed
+repro or measurement), fixed one concern per commit. Baseline: `da90c853` (`origin/main`,
+the 0.9.0 release).
+
+### Findings ledger
+
+All findings are pre-existing unless marked.
+
+| Finding | Consequence | Disposition and regression check |
+|---|---|---|
+| R1, High: `decode_all`/`decode_iter` stopped only when a message left the cursor exactly where it started. | A message with a backward `#[br(seek)]` cycled: `decode_iter` yielded without end and `decode_all` pushed until allocation failed. | `<=` is `ErrorKind::NoProgress` at the message's start, as in `decode_vec` and the incremental attempts. This also turns the zero-width case from a silent stop into the same error (breaking; §11.2 already required a message to advance). `bin_seek.rs`, a bounded-work property in `fuzz_roundtrip.rs` (decodes counted, not timed), and the same shape in the `decode` fuzz target. |
+| R2, Medium: `BufSource` counted every byte ever read against its cap and never released any. | A long-lived decode loop over one `BufSource` (the shape `examples/tcp.rs` showed) ended in permanent `BufferFull` after `cap` cumulative bytes. | `BufSource::compact()` discards the bytes before the cursor's byte; positions stay stream-absolute, and a seek before the retained bytes is `NotSeekable`. Reclaim is explicit because a later seek may still want the bytes. Accepted limit: with positions absolute, a compacting loop on a 32-bit target ends in `PositionOverflow` after 512 MiB (documented on `compact`). Eight `component::buf_source` tests; a 400-stream differential against `BitReader` in review. |
+| R3, Low: `BufSource` surfaced `io::ErrorKind::Interrupted`. | A signal during a read failed the decode, where every other reader retries. | `fill_to` retries. `an_interrupted_read_is_retried`. |
+| R4, Medium: enum variant fields were encoded by a hand-copied generator that had drifted from the struct one. | A `br(calc)` variant field was written (decode `[1,5]`, encode `[1,5,6]`); a stored `bw(calc)` was recomputed on verbatim `to_bytes`; `auto_len` never resolved on a variant; `ignore` and `ctx` took the wrong precedence. | One generator, parameterised by where the field values live (`WriteSite`). Struct expansion is byte-identical before and after over 70 expanded files. `bin_enum_fields.rs`, one test per directive. A stored `bw(calc)` on a variant is now a compile error (R8), since an enum has no canonical encode to recompute it. |
+| R5, Medium: `auto_len = bytes(source)` measured the source with a bare `bit_encode`. | The length disagreed with the body whenever the source had `write_with`, `bw(map)` or `ctx`: a `u32` behind `leb128::write` reported 4 bytes for a 1-byte body. | The probe replays the source's own write statement against a scratch sink, first binding the `temp` values declared between the length and the source, and replaying a `count_prefix`. The recorded limits of §11.3 (a default-layout, scratchless, offset-zero probe) are unchanged. `bin_wire_len.rs`. |
+| R6, Medium: `BitWriter`/`BytesWriter` were `!Send`, through `Option<Box<dyn Any>>` scratch. | A writer could not move into a thread or task. | `with_scratch` takes `Box<dyn Any + Send>` (breaking for a non-`Send` scratch). A unit test asserts both writers are `Send`. |
+| R7, Medium: canonical encode is per message, but the docs said "always spec-compliant". | A parent reported `is_canonical()` while a nested message or `Vec` element was not, and wrote it as stored. | Documented as the contract (§5.2), pinned by `bin_canonical.rs`; deep canonicalization is a ROADMAP §C item. No codegen change (owner decision, 2026-11-10). |
+| R8, Low to Medium: the macros accepted input they then mishandled. | Conflicting or repeated field directives (one silently won); container options ignored on enums and mapped structs; `validate` not compiling under `no_std`; a `read_only` type demanding write-side impls; two proc-macro panics; generated names `S`/`K`/`__e` capturing user items; `bool`/`u8` through a `$t:ty` fragment not recognised; field names colliding with generated methods. | One commit each. A shape is rejected only if, at 0.9.0, one of its directives was silently ignored or the output was wrong; shapes where everything took effect stay accepted. New rejections are spanned errors with trybuild snapshots and `BREAKING CHANGE` footers, and the conflict table has a test that drives every pair of its 23 directives through the attribute parser. The review's "duplicate variant magics" finding was withdrawn: variants that share a magic are a legitimate shape (a request and a response told apart by direction), so it is documented (`decode` takes the first declared match, the rest through `decode_as_<variant>`) and tested, not rejected. |
+| R9, Medium, tests: behaviour-changing mutants left the suite green. | `pad_after`/`align_after` on decode, the bitfield setter mask, `decode_exact_with` exactness, the `StreamBitReader` LSB carry, `BufSource` cap arithmetic, `SourceReader` EOF mapping and `LimitedSource` bounds were unpinned. | Tests added for each; every listed mutation was applied by hand and seen to fail. A fixed-seed parity property now runs one read sequence through all six readers in all four layouts. |
+| R10, Low: the unpack benchmarks folded their input. | The documented "unpack ~190 ps" was the harness floor; the real figure is ~430 ps (§10). The comparison's conclusion held. | `black_box` moved inside the measured closure for every compared implementation; §10 and `AGENTS.md` corrected. |
+| R12, Low to Medium, API: `UInt<T, N>` converted only from its own backing type. | Callers cast with `as` first and truncated silently: `u12::try_new(65541usize as u16)` is `Ok(5)`. | `TryFrom` from all twelve primitive integers (55 new impls from one macro), `WidthError::Negative`, and the hex, octal and binary formatters. The set has to be complete: with more than one source but no `i32`, a bare literal stops compiling. The cost, accepted by the owner on 2026-11-11 with the list in the commit footer: an *untyped* argument is now evaluated as signed `i32`, as for the primitive integers, so `!`, `>>`, `/`, `%` and bit 31 change meaning (`u12::try_from(!0 >> 4)` was `Ok(4095)` and is `Err(Negative)`). No call site in this workspace or in libsdr is affected. Checked against a reference over 5.1M conversions in review. |
+| R11, Low: documentation false at HEAD and dead code. | Wrong option lists, a backwards prefix-order rule in the dispatch guide, dead `::bnb::` rustdoc links in consumer docs, references to roadmap phases that no longer exist; `peek_bytes` and a `__private` export with no callers; three duplicated helpers. | Corrected or removed. `peek_bytes` was last emitted by the 0.4 macros, which the runtime's exact macro pin cannot pair with. |
+
+Recorded, not changed (owner decisions, 2026-11-10): unbounded recursion on self-containing
+types aborts on stack overflow (§11.4 now says so, with the caller-side bound; a depth
+budget is a ROADMAP §C item); `BinCodec` sets no maximum frame size (documented);
+`ErrorKind::BadMagic` stays unboxed (measurement in ROADMAP §C).
+
+### Independent review
+
+Each runtime or macro change was reviewed by a separate reviewer before it joined the
+series, and these reviews changed the result:
+
+- The first `auto_len` probe rewrite rejected a length-type-value layout (`len`, a `temp`
+  tag, a body whose `ctx` reads the tag) that compiled and encoded correctly in 0.9.0. The
+  probe now binds those temps itself; the layout is a byte-pinned test in structs and variants.
+- The first byte-wise read (below) made fields of one to seven bits 1.15 to 1.6 times slower
+  to decode, on a shape no benchmark covered. Fixed with the narrow inline path; sub-byte
+  benchmarks in both bit orders now exist.
+- `compact()` had two unpinned lines (the read-ahead bound and the EOF remainder after
+  compaction); both now have tests that fail on the mutation.
+- The diagnostics batch was reviewed twice by compiling every newly rejected shape against
+  the 0.9.0 macros. The first draft had lost one rejection (`br(calc)` with `ignore`) and
+  rejected shapes that worked: a stored `restore_position` peek or an `ignore` field with
+  `bw(calc)`, `reserved` with `temp` and `calc`, `no_builder` where there is no builder, and
+  variants sharing a magic. All were restored; the series was rebuilt without the
+  duplicate-magic commit.
+- The `UInt` review found the silent `i32` evaluation of untyped arguments, which the first
+  footer described only for shifts on wide backings.
+- The stream-scratch test passed with the scratch unused; it now asserts the bytes are there.
+
+### Performance
+
+The 0.9.0 review measured two costs in the read primitive: a read or write that started or
+ended inside a byte ran one loop iteration per bit (an unaligned 64-bit read took 54 ns
+against 5 ns aligned), and `read_bits` was never inlined into generated decoders, so a
+field's constant width was not folded. §18 had also shipped its hot-path changes unmeasured:
+the buffered gate probe read 405.22 instructions per message at `da90c853` against 392.22 at
+0.8.0 on the same toolchain (the 378 recorded in §13 was Rust 1.98.0).
+
+The fix is one commit. Reads and writes work per touched byte (§10); the slice reader's
+bounds check, aligned path and narrow path are forced inline; the wide unaligned paths and
+the error constructors are out of line.
+
+Environment: Rust 1.99.1, Linux x86_64, Threadripper 7970X, system allocator, default bnb
+features, CPU affinity 61. Baseline and candidate bench executables were built in separate
+target directories from the parent commit and the candidate, and run alternately three
+times each with Criterion's defaults, 1 s warm-up and 3 s measurement; the figure is the
+lowest of the three medians. Other builds were running on other cores during some runs.
+
+| Benchmark | Parent | Candidate | Ratio |
+|---|---:|---:|---:|
+| `dmr_frame/decode` | 242.6 ns | 34.0 ns | 0.14 |
+| `dmr_frame/encode` | 290.8 ns | 140.0 ns | 0.48 |
+| `sub_byte/msb_decode` (new) | 66.8 ns | 32.6 ns | 0.49 |
+| `sub_byte/lsb_decode` (new) | 61.6 ns | 31.3 ns | 0.51 |
+| `sub_byte/msb_encode` (new) | 120.3 ns | 94.3 ns | 0.78 |
+| `ipv4ish_message/decode` | 49.8 ns | 34.3 ns | 0.69 |
+| `byte_aligned/decode` | 22.8 ns | 17.2 ns | 0.76 |
+| `enum_dispatch/integer_valid` | 11.1 ns | 8.9 ns | 0.80 |
+| `enum_dispatch/mixed_1_in_16_invalid` | 173.4 ns | 129.9 ns | 0.75 |
+| `enum_dispatch/buffered_chunk_1` | 1359.9 ns | 1086.4 ns | 0.80 |
+| `enum_dispatch/buffered_chunk_5` | 265.5 ns | 187.5 ns | 0.71 |
+| `enum_dispatch/buffered_chunk_80` | 205.5 ns | 139.3 ns | 0.68 |
+| `incremental_envelope/1024/64` (slowest ratio) | 236.5 ns | 247.4 ns | 1.05 |
+
+No other benchmark in the two suites is slower than 1.04.
+
+**Accepted regressions (owner approval, 2026-11-11).** The independent re-review ran eight
+alternating pairs of the four `incremental_envelope` cases that read slower and found them
+repeatable: 1024/64 235.5 → 239.9 ns (+4.4 ns per envelope, slower in 8 of 8 pairs),
+1024/1500 46.9 → 49.8 ns (+2.9 ns, 6 of 8), 16384/64 3359 → 3453 ns (+94 ns, 7 of 8),
+16384/1500 515.3 → 525.1 ns (+9.8 ns, 5 of 8). The cost arrived with the narrow inline path;
+neither the reviewer nor the author found a variant that removed it without giving up more
+elsewhere. Separately, a hand-written loop that calls the primitives directly with a
+constant width (no in-tree code, no committed benchmark) no longer folds as far as it did
+where the old `#[inline]` read happened to inline: aligned `read_bits(8/16/32)` 0.66 → 0.92
+ns, `read_bits(1/3/4)` 0.18 → about 0.9 ns, `write_bits(1/3/4)` 1.9 → 3.7 ns per call; the
+same loops in a standalone function are faster than before (2.20 → 0.74 ns for the aligned
+read). Every shape generated by the macros is faster. A later presizing change measured a
+suite whose code was byte-identical in both builds at 0.95 to 1.05, which is the resolution
+of this method. Revisiting the envelope path is a ROADMAP §E item.
+
+| Fixed-work probe, three alternating runs, instructions per message | Parent | Candidate |
+|---|---:|---:|
+| `BNB_DISPATCH_PROBE=buffered` (16 messages per drain, 5-byte chunks) | 405.22 | 270.22 |
+| with `BNB_DISPATCH_PROBE_CHUNK=1` (four of five attempts fail) | 1774.22 | 1243.22 |
+| with `BNB_DISPATCH_PROBE_CHUNK=80` (whole frames) | 283.91 | 148.91 |
+
+Counts were identical to the hundredth across the three runs. Cycles per message fell from
+79.7 to 57.5, 416 to 343 and 61.7 to 42.7. Release `.text` of the two bench executables
+moved by +236 and +6,416 bytes (3.38 MB and 3.32 MB).
+
+Variants built and rejected, each measured the same way:
+
+- Both general paths inline in `extract_bits`: byte-aligned decode 8% slower, `byte_runs`
+  decode 7% slower. The larger body changed how the aligned path was compiled.
+- The read left `#[inline]` with the wide path outlined: the optimizer inlined it in one
+  build (byte-aligned decode 0.56) and not in the next after an unrelated edit.
+- `#[inline(never)]` on the read, to pin the old shape: `ipv4ish` decode 22% slower.
+- The wide path out of line with no narrow path: fields of one to seven bits decoded 1.45
+  times slower (found in review; the suite had no such shape).
+- The incremental reader's wrapper inline but still converting the slice reader's
+  end-of-input error: one-byte-chunk buffered decode 1.24 times slower with *fewer*
+  instructions. `perf annotate` put 86% of the decoder's samples on the first wide load of
+  the 80-byte error after the conversion (a store-forwarding stall). Building the
+  `Incomplete` error directly removed it.
+
+The two `#[inline(always)]` attributes are the first in the crate. They sit on a function
+whose body is two compares, two short loops and two calls, and are justified by the
+flip-flopping above rather than by a general policy; libsdr's measurement that blanket
+inline hints made its decoders slower is consistent with that, and no generated code
+carries one.
+
+**Follow-ups on the same gate** (one commit each, parent and candidate built separately,
+three alternating pinned rounds; an independent reviewer re-measured each):
+
+| Change | Benchmark | Parent | Candidate |
+|---|---|---:|---:|
+| A fixed-length `#[bin]` message's `to_bytes` reserves its exact size | `fixed_44/encode` | 83.3 ns | 35.1 ns |
+| Byte-aligned `u16`/`u32`/`u64`/`u128` runs convert in one pass (§16's hooks, extended) | `counted_u16_1024/decode` | 1953 ns | 68.5 ns |
+| | `counted_u16_1024/encode` | 1688 ns | 99.9 ns |
+| | `counted_u32_256/decode` | 586 ns | 51.2 ns |
+| | `counted_u32_256/encode` | 739 ns | 88.6 ns |
+| `MessageStream` keeps one read scratch instead of zeroing 4 KiB per call | `stream_envelope/16x40/704` | 992 ns | 629 ns |
+
+The hand-written reference loops beside the run benchmarks read 311 ns (`u16` decode) and 446
+ns (`u16` encode). Decode still proves the bytes are present before it allocates: a count of
+`usize::MAX` over 40 bytes allocated at most 384 bytes, before and after. The probe counts
+did not move in any of the three. The bulk path was compared with the element loop over 3.3M
+cases (every source and sink, four layouts, every truncation point, x86_64 and 32-bit) with
+identical values, errors and cursors. Mixed-width magic dispatch, measured only: the eighth
+of eight variants costs 2.7 times the first (25.9 against 9.8 ns), down from 4.5 to 6.3 times
+at 0.9.0, with no change to the dispatch.
+
+**What this harness can resolve.** Benchmarks whose code a commit did not touch moved by up
+to 11% between its parent and candidate builds. In every such case the benchmarked path was
+instruction-identical in both, and the gap disappeared when both were built with
+`-C llvm-args=-align-all-functions=6`. Adding a benchmark to a bench executable also moved
+its neighbours (a new `MessageStream` case doubled `incremental_envelope/*/1` in parent and
+candidate alike, and a buffered case moved the probe by 22 instructions). Treat a difference
+under about 5% between two builds as placement until the disassembly or the fixed-work
+probe says otherwise, and check the probe and the neighbouring benchmarks before and after
+adding one.
+
+### Structure
+
+The codec macro (`bnb-macros/src/bitstream/`) is split into modules by responsibility, as a
+pure move: 1,044 macro expansions across the workspace produce byte-identical token streams
+before and after, and no trybuild snapshot changed. The slice entry points that four
+front-ends pasted come from one generator.
+
+The same split of the runtime (`bnb/src/bitstream.rs`, about 6,800 lines) was built and
+**not taken**. It passed every functional check, but rustc partitions a crate's code by
+module, and after the move the incremental pull path (`BitBuf::pull` → `try_pull_with` →
+`decode_attempt`) was compiled differently in a consumer: with function alignment forced on
+both builds, `incremental_envelope` read 12% to 23% slower across ten cases (1024/1:
+11.9 → 14.5 µs), and a second layout that put the attempt helper beside `BitBuf` read up to
+2.3 times slower. The hot functions of the dispatch probe were instruction-identical, so the
+probe alone would not have caught it. The split needs `#[inline]` decisions on that path
+measured one at a time, as its own change (ROADMAP §E).
+
+### Verification
+
+Run on the series as it stands before this record (2026-11-11, rustc 1.99.1):
+
+- `cargo fmt --all --check`; `cargo clippy -p bitsandbytes -p bitsandbytes-macros
+  --all-targets --all-features -- -D warnings`: clean.
+- `cargo test -p bitsandbytes -p bitsandbytes-macros --all-features`: 842 passed, 0 failed,
+  11 ignored, including trybuild; no snapshot changed except those written for new errors.
+- `cargo check --workspace --all-targets --locked`: clean. Consumer suites (`dns`, `socks`,
+  `netlink`, `tcp`, `ip`, `arp`, `rtltcp`, `asn1`): 182 passed.
+- `cargo +1.85.0 check` on both crates; the bare-metal `nostd-check` build; rustdoc with
+  warnings denied; `cargo public-api` equal to the snapshot (additions: `BufSource::compact`,
+  the `BinCodec` impls, the `UInt` conversions and formatters, `WidthError::Negative`;
+  changed: `BitWriter::with_scratch`, both writers now `Send`).
+- Every regression test named above was seen to fail with its fix reverted or mutated by
+  hand. `cargo mutants` was not re-run over the diff.
+- Not run at the time of writing: `scripts/ci-local.sh pre-push`, fuzz campaigns beyond
+  type-checking the targets, semver-checks, a 32-bit run of the unit suite (the library and
+  a probe of the pointer-sized conversions build and run for `i686-unknown-linux-musl`),
+  and libsdr's own benchmark against this series.
+
 ## Named context dispatch trial (2026-11-09)
 
 Baseline: `eca60e6b9868165c5658bdcb2a7ca1a51f9ca2fa`; branch
