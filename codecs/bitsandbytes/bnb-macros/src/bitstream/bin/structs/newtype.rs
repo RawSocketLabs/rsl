@@ -7,7 +7,7 @@ use syn::{Fields, ItemStruct};
 
 use crate::bitstream::bin::args::BinArgs;
 use crate::bitstream::generate::{
-    BitStreamAttrs, decode_layout_impl, layout_token, prefix_methods,
+    BitStreamAttrs, DecodeEntryPoints, decode_layout_impl, layout_token,
 };
 
 /// The **codec newtype** `#[bin]` path: a single-field tuple struct whose wire form is
@@ -99,7 +99,18 @@ pub(super) fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<To
 
     let decode_ts = if has_decode {
         let parse_fn = args.codec_parse.as_ref().expect("checked above");
-        let prefix_decoders = prefix_methods(&quote!(#vis), &layout);
+        let entry_points = DecodeEntryPoints {
+            name,
+            vis: &quote!(#vis),
+            layout: &layout,
+            cursor: &quote!(#bnb::__private::Source),
+            decode_doc: "Decode one value from a `Source` cursor (via this type's codec functions).",
+            decode_all_doc: "Decode every value from `bytes` into a `Vec` (at this type's declared layout).",
+            decode_iter_doc: "A lazy iterator decoding successive values from `bytes`.",
+            peek_doc: "Decode one value without consuming the buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof` — use `decode_prefix` to tell it from malformed input.",
+            decode_exact_doc: "Decode and require every whole byte consumed.",
+        }
+        .expand();
         quote! {
             impl #bnb::__private::BitDecode for #name {
                 fn bit_decode<__BnbS: #bnb::__private::Source>(
@@ -112,36 +123,7 @@ pub(super) fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<To
                 }
             }
 
-            impl #name {
-                #[doc = "Decode one value from a `Source` cursor (via this type's codec functions)."]
-                #vis fn decode<__BnbS: #bnb::__private::Source>(
-                    __bnb_r: &mut __BnbS,
-                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
-                }
-                #[doc = "Decode every value from `bytes` into a `Vec` (at this type's declared layout)."]
-                #vis fn decode_all(
-                    bytes: &[u8],
-                ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
-                    #bnb::__private::decode_all(bytes, #layout)
-                }
-                #[doc = "A lazy iterator decoding successive values from `bytes`."]
-                #vis fn decode_iter(
-                    bytes: &[u8],
-                ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_
-                {
-                    #bnb::__private::decode_iter(bytes, #layout)
-                }
-                #[doc = "Decode one value without consuming the buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof` — use `decode_prefix` to tell it from malformed input."]
-                #vis fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    #bnb::__private::decode_peek(bytes, #layout)
-                }
-                #[doc = "Decode and require every whole byte consumed."]
-                #vis fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    #bnb::__private::decode_exact(bytes, #layout)
-                }
-                #prefix_decoders
-            }
+            #entry_points
         }
     } else {
         quote!()

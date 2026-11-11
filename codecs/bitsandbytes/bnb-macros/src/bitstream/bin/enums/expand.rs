@@ -14,12 +14,13 @@ use crate::bitstream::bin::item::{
     enum_try_str_debug, intercept_debug_derive, is_codec_field_attr,
 };
 use crate::bitstream::bin::structs::field_normalizes_aliases;
-use crate::bitstream::ctx::{ctx_struct_ident, tokens_mention};
+use crate::bitstream::ctx::{ctx_struct_def, ctx_struct_ident, tokens_mention};
 use crate::bitstream::field::{
     CountPrefixSite, desugar_count_prefix, extract_count_prefix, field_is_temp, parse_field_br,
 };
 use crate::bitstream::generate::{
-    BitStreamAttrs, decode_layout_impl, layout_token, prefix_methods,
+    BitStreamAttrs, DECODE_ALL_DOC, DECODE_ITER_DOC, DecodeEntryPoints, PEEK_DOC,
+    decode_layout_impl, layout_token,
 };
 
 // ---------------------------------------------------------------------------
@@ -52,15 +53,9 @@ fn snake_case(ident: &Ident) -> String {
     out
 }
 
-/// The `#[bin]` enum path. See the module banner above.
-#[allow(clippy::too_many_lines)] // Dispatch and generated helpers use one validated variant model.
-pub(in crate::bitstream::bin) fn bin_enum(
-    args: &BinArgs,
-    e: &syn::ItemEnum,
-) -> syn::Result<TokenStream2> {
-    let bnb = crate::bnb_path();
-    let name = &e.ident;
-    let vis = &e.vis;
+/// Rejects what a `#[bin]` enum cannot honour: generic parameters, `validate` (an enum has
+/// no builder to run it), and the struct-only `auto_len`.
+fn reject_unsupported(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<()> {
     if !e.generics.params.is_empty() {
         return Err(syn::Error::new_spanned(
             &e.generics,
@@ -69,7 +64,7 @@ pub(in crate::bitstream::bin) fn bin_enum(
     }
     if args.validate.is_some() {
         return Err(syn::Error::new_spanned(
-            name,
+            &e.ident,
             "`validate` needs the builder; a `#[bin]` enum has none",
         ));
     }
@@ -79,16 +74,14 @@ pub(in crate::bitstream::bin) fn bin_enum(
         "is a `#[bin]` struct option and would be ignored on an enum — put \
          `#[bw(auto_len = count(<field>)|bytes(<field>))]` on the variant's own `WireLen` \
          field, or move the variant's fields into a `#[bin(auto_len(...))]` struct",
-    )?;
+    )
+}
 
-    let dirs = Directions {
-        decode: !args.write_only,
-        encode: !args.read_only,
-    };
-
-    // Desugar `#[brw(count_prefix = <Ty>)]` in each struct-style variant before dispatch
-    // parsing / codegen see the fields. Tuple variants are rejected: the injected length
-    // field must be nameable, and inserting into positional binds would renumber them.
+/// The enum with `#[brw(count_prefix = <Ty>)]` desugared in each struct-style variant, for
+/// dispatch parsing and codegen to see. Tuple variants are rejected: the injected length
+/// field must be nameable, and inserting into positional binds would renumber them.
+fn desugar_count_prefixes(e: &syn::ItemEnum) -> syn::Result<syn::ItemEnum> {
+    let bnb = crate::bnb_path();
     let mut e_desugared = e.clone();
     for v in &mut e_desugared.variants {
         match &mut v.fields {
@@ -109,6 +102,133 @@ pub(in crate::bitstream::bin) fn bin_enum(
             Fields::Unit => {}
         }
     }
+    Ok(e_desugared)
+}
+
+/// The bound on the explicit cursor of `decode` / `decode_with`: `SeekSource` when a variant
+/// field seeks (`seek`/`restore_position`) or the variable-width / fallback magic path peeks
+/// (`use_peek`), else `Source`. A `forward_only` enum rejects either, mirroring the struct
+/// path.
+fn cursor_bound(args: &BinArgs, e: &syn::ItemEnum, use_peek: bool) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
+    let seeks = use_peek
+        || e.variants
+            .iter()
+            .flat_map(|v| &v.fields)
+            .any(|f| parse_field_br(f).is_ok_and(|br| br.restore_position || br.seek.is_some()));
+    if args.forward_only && seeks {
+        let reason = if use_peek {
+            "variable-width / fallback magic dispatch peeks (it needs to seek)"
+        } else {
+            "a seeking variant field (`seek`/`restore_position`)"
+        };
+        return Err(syn::Error::new_spanned(
+            &e.ident,
+            format!("{reason} is incompatible with `#[bin(forward_only)]`"),
+        ));
+    }
+    Ok(if seeks {
+        quote!(#bnb::__private::SeekSource)
+    } else {
+        quote!(#bnb::__private::Source)
+    })
+}
+
+/// The enum as emitted: `#[br(temp)]` variant fields dropped (read but not stored), and the
+/// dispatch attrs (`#[bin(tag=…)]`, `#[catch_all]`) and codec field attrs stripped, leaving
+/// an ordinary enum beside the generated impls.
+fn stored_enum(e: &syn::ItemEnum) -> syn::ItemEnum {
+    let strip = |f: &syn::Field| -> Option<syn::Field> {
+        (!field_is_temp(f)).then(|| {
+            let mut f = f.clone();
+            f.attrs.retain(|a| !is_codec_field_attr(a));
+            f
+        })
+    };
+    let mut clean = e.clone();
+    for v in &mut clean.variants {
+        v.attrs
+            .retain(|a| !(a.path().is_ident("bin") || a.path().is_ident("catch_all")));
+        match &mut v.fields {
+            Fields::Named(n) => n.named = n.named.iter().filter_map(&strip).collect(),
+            Fields::Unnamed(u) => u.unnamed = u.unnamed.iter().filter_map(&strip).collect(),
+            Fields::Unit => {}
+        }
+    }
+    clean
+}
+
+/// The enum's alias-normalizer impl: one arm per variant, normalizing each stored field that
+/// takes part ([`field_normalizes_aliases`]).
+fn alias_normalizer(e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
+    let name = &e.ident;
+    let mut normalize_arms = Vec::new();
+    for variant in &e.variants {
+        let mut stored = variant.fields.clone();
+        match &mut stored {
+            Fields::Named(n) => {
+                n.named = n
+                    .named
+                    .iter()
+                    .filter(|f| !field_is_temp(f))
+                    .cloned()
+                    .collect();
+            }
+            Fields::Unnamed(u) => {
+                u.unnamed = u
+                    .unnamed
+                    .iter()
+                    .filter(|f| !field_is_temp(f))
+                    .cloned()
+                    .collect();
+            }
+            Fields::Unit => {}
+        }
+        let ids = variant_bind_idents(&stored);
+        let mut normalize = Vec::new();
+        let mut bindings = Vec::new();
+        let mut named_bindings = Vec::new();
+        for (field, id) in stored.iter().zip(&ids) {
+            if field_normalizes_aliases(field)? {
+                normalize.push(crate::builder::normalize_field(&field.ty, &quote!(#id)));
+                bindings.push(quote!(#id));
+                named_bindings.push(quote!(#id));
+            } else {
+                bindings.push(quote!(_));
+                named_bindings.push(quote!(#id: _));
+            }
+        }
+        let vid = &variant.ident;
+        let pattern = match &stored {
+            Fields::Named(_) => quote!(Self::#vid { #(#named_bindings),* }),
+            Fields::Unnamed(_) => quote!(Self::#vid(#(#bindings),*)),
+            Fields::Unit => quote!(Self::#vid),
+        };
+        normalize_arms.push(quote!(#pattern => { #(#normalize)* }));
+    }
+    Ok(crate::builder::normalizer_impl(
+        name,
+        &quote!(match self { #(#normalize_arms),* }),
+    ))
+}
+
+/// The `#[bin]` enum path. See the module banner above.
+#[allow(clippy::too_many_lines)] // Dispatch and generated helpers use one validated variant model.
+pub(in crate::bitstream::bin) fn bin_enum(
+    args: &BinArgs,
+    e: &syn::ItemEnum,
+) -> syn::Result<TokenStream2> {
+    let bnb = crate::bnb_path();
+    let name = &e.ident;
+    let vis = &e.vis;
+    reject_unsupported(args, e)?;
+
+    let dirs = Directions {
+        decode: !args.write_only,
+        encode: !args.read_only,
+    };
+
+    let e_desugared = desugar_count_prefixes(e)?;
     let e = &e_desugared;
 
     // Enum-level `magic` is a leading prefix constant, verified on read / written on
@@ -469,30 +589,7 @@ pub(in crate::bitstream::bin) fn bin_enum(
         ::core::result::Result::Ok(())
     };
 
-    // The explicit source is bound on `SeekSource` when a variant field seeks
-    // (`seek`/`restore_position`) or the variable-width / fallback magic path peeks; a
-    // `forward_only` enum then rejects either, mirroring the struct path.
-    let seeks = use_peek
-        || e.variants
-            .iter()
-            .flat_map(|v| &v.fields)
-            .any(|f| parse_field_br(f).is_ok_and(|br| br.restore_position || br.seek.is_some()));
-    if args.forward_only && seeks {
-        let reason = if use_peek {
-            "variable-width / fallback magic dispatch peeks (it needs to seek)"
-        } else {
-            "a seeking variant field (`seek`/`restore_position`)"
-        };
-        return Err(syn::Error::new_spanned(
-            name,
-            format!("{reason} is incompatible with `#[bin(forward_only)]`"),
-        ));
-    }
-    let from_bound = if seeks {
-        quote!(#bnb::__private::SeekSource)
-    } else {
-        quote!(#bnb::__private::Source)
-    };
+    let from_bound = cursor_bound(args, e, use_peek)?;
 
     let attrs = BitStreamAttrs {
         allow_byte_aligned: true,
@@ -754,7 +851,18 @@ pub(in crate::bitstream::bin) fn bin_enum(
             }
         }
     } else {
-        let prefix_decoders = prefix_methods(&quote!(pub), &layout);
+        let entry_points = DecodeEntryPoints {
+            name,
+            vis: &quote!(pub),
+            layout: &layout,
+            cursor: &from_bound,
+            decode_doc: "Decode one message from a bit cursor (a `BitReader`, `BufSource`, `BitBuf`, a streaming reader, …), advancing it; a seekable cursor is required if a variant seeks. The byte/bit order is the cursor's — use `decode_exact`/`decode_all` to bake the message's in.",
+            decode_all_doc: DECODE_ALL_DOC,
+            decode_iter_doc: DECODE_ITER_DOC,
+            peek_doc: PEEK_DOC,
+            decode_exact_doc: "Decode and require every whole byte consumed.",
+        }
+        .expand();
         quote! {
             impl #bnb::BitDecode for #name {
                 fn bit_decode<__BnbS: #bnb::__private::Source>(
@@ -763,35 +871,7 @@ pub(in crate::bitstream::bin) fn bin_enum(
                     #decode_body
                 }
             }
-            impl #name {
-                #[doc = "Decode one message from a bit cursor (a `BitReader`, `BufSource`, `BitBuf`, a streaming reader, …), advancing it; a seekable cursor is required if a variant seeks. The byte/bit order is the cursor's — use `decode_exact`/`decode_all` to bake the message's in."]
-                pub fn decode<__BnbS: #from_bound>(
-                    __bnb_r: &mut __BnbS,
-                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
-                }
-                #[doc = "Decode every message from `bytes` into a `Vec`, bit-aware with the message's own byte/bit order baked in. Whole bytes must hold whole messages; a sub-byte tail in the final byte that does not decode is padding, as in `decode_exact`. A message that decodes without ending past its start (zero-width, or a backward `seek`) is a `NoProgress` error."]
-                pub fn decode_all(
-                    bytes: &[u8],
-                ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
-                    #bnb::__private::decode_all(bytes, #layout)
-                }
-                #[doc = "A lazy iterator decoding successive messages from `bytes` (layout baked in) until it is drained, ending after the first error if one occurs. A sub-byte tail in the final byte that does not decode ends it cleanly, as padding. A message that decodes without ending past its start (zero-width, or a backward `seek`) ends it with a `NoProgress` error."]
-                pub fn decode_iter(
-                    bytes: &[u8],
-                ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_ {
-                    #bnb::__private::decode_iter(bytes, #layout)
-                }
-                #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof`, indistinguishable from malformed input — use `decode_prefix` to tell them apart."]
-                pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    #bnb::__private::decode_peek(bytes, #layout)
-                }
-                #[doc = "Decode and require every whole byte consumed."]
-                pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    #bnb::__private::decode_exact(bytes, #layout)
-                }
-                #prefix_decoders
-            }
+            #entry_points
         }
     };
 
@@ -874,48 +954,9 @@ pub(in crate::bitstream::bin) fn bin_enum(
     let decode_layout =
         (want_decode && !want_encode && !is_ctx_type).then(|| decode_layout_impl(name, &layout));
 
-    let ctx_struct = if is_ctx_type {
-        let decls = args.ctx.iter().map(|(n, t)| {
-            let doc = format!("The `{n}` context parameter.");
-            quote!(#[doc = #doc] #vis #n: #t)
-        });
-        let params = args.ctx.iter().map(|(n, t)| quote!(#n: #t));
-        let names = args.ctx.iter().map(|(n, _)| n);
-        quote! {
-            #[derive(Clone)]
-            #[doc = "Context for the matching `#[bin(ctx(...))]` type — pass it to `decode_with`."]
-            #vis struct #ctx_name { #(#decls),* }
-            impl #ctx_name {
-                #[doc = "Construct the context positionally, in declaration order."]
-                #vis fn new(#(#params),*) -> Self {
-                    Self { #(#names),* }
-                }
-            }
-        }
-    } else {
-        quote!()
-    };
+    let ctx_struct = ctx_struct_def(vis, name, &args.ctx);
 
-    // The emitted enum: drop `#[br(temp)]` variant fields (read but not stored), strip
-    // the dispatch attrs (`#[bin(tag=…)]`, `#[catch_all]`) and codec field attrs, leaving
-    // an ordinary enum beside the generated impls.
-    let strip = |f: &syn::Field| -> Option<syn::Field> {
-        (!field_is_temp(f)).then(|| {
-            let mut f = f.clone();
-            f.attrs.retain(|a| !is_codec_field_attr(a));
-            f
-        })
-    };
-    let mut clean = e.clone();
-    for v in &mut clean.variants {
-        v.attrs
-            .retain(|a| !(a.path().is_ident("bin") || a.path().is_ident("catch_all")));
-        match &mut v.fields {
-            Fields::Named(n) => n.named = n.named.iter().filter_map(&strip).collect(),
-            Fields::Unnamed(u) => u.unnamed = u.unnamed.iter().filter_map(&strip).collect(),
-            Fields::Unit => {}
-        }
-    }
+    let mut clean = stored_enum(e);
 
     // `#[try_str]` variant fields render adaptively: intercept `Debug` (when derived) and emit a
     // custom impl over the variants. No `#[derive(Debug)]` ⇒ nothing to replace.
@@ -930,52 +971,7 @@ pub(in crate::bitstream::bin) fn bin_enum(
         None => None,
     };
 
-    let mut normalize_arms = Vec::new();
-    for variant in &e.variants {
-        let mut stored = variant.fields.clone();
-        match &mut stored {
-            Fields::Named(n) => {
-                n.named = n
-                    .named
-                    .iter()
-                    .filter(|f| !field_is_temp(f))
-                    .cloned()
-                    .collect();
-            }
-            Fields::Unnamed(u) => {
-                u.unnamed = u
-                    .unnamed
-                    .iter()
-                    .filter(|f| !field_is_temp(f))
-                    .cloned()
-                    .collect();
-            }
-            Fields::Unit => {}
-        }
-        let ids = variant_bind_idents(&stored);
-        let mut normalize = Vec::new();
-        let mut bindings = Vec::new();
-        let mut named_bindings = Vec::new();
-        for (field, id) in stored.iter().zip(&ids) {
-            if field_normalizes_aliases(field)? {
-                normalize.push(crate::builder::normalize_field(&field.ty, &quote!(#id)));
-                bindings.push(quote!(#id));
-                named_bindings.push(quote!(#id));
-            } else {
-                bindings.push(quote!(_));
-                named_bindings.push(quote!(#id: _));
-            }
-        }
-        let vid = &variant.ident;
-        let pattern = match &stored {
-            Fields::Named(_) => quote!(Self::#vid { #(#named_bindings),* }),
-            Fields::Unnamed(_) => quote!(Self::#vid(#(#bindings),*)),
-            Fields::Unit => quote!(Self::#vid),
-        };
-        normalize_arms.push(quote!(#pattern => { #(#normalize)* }));
-    }
-    let normalizer =
-        crate::builder::normalizer_impl(name, &quote!(match self { #(#normalize_arms),* }));
+    let normalizer = alias_normalizer(e)?;
 
     Ok(quote! {
         #ctx_struct

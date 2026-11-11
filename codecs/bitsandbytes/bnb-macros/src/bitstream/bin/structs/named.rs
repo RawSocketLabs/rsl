@@ -10,7 +10,7 @@ use crate::bitstream::bin::args::BinArgs;
 use crate::bitstream::bin::item::{
     debug_field_calls, field_is_try_str, intercept_debug_derive, is_codec_field_attr,
 };
-use crate::bitstream::ctx::ctx_struct_ident;
+use crate::bitstream::ctx::ctx_struct_def;
 use crate::bitstream::field::{
     CountPrefixSite, desugar_count_prefix, field_is_temp, parse_field_br, reserved_spec_value,
 };
@@ -245,29 +245,7 @@ pub(in crate::bitstream::bin) fn bin_struct(
     };
 
     // `ctx(...)`: the single front-end owns the generated `<Name>Ctx` struct.
-    let ctx_struct = if args.ctx.is_empty() {
-        quote!()
-    } else {
-        let ctx_name = ctx_struct_ident(&s.ident);
-        let vis = &s.vis;
-        let decls = args.ctx.iter().map(|(n, t)| {
-            let doc = format!("The `{n}` context parameter.");
-            quote!(#[doc = #doc] #vis #n: #t)
-        });
-        let params = args.ctx.iter().map(|(n, t)| quote!(#n: #t));
-        let names = args.ctx.iter().map(|(n, _)| n);
-        quote! {
-            #[derive(Clone)]
-            #[doc = "Context for the matching `#[bin(ctx(...))]` type — pass it to `decode_with`."]
-            #vis struct #ctx_name { #(#decls),* }
-            impl #ctx_name {
-                #[doc = "Construct the context positionally, in declaration order."]
-                #vis fn new(#(#params),*) -> Self {
-                    Self { #(#names),* }
-                }
-            }
-        }
-    };
+    let ctx_struct = ctx_struct_def(&s.vis, &s.ident, &args.ctx);
 
     // `validate = path` is also exposed as re-runnable methods: `build()` checks once at
     // construction, but the value can be mutated before sending — `validate()`/`is_valid()`

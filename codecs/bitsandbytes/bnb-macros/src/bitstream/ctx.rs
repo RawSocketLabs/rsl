@@ -4,7 +4,7 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
-use syn::{Ident, Token, Type};
+use syn::{Ident, Token, Type, Visibility};
 
 /// A declared context parameter `name: Ty` from `ctx(name: Ty, …)`.
 pub(super) struct CtxParam {
@@ -44,6 +44,37 @@ impl Parse for CtxArg {
 /// The generated context-struct name for a type/ident — `Foo` ⇒ `FooCtx`.
 pub(super) fn ctx_struct_ident(name: &Ident) -> Ident {
     format_ident!("{}Ctx", name)
+}
+
+/// The `…Ctx` struct a `ctx(...)` type's front-end emits beside it, with its positional
+/// `new`: one field per declared parameter, as visible as the type. `None` for a type that
+/// declares no context.
+pub(super) fn ctx_struct_def(
+    vis: &Visibility,
+    name: &Ident,
+    ctx: &[(Ident, Type)],
+) -> Option<TokenStream2> {
+    if ctx.is_empty() {
+        return None;
+    }
+    let ctx_name = ctx_struct_ident(name);
+    let decls = ctx.iter().map(|(n, t)| {
+        let doc = format!("The `{n}` context parameter.");
+        quote!(#[doc = #doc] #vis #n: #t)
+    });
+    let params = ctx.iter().map(|(n, t)| quote!(#n: #t));
+    let names = ctx.iter().map(|(n, _)| n);
+    Some(quote! {
+        #[derive(Clone)]
+        #[doc = "Context for the matching `#[bin(ctx(...))]` type — pass it to `decode_with`."]
+        #vis struct #ctx_name { #(#decls),* }
+        impl #ctx_name {
+            #[doc = "Construct the context positionally, in declaration order."]
+            #vis fn new(#(#params),*) -> Self {
+                Self { #(#names),* }
+            }
+        }
+    })
 }
 
 /// The context-struct **type** for a field/element type — appends `Ctx` to the

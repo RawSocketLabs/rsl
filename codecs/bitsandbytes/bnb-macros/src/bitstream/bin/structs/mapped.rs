@@ -7,7 +7,7 @@ use syn::spanned::Spanned;
 use syn::{ItemStruct, Type};
 
 use crate::bitstream::bin::args::BinArgs;
-use crate::bitstream::generate::{decode_layout_impl, prefix_methods};
+use crate::bitstream::generate::{DecodeEntryPoints, decode_layout_impl};
 
 /// The wire **message** type for a mapped `#[bin]` struct: given directly by `wire`/`try_wire`,
 /// or (closure form) taken from the `map`/`try_map` closure's annotated parameter, or the
@@ -197,7 +197,18 @@ pub(super) fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<T
                 .expect("invariant: closure-form decode has `map` or `try_map`");
             quote!(#bnb::__private::decode_try_mapped_msg(__bnb_r, #tm))
         };
-        let prefix_decoders = prefix_methods(&quote!(#vis), &layout);
+        let entry_points = DecodeEntryPoints {
+            name,
+            vis: &quote!(#vis),
+            layout: &layout,
+            cursor: &quote!(#bnb::__private::Source),
+            decode_doc: "Decode one message from a `Source` cursor (mapping the wire type to this logical type).",
+            decode_all_doc: "Decode every message from `bytes` into a `Vec` (at the wire type's layout).",
+            decode_iter_doc: "A lazy iterator decoding successive messages from `bytes`.",
+            peek_doc: "Decode one message without consuming the buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof` — use `decode_prefix` to tell it from malformed input.",
+            decode_exact_doc: "Decode and require every whole byte consumed.",
+        }
+        .expand();
         quote! {
             impl #bnb::__private::BitDecode for #name {
                 fn bit_decode<__BnbS: #bnb::__private::Source>(
@@ -207,36 +218,7 @@ pub(super) fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<T
                 }
             }
 
-            impl #name {
-                #[doc = "Decode one message from a `Source` cursor (mapping the wire type to this logical type)."]
-                #vis fn decode<__BnbS: #bnb::__private::Source>(
-                    __bnb_r: &mut __BnbS,
-                ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
-                }
-                #[doc = "Decode every message from `bytes` into a `Vec` (at the wire type's layout)."]
-                #vis fn decode_all(
-                    bytes: &[u8],
-                ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
-                    #bnb::__private::decode_all(bytes, #layout)
-                }
-                #[doc = "A lazy iterator decoding successive messages from `bytes`."]
-                #vis fn decode_iter(
-                    bytes: &[u8],
-                ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_
-                {
-                    #bnb::__private::decode_iter(bytes, #layout)
-                }
-                #[doc = "Decode one message without consuming the buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof` — use `decode_prefix` to tell it from malformed input."]
-                #vis fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    #bnb::__private::decode_peek(bytes, #layout)
-                }
-                #[doc = "Decode and require every whole byte consumed."]
-                #vis fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    #bnb::__private::decode_exact(bytes, #layout)
-                }
-                #prefix_decoders
-            }
+            #entry_points
         }
     } else {
         quote!()

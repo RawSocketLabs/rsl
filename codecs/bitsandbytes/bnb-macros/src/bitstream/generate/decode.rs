@@ -5,7 +5,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{FieldsNamed, Ident};
 
-use super::entry_points::prefix_methods;
+use super::entry_points::{DECODE_ALL_DOC, DECODE_ITER_DOC, DecodeEntryPoints, PEEK_DOC};
 use super::layout::layout_token;
 use super::options::BitStreamAttrs;
 use super::positioning::pad_read_tokens;
@@ -371,7 +371,18 @@ pub(in crate::bitstream) fn gen_decode(
     // There is no canonical *decode*: `decode_*` is always verbatim (it retains the wire
     // bits of reserved fields — dual-use). Canonicalization is an encode-side concern
     // (`to_canonical_bytes`) or an explicit in-memory helper.
-    let prefix_decoders = prefix_methods(&quote!(pub), &layout);
+    let entry_points = DecodeEntryPoints {
+        name,
+        vis: &quote!(pub),
+        layout: &layout,
+        cursor: &from_bound,
+        decode_doc: from_doc,
+        decode_all_doc: DECODE_ALL_DOC,
+        decode_iter_doc: DECODE_ITER_DOC,
+        peek_doc: PEEK_DOC,
+        decode_exact_doc: "Decode and require every whole byte consumed (errors with `ErrorKind::TrailingBytes` otherwise).",
+    }
+    .expand();
 
     Ok(quote! {
         #guard
@@ -386,34 +397,6 @@ pub(in crate::bitstream) fn gen_decode(
             }
         }
 
-        impl #name {
-            #[doc = #from_doc]
-            pub fn decode<__BnbS: #from_bound>(
-                __bnb_r: &mut __BnbS,
-            ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
-            }
-            #[doc = "Decode every message from `bytes` into a `Vec`, bit-aware with the message's own byte/bit order baked in. Whole bytes must hold whole messages; a sub-byte tail in the final byte that does not decode is padding, as in `decode_exact`. A message that decodes without ending past its start (zero-width, or a backward `seek`) is a `NoProgress` error."]
-            pub fn decode_all(
-                bytes: &[u8],
-            ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
-                #bnb::__private::decode_all(bytes, #layout)
-            }
-            #[doc = "A lazy iterator decoding successive messages from `bytes` (layout baked in) until it is drained, ending after the first error if one occurs. A sub-byte tail in the final byte that does not decode ends it cleanly, as padding. A message that decodes without ending past its start (zero-width, or a backward `seek`) ends it with a `NoProgress` error."]
-            pub fn decode_iter(
-                bytes: &[u8],
-            ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_ {
-                #bnb::__private::decode_iter(bytes, #layout)
-            }
-            #[doc = "Decode one message from `bytes` without consuming the caller's buffer (tail-tolerant). Not a prefix decoder: a short slice is a definitive `UnexpectedEof`, indistinguishable from malformed input — use `decode_prefix` to tell them apart."]
-            pub fn peek(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                #bnb::__private::decode_peek(bytes, #layout)
-            }
-            #[doc = "Decode and require every whole byte consumed (errors with `ErrorKind::TrailingBytes` otherwise)."]
-            pub fn decode_exact(bytes: &[u8]) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                #bnb::__private::decode_exact(bytes, #layout)
-            }
-            #prefix_decoders
-        }
+        #entry_points
     })
 }
