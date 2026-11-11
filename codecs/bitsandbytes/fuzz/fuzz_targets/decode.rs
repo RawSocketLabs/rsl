@@ -7,7 +7,7 @@
 //! Run: `cargo +nightly fuzz run decode`.
 #![no_main]
 
-use bnb::{BitEnum, NormalizeEnumAliases, bin, u4, u12};
+use bnb::{BitEnum, NormalizeEnumAliases, bin, prelude::*, u4, u12};
 use libfuzzer_sys::fuzz_target;
 
 // --- shapes (mirror tests/fuzz_roundtrip.rs) ----------------------------------
@@ -76,6 +76,16 @@ struct Magic {
     body: u16,
 }
 
+/// A pointer-following message: it ends wherever `off` sends the cursor, possibly before
+/// its own start — the shape that must not stall a slice walk.
+#[bin(big)]
+#[derive(Debug, Clone, PartialEq)]
+struct Jump {
+    off: u8,
+    #[br(seek = off.bytes())]
+    target: u8,
+}
+
 fuzz_target!(|data: &[u8]| {
     if let Some(&raw) = data.first() {
         let mut built = Tagged::builder()
@@ -101,6 +111,14 @@ fuzz_target!(|data: &[u8]| {
     let _ = Counted::peek(data);
     let _ = Counted::decode_all(data);
     let _ = Counted::decode_iter(data).count();
+    // A walk decodes at most one message per input bit, plus the one that stops it —
+    // even when a message seeks backward.
+    let bound = data.len() * 8 + 1;
+    let _ = Jump::decode_all(data);
+    assert!(
+        Jump::decode_iter(data).take(bound + 1).count() <= bound,
+        "a slice walk must terminate"
+    );
 
     // Property 3 — decode ∘ encode = id for the fixed-length total parsers. Any
     // byte string of the right length decodes (the parser is total) and re-encodes

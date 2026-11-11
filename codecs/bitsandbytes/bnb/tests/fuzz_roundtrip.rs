@@ -1,16 +1,19 @@
 //! Property-based robustness + round-trip tests across a spread of `#[bin]` message
-//! shapes. Three properties, each over random input:
+//! shapes. Four properties, each over random input:
 //!
 //! 1. **encode ∘ decode = id** — a value encoded then decoded is unchanged.
 //! 2. **decode never panics on arbitrary bytes** — the dual-use safety property: a
 //!    parser fed hostile/garbage input returns `Ok` or `Err`, never panics.
 //! 3. **decode ∘ encode = id** — for fixed-length total parsers, decoding any byte
 //!    string of the right length then re-encoding reproduces it (a bijection).
+//! 4. **a slice walk does bounded work** — `decode_all`/`decode_iter` decode at most one
+//!    message per input bit, whatever a `seek` does to the cursor.
 
 mod property {
 
-    use bnb::{BitEnum, bin, u4, u12};
+    use bnb::{BitEnum, bin, prelude::*, u4, u12};
     use proptest::prelude::*;
+    use std::cell::Cell;
 
     // --- shapes -------------------------------------------------------------------
 
@@ -118,6 +121,36 @@ mod property {
         #[br(parse_with = bnb::codecs::cstring::parse)]
         #[bw(write_with = bnb::codecs::cstring::write)]
         tail: Vec<u8>,
+    }
+
+    /// Longest input the bounded-walk property generates, in bytes.
+    const WALK_LEN: u8 = 64;
+
+    thread_local! {
+        /// `Jump` messages decoded on this thread since the count was last reset.
+        static JUMPS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// Counts one `Jump` decode. Every message of a walk must end past its start, so more
+    /// than one per input bit (plus the one that stops the walk) means it stopped
+    /// terminating: fail here instead of exhausting memory.
+    fn count_jump(target: u8) -> u8 {
+        JUMPS.set(JUMPS.get() + 1);
+        assert!(
+            JUMPS.get() <= usize::from(WALK_LEN) * 8 + 1,
+            "a slice walk must terminate"
+        );
+        target
+    }
+
+    /// A pointer-following message: it ends wherever `off` sends the cursor, possibly before
+    /// its own start. Decode-only: the counting `map` has no inverse.
+    #[bin(big, read_only)]
+    #[derive(Debug, Clone, PartialEq)]
+    struct Jump {
+        off: u8,
+        #[br(seek = off.bytes(), map = count_jump)]
+        target: u8,
     }
 
     proptest! {
@@ -237,6 +270,21 @@ mod property {
             let _ = CountedPrefixed::decode_iter(&bytes).count();
             let _ = Coded::decode_exact(&bytes);
             let _ = Coded::peek(&bytes);
+        }
+
+        // --- 4. a slice walk does bounded work ------------------------------------
+
+        #[test]
+        fn a_seeking_message_cannot_stall_a_slice_walk(
+            // Small bytes keep most `off` pointers inside the buffer, where they can loop.
+            bytes in prop::collection::vec(0..=WALK_LEN, 0..=usize::from(WALK_LEN)),
+        ) {
+            let bound = bytes.len() * 8 + 1;
+            JUMPS.set(0);
+            let _ = Jump::decode_all(&bytes);
+            prop_assert!(JUMPS.get() <= bound, "decode_all decoded {} messages", JUMPS.get());
+            JUMPS.set(0);
+            prop_assert!(Jump::decode_iter(&bytes).take(bound + 1).count() <= bound);
         }
 
         // --- 3. decode ∘ encode = id for fixed total parsers ---------------------

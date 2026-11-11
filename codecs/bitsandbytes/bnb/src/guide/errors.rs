@@ -50,7 +50,9 @@
 //! - `IncompleteAtEof { needed }` — a custom codec still requested input in a finite
 //!   `BitBuf`/`BinCodec` attempt. Other finite custom-codec entry points must report
 //!   their own definitive errors.
-//! - `NoProgress` — a streamed message or counted element consumed no bits.
+//! - `NoProgress` — a streamed message, a counted element, or a message in a
+//!   `decode_all`/`decode_iter` slice walk decoded without ending past its start (zero-width,
+//!   or a backward `seek`).
 //! - `NotSeekable` / `BufferFull` / `TooWide` / `Io` — seek-on-a-stream, buffer cap,
 //!   over-128-bit field, and an I/O failure (carrying just the `std::io::ErrorKind`, not
 //!   the full `io::Error`). `NotSeekable`/`BufferFull` are exactly what you hit moving from

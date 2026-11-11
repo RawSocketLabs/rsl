@@ -8,7 +8,7 @@
 
 mod macro_ {
 
-    use bnb::{bin, prelude::*};
+    use bnb::{ErrorKind, bin, prelude::*};
 
     #[bin(big)]
     #[derive(Debug, PartialEq)]
@@ -46,6 +46,36 @@ mod macro_ {
         let t = Tail::peek(&[0x02, 0x00, 0x7E]).unwrap();
         assert_eq!(t.off, 2);
         assert_eq!(t.target, 0x7E); // byte offset 2
+    }
+
+    /// A pointer-following message: where it ends is wherever `off` sent it.
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    struct Jump {
+        off: u8,
+        #[br(seek = off.bytes())]
+        target: u8,
+    }
+
+    #[test]
+    fn a_message_that_seeks_backward_ends_decode_iter_with_no_progress() {
+        // The first message ends at bit 16; the second reads `off = 0` there and seeks back to
+        // byte 0, ending at bit 8 — before it started. Left unchecked the cursor cycles forever.
+        let mut items = Jump::decode_iter(&[1, 1, 0]).take(8);
+        assert_eq!(items.next(), Some(Ok(Jump { off: 1, target: 1 })));
+        let error = items.next().unwrap().unwrap_err();
+        assert_eq!((error.kind, error.at), (ErrorKind::NoProgress, 16));
+        assert_eq!(
+            items.next(),
+            None,
+            "the iterator stays stopped after the error"
+        );
+    }
+
+    #[test]
+    fn a_message_that_seeks_backward_fails_decode_all_with_no_progress() {
+        let error = Jump::decode_all(&[1, 1, 0]).unwrap_err();
+        assert_eq!((error.kind, error.at), (ErrorKind::NoProgress, 16));
     }
 
     // `dbg` is a read-side diagnostic: it emits a `tracing` event but is otherwise inert —

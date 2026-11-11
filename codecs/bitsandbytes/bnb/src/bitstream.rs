@@ -166,8 +166,9 @@ pub enum ErrorKind {
         /// The custom codec's additional-byte hint, if known; informational at finite EOF.
         needed: Option<usize>,
     },
-    /// A streamed message or counted element succeeded without moving its cursor forward.
-    /// Rejecting it prevents a drain loop from emitting unlimited values from no input.
+    /// A streamed message, counted element, or message in a `decode_all`/`decode_iter` slice
+    /// walk succeeded without ending past where it started (zero-width, or a backward
+    /// `seek`). Rejecting it prevents a drain loop from emitting unlimited values from no input.
     NoProgress,
     /// `decode_exact` left whole bytes unconsumed after the message.
     TrailingBytes {
@@ -2130,7 +2131,9 @@ impl<T: BitEncode> EncodeWith<()> for T {
 /// narrower than a byte) is kept: padding and such a message cannot be told apart.
 ///
 /// # Errors
-/// The first decode [`BitError`] (e.g. a truncated trailing message).
+/// The first decode [`BitError`] (e.g. a truncated trailing message), or
+/// [`ErrorKind::NoProgress`] at a message's start when it decodes without ending past that
+/// start (a zero-width message, or one whose `seek` leaves the cursor at or before it).
 #[doc(hidden)]
 pub fn decode_all<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<Vec<T>, BitError> {
     let mut r = BitReader::with_layout(bytes, layout);
@@ -2142,9 +2145,9 @@ pub fn decode_all<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<Vec<T>, 
             Err(e) if is_padding(bytes, before, layout.bit, &e) => break,
             Err(e) => return Err(e),
         };
-        if r.bit_pos() == before {
-            break; // a zero-width `T` makes no progress — stop without pushing a spurious
-            // element (and without spinning forever).
+        if r.bit_pos() <= before {
+            // Zero-width, or a backward `seek`: without this the loop never ends.
+            return Err(BitError::new(ErrorKind::NoProgress, before));
         }
         out.push(item);
     }
@@ -2171,7 +2174,9 @@ fn is_padding(bytes: &[u8], at: usize, bit: BitOrder, error: &BitError) -> bool 
 
 /// A lazy iterator decoding successive `T` from `bytes` (layout baked in) until the buffer is
 /// drained, ending after the first error if one occurs. Backs `Type::decode_iter`. A sub-byte
-/// tail that does not decode ends it cleanly, as in [`decode_all`].
+/// tail that does not decode ends it cleanly, as in [`decode_all`]. A message that decodes
+/// without ending past its start is that final error, [`ErrorKind::NoProgress`], and is not
+/// yielded.
 #[doc(hidden)]
 pub fn decode_iter<T: BitDecode>(
     bytes: &[u8],
@@ -2185,10 +2190,12 @@ pub fn decode_iter<T: BitDecode>(
         }
         let before = r.bit_pos();
         match T::bit_decode(&mut r) {
-            Ok(v) => {
-                stopped = r.bit_pos() == before; // stop if a zero-width message made no progress
-                Some(Ok(v))
+            // Zero-width, or a backward `seek`: without this the iterator never ends.
+            Ok(_) if r.bit_pos() <= before => {
+                stopped = true;
+                Some(Err(BitError::new(ErrorKind::NoProgress, before)))
             }
+            Ok(v) => Some(Ok(v)),
             Err(e) if is_padding(bytes, before, layout.bit, &e) => {
                 stopped = true;
                 None
@@ -5245,7 +5252,7 @@ mod component {
         }
 
         #[test]
-        fn decode_all_of_a_zero_width_type_yields_nothing() {
+        fn decode_all_and_iter_of_a_zero_width_type_are_no_progress() {
             use bnb::{BitDecode, BitError, Layout, Source};
             #[derive(Debug, PartialEq)]
             struct Zero;
@@ -5254,11 +5261,15 @@ mod component {
                     Ok(Zero)
                 }
             }
-            // A zero-width type makes no progress; over a non-empty buffer `decode_all` must
-            // yield an empty `Vec` (not one spurious element) and not spin.
-            let out: Vec<Zero> =
-                bnb::__private::decode_all(&[0xFF, 0xFF], Layout::default()).unwrap();
-            assert_eq!(out, []);
+            // A zero-width type makes no progress; over a non-empty buffer both entry points
+            // must say so once (no spurious element, no spinning) rather than drop the bytes.
+            let error =
+                bnb::__private::decode_all::<Zero>(&[0xFF, 0xFF], Layout::default()).unwrap_err();
+            assert_eq!((error.kind, error.at), (ErrorKind::NoProgress, 0));
+            let mut items = bnb::__private::decode_iter::<Zero>(&[0xFF, 0xFF], Layout::default());
+            let error = items.next().unwrap().unwrap_err();
+            assert_eq!((error.kind, error.at), (ErrorKind::NoProgress, 0));
+            assert_eq!(items.next(), None);
         }
 
         #[test]

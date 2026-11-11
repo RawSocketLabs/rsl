@@ -1558,13 +1558,13 @@ fn gen_decode(
             ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
             }
-            #[doc = "Decode every message from `bytes` into a `Vec`, bit-aware with the message's own byte/bit order baked in. Whole bytes must hold whole messages; a sub-byte tail in the final byte that does not decode is padding, as in `decode_exact`."]
+            #[doc = "Decode every message from `bytes` into a `Vec`, bit-aware with the message's own byte/bit order baked in. Whole bytes must hold whole messages; a sub-byte tail in the final byte that does not decode is padding, as in `decode_exact`. A message that decodes without ending past its start (zero-width, or a backward `seek`) is a `NoProgress` error."]
             pub fn decode_all(
                 bytes: &[u8],
             ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
                 #bnb::__private::decode_all(bytes, #layout)
             }
-            #[doc = "A lazy iterator decoding successive messages from `bytes` (layout baked in) until it is drained, ending after the first error if one occurs. A sub-byte tail in the final byte that does not decode ends it cleanly, as padding."]
+            #[doc = "A lazy iterator decoding successive messages from `bytes` (layout baked in) until it is drained, ending after the first error if one occurs. A sub-byte tail in the final byte that does not decode ends it cleanly, as padding. A message that decodes without ending past its start (zero-width, or a backward `seek`) ends it with a `NoProgress` error."]
             pub fn decode_iter(
                 bytes: &[u8],
             ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_ {
@@ -4577,13 +4577,13 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
                 }
-                #[doc = "Decode every message from `bytes` into a `Vec`, bit-aware with the message's own byte/bit order baked in. Whole bytes must hold whole messages; a sub-byte tail in the final byte that does not decode is padding, as in `decode_exact`."]
+                #[doc = "Decode every message from `bytes` into a `Vec`, bit-aware with the message's own byte/bit order baked in. Whole bytes must hold whole messages; a sub-byte tail in the final byte that does not decode is padding, as in `decode_exact`. A message that decodes without ending past its start (zero-width, or a backward `seek`) is a `NoProgress` error."]
                 pub fn decode_all(
                     bytes: &[u8],
                 ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
                     #bnb::__private::decode_all(bytes, #layout)
                 }
-                #[doc = "A lazy iterator decoding successive messages from `bytes` (layout baked in) until it is drained, ending after the first error if one occurs. A sub-byte tail in the final byte that does not decode ends it cleanly, as padding."]
+                #[doc = "A lazy iterator decoding successive messages from `bytes` (layout baked in) until it is drained, ending after the first error if one occurs. A sub-byte tail in the final byte that does not decode ends it cleanly, as padding. A message that decodes without ending past its start (zero-width, or a backward `seek`) ends it with a `NoProgress` error."]
                 pub fn decode_iter(
                     bytes: &[u8],
                 ) -> impl ::core::iter::Iterator<Item = ::core::result::Result<Self, #bnb::__private::BitError>> + '_ {
