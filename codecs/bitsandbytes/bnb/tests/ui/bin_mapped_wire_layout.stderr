@@ -1,0 +1,26 @@
+error[E0277]: `Handwritten` cannot be the wire type of a decode-only mapped `#[bin]` struct: it declares no byte and bit order
+  --> tests/ui/bin_mapped_wire_layout.rs:14:25
+   |
+14 | #[bin(read_only, wire = Handwritten)]
+   |                         ^^^^^^^^^^^ the mapped struct decodes in this type's order, and it declares none
+   |
+help: the trait `bnb::__private::DecodeLayout` is not implemented for `Handwritten`
+  --> tests/ui/bin_mapped_wire_layout.rs:6:1
+   |
+ 6 | struct Handwritten(u16);
+   | ^^^^^^^^^^^^^^^^^^
+   = note: a `#[bin]` type declares its order itself; for a hand-written decoder, implement `BitEncode` too (its `LAYOUT` is where a type states the order it is read and written in)
+help: the trait `bnb::__private::DecodeLayout` is implemented for `Mapped`
+  --> tests/ui/bin_mapped_wire_layout.rs:14:1
+   |
+14 | #[bin(read_only, wire = Handwritten)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `bnb::__private::WireLayoutMissing::layout`
+  --> src/lib.rs
+   |
+   |         fn layout(self) -> Layout
+   |            ------ required by a bound in this associated function
+   |         where
+   |             W: DecodeLayout;
+   |                ^^^^^^^^^^^^ required by this bound in `WireLayoutMissing::layout`
+   = note: this error originates in the attribute macro `bin` (in Nightly builds, run with -Z macro-backtrace for more info)

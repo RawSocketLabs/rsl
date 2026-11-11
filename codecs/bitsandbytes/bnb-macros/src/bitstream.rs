@@ -24,7 +24,7 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, quote_spanned};
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
@@ -74,9 +74,10 @@ fn ctx_struct_ident(name: &Ident) -> Ident {
 }
 
 /// The context-struct **type** for a field/element type — appends `Ctx` to the
-/// last path segment so `m::Value` ⇒ `m::ValueCtx`.
+/// last path segment so `m::Value` ⇒ `m::ValueCtx`. Seen through a `macro_rules!` type
+/// fragment ([`crate::ungroup`]).
 fn ctx_struct_ty(ty: &Type) -> syn::Result<TokenStream2> {
-    if let Type::Path(p) = ty {
+    if let Type::Path(p) = crate::ungroup(ty) {
         let mut path = p.path.clone();
         if let Some(last) = path.segments.last_mut() {
             last.ident = ctx_struct_ident(&last.ident);
@@ -193,7 +194,9 @@ fn decode_layout_impl(name: &Ident, layout: &TokenStream2) -> TokenStream2 {
     let bnb = crate::bnb_path();
     quote! {
         impl #bnb::__private::DecodeLayout for #name {
-            const LAYOUT: #bnb::__private::Layout = #layout;
+            fn layout() -> #bnb::__private::Layout {
+                #layout
+            }
         }
     }
 }
@@ -347,10 +350,10 @@ struct FieldBr {
     /// `BitDecode`), so no `br` side is needed here. The same-struct counterpart to the
     /// struct-level `#[bin(auto_len(...))]` (which targets a *nested* field); same keyword.
     auto_len: Option<AutoTarget>,
-    /// Every directive as written (one of the `D_*` names, `#[reserved]` included), in source
-    /// order with its keyword span: what [`check_field_directives`] reads to reject a
-    /// duplicate or a conflicting pair at the directive itself.
-    seen: Vec<(&'static str, proc_macro2::Span)>,
+    /// Every directive as written (`#[reserved]` included), in source order: what
+    /// [`check_field_directives`] reads to reject a conflicting pair or a second, different
+    /// value at the directive itself.
+    seen: Vec<Written>,
 }
 
 impl FieldBr {
@@ -358,8 +361,36 @@ impl FieldBr {
     fn span_of(&self, name: &str) -> proc_macro2::Span {
         self.seen
             .iter()
-            .find(|(n, _)| *n == name)
-            .map_or_else(proc_macro2::Span::call_site, |(_, span)| *span)
+            .find(|w| w.name == name)
+            .map_or_else(proc_macro2::Span::call_site, |w| w.span)
+    }
+}
+
+/// One directive as written on a field, for [`check_field_directives`].
+#[derive(Clone)]
+struct Written {
+    /// Which directive: one of the `D_*` names.
+    name: &'static str,
+    /// The directive's keyword, where a diagnostic about it points.
+    span: proc_macro2::Span,
+    /// The value's tokens (empty for a flag), to tell a restatement from a different value.
+    value: String,
+}
+
+impl Written {
+    /// The directive `name` at `span`, carrying `value`.
+    fn new(name: &'static str, span: proc_macro2::Span, value: &dyn quote::ToTokens) -> Self {
+        let value = value.to_token_stream().to_string();
+        Self { name, span, value }
+    }
+
+    /// Which of the two attributes a [`D_RESERVED`] record was written as, for a diagnostic.
+    fn reserved_form(&self) -> &'static str {
+        if self.value.starts_with("reserved_with") {
+            "#[reserved_with(…)]"
+        } else {
+            D_RESERVED
+        }
     }
 }
 
@@ -390,12 +421,16 @@ const D_VARIABLE: &str = "#[brw(variable)]";
 const D_RESERVED: &str = "#[reserved]";
 
 /// Field directives that cannot share a field: `(directive, the directives it conflicts
-/// with, why — and what to write instead)`. Every pair here used to drop one of the two
+/// with, why — and what to write instead)`; `$other` in the reason stands for whichever
+/// listed directive the field carries. Every pair here used to drop one of the two
 /// silently or make the read and write sides disagree. Pairs absent from the table compose:
 /// positioning, `dbg`, `assert` and `variable` wrap or annotate any field, a read-side and a
 /// write-side directive each own their direction, and `count` + `ctx` is a `Vec` of
-/// context-taking elements.
+/// context-taking elements. A rule that takes three directives to state is not a pair and
+/// lives in [`check_field_directives`].
 const FIELD_CONFLICTS: &[(&str, &[&str], &str)] = &[
+    // `#[bw(calc = …)]` is not listed: on a stored ignored field it is the value
+    // `to_canonical()` computes and `canonical_diff()` compares (a memoised field).
     (
         D_IGNORE,
         &[
@@ -406,14 +441,15 @@ const FIELD_CONFLICTS: &[(&str, &[&str], &str)] = &[
             D_MAP,
             D_TRY_MAP,
             D_PARSE_WITH,
-            D_BW_CALC,
+            D_BR_CALC,
             D_BW_MAP,
             D_WRITE_WITH,
             D_AUTO_LEN,
             D_RESERVED,
         ],
-        "an ignored field is neither read nor written, so the other directive would never \
-         run; remove `ignore`, or remove the other directive",
+        "`$other` would be ignored, because a `#[brw(ignore)]` field is neither read nor \
+         written (decode leaves it at `Default::default()`). Remove `$other`, or remove \
+         `ignore`",
     ),
     (
         D_BR_CALC,
@@ -433,9 +469,9 @@ const FIELD_CONFLICTS: &[(&str, &[&str], &str)] = &[
             D_RESTORE_POSITION,
             D_RESERVED,
         ],
-        "`#[br(calc = …)]` computes the field on decode and writes nothing on encode, so a \
-         directive that reads, maps, seeks, writes or reserves the same field has nothing to \
-         act on; keep only the `calc` (padding and alignment may stay)",
+        "`$other` would have nothing to act on, because `#[br(calc = …)]` computes the field \
+         from earlier fields on decode and puts no bits on the wire in either direction. \
+         Remove `$other` (padding and alignment may stay)",
     ),
     (
         D_IF,
@@ -453,9 +489,11 @@ const FIELD_CONFLICTS: &[(&str, &[&str], &str)] = &[
     (
         D_IF,
         &[D_CTX],
-        "`if` reads the `Option`'s inner type with that type's own codec, so the context \
-         would not be passed; make the field a plain child and pass the condition to it as \
-         context",
+        "`#[br(ctx { … })]` would be ignored, because `if` reads the `Option`'s inner type \
+         with that type's own codec and passes it no context. Decide inside a `parse_with` \
+         closure instead, which can name the earlier fields: `#[br(parse_with = |r| if <cond> \
+         { <Child>::decode_with(r, <Child>Ctx { … }).map(Some) } else { Ok(None) })]`, with \
+         the matching `#[bw(write_with = …)]`",
     ),
     (
         D_MAP,
@@ -471,17 +509,17 @@ const FIELD_CONFLICTS: &[(&str, &[&str], &str)] = &[
     (
         D_COUNT,
         &[D_MAP, D_TRY_MAP, D_PARSE_WITH],
-        "a mapped or custom-parsed field is read by its closure's wire type or by its \
-         function, so the count would be silently dropped; drop `count` and size the read \
-         inside a `parse_with` function, or read the counted `Vec` into a `#[br(temp)]` field \
-         and derive this one with `#[br(calc = …)]`",
+        "`#[br(count = …)]` would be ignored, because `$other` reads the whole field itself \
+         (a `map` closure's argument type or the `parse_with` function decides how much). \
+         Remove `count`; to size the read by an earlier field, name that field inside a \
+         `parse_with` closure",
     ),
     (
         D_CTX,
         &[D_MAP, D_TRY_MAP, D_PARSE_WITH],
-        "a mapped or custom-parsed field is read by its closure's wire type or by its \
-         function, so the context would be silently dropped; drop `ctx` and pass the values \
-         to a `parse_with` closure, which can name the earlier fields directly",
+        "`#[br(ctx { … })]` would be ignored, because `$other` reads the whole field itself \
+         and the context is never built or passed. Remove `ctx`; a `parse_with` closure can \
+         name the earlier fields and hand them to the child's `decode_with` itself",
     ),
     (
         D_BW_CALC,
@@ -515,57 +553,122 @@ const FIELD_CONFLICTS: &[(&str, &[&str], &str)] = &[
     ),
     (
         D_RESTORE_POSITION,
-        &[D_BW_CALC, D_BW_MAP, D_WRITE_WITH, D_AUTO_LEN],
-        "a `restore_position` field is a read-side peek and is never written (the field it \
-         overlaps writes those bytes), so the write-side directive would be silently dropped; \
-         remove it",
+        &[D_BW_MAP, D_WRITE_WITH, D_AUTO_LEN],
+        "`$other` would be ignored, because a `restore_position` field is a read-side peek \
+         and is never written (the field it overlaps writes those bytes). Remove `$other`; \
+         a peek needs no write-side inverse, even when it is read with `map` or `parse_with`",
     ),
     (
         D_RESERVED,
         &[
-            D_TEMP,
             D_COUNT,
             D_CTX,
             D_IF,
             D_MAP,
             D_TRY_MAP,
             D_PARSE_WITH,
-            D_BW_CALC,
             D_BW_MAP,
             D_WRITE_WITH,
             D_AUTO_LEN,
         ],
-        "a reserved field is a plain stored value that the canonical encoder writes as its \
-         spec value, bypassing the other directive; drop `reserved` (a \
-         `#[builder(default = …)]` still gives the field a default), or drop the other \
-         directive",
+        "`to_canonical_bytes()` writes a reserved field's spec value with the field type's \
+         own plain codec, bypassing `$other`, so the canonical encoding would not be the \
+         field's wire form. Remove `reserved` (a `#[builder(default = …)]` still gives the \
+         field a default), or remove `$other`",
     ),
 ];
 
-/// Rejects a field directive given twice and the pairs in [`FIELD_CONFLICTS`], spanned at
-/// the later of the two. The one place a field's directive *combination* is validated;
-/// `assert` alone may repeat (its guards run in order).
-fn check_field_directives(seen: &[(&'static str, proc_macro2::Span)]) -> syn::Result<()> {
-    for (i, (name, span)) in seen.iter().enumerate() {
-        for (earlier, _) in &seen[..i] {
-            if earlier == name {
-                if *name == D_ASSERT {
+/// Rejects a field directive given a second, different value and the pairs in
+/// [`FIELD_CONFLICTS`], spanned at the later of the two, then the rules that take three
+/// directives to state. The one place a field's directive *combination* is validated. A
+/// directive restated with the same value changes nothing and is accepted; `assert` may
+/// repeat with any value (its guards all run, in order).
+fn check_field_directives(seen: &[Written]) -> syn::Result<()> {
+    for (i, later) in seen.iter().enumerate() {
+        let name = later.name;
+        for earlier in &seen[..i] {
+            if earlier.name == name {
+                if name == D_ASSERT || earlier.value == later.value {
                     continue;
                 }
-                return Err(syn::Error::new(
-                    *span,
-                    format!("`{name}` is given more than once on this field; keep one"),
-                ));
+                // Each `br`/`bw` directive overwrites the one before it; the reserved
+                // spec value is the first attribute's.
+                let message = if name == D_RESERVED {
+                    format!(
+                        "`{}` and `{}` both set this field's spec value, and only the first \
+                         would be used; keep one",
+                        earlier.reserved_form(),
+                        later.reserved_form()
+                    )
+                } else {
+                    format!(
+                        "`{name}` is given twice on this field with different values, and \
+                         only the last would be used; keep one"
+                    )
+                };
+                return Err(syn::Error::new(later.span, message));
             }
-            let conflict = FIELD_CONFLICTS.iter().find(|(a, others, _)| {
-                (a == name && others.contains(earlier)) || (a == earlier && others.contains(name))
+            let earlier = earlier.name;
+            let conflict = FIELD_CONFLICTS.iter().find(|(key, others, _)| {
+                (*key == name && others.contains(&earlier))
+                    || (*key == earlier && others.contains(&name))
             });
-            if let Some((_, _, why)) = conflict {
+            if let Some((key, _, why)) = conflict {
+                let other = if *key == name { earlier } else { name };
+                let why = why.replace("$other", other);
                 return Err(syn::Error::new(
-                    *span,
+                    later.span,
                     format!("`{earlier}` and `{name}` cannot be combined on one field: {why}"),
                 ));
             }
+        }
+    }
+    let span_of = |directive: &str| seen.iter().find(|w| w.name == directive).map(|w| w.span);
+    let (temp, calc) = (span_of(D_TEMP), span_of(D_BW_CALC));
+    // A stored peek's `calc` is live (`to_canonical()` and `canonical_diff()` recompute the
+    // field); a `temp` peek has no stored value and is never written, so its `calc` is dead.
+    if let (Some(_), Some(_), Some(calc)) = (span_of(D_RESTORE_POSITION), temp, calc) {
+        return Err(syn::Error::new(
+            calc,
+            format!(
+                "`{D_BW_CALC}` would never run on a field that is both `{D_TEMP}` and \
+                 `{D_RESTORE_POSITION}`: a peek is never written and a `temp` one is not \
+                 stored, so nothing uses the value. Remove the `calc` (a `temp` peek needs \
+                 none), or remove `temp` to store the peek and let `to_canonical()` \
+                 recompute it"
+            ),
+        ));
+    }
+    // `reserved` names the value the canonical encoder writes and `calc` the one the
+    // verbatim encoder writes. On an unstored (`temp`) field both hold; with only one of
+    // `temp` and `calc` beside it, `reserved` has nothing to act on or contradicts the `calc`.
+    if span_of(D_RESERVED).is_some() {
+        match (temp, calc) {
+            (Some(temp), None) => {
+                return Err(syn::Error::new(
+                    temp,
+                    format!(
+                        "`{D_RESERVED}` is ignored on a `{D_TEMP}` field that has no \
+                         `{D_BW_CALC}`: the field is not stored, so there is no value for \
+                         the reserved spec value to stand in for. Remove `reserved`, or add \
+                         `{D_BW_CALC}` for the value `to_bytes` writes (`to_canonical_bytes` \
+                         then writes the reserved one)"
+                    ),
+                ));
+            }
+            (None, Some(calc)) => {
+                return Err(syn::Error::new(
+                    calc,
+                    format!(
+                        "`{D_RESERVED}` and `{D_BW_CALC}` give a stored field two canonical \
+                         values: `to_canonical_bytes()` writes the reserved spec value, but \
+                         `to_canonical()` stores the `calc`. Keep `reserved` for a fixed \
+                         value or `calc` for a computed one, or add `{D_TEMP}` so the field \
+                         is not stored"
+                    ),
+                ));
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -684,6 +787,34 @@ enum BrDirective {
 }
 
 impl BrDirective {
+    /// The directive's value as written (nothing for a flag), for [`Written::value`].
+    fn value(&self) -> TokenStream2 {
+        match self {
+            BrDirective::Count(e)
+            | BrDirective::If(e)
+            | BrDirective::Map(e)
+            | BrDirective::TryMap(e)
+            | BrDirective::ParseWith(e)
+            | BrDirective::PadBefore(e)
+            | BrDirective::PadAfter(e)
+            | BrDirective::Seek(e)
+            | BrDirective::Calc(e) => quote!(#e),
+            BrDirective::Ctx(args) => {
+                let args = args
+                    .iter()
+                    .map(|CtxArg { name, source }| quote!(#name = #source));
+                quote!(#(#args),*)
+            }
+            // `assert` may repeat whatever it says, so its value is never compared.
+            BrDirective::Temp
+            | BrDirective::AlignBefore
+            | BrDirective::AlignAfter
+            | BrDirective::RestorePosition
+            | BrDirective::Dbg
+            | BrDirective::Assert(..) => quote!(),
+        }
+    }
+
     /// The directive as the user writes it (a `D_*` name), for [`FieldBr::seen`].
     fn name(&self) -> &'static str {
         match self {
@@ -800,7 +931,7 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
             let directives =
                 attr.parse_args_with(Punctuated::<At<BrDirective>, Token![,]>::parse_terminated)?;
             for At(span, d) in directives {
-                br.seen.push((d.name(), span));
+                br.seen.push(Written::new(d.name(), span, &d.value()));
                 match d {
                     BrDirective::Count(e) => br.count = Some(e),
                     BrDirective::Ctx(names) => br.ctx = Some(names),
@@ -823,36 +954,39 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
         } else if attr.path().is_ident("bw") {
             attr.parse_nested_meta(|meta| {
                 let span = meta.path.span();
-                if meta.path.is_ident("calc") {
-                    br.seen.push((D_BW_CALC, span));
-                    br.calc = Some(meta.value()?.parse()?);
-                    Ok(())
+                let name = if meta.path.is_ident("calc") {
+                    D_BW_CALC
                 } else if meta.path.is_ident("map") {
-                    br.seen.push((D_BW_MAP, span));
-                    br.bw_map = Some(meta.value()?.parse()?);
-                    Ok(())
+                    D_BW_MAP
                 } else if meta.path.is_ident("write_with") {
-                    br.seen.push((D_WRITE_WITH, span));
-                    br.write_with = Some(meta.value()?.parse()?);
-                    Ok(())
+                    D_WRITE_WITH
                 } else if meta.path.is_ident("auto_len") {
-                    br.seen.push((D_AUTO_LEN, span));
-                    br.auto_len = Some(parse_auto_target(&meta.value()?.parse()?)?);
-                    Ok(())
+                    D_AUTO_LEN
                 } else {
-                    Err(meta.error(
+                    return Err(meta.error(
                         "unknown `#[bw(...)]` directive; expected `calc = <expr>`, `map = <f>`, `write_with = <f>`, or `auto_len = count(<field>)|bytes(<field>)`",
-                    ))
+                    ));
+                };
+                let value: syn::Expr = meta.value()?.parse()?;
+                br.seen.push(Written::new(name, span, &value));
+                match name {
+                    D_BW_CALC => br.calc = Some(value),
+                    D_BW_MAP => br.bw_map = Some(value),
+                    D_WRITE_WITH => br.write_with = Some(value),
+                    _ => br.auto_len = Some(parse_auto_target(&value)?),
                 }
+                Ok(())
             })?;
         } else if attr.path().is_ident("brw") {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("ignore") {
-                    br.seen.push((D_IGNORE, meta.path.span()));
+                    br.seen
+                        .push(Written::new(D_IGNORE, meta.path.span(), &quote!()));
                     br.ignore = true;
                     Ok(())
                 } else if meta.path.is_ident("variable") {
-                    br.seen.push((D_VARIABLE, meta.path.span()));
+                    br.seen
+                        .push(Written::new(D_VARIABLE, meta.path.span(), &quote!()));
                     br.variable = true;
                     Ok(())
                 } else if meta.path.is_ident("count_prefix") {
@@ -871,7 +1005,8 @@ fn parse_field_br(f: &syn::Field) -> syn::Result<FieldBr> {
                 }
             })?;
         } else if attr.path().is_ident("reserved") || attr.path().is_ident("reserved_with") {
-            br.seen.push((D_RESERVED, attr.path().span()));
+            br.seen
+                .push(Written::new(D_RESERVED, attr.path().span(), &attr.meta));
         }
     }
     check_field_directives(&br.seen)?;
@@ -1032,10 +1167,11 @@ fn debug_field_calls(
     bnb: &TokenStream2,
 ) -> TokenStream2 {
     let calls = idents.iter().map(|id| {
+        let id_str = crate::printed(id);
         if try_str.iter().any(|t| t == id) {
-            quote!(.field(::core::stringify!(#id), &#bnb::__private::TryStr(&self.#id)))
+            quote!(.field(#id_str, &#bnb::__private::TryStr(&self.#id)))
         } else {
-            quote!(.field(::core::stringify!(#id), &self.#id))
+            quote!(.field(#id_str, &self.#id))
         }
     });
     quote!(#(#calls)*)
@@ -1060,8 +1196,9 @@ fn enum_try_str_debug(
     }
     let arms = variants.iter().map(|v| {
         let vn = &v.ident;
+        let vn_str = crate::printed(vn);
         match &v.fields {
-            Fields::Unit => quote!(Self::#vn => __bnb_f.write_str(::core::stringify!(#vn))),
+            Fields::Unit => quote!(Self::#vn => __bnb_f.write_str(#vn_str)),
             Fields::Named(named) => {
                 let stored: Vec<&syn::Field> =
                     named.named.iter().filter(|f| !field_is_temp(f)).collect();
@@ -1069,14 +1206,15 @@ fn enum_try_str_debug(
                     stored.iter().filter_map(|f| f.ident.as_ref()).collect();
                 let calls = stored.iter().map(|f| {
                     let id = f.ident.as_ref().expect("invariant: a named field");
+                    let id_str = crate::printed(id);
                     if field_is_try_str(f) {
-                        quote!(.field(::core::stringify!(#id), &#bnb::__private::TryStr(#id)))
+                        quote!(.field(#id_str, &#bnb::__private::TryStr(#id)))
                     } else {
-                        quote!(.field(::core::stringify!(#id), #id))
+                        quote!(.field(#id_str, #id))
                     }
                 });
                 quote!(Self::#vn { #(#binds),* } =>
-                    __bnb_f.debug_struct(::core::stringify!(#vn)) #(#calls)* .finish())
+                    __bnb_f.debug_struct(#vn_str) #(#calls)* .finish())
             }
             Fields::Unnamed(unnamed) => {
                 let stored: Vec<&syn::Field> = unnamed
@@ -1095,7 +1233,7 @@ fn enum_try_str_debug(
                     }
                 });
                 quote!(Self::#vn( #(#binds),* ) =>
-                    __bnb_f.debug_tuple(::core::stringify!(#vn)) #(#calls)* .finish())
+                    __bnb_f.debug_tuple(#vn_str) #(#calls)* .finish())
             }
         }
     });
@@ -1172,12 +1310,13 @@ fn pad_write_tokens(align: bool, pad: Option<&syn::Expr>) -> TokenStream2 {
 /// Checked host-size operands shared by generated counts and absolute pointers.
 fn checked_usize(expr: &syn::Expr, field: &Ident, message: &str) -> TokenStream2 {
     let bnb = crate::bnb_path();
+    let field_str = crate::printed(field);
     quote! {
         ::core::convert::TryInto::<usize>::try_into(#expr).map_err(|_| {
             #bnb::__private::BitError::convert(
                 #bnb::__private::String::from(#message),
                 #bnb::__private::Source::bit_pos(__bnb_r),
-            ).in_field(::core::stringify!(#field))
+            ).in_field(#field_str)
         })?
     }
 }
@@ -1205,12 +1344,13 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     // from. TRACE level under target `bnb::dbg` — enable with `RUST_LOG=bnb::dbg=trace`.
     if br.dbg {
         let id = f.ident.as_ref().expect("named field");
+        let id_str = crate::printed(id);
         core = quote! {
             let __bnb_dbg_at = #bnb::__private::Source::bit_pos(__bnb_r);
             #core
             #bnb::__private::tracing::trace!(
                 target: "bnb::dbg",
-                field = ::core::stringify!(#id),
+                field = #id_str,
                 at_bit = __bnb_dbg_at,
                 value = ?#id,
             );
@@ -1220,6 +1360,7 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     // after any `map`, so they see the *mapped* value). Read-only — encode is untouched.
     if !br.asserts.is_empty() {
         let id = f.ident.as_ref().expect("named field");
+        let id_str = crate::printed(id);
         let checks = br.asserts.iter().map(|(cond, msg)| {
             let msg_ts = if let Some(args) = msg {
                 quote!(#bnb::__private::format!(#args))
@@ -1237,7 +1378,7 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
                             #msg_ts,
                             #bnb::__private::Source::bit_pos(__bnb_r),
                         )
-                        .in_field(::core::stringify!(#id)),
+                        .in_field(#id_str),
                     );
                 }
             }
@@ -1261,6 +1402,7 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
 fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let id = f.ident.as_ref().expect("named field");
+    let id_str = crate::printed(id);
     let ty = &f.ty;
     // A `#[reserved]` field reads as a normal stored leaf here (so the actual wire bits
     // are observable and retained — decode is always verbatim).
@@ -1282,7 +1424,7 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         // Uniform field codec: a leaf (`uN`/bitfield/enum) and a nested message both decode
         // via `BitDecode` (leaves carry the impl now), so no `#[nested]` marker is needed.
         let read_inner = quote!(<#inner as #bnb::__private::BitDecode>::bit_decode(__bnb_r)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?);
+            .map_err(|e| e.in_field(#id_str))?);
         return Ok(quote! {
             let #id = if (#cond) {
                 ::core::option::Option::Some(#read_inner)
@@ -1296,19 +1438,19 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     if let Some(map) = &br.map {
         return Ok(
             quote!(let #id: #ty = #bnb::__private::read_mapped(__bnb_r, #map)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+            .map_err(|e| e.in_field(#id_str))?;),
         );
     }
     if let Some(try_map) = &br.try_map {
         return Ok(
             quote!(let #id: #ty = #bnb::__private::read_try_mapped(__bnb_r, #try_map)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+            .map_err(|e| e.in_field(#id_str))?;),
         );
     }
     // `parse_with`: the escape hatch — a custom `f(r) -> Result<T, BitError>`.
     if let Some(f) = &br.parse_with {
         return Ok(quote!(let #id: #ty = (#f)(__bnb_r)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
+            .map_err(|e| e.in_field(#id_str))?;));
     }
     if let Some(elem) = vec_elem(f) {
         let count = br.count.as_ref().ok_or_else(|| {
@@ -1322,7 +1464,7 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
                 let #id = {
                     let __bnb_n = #checked_count;
                     <#elem as #bnb::__private::BitDecode>::decode_vec(__bnb_r, __bnb_n)
-                        .map_err(|e| e.in_field(::core::stringify!(#id)))?
+                        .map_err(|e| e.in_field(#id_str))?
                 };
             });
         };
@@ -1330,7 +1472,7 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         let lit = ctx_literal(&ctx_struct_ty(elem)?, names, None);
         let read_elem = quote! {
             let __bnb_e = <#elem>::decode_with(__bnb_r, #lit)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                .map_err(|e| e.in_field(#id_str))?;
         };
         // No untrusted pre-allocation: `count` is attacker-controlled, so grow the
         // Vec by pushing. Require progress: zero-width/custom codecs need not consume input.
@@ -1344,7 +1486,7 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
                     if #bnb::__private::Source::bit_pos(__bnb_r) <= __bnb_start {
                         return ::core::result::Result::Err(#bnb::__private::BitError::new(
                             #bnb::__private::ErrorKind::NoProgress, __bnb_start,
-                        ).in_field(::core::stringify!(#id)));
+                        ).in_field(#id_str));
                     }
                     __bnb_v.push(__bnb_e);
                 }
@@ -1361,17 +1503,17 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         if let Some(names) = &br.ctx {
             let lit = ctx_literal(&ctx_struct_ty(ty)?, names, None);
             Ok(quote!(let #id = <#ty>::decode_with(__bnb_r, #lit)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
+                .map_err(|e| e.in_field(#id_str))?;))
         } else if byte_array_len(f).is_some() {
             Ok(quote!(let #id = #bnb::__private::read_byte_array(__bnb_r)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
+                .map_err(|e| e.in_field(#id_str))?;))
         } else {
             // Uniform codec: a leaf or a nested message both decode via `BitDecode`.
             // (`bit_decode` returns `#ty`, so a `temp` field's type is pinned without an
             // explicit annotation.)
             Ok(
                 quote!(let #id = <#ty as #bnb::__private::BitDecode>::bit_decode(__bnb_r)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+                .map_err(|e| e.in_field(#id_str))?;),
             )
         }
     }
@@ -1525,6 +1667,7 @@ fn field_write_core(
 ) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     let id = f.ident.as_ref().expect("named field");
+    let id_str = crate::printed(id);
     let ty = &f.ty;
     let (place, by_ref, value) = (site.place(id), site.by_ref(id), site.value(id));
     // A `restore_position` field is a read-side peek (it overlaps later data), so it
@@ -1538,7 +1681,7 @@ fn field_write_core(
     if spec {
         if let Some(value) = reserved_spec_value(f)? {
             return Ok(quote!(#bnb::__private::Sink::write(__bnb_w, #value)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
+                .map_err(|e| e.in_field(#id_str))?;));
         }
     }
     // `ignore`: in-memory only — emit nothing.
@@ -1564,7 +1707,7 @@ fn field_write_core(
             return Ok(quote! {
                 let #id: #ty = #calc;
                 #bnb::__private::Sink::write(__bnb_w, #id)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                    .map_err(|e| e.in_field(#id_str))?;
             });
         }
         if spec {
@@ -1573,13 +1716,13 @@ fn field_write_core(
                 {
                     let __bnb_calc: #ty = #calc;
                     #bnb::__private::Sink::write(__bnb_w, __bnb_calc)
-                        .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                        .map_err(|e| e.in_field(#id_str))?;
                 }
             });
         }
         // Verbatim (default): write the stored value exactly as it is.
         return Ok(quote!(#bnb::__private::Sink::write(__bnb_w, #value)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
+            .map_err(|e| e.in_field(#id_str))?;));
     }
     // A `temp` field is never stored, so it cannot be written without a `calc`.
     if br.temp {
@@ -1593,13 +1736,13 @@ fn field_write_core(
     if let Some(bw_map) = &br.bw_map {
         return Ok(
             quote!(#bnb::__private::write_mapped(__bnb_w, #by_ref, #bw_map)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+            .map_err(|e| e.in_field(#id_str))?;),
         );
     }
     // `write_with`: the escape hatch — a custom `f(&self.field, w) -> Result<()>`.
     if let Some(f) = &br.write_with {
         return Ok(quote!((#f)(#by_ref, __bnb_w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;));
+            .map_err(|e| e.in_field(#id_str))?;));
     }
     // `auto_len = count(x)|bytes(x)`: a `WireLen<T>` field. `Set(n)` writes `n` verbatim
     // (dual-use); `Auto` derives its length from the named sibling — the element count
@@ -1624,10 +1767,10 @@ fn field_write_core(
                 let __bnb_resolved = match #by_ref {
                     #bnb::__private::WireLen::Set(_) => ::core::clone::Clone::clone(#by_ref),
                     #bnb::__private::WireLen::Auto => #place.resolve_count(#measure)
-                        .map_err(|e| e.in_field(::core::stringify!(#id)))?,
+                        .map_err(|e| e.in_field(#id_str))?,
                 };
                 <#ty as #bnb::__private::BitEncode>::bit_encode(&__bnb_resolved, __bnb_w)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                    .map_err(|e| e.in_field(#id_str))?;
             }
         });
     }
@@ -1650,7 +1793,7 @@ fn field_write_core(
             syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>` field")
         })?;
         let write_inner = quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__bnb_v, __bnb_w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
+            .map_err(|e| e.in_field(#id_str))?;);
         return Ok(quote! {
             if let ::core::option::Option::Some(__bnb_v) = #by_ref {
                 #write_inner
@@ -1663,7 +1806,7 @@ fn field_write_core(
             // the dual of the `decode_vec` read path.
             return Ok(
                 quote!(<#elem as #bnb::__private::BitEncode>::encode_slice(#by_ref, __bnb_w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+                .map_err(|e| e.in_field(#id_str))?;),
             );
         };
         let elem_ctx = ctx_struct_ty(elem)?;
@@ -1671,7 +1814,7 @@ fn field_write_core(
         Ok(quote! {
             for __bnb_e in #by_ref {
                 <#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__bnb_e, __bnb_w, #lit)
-                    .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                    .map_err(|e| e.in_field(#id_str))?;
             }
         })
     } else if let Some(names) = &br.ctx {
@@ -1679,16 +1822,16 @@ fn field_write_core(
         let lit = site.ctx_literal(&child_ctx, names);
         Ok(
             quote!(<#ty as #bnb::EncodeWith<#child_ctx>>::encode_with(#by_ref, __bnb_w, #lit)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+            .map_err(|e| e.in_field(#id_str))?;),
         )
     } else if byte_array_len(f).is_some() {
         Ok(quote!(#bnb::__private::write_byte_array(#by_ref, __bnb_w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;))
+            .map_err(|e| e.in_field(#id_str))?;))
     } else {
         // Uniform codec: a leaf or a nested message both encode via `BitEncode`.
         Ok(
             quote!(<#ty as #bnb::__private::BitEncode>::bit_encode(#by_ref, __bnb_w)
-            .map_err(|e| e.in_field(::core::stringify!(#id)))?;),
+            .map_err(|e| e.in_field(#id_str))?;),
         )
     }
 }
@@ -1837,8 +1980,8 @@ fn gen_decode(
             impl #name {
                 #[doc = "Decode from a bit source, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)] // a ctx param may be used on only one side
-                pub fn decode_with<__S: #bnb::__private::Source>(
-                    __bnb_r: &mut __S,
+                pub fn decode_with<__BnbS: #bnb::__private::Source>(
+                    __bnb_r: &mut __BnbS,
                     __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #(#ctx_binds)*
@@ -1857,8 +2000,8 @@ fn gen_decode(
             // ctx Layer 2: the polymorphic companion, so generic combinators can take
             // this type via `T: DecodeWith<#ctx_name>`.
             impl #bnb::DecodeWith<#ctx_name> for #name {
-                fn decode_with<__S: #bnb::__private::Source>(
-                    __bnb_r: &mut __S,
+                fn decode_with<__BnbS: #bnb::__private::Source>(
+                    __bnb_r: &mut __BnbS,
                     args: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <#name>::decode_with(__bnb_r, args)
@@ -1915,8 +2058,8 @@ fn gen_decode(
         #guard
         #fixed_bit_len
         impl #bnb::BitDecode for #name {
-            fn bit_decode<__S: #bnb::__private::Source>(
-                __bnb_r: &mut __S,
+            fn bit_decode<__BnbS: #bnb::__private::Source>(
+                __bnb_r: &mut __BnbS,
             ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 #magic_read
                 #(#read_stmts)*
@@ -1926,8 +2069,8 @@ fn gen_decode(
 
         impl #name {
             #[doc = #from_doc]
-            pub fn decode<__S: #from_bound>(
-                __bnb_r: &mut __S,
+            pub fn decode<__BnbS: #from_bound>(
+                __bnb_r: &mut __BnbS,
             ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
             }
@@ -2053,9 +2196,11 @@ fn field_write_stmt_auto(
     }
     let bnb = crate::bnb_path();
     let ty = &f.ty;
+    let id_str = crate::printed(id);
     let mut fills = Vec::new();
     for s in targeting {
         let nested = &s.nested;
+        let nested_str = crate::printed(nested);
         let source = &s.source;
         let measure = if s.kind == "bytes" {
             bytes_probe(id, source, site, spec)?
@@ -2067,7 +2212,7 @@ fn field_write_stmt_auto(
         fills.push(quote! {
             if #bnb::__private::WireLen::is_auto(&__bnb_auto.#nested) {
                 __bnb_auto.#nested = __bnb_auto.#nested.resolve_count(#measure)
-                    .map_err(|e| e.in_field(::core::stringify!(#nested)))?;
+                    .map_err(|e| e.in_field(#nested_str))?;
             }
         });
     }
@@ -2081,7 +2226,7 @@ fn field_write_stmt_auto(
             let mut __bnb_auto = ::core::clone::Clone::clone(&self.#id);
             #(#fills)*
             <#ty as #bnb::__private::BitEncode>::bit_encode(&__bnb_auto, __bnb_w)
-                .map_err(|e| e.in_field(::core::stringify!(#id)))?;
+                .map_err(|e| e.in_field(#id_str))?;
         }
         #post
     })
@@ -2187,9 +2332,9 @@ fn gen_encode(
             impl #name {
                 #[doc = "Encode to a bit sink, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)] // a ctx param may be used on only one side
-                pub fn encode_with<__K: #bnb::__private::Sink>(
+                pub fn encode_with<__BnbK: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut __K,
+                    __bnb_w: &mut __BnbK,
                     __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #(#ctx_binds)*
@@ -2207,9 +2352,9 @@ fn gen_encode(
             }
             // ctx Layer 2: the polymorphic companion (dual of `DecodeWith`).
             impl #bnb::EncodeWith<#ctx_name> for #name {
-                fn encode_with<__K: #bnb::__private::Sink>(
+                fn encode_with<__BnbK: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut __K,
+                    __bnb_w: &mut __BnbK,
                     args: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     <#name>::encode_with(self, __bnb_w, args)
@@ -2246,21 +2391,18 @@ fn gen_encode(
                 continue; // not stored — absent from the struct
             }
             let id = f.ident.as_ref().expect("named field");
+            let id_str = crate::printed(id);
             let ty = &f.ty;
             if let Some(calc) = &br.calc {
                 // Non-`temp` `calc` (temp filtered above): canonical value = recompute.
                 let local = format_ident!("__bnb_canon_{}", id);
                 calc_precompute.push(quote!(let #local: #ty = #calc;));
                 field_inits.push(quote!(#id: #local));
-                diff_checks.push(
-                    quote!(if self.#id != (#calc) { __bnb_diff.push(::core::stringify!(#id)); }),
-                );
+                diff_checks.push(quote!(if self.#id != (#calc) { __bnb_diff.push(#id_str); }));
             } else if let Some(spec) = reserved_spec_value(f)? {
                 // Reserved: canonical value = spec value.
                 field_inits.push(quote!(#id: #spec));
-                diff_checks.push(
-                    quote!(if self.#id != (#spec) { __bnb_diff.push(::core::stringify!(#id)); }),
-                );
+                diff_checks.push(quote!(if self.#id != (#spec) { __bnb_diff.push(#id_str); }));
             } else {
                 // Ordinary stored field: moved unchanged.
                 field_inits.push(quote!(#id: self.#id));
@@ -2269,9 +2411,9 @@ fn gen_encode(
 
         // Overrides `BitEncode`'s default (verbatim) `canonical_bit_encode`.
         let method = quote! {
-            fn canonical_bit_encode<__K: #bnb::__private::Sink>(
+            fn canonical_bit_encode<__BnbK: #bnb::__private::Sink>(
                 &self,
-                __bnb_w: &mut __K,
+                __bnb_w: &mut __BnbK,
             ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                 #magic_write
                 #(#writes_canonical)*
@@ -2332,9 +2474,9 @@ fn gen_encode(
         quote! {
             impl #bnb::EncodeWith<#ctx_name> for #name {
                 #[allow(unused_variables)]
-                fn encode_with<__K: #bnb::__private::Sink>(
+                fn encode_with<__BnbK: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut __K,
+                    __bnb_w: &mut __BnbK,
                     args: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     <Self as #bnb::BitEncode>::bit_encode(self, __bnb_w)
@@ -2347,9 +2489,9 @@ fn gen_encode(
         #guard
         impl #bnb::BitEncode for #name {
             const LAYOUT: #bnb::Layout = #layout;
-            fn bit_encode<__K: #bnb::__private::Sink>(
+            fn bit_encode<__BnbK: #bnb::__private::Sink>(
                 &self,
-                __bnb_w: &mut __K,
+                __bnb_w: &mut __BnbK,
             ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                 #magic_write
                 #(#writes)*
@@ -2760,7 +2902,8 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
             ));
         }
     }
-    // The options a mapped struct would otherwise parse and ignore.
+    // The options a mapped struct would otherwise parse and ignore. (`no_builder` is true
+    // of every item that has no builder, so it is accepted on them all.)
     args.reject(
         &["auto_len", "forward_only"],
         "is not supported on a mapped `#[bin]` struct — put it on the wire type instead (the \
@@ -2770,11 +2913,6 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
         &["big", "little", "bytes", "bits"],
         "would be ignored on a mapped `#[bin]` struct, which is read and written in its wire \
          type's own byte and bit order — put it on the wire type instead",
-    )?;
-    args.reject(
-        &["no_builder"],
-        "does nothing on a mapped `#[bin]` struct, which has no generated builder — remove it \
-         (it suppresses the builder of a field-coded `#[bin]` struct)",
     )?;
     // Directions: the `wire`/`try_wire` form is bidirectional unless `read_only`/`write_only`
     // narrows it; the closure form is driven by which closures are present.
@@ -2804,15 +2942,25 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
     let wire = mapped_wire_type(args)?;
     // The slice entry points bake in the wire type's layout. An encodable mapped struct takes
     // it from the wire type's `BitEncode`, which it requires anyway. A decode-only one must
-    // not require that impl, so it asks through the autoref probe, which also accepts the
-    // `DecodeLayout` a `#[bin(read_only)]` wire type carries.
-    let layout = if has_encode {
-        quote!(<#wire as #bnb::__private::BitEncode>::LAYOUT)
+    // not require that impl, so it asks the autoref probe, once, in its own `DecodeLayout`
+    // (which also makes it a wire type another decode-only mapped struct can sit on). The
+    // probe carries the wire type's span: a wire type with no layout is an error there.
+    let (layout, decode_layout) = if has_encode {
+        (quote!(<#wire as #bnb::__private::BitEncode>::LAYOUT), None)
     } else {
-        quote!({
-            use #bnb::__private::WireLayoutDispatch as _;
-            (&#bnb::__private::WireLayoutProbe::<#wire>(::core::marker::PhantomData)).layout()
-        })
+        let call = quote_spanned! {wire.span()=>
+            (&&#bnb::__private::WireLayoutProbe::<#wire>(::core::marker::PhantomData)).layout()
+        };
+        // Each wire type resolves through one of the two traits, leaving the other unused.
+        let probe = quote!({
+            #[allow(unused_imports)]
+            use #bnb::__private::{WireLayoutDispatch as _, WireLayoutMissing as _};
+            #call
+        });
+        (
+            quote!(<#name as #bnb::__private::DecodeLayout>::layout()),
+            Some(decode_layout_impl(name, &probe)),
+        )
     };
 
     let decode_ts = if has_decode {
@@ -2842,8 +2990,8 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
         let prefix_decoders = prefix_methods(&quote!(#vis), &layout);
         quote! {
             impl #bnb::__private::BitDecode for #name {
-                fn bit_decode<__S: #bnb::__private::Source>(
-                    __bnb_r: &mut __S,
+                fn bit_decode<__BnbS: #bnb::__private::Source>(
+                    __bnb_r: &mut __BnbS,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #decode_call
                 }
@@ -2851,8 +2999,8 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
 
             impl #name {
                 #[doc = "Decode one message from a `Source` cursor (mapping the wire type to this logical type)."]
-                #vis fn decode<__S: #bnb::__private::Source>(
-                    __bnb_r: &mut __S,
+                #vis fn decode<__BnbS: #bnb::__private::Source>(
+                    __bnb_r: &mut __BnbS,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
                 }
@@ -2902,9 +3050,9 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
         quote! {
             impl #bnb::__private::BitEncode for #name {
                 const LAYOUT: #bnb::__private::Layout = #layout;
-                fn bit_encode<__K: #bnb::__private::Sink>(
+                fn bit_encode<__BnbK: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut __K,
+                    __bnb_w: &mut __BnbK,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #encode_call
                 }
@@ -2929,6 +3077,7 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
     Ok(quote! {
         #s
         #decode_ts
+        #decode_layout
         #encode_ts
     })
 }
@@ -2979,11 +3128,6 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
         "is not supported on a `#[bin(codec = …)]` newtype — the codec functions own the \
          wire form and the cursor bound; use it on a field-coded `#[bin]` struct",
     )?;
-    args.reject(
-        &["no_builder"],
-        "does nothing on a `#[bin(codec = …)]` newtype, which has no generated builder — \
-         remove it (it suppresses the builder of a field-coded `#[bin]` struct)",
-    )?;
     let inner_ty = match &s.fields {
         Fields::Unnamed(u) if u.unnamed.len() == 1 => &u.unnamed.first().expect("len checked").ty,
         _ => {
@@ -3030,8 +3174,8 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
         let prefix_decoders = prefix_methods(&quote!(#vis), &layout);
         quote! {
             impl #bnb::__private::BitDecode for #name {
-                fn bit_decode<__S: #bnb::__private::Source>(
-                    __bnb_r: &mut __S,
+                fn bit_decode<__BnbS: #bnb::__private::Source>(
+                    __bnb_r: &mut __BnbS,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     // The codec fn's `BitError` passes through untouched: the *parent's*
                     // field read wraps it with `in_field` (innermost-wins), so wrapping
@@ -3042,8 +3186,8 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
 
             impl #name {
                 #[doc = "Decode one value from a `Source` cursor (via this type's codec functions)."]
-                #vis fn decode<__S: #bnb::__private::Source>(
-                    __bnb_r: &mut __S,
+                #vis fn decode<__BnbS: #bnb::__private::Source>(
+                    __bnb_r: &mut __BnbS,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
                 }
@@ -3080,9 +3224,9 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
         quote! {
             impl #bnb::__private::BitEncode for #name {
                 const LAYOUT: #bnb::__private::Layout = #layout;
-                fn bit_encode<__K: #bnb::__private::Sink>(
+                fn bit_encode<__BnbK: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut __K,
+                    __bnb_w: &mut __BnbK,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     (#write_fn)(&self.0, __bnb_w)
                 }
@@ -3259,6 +3403,7 @@ fn desugar_count_prefix(
             ));
         }
         let id = f.ident.clone().expect("checked: named fields only");
+        let id_str = crate::printed(&id);
         let count_id = format_ident!("__bnb_count_{}", id, span = id.span());
         let count_name = count_id.to_string();
         if existing.contains(&count_name) {
@@ -3279,7 +3424,7 @@ fn desugar_count_prefix(
         let calc_expr = quote! {
             <#pty as #bnb::__private::CountPrefix>::try_from_count(#len_expr)
                 .map_err(|__bnb_e| #bnb::__private::BitError::from(__bnb_e)
-                    .in_field(::core::stringify!(#id)))?
+                    .in_field(#id_str))?
         };
         out.push(syn::Field::parse_named.parse2(quote! {
             #[br(temp)]
@@ -3438,6 +3583,7 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         if had_debug {
             clean.attrs = new_attrs;
             let name = &s.ident;
+            let name_str = crate::printed(name);
             let stored_idents: Vec<syn::Ident> = match &clean.fields {
                 Fields::Named(n) => n.named.iter().filter_map(|f| f.ident.clone()).collect(),
                 _ => Vec::new(),
@@ -3446,7 +3592,7 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
             quote! {
                 impl ::core::fmt::Debug for #name {
                     fn fmt(&self, __bnb_f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                        __bnb_f.debug_struct(::core::stringify!(#name))
+                        __bnb_f.debug_struct(#name_str)
                             #debug_calls
                             .finish()
                     }
@@ -3933,8 +4079,10 @@ impl VariantDispatch<'_> {
 }
 
 /// Checks a dispatching (magic-only) variant's constant against the earlier ones. They are
-/// all read as one type, so a byte string and an integer cannot be mixed. A tag variant's
-/// magic is a signature checked after selection, so it is not compared.
+/// all read as one type, so a byte string and an integer cannot be mixed. A repeated constant
+/// is accepted: `decode` takes the first declared variant, and the others are reached out of
+/// band (`decode_as_<variant>`). A tag variant's magic is a signature checked after
+/// selection, so it is not compared.
 fn check_dispatch_magic(
     earlier: &[VariantDispatch<'_>],
     vd: &VariantDispatch<'_>,
@@ -4363,11 +4511,6 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
          `#[bw(auto_len = count(<field>)|bytes(<field>))]` on the variant's own `WireLen` \
          field, or move the variant's fields into a `#[bin(auto_len(...))]` struct",
     )?;
-    args.reject(
-        &["no_builder"],
-        "does nothing on a `#[bin]` enum, which has no generated builder — remove it (it \
-         suppresses the builder of a `#[bin]` struct)",
-    )?;
 
     let dirs = Directions {
         decode: !args.write_only,
@@ -4593,9 +4736,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     };
     // Shared by decode and peek_variant. Only the closed terminal tail executes
     // this allocation; no new reads, tag conversions, or payload error wrapping.
+    let name_str = crate::printed(name);
     let dispatch_error = quote!(#bnb::__private::BitError::no_matching_variant(
         ::core::any::TypeId::of::<Self>(),
-        &(stringify!(#name), #dispatch_kind),
+        &(#name_str, #dispatch_kind),
         #observed,
         #bnb::__private::Source::bit_pos(__bnb_r),
     ).in_field(#disc_field));
@@ -5016,8 +5160,8 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             impl #name {
                 #[doc = "Decode from a bit source, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)]
-                pub fn decode_with<__S: #from_bound>(
-                    __bnb_r: &mut __S,
+                pub fn decode_with<__BnbS: #from_bound>(
+                    __bnb_r: &mut __BnbS,
                     __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #(#ctx_binds)*
@@ -5032,8 +5176,8 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 }
             }
             impl #bnb::DecodeWith<#ctx_name> for #name {
-                fn decode_with<__S: #bnb::__private::Source>(
-                    __bnb_r: &mut __S,
+                fn decode_with<__BnbS: #bnb::__private::Source>(
+                    __bnb_r: &mut __BnbS,
                     args: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <#name>::decode_with(__bnb_r, args)
@@ -5044,16 +5188,16 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         let prefix_decoders = prefix_methods(&quote!(pub), &layout);
         quote! {
             impl #bnb::BitDecode for #name {
-                fn bit_decode<__S: #bnb::__private::Source>(
-                    __bnb_r: &mut __S,
+                fn bit_decode<__BnbS: #bnb::__private::Source>(
+                    __bnb_r: &mut __BnbS,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #decode_body
                 }
             }
             impl #name {
                 #[doc = "Decode one message from a bit cursor (a `BitReader`, `BufSource`, `BitBuf`, a streaming reader, …), advancing it; a seekable cursor is required if a variant seeks. The byte/bit order is the cursor's — use `decode_exact`/`decode_all` to bake the message's in."]
-                pub fn decode<__S: #from_bound>(
-                    __bnb_r: &mut __S,
+                pub fn decode<__BnbS: #from_bound>(
+                    __bnb_r: &mut __BnbS,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
                 }
@@ -5089,9 +5233,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             impl #name {
                 #[doc = "Encode to a bit sink, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)]
-                pub fn encode_with<__K: #bnb::__private::Sink>(
+                pub fn encode_with<__BnbK: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut __K,
+                    __bnb_w: &mut __BnbK,
                     __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #(#ctx_binds)*
@@ -5106,9 +5250,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 }
             }
             impl #bnb::EncodeWith<#ctx_name> for #name {
-                fn encode_with<__K: #bnb::__private::Sink>(
+                fn encode_with<__BnbK: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut __K,
+                    __bnb_w: &mut __BnbK,
                     args: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     <#name>::encode_with(self, __bnb_w, args)
@@ -5122,9 +5266,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             quote! {
                 impl #bnb::EncodeWith<#ctx_name> for #name {
                     #[allow(unused_variables)]
-                    fn encode_with<__K: #bnb::__private::Sink>(
+                    fn encode_with<__BnbK: #bnb::__private::Sink>(
                         &self,
-                        __bnb_w: &mut __K,
+                        __bnb_w: &mut __BnbK,
                         args: #ctx_name,
                     ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                         <Self as #bnb::BitEncode>::bit_encode(self, __bnb_w)
@@ -5137,9 +5281,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 const LAYOUT: #bnb::Layout = #layout;
                 // A catch-all's captured selectors are bound by the arm but never written.
                 #[allow(unused_variables)]
-                fn bit_encode<__K: #bnb::__private::Sink>(
+                fn bit_encode<__BnbK: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut __K,
+                    __bnb_w: &mut __BnbK,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #encode_body
                 }
@@ -5363,5 +5507,249 @@ mod dispatch_tests {
         let e = enum_of(r#"enum E { #[bin(magic = b"X")] A }"#);
         let d = EnumDispatch::parse(&e, None, Some(Magic::Bytes(b"PRE".to_vec()))).unwrap();
         assert_eq!(d.prefix.as_ref().unwrap().byte_len(), 3);
+    }
+}
+
+/// The whole accept/reject matrix of a field's directives, stated independently of
+/// [`FIELD_CONFLICTS`] and driven through the real parser on attributes as a user writes
+/// them: losing a rejection, adding one, or recording one directive as another fails here,
+/// naming the pair.
+#[cfg(test)]
+mod directive_tests {
+    use super::{
+        D_ALIGN_AFTER, D_ALIGN_BEFORE, D_ASSERT, D_AUTO_LEN, D_BR_CALC, D_BW_CALC, D_BW_MAP,
+        D_COUNT, D_CTX, D_DBG, D_IF, D_IGNORE, D_MAP, D_PAD_AFTER, D_PAD_BEFORE, D_PARSE_WITH,
+        D_RESERVED, D_RESTORE_POSITION, D_SEEK, D_TEMP, D_TRY_MAP, D_VARIABLE, D_WRITE_WITH,
+        FIELD_CONFLICTS, TokenStream2, extract_count_prefix, parse_field_br,
+    };
+
+    /// Every field directive: an attribute that carries it and, where it takes a value, the
+    /// same attribute with another value.
+    const ALL: &[(&str, &str, Option<&str>)] = &[
+        (D_COUNT, "#[br(count = n)]", Some("#[br(count = m)]")),
+        (D_CTX, "#[br(ctx { n })]", Some("#[br(ctx { m })]")),
+        (D_TEMP, "#[br(temp)]", None),
+        (D_IF, "#[br(if(n > 0))]", Some("#[br(if(m > 0))]")),
+        (D_MAP, "#[br(map = f)]", Some("#[br(map = g)]")),
+        (D_TRY_MAP, "#[br(try_map = f)]", Some("#[br(try_map = g)]")),
+        (
+            D_PARSE_WITH,
+            "#[br(parse_with = f)]",
+            Some("#[br(parse_with = g)]"),
+        ),
+        (
+            D_PAD_BEFORE,
+            "#[br(pad_before = n)]",
+            Some("#[br(pad_before = m)]"),
+        ),
+        (
+            D_PAD_AFTER,
+            "#[br(pad_after = n)]",
+            Some("#[br(pad_after = m)]"),
+        ),
+        (D_ALIGN_BEFORE, "#[br(align_before)]", None),
+        (D_ALIGN_AFTER, "#[br(align_after)]", None),
+        (D_RESTORE_POSITION, "#[br(restore_position)]", None),
+        (D_SEEK, "#[br(seek = n)]", Some("#[br(seek = m)]")),
+        (D_DBG, "#[br(dbg)]", None),
+        (
+            D_ASSERT,
+            "#[br(assert(n > 0))]",
+            Some("#[br(assert(m > 0))]"),
+        ),
+        (D_BR_CALC, "#[br(calc = n)]", Some("#[br(calc = m)]")),
+        (D_BW_CALC, "#[bw(calc = n)]", Some("#[bw(calc = m)]")),
+        (D_BW_MAP, "#[bw(map = f)]", Some("#[bw(map = g)]")),
+        (
+            D_WRITE_WITH,
+            "#[bw(write_with = f)]",
+            Some("#[bw(write_with = g)]"),
+        ),
+        (
+            D_AUTO_LEN,
+            "#[bw(auto_len = count(n))]",
+            Some("#[bw(auto_len = count(m))]"),
+        ),
+        (D_IGNORE, "#[brw(ignore)]", None),
+        (D_VARIABLE, "#[brw(variable)]", None),
+        (D_RESERVED, "#[reserved]", Some("#[reserved_with(1)]")),
+    ];
+
+    /// The pairs that are a compile error, each once: before the check existed, one of the
+    /// two was never compiled, or the two encoded different bytes. Every other pair composes.
+    const REJECTED: &[(&str, &str)] = &[
+        // A mapped or custom-parsed field is read whole: its count or context is dropped.
+        (D_COUNT, D_MAP),
+        (D_COUNT, D_TRY_MAP),
+        (D_COUNT, D_PARSE_WITH),
+        (D_CTX, D_MAP),
+        (D_CTX, D_TRY_MAP),
+        (D_CTX, D_PARSE_WITH),
+        // `if` reads the `Option`'s inner type with that type's own codec.
+        (D_IF, D_COUNT),
+        (D_IF, D_CTX),
+        (D_IF, D_MAP),
+        (D_IF, D_TRY_MAP),
+        (D_IF, D_PARSE_WITH),
+        // One reader, one writer per field.
+        (D_MAP, D_TRY_MAP),
+        (D_MAP, D_PARSE_WITH),
+        (D_TRY_MAP, D_PARSE_WITH),
+        (D_BW_MAP, D_WRITE_WITH),
+        (D_BW_CALC, D_BW_MAP),
+        (D_BW_CALC, D_WRITE_WITH),
+        (D_BW_CALC, D_AUTO_LEN),
+        (D_AUTO_LEN, D_BW_MAP),
+        (D_AUTO_LEN, D_WRITE_WITH),
+        (D_AUTO_LEN, D_TEMP),
+        // A peek is never written.
+        (D_RESTORE_POSITION, D_BW_MAP),
+        (D_RESTORE_POSITION, D_WRITE_WITH),
+        (D_RESTORE_POSITION, D_AUTO_LEN),
+        // `br(calc)` puts no bits on the wire: the pre-table list, plus `reserved`.
+        (D_BR_CALC, D_COUNT),
+        (D_BR_CALC, D_CTX),
+        (D_BR_CALC, D_TEMP),
+        (D_BR_CALC, D_IF),
+        (D_BR_CALC, D_MAP),
+        (D_BR_CALC, D_TRY_MAP),
+        (D_BR_CALC, D_PARSE_WITH),
+        (D_BR_CALC, D_BW_CALC),
+        (D_BR_CALC, D_BW_MAP),
+        (D_BR_CALC, D_WRITE_WITH),
+        (D_BR_CALC, D_AUTO_LEN),
+        (D_BR_CALC, D_IGNORE),
+        (D_BR_CALC, D_SEEK),
+        (D_BR_CALC, D_RESTORE_POSITION),
+        (D_BR_CALC, D_RESERVED),
+        // An ignored field is neither read nor written. (Its `bw(calc)` is live in the
+        // canonical helpers, so that pair composes.)
+        (D_IGNORE, D_COUNT),
+        (D_IGNORE, D_CTX),
+        (D_IGNORE, D_TEMP),
+        (D_IGNORE, D_IF),
+        (D_IGNORE, D_MAP),
+        (D_IGNORE, D_TRY_MAP),
+        (D_IGNORE, D_PARSE_WITH),
+        (D_IGNORE, D_BW_MAP),
+        (D_IGNORE, D_WRITE_WITH),
+        (D_IGNORE, D_AUTO_LEN),
+        (D_IGNORE, D_RESERVED),
+        // The canonical encoder writes a reserved value with the type's plain codec. With
+        // `temp` or `bw(calc)` alone it has nothing to stand in for, or contradicts the
+        // `calc` (the three together are accepted: `three_directive_rules`).
+        (D_RESERVED, D_COUNT),
+        (D_RESERVED, D_CTX),
+        (D_RESERVED, D_IF),
+        (D_RESERVED, D_MAP),
+        (D_RESERVED, D_TRY_MAP),
+        (D_RESERVED, D_PARSE_WITH),
+        (D_RESERVED, D_BW_MAP),
+        (D_RESERVED, D_WRITE_WITH),
+        (D_RESERVED, D_AUTO_LEN),
+        (D_RESERVED, D_TEMP),
+        (D_RESERVED, D_BW_CALC),
+    ];
+
+    /// The attribute in [`ALL`] that carries the directive `name`.
+    fn sample(name: &str) -> &'static str {
+        let found = ALL.iter().find(|(directive, ..)| *directive == name);
+        found
+            .unwrap_or_else(|| panic!("`{name}` is missing from `ALL`"))
+            .1
+    }
+
+    /// Whether a field carrying `attrs`, in that order, gets through the checks `#[bin]`
+    /// runs on a field's directives: the `count_prefix` scan, then the parser.
+    fn accepted(attrs: &[&str]) -> bool {
+        let attrs = attrs.iter().map(|attr| {
+            attr.parse::<TokenStream2>()
+                .expect("a sample attribute is valid tokens")
+        });
+        let mut field: syn::Field = syn::parse_quote!(#(#attrs)* field: u8);
+        extract_count_prefix(&mut field)
+            .and_then(|_| parse_field_br(&field))
+            .is_ok()
+    }
+
+    fn listed(a: &str, b: &str) -> bool {
+        REJECTED
+            .iter()
+            .any(|&(x, y)| (x, y) == (a, b) || (x, y) == (b, a))
+    }
+
+    #[test]
+    fn every_directive_pair_is_accepted_or_rejected_as_listed() {
+        for (key, others, _) in FIELD_CONFLICTS {
+            for name in others.iter().chain([key]) {
+                sample(name);
+            }
+        }
+        for (a, b) in REJECTED {
+            sample(a);
+            sample(b);
+        }
+        let mut wrong = Vec::new();
+        for &(a, a_attr, _) in ALL {
+            for &(b, b_attr, _) in ALL.iter().filter(|(b, ..)| *b != a) {
+                let ok = accepted(&[a_attr, b_attr]);
+                if ok == listed(a, b) {
+                    let verdict = if ok { "accepted" } else { "rejected" };
+                    wrong.push(format!("`{a}` then `{b}` is {verdict}"));
+                }
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "pairs that contradict `REJECTED`:\n{}",
+            wrong.join("\n")
+        );
+    }
+
+    #[test]
+    fn a_restated_directive_is_accepted_and_a_second_value_rejected() {
+        for &(name, attr, other_value) in ALL {
+            assert!(accepted(&[attr]), "`{name}` alone is rejected");
+            assert!(accepted(&[attr, attr]), "`{name}` restated is rejected");
+            let Some(other_value) = other_value else {
+                continue;
+            };
+            assert_eq!(
+                accepted(&[attr, other_value]),
+                name == D_ASSERT,
+                "`{name}` given two values: only `assert` may repeat"
+            );
+        }
+    }
+
+    #[test]
+    fn three_directive_rules() {
+        let orders = |[a, b, c]: [&'static str; 3]| {
+            [
+                [a, b, c],
+                [a, c, b],
+                [b, a, c],
+                [b, c, a],
+                [c, a, b],
+                [c, b, a],
+            ]
+            .map(|order| order.map(sample))
+        };
+        for order in orders([D_RESERVED, D_TEMP, D_BW_CALC]) {
+            assert!(
+                accepted(&order),
+                "an unstored reserved `calc` field is rejected: {order:?}"
+            );
+        }
+        for order in orders([D_RESTORE_POSITION, D_TEMP, D_BW_CALC]) {
+            assert!(
+                !accepted(&order),
+                "a `temp` peek's dead `calc` is accepted: {order:?}"
+            );
+        }
+        assert!(
+            accepted(&[sample(D_RESTORE_POSITION), sample(D_BW_CALC)]),
+            "a stored peek's `calc` is rejected"
+        );
     }
 }

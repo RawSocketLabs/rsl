@@ -94,4 +94,28 @@ mod macro_ {
             u3::new(0)
         );
     }
+
+    /// An unstored reserved field: `temp` drops it from the struct, `calc` is the value
+    /// `to_bytes` writes, and the reserved spec value is what `to_canonical_bytes` writes.
+    #[test]
+    #[expect(
+        unused_variables,
+        reason = "decode reads the unstored pad into a local nothing uses"
+    )]
+    fn unstored_reserved_field_writes_calc_verbatim_and_spec_canonically() {
+        #[bin(big)]
+        #[derive(Debug, PartialEq, Eq, Clone)]
+        struct UnstoredReserved {
+            #[reserved_with(0xFF)]
+            #[br(temp)]
+            #[bw(calc = 7)]
+            pad: u8,
+            value: u8,
+        }
+
+        let decoded = UnstoredReserved::decode_exact(&[9, 1]).unwrap();
+        assert_eq!(decoded, UnstoredReserved { value: 1 });
+        assert_eq!(decoded.to_bytes().unwrap(), [7, 1]);
+        assert_eq!(decoded.to_canonical_bytes().unwrap(), [0xFF, 1]);
+    }
 }

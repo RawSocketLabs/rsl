@@ -532,6 +532,133 @@ mod macro_ {
         assert_eq!(Msg::Ping.to_bytes().unwrap(), Vec::<u8>::new());
     }
 
+    // Two tag variants may carry the same signature (the selector tells them apart), and a
+    // mixed-width magic may be a prefix of another (first match wins).
+    #[bin(big, ctx(kind: u8), tag = kind)]
+    #[derive(Debug, PartialEq)]
+    enum SharedSignature {
+        #[bin(tag = 1, magic = b"OK")]
+        Short(u8),
+        #[bin(tag = 2, magic = b"OK")]
+        Long(u16),
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum PrefixMagic {
+        #[bin(magic = b"AB")]
+        Long,
+        #[bin(magic = b"A")]
+        Short,
+    }
+
+    #[test]
+    fn tag_variants_may_share_a_signature_and_magics_may_share_a_prefix() {
+        let long =
+            SharedSignature::decode_with_exact(b"OK\x01\x02", SharedSignatureCtx { kind: 2 });
+        assert_eq!(long.unwrap(), SharedSignature::Long(0x0102));
+        assert_eq!(SharedSignature::Short(9).to_bytes().unwrap(), b"OK\x09");
+        assert_eq!(PrefixMagic::decode_exact(b"AB").unwrap(), PrefixMagic::Long);
+        assert_eq!(PrefixMagic::decode_exact(b"A").unwrap(), PrefixMagic::Short);
+    }
+
+    // A hybrid enum: the tag variant's magic is a signature, so a magic-dispatched variant
+    // may carry the same constant, even over the same fields (the selector is tried first,
+    // then the magics, so the context tells the two apart).
+    #[bin(big, ctx(kind: u8), tag = kind)]
+    #[derive(Debug, PartialEq)]
+    enum HybridSignature {
+        #[bin(tag = 1, magic = b"OK")]
+        Tagged(u16),
+        #[bin(magic = b"OK")]
+        ByMagic(u16),
+        #[bin(magic = b"NO")]
+        Refused,
+    }
+
+    #[test]
+    fn a_tag_variant_and_a_magic_variant_may_share_a_constant() {
+        let decode = |bytes: &[u8], kind| {
+            HybridSignature::decode_with_exact(bytes, HybridSignatureCtx { kind }).unwrap()
+        };
+        assert_eq!(decode(b"OK\x01\x02", 1), HybridSignature::Tagged(0x0102));
+        assert_eq!(decode(b"OK\x01\x02", 9), HybridSignature::ByMagic(0x0102));
+        assert_eq!(decode(b"NO", 9), HybridSignature::Refused);
+        assert_eq!(
+            HybridSignature::Tagged(0x0102).to_bytes().unwrap(),
+            b"OK\x01\x02"
+        );
+        assert_eq!(
+            HybridSignature::ByMagic(0x0102).to_bytes().unwrap(),
+            b"OK\x01\x02"
+        );
+    }
+
+    // Two layouts behind one magic are told apart out of band: `decode` picks the first,
+    // `decode_as_<variant>` reaches the second, and each encodes its own bytes.
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum SharedMagic {
+        #[bin(magic = 1u8)]
+        Short { a: u8 },
+        #[bin(magic = 1u8)]
+        Long { a: u8, b: u16 },
+    }
+
+    #[test]
+    fn variants_sharing_a_magic_with_different_fields_each_round_trip() {
+        let short = SharedMagic::Short { a: 2 };
+        let long = SharedMagic::Long { a: 2, b: 3 };
+        assert_eq!(short.to_bytes().unwrap(), [1, 2]);
+        assert_eq!(long.to_bytes().unwrap(), [1, 2, 0, 3]);
+
+        assert_eq!(SharedMagic::decode_exact(&[1, 2]).unwrap(), short);
+        assert_eq!(SharedMagic::decode_as_short(&[1, 2]).unwrap(), short);
+        assert_eq!(SharedMagic::decode_as_long(&[1, 2, 0, 3]).unwrap(), long);
+        assert!(
+            SharedMagic::decode_exact(&[1, 2, 0, 3]).is_err(),
+            "`decode` picks the first variant claiming the magic"
+        );
+    }
+
+    // The same holds over the same fields: a request/response pair with one wire form, told
+    // apart by direction. The macro does not forbid it; the caller picks the entry point.
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum Exchange {
+        #[bin(magic = 1u8)]
+        Req { id: u16 },
+        #[bin(magic = 1u8)]
+        Resp { id: u16 },
+    }
+
+    #[bin(big, write_only)]
+    enum ExchangeOut {
+        #[bin(magic = 1u8)]
+        Req(u16),
+        #[bin(magic = 0x01u8)]
+        Resp(u16),
+    }
+
+    #[test]
+    fn variants_sharing_a_magic_and_fields_decode_as_the_first_declared() {
+        let bytes = [1, 0, 7];
+        assert_eq!(
+            Exchange::decode_exact(&bytes).unwrap(),
+            Exchange::Req { id: 7 },
+            "`decode` takes the first declared variant claiming the magic"
+        );
+        assert_eq!(
+            Exchange::decode_as_resp(&bytes).unwrap(),
+            Exchange::Resp { id: 7 }
+        );
+        assert_eq!(Exchange::Req { id: 7 }.to_bytes().unwrap(), bytes);
+        assert_eq!(Exchange::Resp { id: 7 }.to_bytes().unwrap(), bytes);
+
+        assert_eq!(ExchangeOut::Req(7).to_bytes().unwrap(), bytes);
+        assert_eq!(ExchangeOut::Resp(7).to_bytes().unwrap(), bytes);
+    }
+
     // ── Variant-field directives still work under the new dispatch. ──
 
     // `temp` + `calc` on a catch-all field: read its own length, recompute on encode.

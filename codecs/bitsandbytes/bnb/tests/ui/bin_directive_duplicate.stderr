@@ -1,17 +1,17 @@
-error: `#[br(count = …)]` is given more than once on this field; keep one
- --> tests/ui/bin_directive_duplicate.rs:9:21
-  |
-9 |     #[br(count = n, count = m)]
-  |                     ^^^^^
-
-error: `#[bw(calc = …)]` is given more than once on this field; keep one
-  --> tests/ui/bin_directive_duplicate.rs:17:10
+error: `#[br(count = …)]` is given twice on this field with different values, and only the last would be used; keep one
+  --> tests/ui/bin_directive_duplicate.rs:10:21
    |
-17 |     #[bw(calc = 2)]
+10 |     #[br(count = n, count = m)]
+   |                     ^^^^^
+
+error: `#[bw(calc = …)]` is given twice on this field with different values, and only the last would be used; keep one
+  --> tests/ui/bin_directive_duplicate.rs:18:10
+   |
+18 |     #[bw(calc = 2)]
    |          ^^^^
 
-error: `#[reserved]` is given more than once on this field; keep one
-  --> tests/ui/bin_directive_duplicate.rs:24:7
+error: `#[reserved]` and `#[reserved_with(…)]` both set this field's spec value, and only the first would be used; keep one
+  --> tests/ui/bin_directive_duplicate.rs:25:7
    |
-24 |     #[reserved_with(0xFFu8)]
+25 |     #[reserved_with(0xFFu8)]
    |       ^^^^^^^^^^^^^

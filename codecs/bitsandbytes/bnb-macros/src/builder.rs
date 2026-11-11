@@ -125,10 +125,11 @@ pub(crate) fn generate(
 
     let resolve = fields.iter().map(|f| {
         let id = &f.ident;
+        let id_str = crate::printed(id);
         match &f.default {
             FieldDefault::Required => quote! {
                 let #id = self.#id.ok_or_else(
-                    || #bnb::BuilderError::missing_field(stringify!(#id)),
+                    || #bnb::BuilderError::missing_field(#id_str),
                 )?;
             },
             FieldDefault::DefaultTrait => quote!(let #id = self.#id.unwrap_or_default();),

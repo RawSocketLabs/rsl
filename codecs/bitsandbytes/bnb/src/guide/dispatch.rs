@@ -46,6 +46,11 @@
 //! assert_eq!(Rdata::A(0).magic(), 1); // the `magic()` accessor
 //! ```
 //!
+//! Variants may share a `magic`, with the same fields or different ones: a request and a
+//! response with one wire form, told apart by direction. `decode` takes the first declared
+//! variant that matches; the others are reached with `decode_as_<variant>`, and each
+//! encodes its own bytes.
+//!
 //! Byte-string magics work the same way — the natural fit for PNG/RIFF-style signatures:
 //!
 //! ```

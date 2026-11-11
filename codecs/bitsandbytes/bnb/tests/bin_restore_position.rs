@@ -32,4 +32,40 @@ mod macro_ {
         assert_eq!(decoded.peek, 0xAB, "peeked the high byte at value's offset");
         assert_eq!(decoded, f);
     }
+
+    /// A stored peek kept consistent by `#[bw(calc = …)]`: never written (the field it
+    /// overlaps owns the bytes), but recomputed by the canonical helpers.
+    #[bin(big)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct CalcPeek {
+        #[br(restore_position)]
+        #[bw(calc = self.value.to_be_bytes()[0])]
+        peek: u8,
+        value: u16,
+    }
+
+    #[test]
+    fn stored_peek_with_calc_round_trips_and_canonicalizes() {
+        let decoded = CalcPeek::decode_exact(&[0xAB, 0xCD]).unwrap();
+        let fresh = CalcPeek {
+            peek: 0xAB,
+            value: 0xABCD,
+        };
+        assert_eq!(decoded, fresh);
+        assert_eq!(decoded.to_bytes().unwrap(), [0xAB, 0xCD]);
+        assert!(decoded.is_canonical());
+
+        let stale = CalcPeek {
+            peek: 0,
+            value: 0xABCD,
+        };
+        assert_eq!(
+            stale.to_bytes().unwrap(),
+            [0xAB, 0xCD],
+            "a peek is never written, stale or not"
+        );
+        assert_eq!(stale.to_canonical_bytes().unwrap(), [0xAB, 0xCD]);
+        assert_eq!(stale.canonical_diff(), ["peek"]);
+        assert_eq!(stale.to_canonical(), fresh);
+    }
 }

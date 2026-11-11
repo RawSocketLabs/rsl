@@ -1,5 +1,6 @@
-//! A field directive given twice used to keep the last one silently. Only `assert` may
-//! repeat (its guards run in order).
+//! A field directive given twice with different values used to keep one of them silently.
+//! (A restatement of the same value is the directive once, and `assert` may repeat: its
+//! guards run in order.)
 use bnb::bin;
 
 #[bin]

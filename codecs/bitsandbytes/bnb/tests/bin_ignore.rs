@@ -45,4 +45,28 @@ mod macro_ {
             .unwrap();
         assert_eq!(f.note, 7);
     }
+
+    // A memoised field: never on the wire, but its `calc` names the value it should hold, so
+    // the canonical helpers compare and recompute it.
+    #[bin]
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct Cached {
+        raw: u8,
+        #[brw(ignore)]
+        #[bw(calc = u16::from(self.raw) * 2)]
+        doubled: u16,
+    }
+
+    #[test]
+    fn ignored_calc_field_is_defaulted_on_decode_and_recomputed_by_to_canonical() {
+        let decoded = Cached::decode_exact(&[3]).unwrap();
+        assert_eq!(decoded.doubled, 0, "defaulted on read: the cache is cold");
+        assert_eq!(decoded.canonical_diff(), ["doubled"]);
+
+        let warm = decoded.to_canonical();
+        assert_eq!(warm, Cached { raw: 3, doubled: 6 });
+        assert!(warm.is_canonical());
+        assert_eq!(warm.to_bytes().unwrap(), [3], "still not on the wire");
+        assert_eq!(warm.to_canonical_bytes().unwrap(), [3]);
+    }
 }

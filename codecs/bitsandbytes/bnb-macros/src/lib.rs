@@ -63,25 +63,32 @@ pub(crate) fn bits_leaf_codec_impl(
     quote::quote! {
         impl #bnb::__private::BitDecode for #name {
             #[inline]
-            fn bit_decode<__S: #bnb::__private::Source>(
-                __r: &mut __S,
+            fn bit_decode<__BnbS: #bnb::__private::Source>(
+                __bnb_r: &mut __BnbS,
             ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                __r.read::<Self>()
+                __bnb_r.read::<Self>()
             }
         }
         impl #bnb::__private::BitEncode for #name {
             #[inline]
-            fn bit_encode<__K: #bnb::__private::Sink>(
+            fn bit_encode<__BnbK: #bnb::__private::Sink>(
                 &self,
-                __w: &mut __K,
+                __bnb_w: &mut __BnbK,
             ) -> ::core::result::Result<(), #bnb::__private::BitError> {
-                __w.write(*self)
+                __bnb_w.write(*self)
             }
         }
         impl #bnb::__private::FixedBitLen for #name {
             const BIT_LEN: u32 = <Self as #bnb::__private::Bits>::BITS;
         }
     }
+}
+
+/// `ident`'s name as generated code prints it at run time (a `BitError`'s field, a missing
+/// builder field, a `Debug` line): without a raw `r#` prefix, as `std`'s own derives print it.
+pub(crate) fn printed(ident: &syn::Ident) -> String {
+    use syn::ext::IdentExt;
+    ident.unraw().to_string()
 }
 
 /// `ty` without the invisible group a `macro_rules!` `$t:ty` fragment wraps it in (or
@@ -490,9 +497,11 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// "nothing matched" tail is a `#[catch_all]` (preserving the unknown discriminant) or a
 /// typed no-tag/no-magic fallback variant, not both; without either a magic enum is a
 /// closed set. An optional enum-level `magic` is a leading prefix. Variants may be unit,
-/// tuple, or named. The codec also generates `decode_as_<variant>`,
-/// `peek_variant`/`<Name>Kind`, `decode_tagged`, and a `magic()`/`tag()` accessor where
-/// the discriminant is single-valued. See the `bnb::guide::dispatch` page.
+/// tuple, or named. Variants may share a `magic`: `decode` takes the first declared match,
+/// and the others are reached with `decode_as_<variant>`. The codec also generates
+/// `decode_as_<variant>`, `peek_variant`/`<Name>Kind`, `decode_tagged`, and a
+/// `magic()`/`tag()` accessor where the discriminant is single-valued. See the
+/// `bnb::guide::dispatch` page.
 ///
 /// On a struct, `#[bin]` uses the shared codec/builder generators directly, which
 /// stay usable directly. See the `bnb::guide::bin_codec` page for a full walkthrough and

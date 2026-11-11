@@ -220,4 +220,23 @@ mod macro_ {
             "set pad/alignment bits are discarded, not read as fields"
         );
     }
+
+    /// A directive restated with the same value (two attributes, as a wrapper macro might
+    /// stamp them) is the directive once: one pad byte, not two.
+    #[bin(big)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct Restated {
+        #[br(pad_before = 1.bytes())]
+        #[br(pad_before = 1.bytes())]
+        value: u8,
+    }
+
+    #[test]
+    fn restated_directive_applies_once() {
+        assert_eq!(Restated { value: 5 }.to_bytes().unwrap(), [0, 5]);
+        assert_eq!(
+            Restated::decode_exact(&[0xEE, 5]).unwrap(),
+            Restated { value: 5 }
+        );
+    }
 }

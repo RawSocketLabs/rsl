@@ -18,12 +18,12 @@ struct CalcMap {
     len: u8,
 }
 
-// A reserved field is stored; a `temp` field is not.
-#[bin]
+// A `temp` field is not stored, so without a `calc` the reserved value stands in for
+// nothing. (With one it is accepted: `tests/bin_reserved.rs`.)
+#[bin(read_only)]
 struct TempReserved {
     #[reserved]
     #[br(temp)]
-    #[bw(calc = 0)]
     pad: u8,
 }
 
@@ -55,7 +55,8 @@ struct PeekWrite {
     body: u8,
 }
 
-// The canonical encoder would write the reserved spec value and drop the `calc`.
+// A stored field would get two canonical values: the reserved one in
+// `to_canonical_bytes()`, the `calc` in `to_canonical()`.
 #[bin]
 struct ReservedCalc {
     #[reserved]
@@ -70,6 +71,51 @@ struct CalcRead {
     raw: u8,
     #[br(calc = raw, map = |x: u8| x)]
     derived: u8,
+}
+
+// An ignored field is defaulted on decode: the `calc` would never run (the other
+// pre-existing `br(calc)` rule).
+#[bin]
+struct CalcIgnore {
+    raw: u8,
+    #[br(calc = raw & 1)]
+    #[brw(ignore)]
+    derived: u8,
+}
+
+// A `temp` peek is neither stored nor written: its `calc` would never run. (A stored peek
+// may carry one; the canonical helpers recompute it.)
+#[bin]
+struct TempPeekCalc {
+    #[br(temp, restore_position)]
+    #[bw(calc = self.body)]
+    tag: u8,
+    body: u8,
+}
+
+// The canonical encoder would write the reserved value as a plain `u16`, bypassing the
+// `bw(map)` that makes the field one byte on the wire.
+#[bin]
+struct ReservedMap {
+    #[reserved]
+    #[br(map = |x: u8| u16::from(x))]
+    #[bw(map = |v: &u16| *v as u8)]
+    pad: u16,
+}
+
+#[bin(ctx(wide: u8))]
+struct Child {
+    #[br(count = wide)]
+    data: Vec<u8>,
+}
+
+// `if` reads the inner type with its own codec: the context would never be passed.
+#[bin]
+struct IfCtx {
+    flag: u8,
+    wide: u8,
+    #[br(if(flag != 0), ctx { wide })]
+    child: Option<Child>,
 }
 
 fn main() {}

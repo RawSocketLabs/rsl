@@ -441,7 +441,7 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
 
             let (getter_kw, getter_body) = match &raw_ty {
                 Some(rt) => {
-                    let from_expr = crate::const_from_bits(rt, &quote!(__masked));
+                    let from_expr = crate::const_from_bits(rt, &quote!(__bnb_masked));
                     let tail = match read {
                         syn::Expr::Closure(c) if c.inputs.len() == 2 => {
                             let p0 = &c.inputs[0];
@@ -456,14 +456,14 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
                         // A path to a fn: a direct call is `const`-compatible when
                         // the target is a `const fn`.
                         _ => quote! {
-                            let __raw = #from_expr;
-                            (#read)(__raw, self)
+                            let __bnb_raw = #from_expr;
+                            (#read)(__bnb_raw, self)
                         },
                     };
                     (
                         quote!(const fn),
                         quote! {
-                            let __masked: u128 = ((self.value as u128) >> Self::#off) & Self::#mask;
+                            let __bnb_masked: u128 = ((self.value as u128) >> Self::#off) & Self::#mask;
                             #tail
                         },
                     )
@@ -471,9 +471,9 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
                 None => (
                     quote!(fn),
                     quote! {
-                        let __masked: u128 = ((self.value as u128) >> Self::#off) & Self::#mask;
-                        let __raw = #bits_path::from_bits(__masked);
-                        (#read)(__raw, self)
+                        let __bnb_masked: u128 = ((self.value as u128) >> Self::#off) & Self::#mask;
+                        let __bnb_raw = #bits_path::from_bits(__bnb_masked);
+                        (#read)(__bnb_raw, self)
                     },
                 ),
             };
@@ -493,24 +493,24 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
             });
             let (store_kw, store) = match (&raw_ty, const_raw_expr) {
                 (Some(rt), Some(raw_expr)) => {
-                    let into_expr = crate::const_into_bits(rt, &quote!(__raw));
+                    let into_expr = crate::const_into_bits(rt, &quote!(__bnb_raw));
                     (
                         quote!(const fn),
                         quote! {
-                            let __raw = #raw_expr;
-                            let __bits: u128 = #into_expr;
+                            let __bnb_raw = #raw_expr;
+                            let __bnb_bits: u128 = #into_expr;
                             self.value = ((self.value as u128 & !(Self::#mask << Self::#off))
-                                | ((__bits & Self::#mask) << Self::#off)) as #backing;
+                                | ((__bnb_bits & Self::#mask) << Self::#off)) as #backing;
                         },
                     )
                 }
                 _ => (
                     quote!(fn),
                     quote! {
-                        let __raw = (#write)(value);
-                        let __bits: u128 = #bits_path::into_bits(__raw);
+                        let __bnb_raw = (#write)(value);
+                        let __bnb_bits: u128 = #bits_path::into_bits(__bnb_raw);
                         self.value = ((self.value as u128 & !(Self::#mask << Self::#off))
-                            | ((__bits & Self::#mask) << Self::#off)) as #backing;
+                            | ((__bnb_bits & Self::#mask) << Self::#off)) as #backing;
                     },
                 ),
             };
@@ -599,11 +599,13 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
     // their getters), so `{:?}` shows `version: 4, ihl: 5` rather than the backing int.
     let debug_ts = if has_debug {
         let field_idents: Vec<_> = fields.iter().map(|f| &f.ident).collect();
+        let field_strs = field_idents.iter().map(|id| crate::printed(id));
+        let name_str = crate::printed(name);
         quote! {
             impl ::core::fmt::Debug for #name {
-                fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    __f.debug_struct(::core::stringify!(#name))
-                        #( .field(::core::stringify!(#field_idents), &self.#field_idents()) )*
+                fn fmt(&self, __bnb_f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    __bnb_f.debug_struct(#name_str)
+                        #( .field(#field_strs, &self.#field_idents()) )*
                         .finish()
                 }
             }

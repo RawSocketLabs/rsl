@@ -1,10 +1,11 @@
 //! Generated code keeps to names the user cannot collide with by accident: its generic
-//! parameters are `__S`/`__K` and its locals carry the `__bnb_` prefix, so a message may use
-//! types named `S` and `K` and fields named like the old generated locals.
+//! parameters are `__BnbS`/`__BnbK` and its locals carry the `__bnb_` prefix, so a message
+//! may use types named `S` and `K` (or `__S` and `__K`), fields named like the old generated
+//! locals, and helpers named like the old `#[bitfield]` view locals.
 
 mod macro_ {
-    use bnb::bin;
     use bnb::prelude::*;
+    use bnb::{bin, bitfield, u2, u4};
 
     // ── User types named like the old generated generic parameters. ──
     #[bin(big)]
@@ -66,6 +67,84 @@ mod macro_ {
         let counted = Counted::decode_with_exact(&[7, 8, 9], CountedCtx { n: 2 }).unwrap();
         assert_eq!(counted.items, [K { b: 8 }, K { b: 9 }]);
         assert_eq!(counted.to_bytes().unwrap(), [7, 8, 9]);
+    }
+
+    // ── User types named like the generic parameters before they took the `__Bnb` prefix. ──
+    #[bin(big)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[allow(non_camel_case_types)]
+    struct __S {
+        a: u8,
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[allow(non_camel_case_types)]
+    struct __K {
+        b: u8,
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    struct UsesDunderBoth {
+        s: __S,
+        #[br(count = 1)]
+        ks: Vec<__K>,
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum DunderEither {
+        #[bin(magic = 1u8)]
+        One(__S, __K),
+    }
+
+    #[test]
+    fn user_types_named_dunder_s_and_k_are_not_captured() {
+        let both = UsesDunderBoth::decode_exact(&[1, 2]).unwrap();
+        assert_eq!(
+            (both.s, both.ks.as_slice()),
+            (__S { a: 1 }, &[__K { b: 2 }][..])
+        );
+        assert_eq!(both.to_bytes().unwrap(), [1, 2]);
+
+        let one = DunderEither::decode_exact(&[1, 8, 9]).unwrap();
+        assert_eq!(one, DunderEither::One(__S { a: 8 }, __K { b: 9 }));
+        assert_eq!(one.to_bytes().unwrap(), [1, 8, 9]);
+    }
+
+    // ── Helpers named like the old `#[bitfield]` view locals: one called from an inlined
+    // closure body, one given as the `read` path. ──
+    const fn __masked(bits: u2) -> u8 {
+        bits.value() + 10
+    }
+
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "the signature a view's `read` path is called with"
+    )]
+    const fn __raw(bits: u2, _field: &Viewed) -> u8 {
+        bits.value() + 20
+    }
+
+    #[bitfield(u8)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct Viewed {
+        #[view(
+            bits = 2,
+            read = |bits: u2, _field: &Self| __masked(bits),
+            write = |value: u8| u2::new(value - 10)
+        )]
+        inlined: u8,
+        #[view(bits = 2, raw = u2, read = __raw, write = |value: u8| u2::new(value - 20))]
+        by_path: u8,
+        rest: u4,
+    }
+
+    #[test]
+    fn helpers_named_like_the_old_view_locals_are_not_captured() {
+        let viewed = Viewed::new().with_inlined(11).with_by_path(22);
+        assert_eq!((viewed.inlined(), viewed.by_path()), (11, 22));
     }
 
     // ── Fields named like the old generated locals, read by a later directive. ──

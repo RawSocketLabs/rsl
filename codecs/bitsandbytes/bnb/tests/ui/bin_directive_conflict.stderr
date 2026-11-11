@@ -10,38 +10,62 @@ error: `#[bw(calc = …)]` and `#[bw(map = …)]` cannot be combined on one fiel
 17 |     #[bw(calc = 1, map = |v: &u8| *v + 1)]
    |                    ^^^
 
-error: `#[reserved]` and `#[br(temp)]` cannot be combined on one field: a reserved field is a plain stored value that the canonical encoder writes as its spec value, bypassing the other directive; drop `reserved` (a `#[builder(default = …)]` still gives the field a default), or drop the other directive
-  --> tests/ui/bin_directive_conflict.rs:25:10
+error: `#[reserved]` is ignored on a `#[br(temp)]` field that has no `#[bw(calc = …)]`: the field is not stored, so there is no value for the reserved spec value to stand in for. Remove `reserved`, or add `#[bw(calc = …)]` for the value `to_bytes` writes (`to_canonical_bytes` then writes the reserved one)
+  --> tests/ui/bin_directive_conflict.rs:26:10
    |
-25 |     #[br(temp)]
+26 |     #[br(temp)]
    |          ^^^^
 
-error: `#[brw(ignore)]` and `#[br(count = …)]` cannot be combined on one field: an ignored field is neither read nor written, so the other directive would never run; remove `ignore`, or remove the other directive
+error: `#[brw(ignore)]` and `#[br(count = …)]` cannot be combined on one field: `#[br(count = …)]` would be ignored, because a `#[brw(ignore)]` field is neither read nor written (decode leaves it at `Default::default()`). Remove `#[br(count = …)]`, or remove `ignore`
   --> tests/ui/bin_directive_conflict.rs:35:10
    |
 35 |     #[br(count = n)]
    |          ^^^^^
 
-error: `#[br(count = …)]` and `#[br(map = …)]` cannot be combined on one field: a mapped or custom-parsed field is read by its closure's wire type or by its function, so the count would be silently dropped; drop `count` and size the read inside a `parse_with` function, or read the counted `Vec` into a `#[br(temp)]` field and derive this one with `#[br(calc = …)]`
+error: `#[br(count = …)]` and `#[br(map = …)]` cannot be combined on one field: `#[br(count = …)]` would be ignored, because `#[br(map = …)]` reads the whole field itself (a `map` closure's argument type or the `parse_with` function decides how much). Remove `count`; to size the read by an earlier field, name that field inside a `parse_with` closure
   --> tests/ui/bin_directive_conflict.rs:43:21
    |
 43 |     #[br(count = n, map = |x: [u8; 2]| x.to_vec())]
    |                     ^^^
 
-error: `#[br(restore_position)]` and `#[bw(write_with = …)]` cannot be combined on one field: a `restore_position` field is a read-side peek and is never written (the field it overlaps writes those bytes), so the write-side directive would be silently dropped; remove it
+error: `#[br(restore_position)]` and `#[bw(write_with = …)]` cannot be combined on one field: `#[bw(write_with = …)]` would be ignored, because a `restore_position` field is a read-side peek and is never written (the field it overlaps writes those bytes). Remove `#[bw(write_with = …)]`; a peek needs no write-side inverse, even when it is read with `map` or `parse_with`
   --> tests/ui/bin_directive_conflict.rs:53:10
    |
 53 |     #[bw(write_with = bnb::codecs::leb128::write)]
    |          ^^^^^^^^^^
 
-error: `#[reserved]` and `#[bw(calc = …)]` cannot be combined on one field: a reserved field is a plain stored value that the canonical encoder writes as its spec value, bypassing the other directive; drop `reserved` (a `#[builder(default = …)]` still gives the field a default), or drop the other directive
-  --> tests/ui/bin_directive_conflict.rs:62:10
+error: `#[reserved]` and `#[bw(calc = …)]` give a stored field two canonical values: `to_canonical_bytes()` writes the reserved spec value, but `to_canonical()` stores the `calc`. Keep `reserved` for a fixed value or `calc` for a computed one, or add `#[br(temp)]` so the field is not stored
+  --> tests/ui/bin_directive_conflict.rs:63:10
    |
-62 |     #[bw(calc = 7)]
+63 |     #[bw(calc = 7)]
    |          ^^^^
 
-error: `#[br(calc = …)]` and `#[br(map = …)]` cannot be combined on one field: `#[br(calc = …)]` computes the field on decode and writes nothing on encode, so a directive that reads, maps, seeks, writes or reserves the same field has nothing to act on; keep only the `calc` (padding and alignment may stay)
-  --> tests/ui/bin_directive_conflict.rs:71:22
+error: `#[br(calc = …)]` and `#[br(map = …)]` cannot be combined on one field: `#[br(map = …)]` would have nothing to act on, because `#[br(calc = …)]` computes the field from earlier fields on decode and puts no bits on the wire in either direction. Remove `#[br(map = …)]` (padding and alignment may stay)
+  --> tests/ui/bin_directive_conflict.rs:72:22
    |
-71 |     #[br(calc = raw, map = |x: u8| x)]
+72 |     #[br(calc = raw, map = |x: u8| x)]
    |                      ^^^
+
+error: `#[br(calc = …)]` and `#[brw(ignore)]` cannot be combined on one field: `#[br(calc = …)]` would be ignored, because a `#[brw(ignore)]` field is neither read nor written (decode leaves it at `Default::default()`). Remove `#[br(calc = …)]`, or remove `ignore`
+  --> tests/ui/bin_directive_conflict.rs:82:11
+   |
+82 |     #[brw(ignore)]
+   |           ^^^^^^
+
+error: `#[bw(calc = …)]` would never run on a field that is both `#[br(temp)]` and `#[br(restore_position)]`: a peek is never written and a `temp` one is not stored, so nothing uses the value. Remove the `calc` (a `temp` peek needs none), or remove `temp` to store the peek and let `to_canonical()` recompute it
+  --> tests/ui/bin_directive_conflict.rs:91:10
+   |
+91 |     #[bw(calc = self.body)]
+   |          ^^^^
+
+error: `#[reserved]` and `#[br(map = …)]` cannot be combined on one field: `to_canonical_bytes()` writes a reserved field's spec value with the field type's own plain codec, bypassing `#[br(map = …)]`, so the canonical encoding would not be the field's wire form. Remove `reserved` (a `#[builder(default = …)]` still gives the field a default), or remove `#[br(map = …)]`
+   --> tests/ui/bin_directive_conflict.rs:101:10
+    |
+101 |     #[br(map = |x: u8| u16::from(x))]
+    |          ^^^
+
+error: `#[br(if(…))]` and `#[br(ctx { … })]` cannot be combined on one field: `#[br(ctx { … })]` would be ignored, because `if` reads the `Option`'s inner type with that type's own codec and passes it no context. Decide inside a `parse_with` closure instead, which can name the earlier fields: `#[br(parse_with = |r| if <cond> { <Child>::decode_with(r, <Child>Ctx { … }).map(Some) } else { Ok(None) })]`, with the matching `#[bw(write_with = …)]`
+   --> tests/ui/bin_directive_conflict.rs:117:25
+    |
+117 |     #[br(if(flag != 0), ctx { wide })]
+    |                         ^^^

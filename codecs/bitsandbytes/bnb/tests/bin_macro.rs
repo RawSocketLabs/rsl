@@ -73,6 +73,48 @@ mod macro_ {
         // time — only Decode is derived).
     }
 
+    // `no_builder` is true of an item kind that has no builder: accepted as a no-op, so a
+    // wrapper macro can stamp `#[bin(big, no_builder)]` on every item it emits.
+    #[bin(big, no_builder)]
+    #[derive(Debug, PartialEq, Eq)]
+    enum NoBuilderEnum {
+        #[bin(magic = 1u8)]
+        Only(u8),
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct NoBuilderWire {
+        a: u16,
+    }
+
+    #[bin(
+        no_builder,
+        map = |w: NoBuilderWire| NoBuilderMapped(w.a),
+        bw_map = |m: &NoBuilderMapped| NoBuilderWire { a: m.0 }
+    )]
+    #[derive(Debug, PartialEq, Eq)]
+    struct NoBuilderMapped(u16);
+
+    #[bin(no_builder, codec = bnb::codecs::leb128)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct NoBuilderCodec(u64);
+
+    #[test]
+    fn no_builder_is_a_no_op_on_items_without_a_builder() {
+        let only = NoBuilderEnum::Only(2);
+        assert_eq!(only.to_bytes().unwrap(), [1, 2]);
+        assert_eq!(NoBuilderEnum::decode_exact(&[1, 2]).unwrap(), only);
+
+        let mapped = NoBuilderMapped(5);
+        assert_eq!(mapped.to_bytes().unwrap(), [0, 5]);
+        assert_eq!(NoBuilderMapped::decode_exact(&[0, 5]).unwrap(), mapped);
+
+        let codec = NoBuilderCodec(128);
+        assert_eq!(codec.to_bytes().unwrap(), [0x80, 1]);
+        assert_eq!(NoBuilderCodec::decode_exact(&[0x80, 1]).unwrap(), codec);
+    }
+
     // Fields named `r`/`w` once collided with the codec's generated source/sink and were
     // a hard error. The params are now `__bnb_r`/`__bnb_w`, so `r`/`w` are ordinary field
     // names — even usable as a sibling local in a directive like `count`.

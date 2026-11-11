@@ -60,6 +60,44 @@ mod macro_ {
     }
     message!(Message, [u8; 2], Vec<u8>, Option<u8>);
 
+    #[bin(big, ctx(n: u8))]
+    #[derive(Debug, PartialEq)]
+    struct Run {
+        #[br(count = n)]
+        data: Vec<u8>,
+    }
+
+    macro_rules! parent {
+        ($name:ident, $child:ty) => {
+            #[bin(big)]
+            #[derive(Debug, PartialEq)]
+            struct $name {
+                n: u8,
+                #[br(ctx { n })]
+                one: $child,
+                #[br(count = 2, ctx { n })]
+                many: Vec<$child>,
+            }
+        };
+    }
+    parent!(Parent, Run);
+
+    #[test]
+    fn a_ctx_child_names_its_context_struct_through_a_type_fragment() {
+        let bytes = [1, 9, 8, 7];
+        let parent = Parent::decode_exact(&bytes).unwrap();
+        let run = |byte| Run { data: vec![byte] };
+        assert_eq!(
+            parent,
+            Parent {
+                n: 1,
+                one: run(9),
+                many: vec![run(8), run(7)],
+            }
+        );
+        assert_eq!(parent.to_bytes().unwrap(), bytes);
+    }
+
     #[test]
     fn a_bitfield_recognises_primitives_passed_as_type_fragments() {
         let packed = Packed::new().with_on(true).with_value(0xAB);

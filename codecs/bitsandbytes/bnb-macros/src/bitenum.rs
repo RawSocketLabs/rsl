@@ -186,6 +186,7 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     // from_bits: match each discriminant; unknown -> catch-all or a panic (a `const fn`
     // can only panic with a literal message, hence `concat!` and no `{}` for the value).
+    let name_str = crate::printed(name);
     let from_unit: Vec<TokenStream2> = unit
         .iter()
         .map(|(id, disc)| quote!(#disc => #name::#id))
@@ -196,7 +197,7 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     } else {
         quote!(_ => panic!(concat!(
             "non-exhaustive BitEnum ",
-            stringify!(#name),
+            #name_str,
             " has no variant for discriminant (and no #[catch_all])"
         )))
     };
@@ -215,7 +216,7 @@ fn expand_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 #(#from_unit,)*
                 other => unreachable!(
                     "non-exhaustive BitEnum {} has no variant for discriminant {} and no #[catch_all]",
-                    stringify!(#name), other
+                    #name_str, other
                 ),
             }
         }
@@ -316,6 +317,7 @@ fn conv_impls(
     }
     let bnb = crate::bnb_path();
     let bits_path = quote!(#bnb::__private::Bits);
+    let name_str = crate::printed(name);
 
     // Enum -> primitive: total. `from_bits` performs the (lossless) down-cast,
     // keeping `as` out of the expanded call site.
@@ -353,7 +355,7 @@ fn conv_impls(
                         other => ::core::result::Result::Err(
                             #bnb::__private::UnknownDiscriminant::new(
                                 other,
-                                ::core::stringify!(#name),
+                                #name_str,
                             ),
                         ),
                     }

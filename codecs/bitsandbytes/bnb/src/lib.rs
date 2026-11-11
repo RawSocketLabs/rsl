@@ -264,16 +264,26 @@ pub mod __private {
     pub use ::tracing;
 
     /// The layout of a decode-only (`#[bin(read_only)]`) type, which has no `BitEncode` to
-    /// carry `LAYOUT`. Emitted by `#[bin]` for generated code; not a stable API.
+    /// carry `LAYOUT`. Emitted by `#[bin]` for generated code; not a stable API. Its
+    /// diagnostic is the one a decode-only mapped struct shows for a wire type that states
+    /// no layout at all (the last [`WireLayoutProbe`] tier).
+    #[diagnostic::on_unimplemented(
+        message = "`{Self}` cannot be the wire type of a decode-only mapped `#[bin]` struct: it declares no byte and bit order",
+        label = "the mapped struct decodes in this type's order, and it declares none",
+        note = "a `#[bin]` type declares its order itself; for a hand-written decoder, implement `BitEncode` too (its `LAYOUT` is where a type states the order it is read and written in)"
+    )]
     pub trait DecodeLayout {
-        /// The bit and byte order the type's slice entry points decode in.
-        const LAYOUT: Layout;
+        /// The bit and byte order the type's slice entry points decode in. (A function, not
+        /// a constant, so a mapped struct can answer with its wire type's.)
+        fn layout() -> Layout;
     }
 
-    /// Concrete-site autoref dispatch for a decode-only wire-mapped `#[bin]` struct: its wire
-    /// type's layout comes from that type's `BitEncode` when it has one, else from the
-    /// [`DecodeLayout`] of a `#[bin(read_only)]` wire type — so reading through a wire type
-    /// never requires it to encode. Not a stable API.
+    /// Concrete-site autoref dispatch for a decode-only wire-mapped `#[bin]` struct, which
+    /// decodes in its wire type's layout without requiring that type to encode. Called as
+    /// `(&&WireLayoutProbe::<W>(PhantomData)).layout()`, it resolves in this order: the
+    /// wire type's own [`DecodeLayout`] (a `#[bin(read_only)]` type's declared order), else
+    /// its `BitEncode::LAYOUT`, else [`WireLayoutMissing`], which fails on `W: DecodeLayout`
+    /// and so reports that trait's diagnostic. Not a stable API.
     pub struct WireLayoutProbe<W>(pub ::core::marker::PhantomData<fn() -> W>);
 
     /// The layout sources [`WireLayoutProbe`] resolves between, in priority order.
@@ -282,15 +292,34 @@ pub mod __private {
         fn layout(self) -> Layout;
     }
 
-    impl<W: BitEncode> WireLayoutDispatch for &WireLayoutProbe<W> {
+    impl<W: DecodeLayout> WireLayoutDispatch for &&WireLayoutProbe<W> {
+        fn layout(self) -> Layout {
+            W::layout()
+        }
+    }
+
+    impl<W: BitEncode> WireLayoutDispatch for &&&WireLayoutProbe<W> {
         fn layout(self) -> Layout {
             W::LAYOUT
         }
     }
 
-    impl<W: DecodeLayout> WireLayoutDispatch for &&WireLayoutProbe<W> {
-        fn layout(self) -> Layout {
-            W::LAYOUT
+    /// The last [`WireLayoutProbe`] tier, reached by a wire type with neither layout source:
+    /// its bound cannot hold there, so the call is one error carrying [`DecodeLayout`]'s
+    /// diagnostic.
+    pub trait WireLayoutMissing<W> {
+        /// Never callable from this tier: `W: DecodeLayout` is what the earlier tier took.
+        fn layout(self) -> Layout
+        where
+            W: DecodeLayout;
+    }
+
+    impl<W> WireLayoutMissing<W> for &WireLayoutProbe<W> {
+        fn layout(self) -> Layout
+        where
+            W: DecodeLayout,
+        {
+            W::layout()
         }
     }
 
