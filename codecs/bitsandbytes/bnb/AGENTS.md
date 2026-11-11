@@ -363,8 +363,9 @@ allowed exception. Keep the public surface fully documented.
 - `benches/bitfield_bench.rs` (criterion, `Criterion::default()`) measures `bnb`
   **against the crates it replaces** — `bitbybit`, `modular-bitfield-msb` (dev-deps,
   bench-only) — and a hand-written shift/mask baseline, on an identical DNS-shaped
-  16-bit field. Result: `bnb` matches `bitbybit`, beats `modular-bitfield`, within
-  noise of hand-written (pack ~870ps, unpack ~192ps).
+  16-bit field. Result: `bnb` matches `bitbybit`, beats `modular-bitfield`, and is within
+  ~4% of hand-written (pack ~873ps vs ~843ps, unpack ~428ps vs ~434ps; medians of one
+  pinned run on a loaded machine).
 - `benches/bitstream_bench.rs` — the `#[bin]`/derive codec throughput.
 - `benches/message_bench.rs` — whole-message encode/decode.
 - `benches/seek_bench.rs` — the seekable reader adapters.

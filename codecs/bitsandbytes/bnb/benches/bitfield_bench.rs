@@ -108,22 +108,33 @@ fn bench_unpack(c: &mut Criterion) {
     let mb_s = mb::State::new().with_a(2).with_b(42).with_c(2);
     let raw: u16 = 0x1002 | (42 << 4);
 
+    // `black_box` goes on the input *inside* the measured closure, for every implementation
+    // alike: applied once outside, the value is a loop-invariant the optimizer folds, and the
+    // bench times an empty iteration instead of the field reads.
     let mut g = c.benchmark_group("unpack");
     g.bench_function("bnb", |bn| {
-        let s = black_box(bits_s);
-        bn.iter(|| u16::from(s.a().value()) + u16::from(s.b().value()) + u16::from(s.c().value()));
+        bn.iter(|| {
+            let s = black_box(bits_s);
+            u16::from(s.a().value()) + u16::from(s.b().value()) + u16::from(s.c().value())
+        });
     });
     g.bench_function("bitbybit", |bn| {
-        let s = black_box(bb_s);
-        bn.iter(|| u16::from(s.a().value()) + u16::from(s.b().value()) + u16::from(s.c().value()));
+        bn.iter(|| {
+            let s = black_box(bb_s);
+            u16::from(s.a().value()) + u16::from(s.b().value()) + u16::from(s.c().value())
+        });
     });
     g.bench_function("modular_bitfield", |bn| {
-        let s = black_box(mb_s);
-        bn.iter(|| u16::from(s.a()) + u16::from(s.b()) + u16::from(s.c()));
+        bn.iter(|| {
+            let s = black_box(mb_s);
+            u16::from(s.a()) + u16::from(s.b()) + u16::from(s.c())
+        });
     });
     g.bench_function("handwritten", |bn| {
-        let v = black_box(raw);
-        bn.iter(|| ((v >> 11) & 0x1F) + ((v >> 4) & 0x7F) + (v & 0xF));
+        bn.iter(|| {
+            let v = black_box(raw);
+            ((v >> 11) & 0x1F) + ((v >> 4) & 0x7F) + (v & 0xF)
+        });
     });
     g.finish();
 }
@@ -134,12 +145,10 @@ fn bench_bytes_roundtrip(c: &mut Criterion) {
 
     let mut g = c.benchmark_group("bytes_roundtrip");
     g.bench_function("bnb", |bn| {
-        let s = black_box(bits_s);
-        bn.iter(|| BitsState::from_be_bytes(black_box(s.to_be_bytes())));
+        bn.iter(|| BitsState::from_be_bytes(black_box(black_box(bits_s).to_be_bytes())));
     });
     g.bench_function("modular_bitfield", |bn| {
-        let s = black_box(mb_s);
-        bn.iter(|| mb::State::from_bytes(black_box(s.into_bytes())));
+        bn.iter(|| mb::State::from_bytes(black_box(black_box(mb_s).into_bytes())));
     });
     g.finish();
 }
@@ -164,8 +173,8 @@ fn bench_primitives(c: &mut Criterion) {
         bn.iter(|| <Code as bnb::Bits>::from_bits(black_box(9)));
     });
     g.bench_function("bnb_enum_encode", |bn| {
-        let v = black_box(Code::Other(u4::new(9)));
-        bn.iter(|| <Code as bnb::Bits>::into_bits(v));
+        let v = Code::Other(u4::new(9));
+        bn.iter(|| <Code as bnb::Bits>::into_bits(black_box(v)));
     });
     g.finish();
 }
