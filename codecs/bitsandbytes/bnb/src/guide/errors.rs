@@ -43,7 +43,7 @@
 //! - `Convert { message }` — a conversion or guard rejected the value: a `try_map` /
 //!   `try_wire` converter, a `#[br(assert(...))]` guard, a `WireLen` / `count_prefix`
 //!   length that overflowed its prefix type, invalid UTF-8 in a string field, or a
-//!   `WidthError` bridged in from checked construction (`try_new`).
+//!   `WidthError` bridged in from checked construction (`try_new`, `try_from`).
 //! - `Incomplete { needed }` — a stream ran out mid-message. `BitBuf` and
 //!   `Type::decode_prefix` support retry; a direct forward-only read may already have
 //!   consumed input.
@@ -174,7 +174,8 @@
 //!
 //! Decoding/encoding yields [`BitError`](crate::BitError). The separate
 //! [`WidthError`](crate::WidthError) covers *construction* (`UInt::try_new` and the `TryFrom`
-//! impls). A `From<WidthError> for BitError` bridges them, so a construction failure inside
+//! impls from every primitive integer: a value too large for the width, or a negative one).
+//! A `From<WidthError> for BitError` bridges them, so a construction failure inside
 //! a custom `parse_with`/converter can `?`-propagate.
 //! [`UnknownDiscriminant`](crate::UnknownDiscriminant) is also construction-only: it
 //! belongs to a closed `BitEnum`'s checked integer `TryFrom`, not `#[bin]` dispatch.

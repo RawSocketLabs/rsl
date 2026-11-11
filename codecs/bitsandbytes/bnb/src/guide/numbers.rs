@@ -34,17 +34,32 @@
 //! assert_eq!(u4::default().value(), 0);  // zero
 //! ```
 //!
-//! ## Converting to and from the backing primitive
+//! ## Converting to and from primitive integers
 //!
 //! ```
-//! use bnb::u12;
+//! use bnb::{u12, WidthError};
 //!
 //! let v = u12::new(0xABC);
 //! let raw: u16 = v.into();               // widening is infallible
 //! assert_eq!(raw, 0xABC);
 //! assert_eq!(u12::try_from(0xABCu16).unwrap(), v); // narrowing is checked
 //! assert!(u12::try_from(0x1000u16).is_err());
+//!
+//! // `try_from` takes any primitive integer, signed or unsigned, and checks the
+//! // number itself. Convert directly; a cast first truncates before the check.
+//! let len: usize = 65_541; // 0x1_0005
+//! assert!(u12::try_from(len).is_err());
+//! assert_eq!(u12::try_new(len as u16).map(u12::value), Ok(5)); // wrong: the cast wrapped
+//! assert_eq!(u12::try_from(-1), Err(WidthError::Negative { value: -1, bits: 12 }));
+//!
+//! // Hex, octal and binary formatting behave as on the backing primitive.
+//! assert_eq!(format!("{v:#06x} {v:b}"), "0x0abc 101010111100");
 //! ```
+//!
+//! An untyped argument is evaluated as a signed `i32` before it is converted, as with
+//! the primitive integers' own `try_from`. Type one operand whenever the argument is
+//! more than a small literal, because `!`, `>>`, `/`, `%` and bit 31 differ on a signed
+//! value: `u12::try_from(!0_u16 >> 4)`, `u48::try_from(0x1_0000_0000_u64)`.
 //!
 //! # The `Bits` trait — why everything composes
 //!

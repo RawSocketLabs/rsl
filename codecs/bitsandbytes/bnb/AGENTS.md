@@ -286,6 +286,13 @@ confusion, not remove it).
   `from_bits` also masks its input to the enum width, so stray high bits never panic.
 - A fixed-length message implements `FixedBitLen` (its `BIT_LEN` sizes a nested
   region); a `count`-bearing (variable-length) message does **not**.
+- `UInt<T, N>: TryFrom<S>` exists for **all twelve** primitive integers (`int.rs`,
+  `impl_uint_try_from!` plus the same-type impl in `impl_uint!`); `Ok` iff the value fits
+  in `N` bits, else `WidthError::ValueTooLarge`/`Negative`. Keep the set complete: with
+  more than one source but no `i32`, a bare literal (`u12::try_from(5)`) stops compiling,
+  because it falls back to `i32`. For the same reason an **untyped** argument is evaluated as
+  signed `i32` (`!0 >> 4` is negative): type an operand in anything beyond a small literal.
+  Callers convert with `try_from`, never `as` + `try_new`.
 
 ## Testing
 

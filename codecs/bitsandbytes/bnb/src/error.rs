@@ -8,8 +8,10 @@ use core::fmt;
 
 /// Errors from checked construction.
 ///
-/// Currently the only fallible operation is `UInt::try_new` (and the `TryFrom`
-/// impls built on it). Decoding never *rejects an out-of-range value*: the codec is
+/// The fallible operations are `UInt::try_new` and the `TryFrom` impls that convert
+/// any primitive integer into a `UInt`: a value above the width's range is
+/// [`ValueTooLarge`](WidthError::ValueTooLarge), a negative one is
+/// [`Negative`](WidthError::Negative). Decoding never *rejects an out-of-range value*: the codec is
 /// dual-use, so unknown values are preserved via a `#[catch_all]` variant rather than
 /// rejected, and field access masks rather than validates. (Structural decode failures —
 /// EOF, a bad `magic`, an `assert`, invalid UTF-8 — are the separate
@@ -23,6 +25,10 @@ use core::fmt;
 /// let err = u4::try_new(20).unwrap_err(); // 20 doesn't fit in 4 bits
 /// assert_eq!(err, WidthError::ValueTooLarge { value: 20, bits: 4 });
 /// assert_eq!(err.to_string(), "value 20 does not fit in 4 bits");
+///
+/// let err = u4::try_from(-3_i32).unwrap_err(); // no unsigned width holds -3
+/// assert_eq!(err, WidthError::Negative { value: -3, bits: 4 });
+/// assert_eq!(err.to_string(), "value -3 is negative and does not fit in 4 unsigned bits");
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -34,6 +40,13 @@ pub enum WidthError {
         /// The maximum number of bits available.
         bits: u32,
     },
+    /// A negative value was converted into an unsigned integer, which holds none.
+    Negative {
+        /// The offending value.
+        value: i128,
+        /// The width of the unsigned target, in bits.
+        bits: u32,
+    },
 }
 
 impl fmt::Display for WidthError {
@@ -41,6 +54,12 @@ impl fmt::Display for WidthError {
         match self {
             WidthError::ValueTooLarge { value, bits } => {
                 write!(f, "value {value} does not fit in {bits} bits")
+            }
+            WidthError::Negative { value, bits } => {
+                write!(
+                    f,
+                    "value {value} is negative and does not fit in {bits} unsigned bits"
+                )
             }
         }
     }
@@ -116,6 +135,26 @@ mod unit {
     fn value_too_large_display() {
         let e = WidthError::ValueTooLarge { value: 20, bits: 4 };
         assert_eq!(e.to_string(), "value 20 does not fit in 4 bits");
+    }
+
+    #[test]
+    fn negative_display_names_the_value_and_the_unsigned_width() {
+        let e = WidthError::Negative {
+            value: -3,
+            bits: 12,
+        };
+        assert_eq!(
+            e.to_string(),
+            "value -3 is negative and does not fit in 12 unsigned bits"
+        );
+        let e = WidthError::Negative {
+            value: i128::MIN,
+            bits: 128,
+        };
+        assert_eq!(
+            e.to_string(),
+            "value -170141183460469231731687303715884105728 is negative and does not fit in 128 unsigned bits"
+        );
     }
 
     #[test]
