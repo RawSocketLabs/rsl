@@ -300,8 +300,14 @@
 //!
 //! writer.write_all(&Msg { seq: 1 }.to_bytes()?)?;
 //! let reply = Msg::decode(&mut reader)?; // one framed message off the stream
+//! reader.compact();                      // release its bytes before the next one
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
+//!
+//! A `BufSource` retains every byte it reads, against its cap, until `compact()` discards the
+//! ones before the cursor; a loop that never calls it ends in `BufferFull` once `cap` bytes
+//! have gone by. Positions stay stream-absolute across `compact()`, and a seek back before
+//! the discarded bytes is `NotSeekable`.
 //!
 //! For halves you need to **move across threads** (a dedicated reader thread and writer thread),
 //! the equivalent of tokio's `into_split` is `Arc<TcpStream>` — clone the `Arc` per side and use

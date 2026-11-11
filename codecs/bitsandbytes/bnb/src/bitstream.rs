@@ -202,10 +202,13 @@ pub enum ErrorKind {
     },
     /// A position directive (`restore_position`/seek) ran on a non-seekable
     /// [`Source`] (a forward-only stream). Decode from a slice ([`BitReader`]) or a
-    /// seekable source instead.
+    /// seekable source instead. Also a seek on a `BufSource` (with `std`) to a position
+    /// before the bytes it still retains: `BufSource::compact` discarded them, and the
+    /// reader underneath cannot go back.
     NotSeekable,
-    /// A `BufSource` (with `std`) hit its retention cap before the message finished — the
-    /// framed message is larger than the configured bound (never unbounded).
+    /// A `BufSource` (with `std`) would have to retain more than its cap to finish the read —
+    /// the bytes held since the start, or since the last `BufSource::compact`, plus the
+    /// message in progress exceed the configured bound (never unbounded).
     BufferFull {
         /// The cap, in bytes.
         cap: usize,
@@ -365,7 +368,7 @@ impl fmt::Display for BitError {
                 write!(f, "conversion failed: {message}")?;
             }
             ErrorKind::NotSeekable => {
-                write!(f, "a position directive ran on a non-seekable source")?;
+                write!(f, "seek to a position this source cannot reach")?;
             }
             ErrorKind::BufferFull { cap } => {
                 write!(f, "buffered source exceeded its {cap}-byte cap")?;
@@ -2622,23 +2625,39 @@ impl<R: std::io::Read> Source for StreamBitReader<R> {
 /// EOF, a read past the retained bytes is [`ErrorKind::UnexpectedEof`], as on a slice;
 /// for input that may still grow, push into a [`BitBuf`] instead.
 ///
+/// **Reclaim is explicit.** Every byte read stays retained, and counts against the cap,
+/// until [`compact`](Self::compact) discards the bytes before the cursor. A loop decoding
+/// message after message from one `BufSource` must call it between messages, or the stream
+/// ends in [`ErrorKind::BufferFull`] once `cap` bytes have gone by. Nothing is reclaimed
+/// automatically, because a later seek may still want those bytes. Positions
+/// ([`bit_pos`](Source::bit_pos), [`seek_to_bit`](Source::seek_to_bit), error offsets) count
+/// from the start of the stream and do not move when bytes are discarded.
+///
 /// # Examples
 ///
 /// ```
-/// use bnb::{bin, BufSource};
+/// use bnb::{bin, BufSource, Source};
 ///
 /// #[bin(big)]
 /// #[derive(Debug, PartialEq)]
 /// struct Word { value: u32 }
 ///
-/// let mut src = BufSource::new(&[0x12, 0x34, 0x56, 0x78][..]); // any `Read`
+/// let wire = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+/// let mut src = BufSource::with_capacity(&wire[..], 4); // any `Read`; retain 4 bytes at most
 /// assert_eq!(Word::decode(&mut src).unwrap(), Word { value: 0x1234_5678 });
+/// src.compact(); // done with that message: release its bytes
+/// assert_eq!(Word::decode(&mut src).unwrap(), Word { value: 0x9ABC_DEF0 });
+/// assert_eq!(src.bit_pos(), 64, "positions stay stream-absolute");
 /// ```
 #[cfg(feature = "std")]
 #[derive(Clone, Debug)]
 pub struct BufSource<R> {
     inner: R,
+    /// The retained bytes: stream bytes `base..base + buf.len()`.
     buf: Vec<u8>,
+    /// Stream offset, in bytes, of `buf[0]`: how much [`compact`](Self::compact) has discarded.
+    base: usize,
+    /// The cursor, in bits from the start of the stream; never before `base`.
     bit_pos: usize,
     cap: usize,
     layout: Layout,
@@ -2665,6 +2684,7 @@ impl<R: std::io::Read> BufSource<R> {
         Self {
             inner,
             buf: Vec::new(),
+            base: 0,
             bit_pos: 0,
             cap,
             layout,
@@ -2672,16 +2692,36 @@ impl<R: std::io::Read> BufSource<R> {
         }
     }
 
-    /// Reads from `inner` until `buf` holds at least `byte_end` bytes (or EOF/cap).
+    /// Discards the retained bytes before the cursor's byte, keeping a partially consumed
+    /// byte, so they stop counting against the retention cap. Call it between messages in a
+    /// long-lived decode loop; the allocation is reused.
+    ///
+    /// Positions stay stream-absolute: [`bit_pos`](Source::bit_pos) is unchanged. The
+    /// discarded bytes are gone, so a later [`seek_to_bit`](Source::seek_to_bit) before the
+    /// retained bytes fails with [`ErrorKind::NotSeekable`] — do not call this while a
+    /// `restore_position` or pointer of the message in progress may still seek back.
+    ///
+    /// Because positions never rewind, the stream as a whole is limited to `usize::MAX`
+    /// bits: on a 32-bit target a compacting loop ends in [`ErrorKind::PositionOverflow`]
+    /// after 512 MiB. Start a new `BufSource` over the reader before then.
+    pub fn compact(&mut self) {
+        // A forward seek can leave the cursor past everything read so far.
+        let whole = (self.bit_pos / 8 - self.base).min(self.buf.len());
+        self.buf.drain(..whole);
+        self.base += whole;
+    }
+
+    /// Reads from `inner` until the retained bytes reach stream byte `byte_end` (or
+    /// EOF/cap), never past it.
     fn fill_to(&mut self, byte_end: usize) -> Result<(), BitError> {
-        while self.buf.len() < byte_end && !self.eof {
+        while self.base + self.buf.len() < byte_end && !self.eof {
             if self.buf.len() >= self.cap {
                 return Err(BitError::new(
                     ErrorKind::BufferFull { cap: self.cap },
                     self.bit_pos,
                 ));
             }
-            let want = (byte_end - self.buf.len()).min(self.cap - self.buf.len());
+            let want = (byte_end - self.base - self.buf.len()).min(self.cap - self.buf.len());
             let start = self.buf.len();
             self.buf.resize(start + want, 0);
             match self.inner.read(&mut self.buf[start..]) {
@@ -2718,18 +2758,21 @@ impl<R: std::io::Read> Source for BufSource<R> {
             .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
         let byte_end = end.div_ceil(8);
         self.fill_to(byte_end)?;
-        if self.buf.len() < byte_end {
+        let retained_end = self.base + self.buf.len();
+        if retained_end < byte_end {
             // `fill_to` stops short only at the reader's EOF, so the input is finite and
             // finished: report it as a slice would, letting dispatch fall through.
             return Err(BitError::new(
                 ErrorKind::UnexpectedEof {
                     needed: n as usize,
-                    remaining: bits_in(self.buf.len()).saturating_sub(self.bit_pos),
+                    remaining: bits_in(retained_end).saturating_sub(self.bit_pos),
                 },
                 self.bit_pos,
             ));
         }
-        let acc = extract_bits(&self.buf, self.bit_pos, n as usize, self.layout.bit);
+        // `buf` starts at stream byte `base`, and the cursor is never before it.
+        let at = self.bit_pos - self.base * 8;
+        let acc = extract_bits(&self.buf, at, n as usize, self.layout.bit);
         self.bit_pos += n as usize;
         Ok(acc)
     }
@@ -2742,9 +2785,17 @@ impl<R: std::io::Read> Source for BufSource<R> {
     fn bit_order(&self) -> BitOrder {
         self.layout.bit
     }
+    /// Moves the cursor to stream-absolute bit `pos`.
+    ///
+    /// # Errors
+    /// [`ErrorKind::NotSeekable`] if `pos` is before the retained bytes, which
+    /// [`compact`](BufSource::compact) discarded; the cursor does not move.
     fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
         // Seek within the retained buffer; a later read fills more on demand.
         // Backward seeks (`restore_position`) hit already-retained bytes.
+        if pos / 8 < self.base {
+            return Err(BitError::new(ErrorKind::NotSeekable, self.bit_pos));
+        }
         self.bit_pos = pos;
         Ok(())
     }
@@ -3789,7 +3840,7 @@ mod unit {
         );
         assert_eq!(
             BitError::new(ErrorKind::NotSeekable, 4).to_string(),
-            "a position directive ran on a non-seekable source at bit 4",
+            "seek to a position this source cannot reach at bit 4",
         );
         assert_eq!(
             BitError::new(ErrorKind::BufferFull { cap: 64 }, 0).to_string(),
@@ -5494,6 +5545,140 @@ mod component {
             );
             let err = src.read_bits(16).unwrap_err();
             assert!(matches!(err.kind, ErrorKind::BufferFull { cap: 1 }));
+        }
+
+        /// A reader of `count` 4-byte big-endian counters, 0 upward, behind a 16-byte cap.
+        fn counters(count: u32) -> BufSource<Chunked> {
+            let data = (0..count).flat_map(u32::to_be_bytes).collect();
+            BufSource::with_capacity(Chunked { data, pos: 0 }, 16)
+        }
+
+        #[test]
+        fn compacting_between_messages_decodes_a_stream_longer_than_the_cap() {
+            // 40 messages are 160 bytes, ten times the cap: the cap bounds what is retained
+            // at once, not how much may ever go by.
+            let mut src = counters(40);
+            for seq in 0..40_u32 {
+                assert_eq!(src.read_bits(32).unwrap(), u128::from(seq));
+                src.compact();
+            }
+            assert_eq!(src.bit_pos(), 40 * 32, "positions stay stream-absolute");
+            assert!(matches!(
+                src.read_bits(8).unwrap_err().kind,
+                ErrorKind::UnexpectedEof { .. }
+            ));
+        }
+
+        #[test]
+        fn without_compaction_the_cap_counts_every_byte_read() {
+            let mut src = counters(40);
+            for seq in 0..4_u32 {
+                assert_eq!(src.read_bits(32).unwrap(), u128::from(seq));
+            }
+            let err = src.read_bits(32).unwrap_err();
+            assert_eq!((err.kind, err.at), (ErrorKind::BufferFull { cap: 16 }, 128));
+            // Nothing was lost: releasing the consumed bytes lets the same read succeed.
+            src.compact();
+            assert_eq!(src.read_bits(32).unwrap(), 4);
+        }
+
+        #[test]
+        fn seeking_before_the_compacted_bytes_is_not_seekable() {
+            let mut src = counters(4);
+            src.read_bits(32).unwrap();
+            src.read_bits(32).unwrap();
+            src.compact(); // bytes 0..8 are gone
+            for gone in [0, 32, 63] {
+                let err = src.seek_to_bit(gone).unwrap_err();
+                assert_eq!((err.kind, err.at), (ErrorKind::NotSeekable, 64));
+            }
+            assert_eq!(src.bit_pos(), 64, "a refused seek leaves the cursor alone");
+            assert_eq!(src.read_bits(32).unwrap(), 2);
+        }
+
+        /// A reader that hands out as many bytes as the caller's buffer holds and counts them.
+        struct Greedy {
+            data: Vec<u8>,
+            pos: usize,
+        }
+        impl std::io::Read for Greedy {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = buf.len().min(self.data.len() - self.pos);
+                buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+                self.pos += n;
+                Ok(n)
+            }
+        }
+
+        #[test]
+        fn a_compacted_source_still_reads_no_further_than_the_field_needs() {
+            // A caller that resumes the raw reader after decoding relies on this.
+            let reader = Greedy {
+                data: (0..64).collect(),
+                pos: 0,
+            };
+            let mut src = BufSource::with_capacity(reader, 16);
+            for byte in 0..8_u8 {
+                assert_eq!(src.read_bits(8).unwrap(), u128::from(byte));
+                src.compact();
+            }
+            assert_eq!(src.inner.pos, 8, "bytes taken from the reader");
+        }
+
+        #[test]
+        fn eof_after_compaction_reports_the_bits_actually_left() {
+            let mut src = BufSource::new(&[0, 1, 2, 3, 4, 5][..]);
+            src.read_bits(32).unwrap();
+            src.compact();
+            let err = src.read_bits(32).unwrap_err();
+            assert_eq!(
+                (err.kind, err.at),
+                (
+                    ErrorKind::UnexpectedEof {
+                        needed: 32,
+                        remaining: 16
+                    },
+                    32
+                )
+            );
+        }
+
+        #[test]
+        fn seeking_within_the_retained_bytes_still_works_after_compaction() {
+            let mut src = counters(4);
+            src.read_bits(32).unwrap();
+            src.compact(); // bytes 0..4 are gone; the buffer now starts at byte 4
+            assert_eq!(src.read_bits(32).unwrap(), 1);
+            assert_eq!(src.read_bits(32).unwrap(), 2);
+            src.seek_to_bit(32).unwrap(); // absolute bit 32 is the oldest retained byte
+            assert_eq!(src.read_bits(32).unwrap(), 1);
+            src.seek_to_bit(64).unwrap();
+            assert_eq!(src.read_bits(32).unwrap(), 2);
+            assert_eq!(src.bit_pos(), 96);
+        }
+
+        #[test]
+        fn compacting_mid_byte_keeps_the_partially_consumed_byte() {
+            let data = vec![0x12, 0x34, 0x56, 0x78];
+            let mut src = BufSource::with_capacity(Chunked { data, pos: 0 }, 2);
+            assert_eq!(src.read_bits(12).unwrap(), 0x123);
+            src.compact(); // drops byte 0, keeps byte 1: its low nibble is unread
+            assert_eq!(src.bit_pos(), 12);
+            assert_eq!(src.read_bits(12).unwrap(), 0x456);
+            src.seek_to_bit(8).unwrap(); // the start of the kept byte is still there
+            assert_eq!(src.read_bits(8).unwrap(), 0x34);
+            assert_eq!(src.seek_to_bit(7).unwrap_err().kind, ErrorKind::NotSeekable);
+        }
+
+        #[test]
+        fn compacting_after_a_seek_past_the_retained_bytes_loses_nothing() {
+            let data = (0..8).collect();
+            let mut src = BufSource::with_capacity(Chunked { data, pos: 0 }, 8);
+            assert_eq!(src.read_bits(8).unwrap(), 0);
+            src.seek_to_bit(40).unwrap(); // bytes 1..5 have not been read from the reader yet
+            src.compact();
+            assert_eq!(src.read_bits(8).unwrap(), 5);
+            assert_eq!(src.bit_pos(), 48);
         }
 
         #[test]

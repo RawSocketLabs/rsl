@@ -57,7 +57,8 @@
 //!   over-128-bit field, and an I/O failure (carrying just the `std::io::ErrorKind`, not
 //!   the full `io::Error`). `NotSeekable`/`BufferFull` are exactly what you hit moving from
 //!   slices to streams (a `restore_position` on a forward stream; a message larger than a
-//!   `BufSource` cap, with `std`).
+//!   `BufSource` cap, with `std`). A `BufSource` loop that never calls `compact` also ends in
+//!   `BufferFull`, and a seek back before compacted bytes is `NotSeekable`.
 //!
 //! ```
 //! use bnb::{bin, ErrorKind};

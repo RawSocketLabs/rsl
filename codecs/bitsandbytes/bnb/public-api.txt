@@ -449,6 +449,7 @@ impl<T> tracing::instrument::Instrument for bnb::bitstream::BufSeekReader<R>
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BufSeekReader<R>
 pub struct bnb::bitstream::BufSource<R>
 impl<R: std::io::Read> bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::compact(&mut self)
 pub fn bnb::bitstream::BufSource<R>::new(R) -> Self
 pub fn bnb::bitstream::BufSource<R>::with_capacity(R, usize) -> Self
 pub fn bnb::bitstream::BufSource<R>::with_capacity_and_layout(R, usize, bnb::bitstream::Layout) -> Self
@@ -2821,6 +2822,7 @@ impl<T> tracing::instrument::Instrument for bnb::bitstream::BufSeekReader<R>
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::BufSeekReader<R>
 pub struct bnb::BufSource<R>
 impl<R: std::io::Read> bnb::bitstream::BufSource<R>
+pub fn bnb::bitstream::BufSource<R>::compact(&mut self)
 pub fn bnb::bitstream::BufSource<R>::new(R) -> Self
 pub fn bnb::bitstream::BufSource<R>::with_capacity(R, usize) -> Self
 pub fn bnb::bitstream::BufSource<R>::with_capacity_and_layout(R, usize, bnb::bitstream::Layout) -> Self

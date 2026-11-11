@@ -1,7 +1,8 @@
 //! **bufsource** — `BufSource`: a bounded retain-and-seek buffer over a forward-only `Read` —
 //! the "socket that *also* needs to seek" case. A message with a backward `restore_position`
 //! decodes over it even though the underlying reader **can't** seek, because `BufSource` retains
-//! the recent bytes. (Contrast `tcp`, which used `BufSource` purely forward, and `SeekReader`,
+//! the bytes it has read: all of them, up to its cap, until `compact()` releases the ones
+//! before the cursor. (Contrast `tcp`, which used `BufSource` purely forward, and `SeekReader`,
 //! which needs a real `Read + Seek`. A `StreamBitReader` here would be a *compile error* — its
 //! source isn't seekable.)
 //!

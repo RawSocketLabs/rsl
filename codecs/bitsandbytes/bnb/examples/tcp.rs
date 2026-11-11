@@ -4,8 +4,10 @@
 //! A `#[bin]` enum is a self-delimiting RPC (magic-dispatched), so a reader pulls exactly one
 //! message off the stream at a time. The read side wraps the socket in a [`BufSource`] (the
 //! `std::io::Read` → bnb `Source` adapter that buffers as the decoder needs bytes, so
-//! `decode` blocks until a whole message has arrived). The write side just calls
-//! `to_bytes()` + `write_all`.
+//! `decode` blocks until a whole message has arrived). It retains what it reads until told
+//! otherwise, so each loop calls `compact()` between messages: the retention cap then bounds
+//! one message rather than the whole connection. The write side just calls `to_bytes()` +
+//! `write_all`.
 //!
 //! **The duplex trick:** `std`'s `&TcpStream` implements *both* `Read` and `Write`, so the read
 //! half (a `BufSource<&TcpStream>`) and the write half (`&TcpStream`) are two shared borrows of
@@ -74,6 +76,10 @@ fn serve(stream: &TcpStream) -> std::io::Result<()> {
             }
             Err(e) => panic!("server: framing/transport error: {e}"),
         };
+        // This request is decoded: release its bytes. Without this every byte the connection
+        // ever carried stays retained, and the reader fails with `BufferFull` at its cap.
+        // Positions stay stream-absolute, so the `e.at == start` check above is unaffected.
+        reader.compact();
         info!(?req, "server ← request");
         if let Some(reply) = reply_to(&req) {
             writer.write_all(&reply.to_bytes().expect("encode reply"))?;
@@ -122,6 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!(?request, bytes = %hex(&bytes), "client → request");
 
         let reply = Message::decode(&mut reader)?; // one framed reply off the stream
+        reader.compact(); // done with it: keep the retained bytes to one message
         info!(?reply, "client ← reply");
         match (&request, &reply) {
             (Message::Ping { seq }, Message::Pong { seq: back }) => assert_eq!(seq, back),
