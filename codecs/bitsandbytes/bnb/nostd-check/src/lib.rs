@@ -4,8 +4,9 @@
 //! the runtime *and* the macro-generated code use only `core` + `alloc` — no
 //! accidental `std` linkage. It exercises every generated path that used to emit
 //! `::std::…`: a `magic` constant, a `reserved` field (the canonical encode path), a
-//! `count`-driven `Vec` payload, a `#[bitfield]`, and a closed `BitEnum`'s checked
-//! `TryFrom` (the `UnknownDiscriminant`/`String` path).
+//! `count`-driven `Vec` payload, a `#[bitfield]`, a closed `BitEnum`'s checked
+//! `TryFrom` (the `UnknownDiscriminant`/`String` path), and a `validate` hook (the
+//! `BuilderError` message path).
 //!
 //! Run it (from the rsl workspace root):
 //! ```text
@@ -116,6 +117,27 @@ pub fn dispatch_diagnostics() -> [Option<renamed_bnb::DispatchValue>; 2] {
 /// The discriminator captured by a dispatch miss that originated in enum `T`.
 fn observed<T: 'static>(error: Option<BitError>) -> Option<renamed_bnb::DispatchValue> {
     error?.dispatch_error_for::<T>()?.observed().cloned()
+}
+
+/// `validate = <path>`: the builder turns the validator's `Display` error into a
+/// `BuilderError` message, which must not reach for `std`'s `ToString` prelude.
+#[bin(big, validate = Checked::check)]
+#[derive(Debug)]
+pub struct Checked {
+    level: u8,
+}
+
+impl Checked {
+    fn check(&self) -> Result<(), &'static str> {
+        if self.level > 3 {
+            return Err("level over 3");
+        }
+        Ok(())
+    }
+}
+
+pub fn build_checked(level: u8) -> Result<Checked, renamed_bnb::BuilderError> {
+    Checked::builder().level(level).build()
 }
 
 /// Encode to an owned `Vec<u8>` (alloc).

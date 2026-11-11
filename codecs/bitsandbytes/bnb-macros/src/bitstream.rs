@@ -3430,8 +3430,11 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
         // `BuilderError::Invalid`. The parser stays permissive (decode never runs it).
         let post_build = args.validate.as_ref().map(|path| {
             quote! {
-                (#path)(&__value)
-                    .map_err(|__e| #bnb::BuilderError::invalid(__e.to_string()))?;
+                // `format!` through the runtime's re-export: `.to_string()` needs the
+                // `ToString` prelude, which a `#![no_std]` consumer does not have.
+                (#path)(&__value).map_err(|__e| {
+                    #bnb::BuilderError::invalid(#bnb::__private::format!("{}", __e))
+                })?;
             }
         });
         let mut bfields = Vec::new();
