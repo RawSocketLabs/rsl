@@ -2381,6 +2381,24 @@ where
     Ok(w.into_bytes())
 }
 
+/// [`encode_to_vec_with`] into a buffer allocated once, for a message of `bit_len` bits —
+/// backs `Type::to_bytes`/`to_canonical_bytes` of a fixed-length message, whose
+/// [`FixedBitLen::BIT_LEN`] the macro passes. The length only sizes the allocation: an
+/// encoder that writes more still grows the buffer, and one that writes less returns less.
+///
+/// # Errors
+/// Propagates the closure's [`BitError`].
+#[doc(hidden)]
+pub fn encode_fixed_to_vec<F>(layout: Layout, bit_len: u32, f: F) -> Result<Vec<u8>, BitError>
+where
+    F: FnOnce(&mut BitWriter) -> Result<(), BitError>,
+{
+    let mut w = BitWriter::with_layout(layout);
+    w.bytes.reserve_exact(bit_len.div_ceil(8) as usize);
+    f(&mut w)?;
+    Ok(w.into_bytes())
+}
+
 /// Decodes and requires every **whole byte** consumed; a sub-byte tail in the
 /// final byte is treated as padding. Backs `Type::decode_exact`.
 ///

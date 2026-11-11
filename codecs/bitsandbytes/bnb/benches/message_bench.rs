@@ -8,7 +8,8 @@
 //! codec hits — unaligned bitfields, byte-aligned scalars, and a var-length `Vec` — so
 //! the number is an **informational baseline** for whole-message throughput, not a
 //! micro-benchmark of one operation. (No CI perf gate is attached; this is a local
-//! baseline only.) `byte_runs_2x255` isolates two 255-byte `count_prefix` byte runs.
+//! baseline only.) `byte_runs_2x255` isolates two 255-byte `count_prefix` byte runs, and
+//! `fixed_44` a fixed-length message whose encoded size is known up front.
 //!
 //! Run: cargo bench -p bitsandbytes --bench `message_bench`
 //! (Reports under target/criterion/.)
@@ -279,9 +280,49 @@ fn bench_stream_reads(c: &mut Criterion) {
 #[cfg(not(feature = "net"))]
 fn bench_stream_reads(_: &mut Criterion) {}
 
+/// A fixed-length 44-byte message: every field has a constant width, so `to_bytes` knows
+/// the encoded size before it writes.
+#[bin(big)]
+#[derive(Clone)]
+struct Fixed44 {
+    kind: u16,
+    flags: u16,
+    seq: u32,
+    ack: u32,
+    src: u64,
+    dst: u64,
+    digest: [u8; 16],
+}
+
+fn fixed44() -> Fixed44 {
+    Fixed44 {
+        kind: 0x0102,
+        flags: 0x8001,
+        seq: 0x1C46_B1E6,
+        ack: 0x0BAD_F00D,
+        src: 0x0011_2233_4455_6677,
+        dst: 0x8899_AABB_CCDD_EEFF,
+        digest: [0x5A; 16],
+    }
+}
+
+fn bench_fixed(c: &mut Criterion) {
+    let msg = fixed44();
+    let bytes = msg.to_bytes().unwrap();
+    assert_eq!(bytes.len(), 44);
+    let mut g = c.benchmark_group("fixed_44");
+    g.bench_function("encode", |b| {
+        b.iter(|| black_box(&msg).to_bytes().unwrap());
+    });
+    g.bench_function("decode", |b| {
+        b.iter(|| Fixed44::decode_exact(black_box(&bytes)).unwrap());
+    });
+    g.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = bench_message, bench_byte_runs, bench_incremental, bench_element_replay, bench_stream_reads
+    targets = bench_message, bench_byte_runs, bench_fixed, bench_incremental, bench_element_replay, bench_stream_reads
 }
 criterion_main!(benches);

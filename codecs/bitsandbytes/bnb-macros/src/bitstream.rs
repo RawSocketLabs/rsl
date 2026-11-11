@@ -1056,6 +1056,15 @@ fn br_indeterminate(br: &FieldBr) -> bool {
         || br.seek.is_some()
 }
 
+/// Whether `gen_decode` implements `FixedBitLen` for a message: it takes no `ctx`, no
+/// directive makes a width indeterminate, and it has no `Vec` field. `gen_encode` asks
+/// the same question before it names that impl to size an encode buffer.
+fn fixed_len(fields: &FieldsNamed, brs: &[FieldBr], attrs: &BitStreamAttrs) -> bool {
+    attrs.ctx.is_empty()
+        && !brs.iter().any(br_indeterminate)
+        && !fields.named.iter().any(|f| vec_elem(f).is_some())
+}
+
 /// A reserved field — a normal stored field with a known **spec value** (the type's
 /// zero, or the `reserved_with` expression). On the default codec path it reads/writes
 /// like any field (so you observe and can override the actual wire bits); the canonical
@@ -2012,16 +2021,15 @@ fn gen_decode(
 
     // A message with a `count`-driven `Vec` (or a `ctx`/`if` field) is variable-
     // length; only a fixed one also implements `FixedBitLen` (sizes embedded regions).
-    let variable = indeterminate || fields.named.iter().any(|f| vec_elem(f).is_some());
-    let fixed_bit_len = if variable {
-        quote!()
-    } else {
+    let fixed_bit_len = if fixed_len(fields, &brs, attrs) {
         let widths = fields.named.iter().map(field_width);
         quote! {
             impl #bnb::__private::FixedBitLen for #name {
                 const BIT_LEN: u32 = #magic_bits 0 #(+ #widths)*;
             }
         }
+    } else {
+        quote!()
     };
 
     // `restore_position` seeks, so the explicit-source entry point requires a
@@ -2144,16 +2152,20 @@ pub(crate) fn expand_encode(item: TokenStream) -> TokenStream {
 }
 
 fn encode_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    // A lone derive cannot see whether `BitDecode` (and so `FixedBitLen`) is derived too.
     gen_encode(
         &input.ident,
         named_struct(input)?,
         &parse_bit_stream(input)?,
+        false,
     )
 }
 
 /// Generates the encode side (`BitEncode` + entry points, or `encode_with` for a
 /// `ctx` type). Shared by `#[derive(BitEncode)]` and `#[bin]`. `calc` fields write
 /// a computed value; `temp` fields (no `self` field) are written via their `calc`.
+/// `decodes` says the caller also generates the decode side for the same fields, so a
+/// fixed-length message has a `FixedBitLen` impl its slice encoders can size from.
 /// [`field_write_stmt`], but for a field targeted by a struct-level `auto_len(...)` rule:
 /// emit a clone-and-fill that resolves each nested `Auto` [`WireLen`](bnb::WireLen) from its
 /// sibling before encoding the field. Untargeted fields fall through unchanged. The resolve
@@ -2237,6 +2249,7 @@ fn gen_encode(
     name: &Ident,
     fields: &FieldsNamed,
     attrs: &BitStreamAttrs,
+    decodes: bool,
 ) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
     // Parse each field's directives once (see `gen_decode`), then derive everything
@@ -2286,6 +2299,10 @@ fn gen_encode(
         attrs.magic.as_ref(),
     );
     let layout = layout_token(attrs);
+    // A fixed-length message hands `to_bytes`/`to_canonical_bytes` its width, so their
+    // output buffer is allocated once at its final size.
+    let bit_len = (decodes && fixed_len(fields, &brs, attrs))
+        .then(|| quote!(<Self as #bnb::__private::FixedBitLen>::BIT_LEN));
     // `magic`: emit the leading constant before the fields (matched read/write).
     let magic_write = match &attrs.magic {
         Some(m) => quote! {
@@ -2409,6 +2426,14 @@ fn gen_encode(
             }
         }
 
+        let encode =
+            quote!(|__bnb_w| <Self as #bnb::BitEncode>::canonical_bit_encode(self, __bnb_w));
+        let canonical_to_vec = if let Some(bits) = &bit_len {
+            quote!(#bnb::__private::encode_fixed_to_vec(#layout, #bits, #encode))
+        } else {
+            quote!(#bnb::__private::encode_to_vec_with(#layout, #encode))
+        };
+
         // Overrides `BitEncode`'s default (verbatim) `canonical_bit_encode`.
         let method = quote! {
             fn canonical_bit_encode<__BnbK: #bnb::__private::Sink>(
@@ -2430,10 +2455,7 @@ fn gen_encode(
                 #[doc = "fields of their own. To emit this form over a `std::io::Write`, encode the"]
                 #[doc = "canonical copy: `value.to_canonical().encode(&mut w)`."]
                 pub fn to_canonical_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
-                    #bnb::__private::encode_to_vec_with(
-                        #layout,
-                        |__bnb_w| <Self as #bnb::BitEncode>::canonical_bit_encode(self, __bnb_w),
-                    )
+                    #canonical_to_vec
                 }
 
                 #[doc = "The **canonical form in memory**: a copy with reserved fields set to their"]
@@ -2485,6 +2507,16 @@ fn gen_encode(
         }
     };
 
+    let to_vec = if let Some(bits) = &bit_len {
+        quote!(#bnb::__private::encode_fixed_to_vec(
+            #layout,
+            #bits,
+            |__bnb_w| <Self as #bnb::BitEncode>::bit_encode(self, __bnb_w),
+        ))
+    } else {
+        quote!(#bnb::__private::encode_to_vec(self, #layout))
+    };
+
     Ok(quote! {
         #guard
         impl #bnb::BitEncode for #name {
@@ -2509,7 +2541,7 @@ fn gen_encode(
             #[doc = "`EncodeExt` into scope and call `.bit_encode(&mut sink)` /"]
             #[doc = "`.encode(&mut w)` (the latter is verbatim, `std` only)."]
             pub fn to_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
-                #bnb::__private::encode_to_vec(self, #layout)
+                #to_vec
             }
         }
         #encode_with_trait
@@ -3548,7 +3580,7 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
     let encode = if args.read_only {
         quote!()
     } else {
-        gen_encode(&s.ident, full_fields, &attrs)?
+        gen_encode(&s.ident, full_fields, &attrs, !args.write_only)?
     };
     // A decode-only message has no `BitEncode` to carry its layout (a `ctx` one has no
     // `BitDecode` either, so cannot be a wire type).
