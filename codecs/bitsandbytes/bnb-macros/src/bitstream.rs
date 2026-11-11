@@ -2416,9 +2416,26 @@ struct BinArgs {
     /// the paren form when `read_only`/`write_only` narrows the direction.
     codec_parse: Option<syn::Expr>,
     codec_write: Option<syn::Expr>,
+    /// Every option as written, with its span: what [`BinArgs::reject`] reads to error at
+    /// an option the item's kind cannot honour.
+    seen: Vec<(String, proc_macro2::Span)>,
 }
 
 impl BinArgs {
+    /// Errors, at the option itself, for the first of `options` this `#[bin(...)]` carries:
+    /// `why` completes the sentence "`<option>` …", saying where the option belongs. For an
+    /// item kind that would otherwise parse the option and ignore it.
+    fn reject(&self, options: &[&str], why: &str) -> syn::Result<()> {
+        match self
+            .seen
+            .iter()
+            .find(|(name, _)| options.contains(&name.as_str()))
+        {
+            Some((name, span)) => Err(syn::Error::new(*span, format!("`{name}` {why}"))),
+            None => Ok(()),
+        }
+    }
+
     /// Whether any wire-mapping option is set (the struct serializes via a separate wire type
     /// rather than its own fields) — either the closure form (`map`/`try_map`/`bw_map`) or the
     /// conversion-trait form (`wire`/`try_wire`).
@@ -2467,6 +2484,9 @@ pub(crate) fn expand_bin(attr: TokenStream, item: TokenStream) -> TokenStream {
 fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> {
     let mut args = BinArgs::default();
     let parser = syn::meta::parser(|meta| {
+        if let Some(option) = meta.path.get_ident() {
+            args.seen.push((option.to_string(), option.span()));
+        }
         if meta.path.is_ident("read_only") {
             args.read_only = true;
         } else if meta.path.is_ident("write_only") {
@@ -2720,6 +2740,22 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
             ));
         }
     }
+    // The options a mapped struct would otherwise parse and ignore.
+    args.reject(
+        &["auto_len", "forward_only"],
+        "is not supported on a mapped `#[bin]` struct — put it on the wire type instead (the \
+         wire type owns the fields and the cursor)",
+    )?;
+    args.reject(
+        &["big", "little", "bytes", "bits"],
+        "would be ignored on a mapped `#[bin]` struct, which is read and written in its wire \
+         type's own byte and bit order — put it on the wire type instead",
+    )?;
+    args.reject(
+        &["no_builder"],
+        "does nothing on a mapped `#[bin]` struct, which has no generated builder — remove it \
+         (it suppresses the builder of a field-coded `#[bin]` struct)",
+    )?;
     // Directions: the `wire`/`try_wire` form is bidirectional unless `read_only`/`write_only`
     // narrows it; the closure form is driven by which closures are present.
     let (has_decode, has_encode) = if from_form {
@@ -2900,6 +2936,17 @@ fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2>
             ));
         }
     }
+    // The options a codec newtype would otherwise parse and ignore.
+    args.reject(
+        &["auto_len", "forward_only"],
+        "is not supported on a `#[bin(codec = …)]` newtype — the codec functions own the \
+         wire form and the cursor bound; use it on a field-coded `#[bin]` struct",
+    )?;
+    args.reject(
+        &["no_builder"],
+        "does nothing on a `#[bin(codec = …)]` newtype, which has no generated builder — \
+         remove it (it suppresses the builder of a field-coded `#[bin]` struct)",
+    )?;
     let inner_ty = match &s.fields {
         Fields::Unnamed(u) if u.unnamed.len() == 1 => &u.unnamed.first().expect("len checked").ty,
         _ => {
@@ -4192,6 +4239,18 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             "`validate` needs the builder; a `#[bin]` enum has none",
         ));
     }
+    // The struct options an enum would otherwise parse and ignore.
+    args.reject(
+        &["auto_len"],
+        "is a `#[bin]` struct option and would be ignored on an enum — put \
+         `#[bw(auto_len = count(<field>)|bytes(<field>))]` on the variant's own `WireLen` \
+         field, or move the variant's fields into a `#[bin(auto_len(...))]` struct",
+    )?;
+    args.reject(
+        &["no_builder"],
+        "does nothing on a `#[bin]` enum, which has no generated builder — remove it (it \
+         suppresses the builder of a `#[bin]` struct)",
+    )?;
 
     // Desugar `#[brw(count_prefix = <Ty>)]` in each struct-style variant before dispatch
     // parsing / codegen see the fields. Tuple variants are rejected: the injected length
@@ -4596,7 +4655,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         little: args.little,
         magic: None,
         ctx: args.ctx.clone(),
-        auto_len: args.auto_len.clone(),
+        auto_len: Vec::new(), // struct-only (rejected above)
     };
     let layout = layout_token(&attrs);
     let want_decode = !args.write_only;

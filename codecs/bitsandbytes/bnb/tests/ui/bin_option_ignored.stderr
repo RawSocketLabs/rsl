@@ -1,0 +1,41 @@
+error: `little` would be ignored on a mapped `#[bin]` struct, which is read and written in its wire type's own byte and bit order — put it on the wire type instead
+  --> tests/ui/bin_option_ignored.rs:23:7
+   |
+23 | #[bin(little, wire = Wire)]
+   |       ^^^^^^
+
+error: `no_builder` does nothing on a mapped `#[bin]` struct, which has no generated builder — remove it (it suppresses the builder of a field-coded `#[bin]` struct)
+  --> tests/ui/bin_option_ignored.rs:27:7
+   |
+27 | #[bin(no_builder, map = |w: Wire| MappedBuilder(w.a))]
+   |       ^^^^^^^^^^
+
+error: `forward_only` is not supported on a mapped `#[bin]` struct — put it on the wire type instead (the wire type owns the fields and the cursor)
+  --> tests/ui/bin_option_ignored.rs:31:7
+   |
+31 | #[bin(forward_only, try_wire = Wire)]
+   |       ^^^^^^^^^^^^
+
+error: `auto_len` is not supported on a `#[bin(codec = …)]` newtype — the codec functions own the wire form and the cursor bound; use it on a field-coded `#[bin]` struct
+  --> tests/ui/bin_option_ignored.rs:35:36
+   |
+35 | #[bin(codec = bnb::codecs::leb128, auto_len(a.b = count(c)))]
+   |                                    ^^^^^^^^
+
+error: `no_builder` does nothing on a `#[bin(codec = …)]` newtype, which has no generated builder — remove it (it suppresses the builder of a field-coded `#[bin]` struct)
+  --> tests/ui/bin_option_ignored.rs:38:36
+   |
+38 | #[bin(codec = bnb::codecs::leb128, no_builder)]
+   |                                    ^^^^^^^^^^
+
+error: `auto_len` is a `#[bin]` struct option and would be ignored on an enum — put `#[bw(auto_len = count(<field>)|bytes(<field>))]` on the variant's own `WireLen` field, or move the variant's fields into a `#[bin(auto_len(...))]` struct
+  --> tests/ui/bin_option_ignored.rs:42:12
+   |
+42 | #[bin(big, auto_len(header.len = count(items)))]
+   |            ^^^^^^^^
+
+error: `no_builder` does nothing on a `#[bin]` enum, which has no generated builder — remove it (it suppresses the builder of a `#[bin]` struct)
+  --> tests/ui/bin_option_ignored.rs:49:12
+   |
+49 | #[bin(big, no_builder)]
+   |            ^^^^^^^^^^
