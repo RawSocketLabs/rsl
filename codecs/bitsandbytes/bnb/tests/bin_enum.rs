@@ -8,7 +8,7 @@
 
 mod macro_ {
 
-    use bnb::bin;
+    use bnb::{ErrorKind, bin};
 
     #[bin(big)]
     #[derive(Debug, PartialEq)]
@@ -290,6 +290,36 @@ mod macro_ {
         assert_eq!(
             Body::decode_tagged(2, &[0x07]).unwrap(),
             Body::Data { n: 7 }
+        );
+    }
+
+    // ── The exact slice entry points share one rule: a whole unread byte is an error,
+    //    never silently dropped (a caller slicing a frame must learn it over-read). ──
+    #[test]
+    fn decode_as_variant_rejects_a_trailing_byte() {
+        // Magic enum.
+        assert_eq!(
+            Rdata::decode_as_port(&[0x00, 0x02, 0x11, 0x22, 0xFF])
+                .unwrap_err()
+                .kind,
+            ErrorKind::TrailingBytes { remaining: 1 }
+        );
+        // Tag (`ctx`) enum.
+        assert_eq!(
+            Body::decode_as_login(&[0xAA, 0xBB, 0xCC, 0xDD, 0xFF], BodyCtx { kind: 0 })
+                .unwrap_err()
+                .kind,
+            ErrorKind::TrailingBytes { remaining: 1 }
+        );
+    }
+
+    #[test]
+    fn enum_decode_with_exact_rejects_a_trailing_byte() {
+        assert_eq!(
+            Body::decode_with_exact(&[0x07, 0xFF], BodyCtx { kind: 2 })
+                .unwrap_err()
+                .kind,
+            ErrorKind::TrailingBytes { remaining: 1 }
         );
     }
 

@@ -157,6 +157,104 @@ mod macro_ {
         assert_eq!(b.lo(), u4::new(0xF));
     }
 
+    // An explicit `#[bits(N)]` / `#[bits(A..=B)]` slot may be narrower than its field type, so
+    // a setter can be handed more bits than the slot holds. Those are masked to the slot: the
+    // low bits are stored and nothing spills into the neighbouring fields. Every neighbour
+    // starts at zero below, so a single spilled bit shows up in `to_raw` and in its getter.
+
+    #[bitfield(u16, bits = lsb)]
+    #[derive(Clone, Copy)]
+    struct WidthsLsb {
+        #[bits(5)]
+        a: u8,
+        #[bits(7)]
+        b: u8,
+        #[bits(4)]
+        c: u8,
+    }
+
+    #[test]
+    fn with_setter_masks_an_over_wide_value_to_its_slot() {
+        // msb, `#[bits(7)]`: `b` is bits 4..=10, below `a` (11..=15).
+        let w = Widths::new().with_b(0xFF);
+        assert_eq!(w.to_raw(), 0b0000_0111_1111_0000);
+        assert_eq!((w.a(), w.b(), w.c()), (0, 0x7F, 0));
+
+        // lsb, `#[bits(5)]`: `a` is bits 0..=4, below `b` (5..=11).
+        let l = WidthsLsb::new().with_a(0xFF);
+        assert_eq!(l.to_raw(), 0b0000_0000_0001_1111);
+        assert_eq!((l.a(), l.b(), l.c()), (0x1F, 0, 0));
+
+        // manual range, `#[bits(0..=3)]`: `c` is below `b` (4..=10).
+        let r = Ranges::new().with_c(0xFF);
+        assert_eq!(r.to_raw(), 0b0000_0000_0000_1111);
+        assert_eq!((r.a(), r.b(), r.c()), (0, 0, 0x0F));
+    }
+
+    #[test]
+    fn set_setter_masks_an_over_wide_value_to_its_slot() {
+        let mut w = Widths::new();
+        w.set_b(0xFF);
+        assert_eq!(w.to_raw(), 0b0000_0111_1111_0000);
+        assert_eq!((w.a(), w.b(), w.c()), (0, 0x7F, 0));
+
+        let mut l = WidthsLsb::new();
+        l.set_a(0xFF);
+        assert_eq!(l.to_raw(), 0b0000_0000_0001_1111);
+        assert_eq!((l.a(), l.b(), l.c()), (0x1F, 0, 0));
+
+        let mut r = Ranges::new();
+        r.set_c(0xFF);
+        assert_eq!(r.to_raw(), 0b0000_0000_0000_1111);
+        assert_eq!((r.a(), r.b(), r.c()), (0, 0, 0x0F));
+    }
+
+    // The same holds for field types that go through the const `Bits` pair rather than a
+    // primitive cast: a `UInt`, and a hand-written `impl_bits!` type.
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct Octet(u8);
+
+    bnb::impl_bits! {
+        impl Bits for Octet {
+            const BITS: u32 = 8;
+            const fn into_bits(self) -> u128 {
+                self.0 as u128
+            }
+            const fn from_bits(raw: u128) -> Self {
+                Octet(raw.to_le_bytes()[0])
+            }
+        }
+    }
+
+    #[bitfield(u16, bits = msb)]
+    #[derive(Clone, Copy)]
+    struct NarrowSlots {
+        head: u4,
+        #[bits(3)]
+        small: u5, // a 5-bit `UInt` in a 3-bit slot (bits 9..=11)
+        #[bits(4)]
+        octet: Octet, // an 8-bit custom type in a 4-bit slot (bits 5..=8)
+        tail: u5,
+    }
+
+    #[test]
+    fn uint_and_custom_fields_in_a_narrower_slot_are_masked_by_both_setters() {
+        let n = NarrowSlots::new().with_small(u5::new(0b1_1111));
+        assert_eq!(n.to_raw(), 0b0000_1110_0000_0000);
+        assert_eq!(n.head(), u4::new(0));
+
+        let n = NarrowSlots::new().with_octet(Octet(0xFF));
+        assert_eq!(n.to_raw(), 0b0000_0001_1110_0000);
+        assert_eq!((n.small(), n.octet()), (u5::new(0), Octet(0x0F)));
+
+        let mut n = NarrowSlots::new();
+        n.set_small(u5::new(0b1_1111));
+        n.set_octet(Octet(0xFF));
+        assert_eq!(n.to_raw(), 0b0000_1111_1110_0000);
+        assert_eq!((n.head(), n.tail()), (u4::new(0), u5::new(0)));
+    }
+
     // ---------------------------------------------------------------------------
     // Reserved / padding: declared width may be < backing width.
     // ---------------------------------------------------------------------------

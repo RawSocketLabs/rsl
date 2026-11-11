@@ -4,14 +4,21 @@
 //! re-seeks absolutely before every read, so it cannot be fooled by stale position state.
 //! Every successful value is also checked against the in-memory `BitReader`, which shares
 //! neither reader's I/O path, so a bug common to both seek readers still fails.
+//!
+//! The second property widens that to the whole ladder for the operations every `Source`
+//! shares: a forward sequence of reads returns the same values and cursors from
+//! `StreamBitReader`, `BufSource`, `SeekReader`, `BufSeekReader` and `BitBuf` as from
+//! `BitReader`, in all four bit-order x byte-order layouts.
 #![cfg(feature = "std")]
 
 mod property {
 
     use bnb::{
-        BitError, BitOrder, BitReader, BufSeekReader, ByteOrder, Layout, SeekReader, Source,
+        BitBuf, BitError, BitOrder, BitReader, BufSeekReader, BufSource, ByteOrder, Layout,
+        SeekReader, Source, StreamBitReader,
     };
     use proptest::prelude::*;
+    use proptest::test_runner::RngSeed;
     use std::io::Cursor;
 
     /// One step against both readers.
@@ -96,6 +103,99 @@ mod property {
                 let actual = apply(&mut candidate, op, len * 8);
                 prop_assert_eq!(&actual, &expected, "step {} ({:?}) diverged", i, op);
                 prop_assert_eq!(candidate.bit_pos(), reference.bit_pos(), "cursor diverged at step {}", i);
+            }
+        }
+    }
+
+    /// A forward-only step: the subset of [`Op`] every `Source` supports (no seek), weighted
+    /// towards raw reads of any legal width so most steps leave the cursor mid-byte.
+    fn forward_op() -> impl Strategy<Value = Op> {
+        prop_oneof![
+            8 => (0u32..=128).prop_map(Op::Bits),
+            1 => Just(Op::U16),
+            1 => Just(Op::U32),
+        ]
+    }
+
+    const LAYOUTS: [Layout; 4] = [
+        Layout {
+            bit: BitOrder::Msb,
+            byte: ByteOrder::Big,
+        },
+        Layout {
+            bit: BitOrder::Msb,
+            byte: ByteOrder::Little,
+        },
+        Layout {
+            bit: BitOrder::Lsb,
+            byte: ByteOrder::Big,
+        },
+        Layout {
+            bit: BitOrder::Lsb,
+            byte: ByteOrder::Little,
+        },
+    ];
+
+    /// One step on `src`: its value (`None` on any error — the readers name running out of
+    /// input differently, by design) and the cursor it leaves.
+    fn step<S: Source>(src: &mut S, op: &Op, bit_len: usize) -> (Option<u128>, usize) {
+        let value = apply(src, op, bit_len).ok();
+        (value, src.bit_pos())
+    }
+
+    proptest! {
+        // A fixed seed: the same sequences on every run and every machine.
+        #![proptest_config(ProptestConfig {
+            cases: 256,
+            rng_seed: RngSeed::Fixed(0x6269_7473_616e_6462),
+            ..ProptestConfig::default()
+        })]
+
+        #[test]
+        fn every_reader_returns_the_same_bits_for_a_forward_read_sequence(
+            len in 0usize..512,
+            seed in any::<u64>(),
+            ops in prop::collection::vec(forward_op(), 1..48),
+        ) {
+            let data = bytes(len, seed);
+            let bit_len = len * 8;
+            for layout in LAYOUTS {
+                let mut reference = BitReader::with_layout(&data, layout);
+                let mut stream = StreamBitReader::with_layout(&data[..], layout);
+                let mut buf_source =
+                    BufSource::with_capacity_and_layout(&data[..], 64 * 1024, layout);
+                let mut seek = SeekReader::with_layout(Cursor::new(&data), layout);
+                let mut buf_seek = BufSeekReader::with_layout(Cursor::new(&data), layout);
+                let mut bit_buf = BitBuf::new().with_layout(layout);
+                bit_buf.push(&data).expect("an unbounded buffer accepts any push");
+
+                for (i, op) in ops.iter().enumerate() {
+                    let (expected, expected_pos) = step(&mut reference, op, bit_len);
+                    let candidates = [
+                        ("StreamBitReader", step(&mut stream, op, bit_len)),
+                        ("BufSource", step(&mut buf_source, op, bit_len)),
+                        ("SeekReader", step(&mut seek, op, bit_len)),
+                        ("BufSeekReader", step(&mut buf_seek, op, bit_len)),
+                        ("BitBuf", step(&mut bit_buf, op, bit_len)),
+                    ];
+                    for (name, (value, pos)) in candidates {
+                        prop_assert_eq!(
+                            value, expected,
+                            "{} disagrees with BitReader at step {} ({:?}), {:?}", name, i, op, layout
+                        );
+                        if expected.is_some() {
+                            prop_assert_eq!(
+                                pos, expected_pos,
+                                "{} cursor diverged at step {} ({:?}), {:?}", name, i, op, layout
+                            );
+                        }
+                    }
+                    // A failed read may have consumed input on the forward-only reader, so
+                    // the sequence ends at the first failure.
+                    if expected.is_none() {
+                        break;
+                    }
+                }
             }
         }
     }

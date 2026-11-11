@@ -4108,6 +4108,89 @@ mod unit {
     }
 
     #[test]
+    fn limited_source_reports_absolute_positions_for_a_window_past_the_start() {
+        let mut source = BitReader::new(&[0x00, 0x11, 0x22, 0x33]);
+        source.read::<u8>().unwrap();
+        let mut child = source.limit_bytes(2).unwrap();
+        assert_eq!((child.start_bit(), child.end_bit()), (8, 24));
+        assert_eq!(child.bit_pos(), 8, "positions stay parent-absolute");
+        child.read_bits(4).unwrap();
+        assert_eq!(child.bit_pos(), 12);
+    }
+
+    #[test]
+    fn limited_source_seek_accepts_both_edges_of_its_window() {
+        // Window = bits 8..24 of a 32-bit parent.
+        let mut source = BitReader::new(&[0x00, 0x11, 0x22, 0x33]);
+        source.read::<u8>().unwrap();
+        let mut child = source.limit_bytes(2).unwrap();
+        child.seek_to_bit(24).unwrap();
+        assert_eq!(child.remaining_bits(), 0);
+        child.seek_to_bit(8).unwrap();
+        assert_eq!(child.read::<u8>().unwrap(), 0x11);
+    }
+
+    #[test]
+    fn limited_source_seek_rejects_one_bit_outside_either_edge() {
+        // Window = bits 8..24 of a 32-bit parent: both targets are valid parent positions,
+        // so only the window can reject them.
+        let mut source = BitReader::new(&[0x00, 0x11, 0x22, 0x33]);
+        source.read::<u8>().unwrap();
+        let mut child = source.limit_bytes(2).unwrap();
+        child.read_bits(4).unwrap();
+        for outside in [7, 25] {
+            assert!(
+                matches!(
+                    child.seek_to_bit(outside).unwrap_err().kind,
+                    ErrorKind::UnexpectedEof { .. }
+                ),
+                "seek to bit {outside} must be rejected"
+            );
+            assert_eq!(
+                child.bit_pos(),
+                12,
+                "a rejected seek must not move the cursor"
+            );
+        }
+    }
+
+    #[test]
+    fn limited_source_reads_in_its_parents_layout() {
+        // LSB-first, little-endian is the one layout where dropping *either* order to its
+        // default changes a byte-multiple value (see `Source::bit_order`).
+        let layout = Layout {
+            bit: BitOrder::Lsb,
+            byte: ByteOrder::Little,
+        };
+        let mut source = BitReader::with_layout(&[0x34, 0x12], layout);
+        let mut child = source.limit_bytes(2).unwrap();
+        assert_eq!(child.bit_order(), BitOrder::Lsb);
+        assert_eq!(child.byte_order(), ByteOrder::Little);
+        assert_eq!(child.read::<u16>().unwrap(), 0x1234);
+    }
+
+    #[test]
+    fn decode_exact_with_accepts_input_the_closure_consumes_exactly() {
+        let v = decode_exact_with(&[0xAB, 0xCD], Layout::default(), |r| r.read_bits(16));
+        assert_eq!(v.unwrap(), 0xABCD);
+    }
+
+    #[test]
+    fn decode_exact_with_rejects_a_trailing_byte() {
+        let err = decode_exact_with(&[0xAB, 0xCD, 0xEE], Layout::default(), |r| r.read_bits(16))
+            .unwrap_err();
+        assert_eq!(err.kind, ErrorKind::TrailingBytes { remaining: 1 });
+        assert_eq!(err.at, 16, "the error points at the first unconsumed bit");
+    }
+
+    #[test]
+    fn decode_exact_with_accepts_the_unread_bits_of_a_final_partial_byte() {
+        // Only *whole* trailing bytes are an error: 12 bits read out of 2 bytes is exact.
+        let v = decode_exact_with(&[0xAB, 0xC0], Layout::default(), |r| r.read_bits(12));
+        assert_eq!(v.unwrap(), 0xABC);
+    }
+
+    #[test]
     fn bit_reader_borrows_exact_aligned_input_spans() {
         let bytes = [0x30, 0x03, 0x02, 0x01, 0x07];
         let mut source = BitReader::new(&bytes);
@@ -5129,6 +5212,33 @@ mod component {
             let mut msb = StreamBitReader::with_layout(&bytes[..], Layout::default());
             assert_ne!(Le::bit_decode(&mut msb).unwrap().v, 0x1122_3344);
         }
+
+        #[test]
+        fn lsb_sub_byte_reads_carry_the_unread_high_bits_across_a_byte_boundary() {
+            use bnb::{BitOrder, ByteOrder, Layout, Source};
+            // Every byte has set high bits, so a dropped or misplaced carry changes a value.
+            let bytes = [0xB7, 0x6C, 0xE5, 0x9A, 0xD3];
+            let layout = Layout {
+                bit: BitOrder::Lsb,
+                byte: ByteOrder::Little,
+            };
+            let mut stream = StreamBitReader::with_layout(&bytes[..], layout);
+            let mut slice = BitReader::with_layout(&bytes, layout);
+            // By hand, LSB-first: 0xB7 = 1011_0111 -> low 3 bits = 111; then its 5 high bits
+            // (10110) are the low end of the next value, under the low 2 bits of 0x6C (00).
+            assert_eq!(stream.read_bits(3).unwrap(), 0b111);
+            assert_eq!(stream.read_bits(7).unwrap(), 0b00_10110);
+            slice.read_bits(10).unwrap();
+            // The rest against the slice reader, splitting bytes at varying offsets.
+            for n in [5u32, 9, 4, 12] {
+                assert_eq!(
+                    stream.read_bits(n).unwrap(),
+                    slice.read_bits(n).unwrap(),
+                    "read_bits({n}) diverged from the slice reader"
+                );
+                assert_eq!(Source::bit_pos(&stream), slice.bit_pos());
+            }
+        }
     }
 
     /// `bitstream_seek.rs` — Spike (DESIGN §11): seeking is free on the in-memory cursor, and a
@@ -5469,6 +5579,45 @@ mod component {
             let mut r = BitReader::new(&[0x04, 0xAA, 0xBB]);
             assert!(read_blob(&mut r).is_err());
         }
+
+        #[test]
+        fn as_read_ends_short_once_some_bytes_were_read() {
+            use bnb::BitReader;
+            // The `std::io` convention: bytes already produced are returned, not discarded
+            // behind an error.
+            let mut r = BitReader::new(&[0xAA, 0xBB]);
+            let mut buf = [0u8; 4];
+            assert_eq!(r.as_read().read(&mut buf).unwrap(), 2);
+            assert_eq!(buf, [0xAA, 0xBB, 0x00, 0x00]);
+        }
+
+        #[test]
+        fn as_read_reports_exhausted_input_as_unexpected_eof() {
+            use bnb::BitReader;
+            let mut r = BitReader::new(&[]);
+            let err = r.as_read().read(&mut [0u8; 1]).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+        }
+
+        #[test]
+        fn as_read_reports_a_starved_stream_as_unexpected_eof() {
+            use bnb::StreamBitReader;
+            // A forward stream that runs dry is `Incomplete`, not `UnexpectedEof`; through
+            // `std::io` both are an end of input.
+            let mut s = StreamBitReader::new(&[][..]);
+            let err = s.as_read().read(&mut [0u8; 1]).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+        }
+
+        #[test]
+        fn as_read_does_not_report_a_non_eof_failure_as_end_of_input() {
+            use bnb::BufSource;
+            // A zero retention cap fails the first read with `BufferFull`: input remains, so
+            // an `UnexpectedEof` here would make a `Read` consumer stop as if it were done.
+            let mut src = BufSource::with_capacity(&[0xAA, 0xBB][..], 0);
+            let err = src.as_read().read(&mut [0u8; 1]).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        }
     }
 
     /// `bin_buf_source.rs` — `BufSource`: a seekable `Source` over a forward `Read`. It
@@ -5728,6 +5877,79 @@ mod component {
                 src.read_bits(8).unwrap_err().kind,
                 ErrorKind::Io(_)
             ));
+        }
+
+        #[test]
+        fn a_full_128_bit_read_is_accepted() {
+            // 128 is the widest legal read; only 129 and up are `TooWide`.
+            let data: [u8; 16] = [
+                0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54,
+                0x32, 0x10,
+            ];
+            let mut src = BufSource::new(&data[..]);
+            // MSB-first, 16 whole bytes: the big-endian integer.
+            assert_eq!(src.read_bits(128).unwrap(), u128::from_be_bytes(data));
+            assert_eq!(src.bit_pos(), 128);
+        }
+
+        // Returns one byte on the first call, then as many as the buffer takes: a reader
+        // whose short first read leaves the retention buffer partly filled.
+        struct ShortThenGreedy<'a> {
+            data: &'a [u8],
+            first: bool,
+        }
+        impl std::io::Read for ShortThenGreedy<'_> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = if self.first { 1 } else { buf.len() }.min(self.data.len());
+                self.first = false;
+                buf[..n].copy_from_slice(&self.data[..n]);
+                self.data = &self.data[n..];
+                Ok(n)
+            }
+        }
+
+        #[test]
+        fn retention_cap_still_bounds_the_buffer_after_a_short_read() {
+            // Cap 2, a 3-byte read: after the 1-byte first read only 1 more byte may be
+            // retained, however much the reader offers.
+            let mut src = BufSource::with_capacity(
+                ShortThenGreedy {
+                    data: &[0xFF; 8],
+                    first: true,
+                },
+                2,
+            );
+            assert_eq!(
+                src.read_bits(24).unwrap_err().kind,
+                ErrorKind::BufferFull { cap: 2 }
+            );
+        }
+
+        #[test]
+        fn a_read_takes_only_the_bytes_it_needs_from_a_borrowed_reader() {
+            // Reading "on demand": after a 3-byte message the borrowed reader must still
+            // hold everything behind it, or the bytes of the next message are lost.
+            let data = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+            let mut inner = &data[..];
+            let mut src = BufSource::new(&mut inner);
+            assert_eq!(src.read_bits(8).unwrap(), 0x11);
+            assert_eq!(src.read_bits(16).unwrap(), 0x2233);
+            assert_eq!(inner, &data[3..]);
+        }
+
+        #[test]
+        fn typed_reads_follow_the_configured_layout() {
+            use bnb::{BitOrder, ByteOrder, Layout};
+            // LSB-first, little-endian is the one layout where dropping *either* order to
+            // its default changes a byte-multiple value (see `Source::bit_order`).
+            let layout = Layout {
+                bit: BitOrder::Lsb,
+                byte: ByteOrder::Little,
+            };
+            let mut src = BufSource::with_capacity_and_layout(&[0x34, 0x12][..], 16, layout);
+            assert_eq!(src.bit_order(), BitOrder::Lsb);
+            assert_eq!(src.byte_order(), ByteOrder::Little);
+            assert_eq!(src.read::<u16>().unwrap(), 0x1234);
         }
     }
 

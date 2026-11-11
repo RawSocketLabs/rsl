@@ -6,7 +6,7 @@
 
 mod macro_ {
 
-    use bnb::{bin, u4};
+    use bnb::{ErrorKind, bin, u4};
 
     // --- A child whose length depends on context passed by the parent (a TLV-ish
     // shape: the parent reads a length/tag, the child is parsed accordingly). ---
@@ -37,6 +37,20 @@ mod macro_ {
         };
         let bytes = t.to_bytes().unwrap();
         assert_eq!(Tlv::decode_exact(&bytes).unwrap(), t);
+    }
+
+    #[test]
+    fn decode_with_exact_rejects_a_trailing_byte() {
+        // `Value` with n = 1 is 4 + 8 bits: two bytes, the low nibble of the second unused.
+        let ctx = ValueCtx { n: 1 };
+        let v = Value::decode_with_exact(&[0x51, 0x10], ctx.clone()).unwrap();
+        assert_eq!(v.data, [0x11]);
+        assert_eq!(
+            Value::decode_with_exact(&[0x51, 0x10, 0xFF], ctx)
+                .unwrap_err()
+                .kind,
+            ErrorKind::TrailingBytes { remaining: 1 }
+        );
     }
 
     // --- A SEQUENCE-OF whose elements each need the parent's own context. ---
