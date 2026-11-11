@@ -958,7 +958,7 @@ fn reserved_spec_value(f: &syn::Field) -> syn::Result<Option<TokenStream2>> {
         Reserved::Zero => quote!(<#ty as #bnb::__private::Bits>::from_bits(0)),
         Reserved::With(expr) => {
             let expr = *expr;
-            quote!({ let __r: #ty = #expr; __r })
+            quote!({ let __bnb_spec: #ty = #expr; __bnb_spec })
         }
     }))
 }
@@ -1062,7 +1062,7 @@ fn enum_try_str_debug(
     let arms = variants.iter().map(|v| {
         let vn = &v.ident;
         match &v.fields {
-            Fields::Unit => quote!(Self::#vn => __f.write_str(::core::stringify!(#vn))),
+            Fields::Unit => quote!(Self::#vn => __bnb_f.write_str(::core::stringify!(#vn))),
             Fields::Named(named) => {
                 let stored: Vec<&syn::Field> =
                     named.named.iter().filter(|f| !field_is_temp(f)).collect();
@@ -1077,7 +1077,7 @@ fn enum_try_str_debug(
                     }
                 });
                 quote!(Self::#vn { #(#binds),* } =>
-                    __f.debug_struct(::core::stringify!(#vn)) #(#calls)* .finish())
+                    __bnb_f.debug_struct(::core::stringify!(#vn)) #(#calls)* .finish())
             }
             Fields::Unnamed(unnamed) => {
                 let stored: Vec<&syn::Field> = unnamed
@@ -1086,7 +1086,7 @@ fn enum_try_str_debug(
                     .filter(|f| !field_is_temp(f))
                     .collect();
                 let binds: Vec<syn::Ident> = (0..stored.len())
-                    .map(|i| quote::format_ident!("__f{i}"))
+                    .map(|i| quote::format_ident!("__bnb_f{i}"))
                     .collect();
                 let calls = stored.iter().zip(&binds).map(|(f, b)| {
                     if field_is_try_str(f) {
@@ -1096,13 +1096,13 @@ fn enum_try_str_debug(
                     }
                 });
                 quote!(Self::#vn( #(#binds),* ) =>
-                    __f.debug_tuple(::core::stringify!(#vn)) #(#calls)* .finish())
+                    __bnb_f.debug_tuple(::core::stringify!(#vn)) #(#calls)* .finish())
             }
         }
     });
     Some(quote! {
         impl ::core::fmt::Debug for #name {
-            fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+            fn fmt(&self, __bnb_f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 match self {
                     #(#arms),*
                 }
@@ -1196,8 +1196,8 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         let id = f.ident.as_ref().expect("named field");
         let offset = checked_usize(expr, id, "seek offset is outside the usize range");
         quote! {
-            let __seek = #offset;
-            #bnb::__private::Source::seek_to_bit(__bnb_r, __seek)?;
+            let __bnb_seek = #offset;
+            #bnb::__private::Source::seek_to_bit(__bnb_r, __bnb_seek)?;
         }
     });
     let mut core = field_read_core(f, br)?;
@@ -1207,12 +1207,12 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
     if br.dbg {
         let id = f.ident.as_ref().expect("named field");
         core = quote! {
-            let __dbg_at = #bnb::__private::Source::bit_pos(__bnb_r);
+            let __bnb_dbg_at = #bnb::__private::Source::bit_pos(__bnb_r);
             #core
             #bnb::__private::tracing::trace!(
                 target: "bnb::dbg",
                 field = ::core::stringify!(#id),
-                at_bit = __dbg_at,
+                at_bit = __bnb_dbg_at,
                 value = ?#id,
             );
         };
@@ -1250,9 +1250,9 @@ fn field_read_stmt(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         // Peek: save the offset (before any seek), read the field, rewind so later
         // fields re-read from where they were.
         body = quote! {
-            let __pos = #bnb::__private::Source::bit_pos(__bnb_r);
+            let __bnb_pos = #bnb::__private::Source::bit_pos(__bnb_r);
             #body
-            #bnb::__private::Source::seek_to_bit(__bnb_r, __pos)?;
+            #bnb::__private::Source::seek_to_bit(__bnb_r, __bnb_pos)?;
         };
     }
     Ok(quote!(#pre #body #post))
@@ -1321,35 +1321,35 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         let Some(names) = &br.ctx else {
             return Ok(quote! {
                 let #id = {
-                    let __n = #checked_count;
-                    <#elem as #bnb::__private::BitDecode>::decode_vec(__bnb_r, __n)
+                    let __bnb_n = #checked_count;
+                    <#elem as #bnb::__private::BitDecode>::decode_vec(__bnb_r, __bnb_n)
                         .map_err(|e| e.in_field(::core::stringify!(#id)))?
                 };
             });
         };
-        // Read one element into `__e`, pinning its type so inference can't drift.
+        // Read one element into `__bnb_e`, pinning its type so inference can't drift.
         let lit = ctx_literal(&ctx_struct_ty(elem)?, names, None);
         let read_elem = quote! {
-            let __e = <#elem>::decode_with(__bnb_r, #lit)
+            let __bnb_e = <#elem>::decode_with(__bnb_r, #lit)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;
         };
         // No untrusted pre-allocation: `count` is attacker-controlled, so grow the
         // Vec by pushing. Require progress: zero-width/custom codecs need not consume input.
         Ok(quote! {
             let #id = {
-                let __n = #checked_count;
-                let mut __v: #bnb::__private::Vec<#elem> = #bnb::__private::Vec::new();
-                for _ in 0..__n {
-                    let __start = #bnb::__private::Source::bit_pos(__bnb_r);
+                let __bnb_n = #checked_count;
+                let mut __bnb_v: #bnb::__private::Vec<#elem> = #bnb::__private::Vec::new();
+                for _ in 0..__bnb_n {
+                    let __bnb_start = #bnb::__private::Source::bit_pos(__bnb_r);
                     #read_elem
-                    if #bnb::__private::Source::bit_pos(__bnb_r) <= __start {
+                    if #bnb::__private::Source::bit_pos(__bnb_r) <= __bnb_start {
                         return ::core::result::Result::Err(#bnb::__private::BitError::new(
-                            #bnb::__private::ErrorKind::NoProgress, __start,
+                            #bnb::__private::ErrorKind::NoProgress, __bnb_start,
                         ).in_field(::core::stringify!(#id)));
                     }
-                    __v.push(__e);
+                    __bnb_v.push(__bnb_e);
                 }
-                __v
+                __bnb_v
             };
         })
     } else {
@@ -1572,8 +1572,8 @@ fn field_write_core(
             // Canonical: recompute from the other fields, pinned to the declared type.
             return Ok(quote! {
                 {
-                    let __calc: #ty = #calc;
-                    #bnb::__private::Sink::write(__bnb_w, __calc)
+                    let __bnb_calc: #ty = #calc;
+                    #bnb::__private::Sink::write(__bnb_w, __bnb_calc)
                         .map_err(|e| e.in_field(::core::stringify!(#id)))?;
                 }
             });
@@ -1622,12 +1622,12 @@ fn field_write_core(
         // free); a `Set(n)` override is written verbatim, skipping the measure entirely.
         return Ok(quote! {
             {
-                let __resolved = match #by_ref {
+                let __bnb_resolved = match #by_ref {
                     #bnb::__private::WireLen::Set(_) => ::core::clone::Clone::clone(#by_ref),
                     #bnb::__private::WireLen::Auto => #place.resolve_count(#measure)
                         .map_err(|e| e.in_field(::core::stringify!(#id)))?,
                 };
-                <#ty as #bnb::__private::BitEncode>::bit_encode(&__resolved, __bnb_w)
+                <#ty as #bnb::__private::BitEncode>::bit_encode(&__bnb_resolved, __bnb_w)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         });
@@ -1650,10 +1650,10 @@ fn field_write_core(
         let inner = option_elem(f).ok_or_else(|| {
             syn::Error::new_spanned(f, "`#[br(if(...))]` requires an `Option<_>` field")
         })?;
-        let write_inner = quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__v, __bnb_w)
+        let write_inner = quote!(<#inner as #bnb::__private::BitEncode>::bit_encode(__bnb_v, __bnb_w)
             .map_err(|e| e.in_field(::core::stringify!(#id)))?;);
         return Ok(quote! {
-            if let ::core::option::Option::Some(__v) = #by_ref {
+            if let ::core::option::Option::Some(__bnb_v) = #by_ref {
                 #write_inner
             }
         });
@@ -1670,8 +1670,8 @@ fn field_write_core(
         let elem_ctx = ctx_struct_ty(elem)?;
         let lit = site.ctx_literal(&elem_ctx, names);
         Ok(quote! {
-            for __e in #by_ref {
-                <#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__e, __bnb_w, #lit)
+            for __bnb_e in #by_ref {
+                <#elem as #bnb::EncodeWith<#elem_ctx>>::encode_with(__bnb_e, __bnb_w, #lit)
                     .map_err(|e| e.in_field(::core::stringify!(#id)))?;
             }
         })
@@ -1829,15 +1829,18 @@ fn gen_decode(
     // (binding the ctx params as locals) instead — no `BitDecode`/`FixedBitLen`.
     if !attrs.ctx.is_empty() {
         let ctx_name = ctx_struct_ident(name);
-        let ctx_binds = attrs.ctx.iter().map(|(n, _)| quote!(let #n = __ctx.#n;));
+        let ctx_binds = attrs
+            .ctx
+            .iter()
+            .map(|(n, _)| quote!(let #n = __bnb_ctx.#n;));
         return Ok(quote! {
             #guard
             impl #name {
                 #[doc = "Decode from a bit source, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)] // a ctx param may be used on only one side
-                pub fn decode_with<S: #bnb::__private::Source>(
-                    __bnb_r: &mut S,
-                    __ctx: #ctx_name,
+                pub fn decode_with<__S: #bnb::__private::Source>(
+                    __bnb_r: &mut __S,
+                    __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #(#ctx_binds)*
                     #magic_read
@@ -1847,16 +1850,16 @@ fn gen_decode(
                 #[doc = "Decode from bytes with context, requiring every whole byte consumed."]
                 pub fn decode_with_exact(
                     bytes: &[u8],
-                    __ctx: #ctx_name,
+                    __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    #bnb::__private::decode_exact_with(bytes, #layout, |__bnb_r| Self::decode_with(__bnb_r, __ctx))
+                    #bnb::__private::decode_exact_with(bytes, #layout, |__bnb_r| Self::decode_with(__bnb_r, __bnb_ctx))
                 }
             }
             // ctx Layer 2: the polymorphic companion, so generic combinators can take
             // this type via `T: DecodeWith<#ctx_name>`.
             impl #bnb::DecodeWith<#ctx_name> for #name {
-                fn decode_with<S: #bnb::__private::Source>(
-                    __bnb_r: &mut S,
+                fn decode_with<__S: #bnb::__private::Source>(
+                    __bnb_r: &mut __S,
                     args: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <#name>::decode_with(__bnb_r, args)
@@ -1913,8 +1916,8 @@ fn gen_decode(
         #guard
         #fixed_bit_len
         impl #bnb::BitDecode for #name {
-            fn bit_decode<S: #bnb::__private::Source>(
-                __bnb_r: &mut S,
+            fn bit_decode<__S: #bnb::__private::Source>(
+                __bnb_r: &mut __S,
             ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 #magic_read
                 #(#read_stmts)*
@@ -1924,8 +1927,8 @@ fn gen_decode(
 
         impl #name {
             #[doc = #from_doc]
-            pub fn decode<S: #from_bound>(
-                __bnb_r: &mut S,
+            pub fn decode<__S: #from_bound>(
+                __bnb_r: &mut __S,
             ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
             }
@@ -2063,8 +2066,8 @@ fn field_write_stmt_auto(
         // Only an `Auto` nested value computes the measure (a `bytes` probe isn't free); a
         // `Set(n)` override is kept verbatim.
         fills.push(quote! {
-            if #bnb::__private::WireLen::is_auto(&__auto.#nested) {
-                __auto.#nested = __auto.#nested.resolve_count(#measure)
+            if #bnb::__private::WireLen::is_auto(&__bnb_auto.#nested) {
+                __bnb_auto.#nested = __bnb_auto.#nested.resolve_count(#measure)
                     .map_err(|e| e.in_field(::core::stringify!(#nested)))?;
             }
         });
@@ -2076,9 +2079,9 @@ fn field_write_stmt_auto(
     Ok(quote! {
         #pre
         {
-            let mut __auto = ::core::clone::Clone::clone(&self.#id);
+            let mut __bnb_auto = ::core::clone::Clone::clone(&self.#id);
             #(#fills)*
-            <#ty as #bnb::__private::BitEncode>::bit_encode(&__auto, __bnb_w)
+            <#ty as #bnb::__private::BitEncode>::bit_encode(&__bnb_auto, __bnb_w)
                 .map_err(|e| e.in_field(::core::stringify!(#id)))?;
         }
         #post
@@ -2176,16 +2179,19 @@ fn gen_encode(
         !ctx_names.is_empty() && writes.iter().any(|w| tokens_mention(w.clone(), &ctx_names));
     if encode_uses_ctx {
         let ctx_name = ctx_struct_ident(name);
-        let ctx_binds = attrs.ctx.iter().map(|(n, _)| quote!(let #n = __ctx.#n;));
+        let ctx_binds = attrs
+            .ctx
+            .iter()
+            .map(|(n, _)| quote!(let #n = __bnb_ctx.#n;));
         return Ok(quote! {
             #guard
             impl #name {
                 #[doc = "Encode to a bit sink, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)] // a ctx param may be used on only one side
-                pub fn encode_with<K: #bnb::__private::Sink>(
+                pub fn encode_with<__K: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut K,
-                    __ctx: #ctx_name,
+                    __bnb_w: &mut __K,
+                    __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #(#ctx_binds)*
                     #magic_write
@@ -2195,16 +2201,16 @@ fn gen_encode(
                 #[doc = "Encode to a `Vec<u8>` with context."]
                 pub fn to_bytes_with(
                     &self,
-                    __ctx: #ctx_name,
+                    __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
-                    #bnb::__private::encode_to_vec_with(#layout, |__bnb_w| self.encode_with(__bnb_w, __ctx))
+                    #bnb::__private::encode_to_vec_with(#layout, |__bnb_w| self.encode_with(__bnb_w, __bnb_ctx))
                 }
             }
             // ctx Layer 2: the polymorphic companion (dual of `DecodeWith`).
             impl #bnb::EncodeWith<#ctx_name> for #name {
-                fn encode_with<K: #bnb::__private::Sink>(
+                fn encode_with<__K: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut K,
+                    __bnb_w: &mut __K,
                     args: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     <#name>::encode_with(self, __bnb_w, args)
@@ -2244,16 +2250,18 @@ fn gen_encode(
             let ty = &f.ty;
             if let Some(calc) = &br.calc {
                 // Non-`temp` `calc` (temp filtered above): canonical value = recompute.
-                let local = format_ident!("__canon_{}", id);
+                let local = format_ident!("__bnb_canon_{}", id);
                 calc_precompute.push(quote!(let #local: #ty = #calc;));
                 field_inits.push(quote!(#id: #local));
-                diff_checks
-                    .push(quote!(if self.#id != (#calc) { __d.push(::core::stringify!(#id)); }));
+                diff_checks.push(
+                    quote!(if self.#id != (#calc) { __bnb_diff.push(::core::stringify!(#id)); }),
+                );
             } else if let Some(spec) = reserved_spec_value(f)? {
                 // Reserved: canonical value = spec value.
                 field_inits.push(quote!(#id: #spec));
-                diff_checks
-                    .push(quote!(if self.#id != (#spec) { __d.push(::core::stringify!(#id)); }));
+                diff_checks.push(
+                    quote!(if self.#id != (#spec) { __bnb_diff.push(::core::stringify!(#id)); }),
+                );
             } else {
                 // Ordinary stored field: moved unchanged.
                 field_inits.push(quote!(#id: self.#id));
@@ -2262,9 +2270,9 @@ fn gen_encode(
 
         // Overrides `BitEncode`'s default (verbatim) `canonical_bit_encode`.
         let method = quote! {
-            fn canonical_bit_encode<K: #bnb::__private::Sink>(
+            fn canonical_bit_encode<__K: #bnb::__private::Sink>(
                 &self,
-                __bnb_w: &mut K,
+                __bnb_w: &mut __K,
             ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                 #magic_write
                 #(#writes_canonical)*
@@ -2299,9 +2307,9 @@ fn gen_encode(
                 #[doc = "reserved fields not at their spec value, or `calc` fields not equal to their"]
                 #[doc = "recomputed value. Empty iff `self` is already canonical."]
                 pub fn canonical_diff(&self) -> #bnb::__private::Vec<&'static str> {
-                    let mut __d = #bnb::__private::Vec::new();
+                    let mut __bnb_diff = #bnb::__private::Vec::new();
                     #(#diff_checks)*
-                    __d
+                    __bnb_diff
                 }
 
                 #[doc = "Whether `self` is already in canonical form (none of its own reserved/`calc`"]
@@ -2325,9 +2333,9 @@ fn gen_encode(
         quote! {
             impl #bnb::EncodeWith<#ctx_name> for #name {
                 #[allow(unused_variables)]
-                fn encode_with<K: #bnb::__private::Sink>(
+                fn encode_with<__K: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut K,
+                    __bnb_w: &mut __K,
                     args: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     <Self as #bnb::BitEncode>::bit_encode(self, __bnb_w)
@@ -2340,9 +2348,9 @@ fn gen_encode(
         #guard
         impl #bnb::BitEncode for #name {
             const LAYOUT: #bnb::Layout = #layout;
-            fn bit_encode<K: #bnb::__private::Sink>(
+            fn bit_encode<__K: #bnb::__private::Sink>(
                 &self,
-                __bnb_w: &mut K,
+                __bnb_w: &mut __K,
             ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                 #magic_write
                 #(#writes)*
@@ -2814,13 +2822,13 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
                 // decode: read the wire message, then `Self::from(wire)`.
                 quote!(#bnb::__private::decode_mapped_msg(
                     __bnb_r,
-                    |__w: #wire| <#name as ::core::convert::From<#wire>>::from(__w)
+                    |__bnb_wire: #wire| <#name as ::core::convert::From<#wire>>::from(__bnb_wire)
                 ))
             } else {
                 // try_wire: `Self::try_from(wire)` — a conversion error becomes a decode error.
                 quote!(#bnb::__private::decode_try_mapped_msg(
                     __bnb_r,
-                    |__w: #wire| <#name as ::core::convert::TryFrom<#wire>>::try_from(__w)
+                    |__bnb_wire: #wire| <#name as ::core::convert::TryFrom<#wire>>::try_from(__bnb_wire)
                 ))
             }
         } else if let Some(map) = &args.map {
@@ -2883,7 +2891,7 @@ fn bin_struct_mapped(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2
             quote!(#bnb::__private::encode_mapped_msg(
                 __bnb_w,
                 self,
-                |__v: &#name| -> #wire { ::core::convert::Into::into(__v) }
+                |__bnb_v: &#name| -> #wire { ::core::convert::Into::into(__bnb_v) }
             ))
         } else {
             let bw = args
@@ -3271,7 +3279,7 @@ fn desugar_count_prefix(
         };
         let calc_expr = quote! {
             <#pty as #bnb::__private::CountPrefix>::try_from_count(#len_expr)
-                .map_err(|__e| #bnb::__private::BitError::from(__e)
+                .map_err(|__bnb_e| #bnb::__private::BitError::from(__bnb_e)
                     .in_field(::core::stringify!(#id)))?
         };
         out.push(syn::Field::parse_named.parse2(quote! {
@@ -3438,8 +3446,8 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
             let debug_calls = debug_field_calls(&stored_idents, &try_str_idents, &bnb);
             quote! {
                 impl ::core::fmt::Debug for #name {
-                    fn fmt(&self, __f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                        __f.debug_struct(::core::stringify!(#name))
+                    fn fmt(&self, __bnb_f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        __bnb_f.debug_struct(::core::stringify!(#name))
                             #debug_calls
                             .finish()
                     }
@@ -3468,8 +3476,8 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
             quote! {
                 // `format!` through the runtime's re-export: `.to_string()` needs the
                 // `ToString` prelude, which a `#![no_std]` consumer does not have.
-                (#path)(&__value).map_err(|__e| {
-                    #bnb::BuilderError::invalid(#bnb::__private::format!("{}", __e))
+                (#path)(&__bnb_value).map_err(|__bnb_e| {
+                    #bnb::BuilderError::invalid(#bnb::__private::format!("{}", __bnb_e))
                 })?;
             }
         });
@@ -3604,12 +3612,16 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
 // ---------------------------------------------------------------------------
 
 /// The bind idents for a variant's fields — the field's own ident (named) or a
-/// synthesized `__f{i}` (tuple). Empty for a unit variant.
+/// synthesized `__bnb_f{i}` (tuple). Empty for a unit variant.
 fn variant_bind_idents(fields: &Fields) -> Vec<Ident> {
     fields
         .iter()
         .enumerate()
-        .map(|(i, f)| f.ident.clone().unwrap_or_else(|| format_ident!("__f{}", i)))
+        .map(|(i, f)| {
+            f.ident
+                .clone()
+                .unwrap_or_else(|| format_ident!("__bnb_f{}", i))
+        })
         .collect()
 }
 
@@ -3750,7 +3762,7 @@ impl Magic {
     /// Read and verify this magic, erroring on mismatch (`what` names the site).
     fn verify(&self, what: &str) -> TokenStream2 {
         let bnb = crate::bnb_path();
-        let binding = format_ident!("__vm");
+        let binding = format_ident!("__bnb_vm");
         let read = self.read_into(&binding);
         let expected = self.const_expr();
         let msg = format!("magic mismatch ({what})");
@@ -3871,19 +3883,19 @@ impl NamedTag {
         let value = &self.value;
         if matches!(value, syn::Expr::Lit(lit) if matches!(lit.lit, syn::Lit::Int(_))) {
             let converted = crate::const_from_bits(ty, &quote!(#value as u128));
-            let restored = crate::const_into_bits(ty, &quote!(__VALUE));
+            let restored = crate::const_into_bits(ty, &quote!(__BNB_VALUE));
             quote!({
-                const __VALUE: #ty = #converted;
+                const __BNB_VALUE: #ty = #converted;
                 const _: () = assert!(#restored == #value as u128, "tag literal does not fit its context type");
-                __VALUE
+                __BNB_VALUE
             })
         } else {
             // `(7)` is the documented form for a literal of a non-`Bits` type: type-checked,
             // so out of range is an error, and its parentheses are not the user's mistake.
             quote!({
                 #[allow(unused_parens, unused_braces)]
-                const __VALUE: #ty = #value;
-                __VALUE
+                const __BNB_VALUE: #ty = #value;
+                __BNB_VALUE
             })
         }
     }
@@ -4172,7 +4184,7 @@ impl<'a> EnumDispatch<'a> {
     }
 
     /// The read type shared by all dispatching magics, if they agree on `(kind, width)`
-    /// (a single-read `__m`); `None` if there are none or they disagree (peek dispatch).
+    /// (a single-read `__bnb_m`); `None` if there are none or they disagree (peek dispatch).
     fn uniform_magic_read_type(&self) -> Option<TokenStream2> {
         let mut shape: Option<(u8, usize)> = None;
         let mut ty = None;
@@ -4254,7 +4266,9 @@ fn variant_field_codec(
             .find(|(n, _)| f.ident.as_ref() == Some(n))
         {
             let field_ty = &f.ty;
-            reads.push(quote!(let #id: #field_ty = { let __captured: #ty = #name; __captured };));
+            reads.push(
+                quote!(let #id: #field_ty = { let __bnb_captured: #ty = #name; __bnb_captured };),
+            );
         } else if is_catch && i == 0 {
             if br.temp {
                 return Err(syn::Error::new_spanned(
@@ -4444,7 +4458,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     }
 
     // For tag dispatch: the selector ident + its `ctx` type. For magic dispatch: a
-    // representative dispatching magic (drives the single-read `__m` + the catch writer).
+    // representative dispatching magic (drives the single-read `__bnb_m` + the catch writer).
     let selector_ty = dispatch
         .selector
         .as_ref()
@@ -4468,8 +4482,8 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         .find_map(|v| v.magic.as_ref());
 
     // The "nothing matched" tail: a typed fallback (parse the unconsumed bytes — no
-    // capture), else a `#[catch_all]` capturing the read magic (`__m`, single-read), the
-    // unmatched selector (`__other`, tag), or nothing (peek path — the magic stays in the
+    // capture), else a `#[catch_all]` capturing the read magic (`__bnb_m`, single-read), the
+    // unmatched selector (`__bnb_other`, tag), or nothing (peek path — the magic stays in the
     // catch-all's own fields).
     let tail_variant = fallback_variant.or(catch_variant);
     let tail_capture: Option<TokenStream2> = if fallback_variant.is_some() || has_named_tags {
@@ -4478,9 +4492,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         if use_peek {
             None
         } else if magic_dispatch {
-            Some(quote!(__m))
+            Some(quote!(__bnb_m))
         } else {
-            Some(quote!(__other))
+            Some(quote!(__bnb_other))
         }
     } else {
         None
@@ -4571,10 +4585,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     };
     let observed = match rep_magic.filter(|_| !use_peek) {
         Some(Magic::Int { .. }) => quote!(::core::option::Option::Some(
-            #bnb::DispatchValue::Integer(::core::convert::From::from(__m))
+            #bnb::DispatchValue::Integer(::core::convert::From::from(__bnb_m))
         )),
         Some(Magic::Bytes(_)) => quote!(::core::option::Option::Some(
-            #bnb::DispatchValue::Bytes(#bnb::__private::Vec::from(__m))
+            #bnb::DispatchValue::Bytes(#bnb::__private::Vec::from(__bnb_m))
         )),
         None => quote!(::core::option::Option::None),
     };
@@ -4604,12 +4618,12 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         }}
     };
 
-    // The decode dispatch. Magic: a single `__m` read + an `==` chain (uniform width, no
+    // The decode dispatch. Magic: a single `__bnb_m` read + an `==` chain (uniform width, no
     // fallback), or a `match_magic` probe chain (variable width / fallback,
     // so the tail can re-read the unconsumed magic). Tag: a `match` on the selector. The
     // tail body is the final else.
     //
-    // The magic block: a single `__m` read + `==` chain (uniform width), or a
+    // The magic block: a single `__bnb_m` read + `==` chain (uniform width), or a
     // `match_magic` chain (variable width / fallback), ending in the tail body.
     // Used directly for pure-magic dispatch, and as the selector `match`'s fall-through
     // under hybrid (tag takes priority, then magic).
@@ -4636,7 +4650,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     } else {
         let read = rep_magic
             .expect("magic dispatch has a representative magic")
-            .read_into(&format_ident!("__m"));
+            .read_into(&format_ident!("__bnb_m"));
         let mut chain = tail_body.clone();
         for v in dispatch.variants.iter().rev() {
             if v.role() == VariantRole::MagicOnly {
@@ -4647,7 +4661,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                     .const_expr();
                 let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
                 chain = quote! {
-                    if __m == #c {
+                    if __bnb_m == #c {
                         #(#reads)*
                         ::core::result::Result::Ok(#ctor)
                     } else #chain
@@ -4716,10 +4730,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         } else {
             tail_body.clone()
         };
-        // A pure-tag catch-all captures the unmatched selector (`__other`); a hybrid reads
-        // `__m` in the magic block, so the unmatched selector is unused there.
+        // A pure-tag catch-all captures the unmatched selector (`__bnb_other`); a hybrid reads
+        // `__bnb_m` in the magic block, so the unmatched selector is unused there.
         let catch_pat = if !magic_dispatch && tail_variant.is_some() {
-            quote!(__other)
+            quote!(__bnb_other)
         } else {
             quote!(_)
         };
@@ -4782,7 +4796,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
     let ctx_binds: Vec<TokenStream2> = args
         .ctx
         .iter()
-        .map(|(n, _)| quote!(let #n = __ctx.#n;))
+        .map(|(n, _)| quote!(let #n = __bnb_ctx.#n;))
         .collect();
 
     // An inherent accessor on a dispatched enum: `tag()` (the off-wire selector this value
@@ -4885,7 +4899,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             helper_methods.push(quote! {
                 #[doc = #doc]
                 #[allow(unused_variables)]
-                pub fn #mname(bytes: &[u8], __ctx: #ctx_name) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                pub fn #mname(bytes: &[u8], __bnb_ctx: #ctx_name) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #bnb::__private::decode_exact_with(bytes, #layout, |__bnb_r| { #(#ctx_binds)* #body })
                 }
             });
@@ -4948,7 +4962,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         } else {
             let read = rep_magic
                 .expect("magic dispatch has a representative magic")
-                .read_into(&format_ident!("__m"));
+                .read_into(&format_ident!("__bnb_m"));
             let mut chain = quote!({ #tail_kind });
             for v in dispatch.variants.iter().rev() {
                 if v.role() == VariantRole::MagicOnly {
@@ -4958,7 +4972,7 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                         .expect("invariant: MagicOnly has a magic")
                         .const_expr();
                     let k = &v.variant.ident;
-                    chain = quote!(if __m == #c { ::core::result::Result::Ok(#kind_name::#k) } else #chain);
+                    chain = quote!(if __bnb_m == #c { ::core::result::Result::Ok(#kind_name::#k) } else #chain);
                 }
             }
             quote!(#read #chain)
@@ -5003,9 +5017,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             impl #name {
                 #[doc = "Decode from a bit source, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)]
-                pub fn decode_with<S: #from_bound>(
-                    __bnb_r: &mut S,
-                    __ctx: #ctx_name,
+                pub fn decode_with<__S: #from_bound>(
+                    __bnb_r: &mut __S,
+                    __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #(#ctx_binds)*
                     #decode_body
@@ -5013,14 +5027,14 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 #[doc = "Decode from bytes with context, requiring every whole byte consumed."]
                 pub fn decode_with_exact(
                     bytes: &[u8],
-                    __ctx: #ctx_name,
+                    __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
-                    #bnb::__private::decode_exact_with(bytes, #layout, |__bnb_r| Self::decode_with(__bnb_r, __ctx.clone()))
+                    #bnb::__private::decode_exact_with(bytes, #layout, |__bnb_r| Self::decode_with(__bnb_r, __bnb_ctx.clone()))
                 }
             }
             impl #bnb::DecodeWith<#ctx_name> for #name {
-                fn decode_with<S: #bnb::__private::Source>(
-                    __bnb_r: &mut S,
+                fn decode_with<__S: #bnb::__private::Source>(
+                    __bnb_r: &mut __S,
                     args: #ctx_name,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <#name>::decode_with(__bnb_r, args)
@@ -5031,16 +5045,16 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
         let prefix_decoders = prefix_methods(&quote!(pub), &layout);
         quote! {
             impl #bnb::BitDecode for #name {
-                fn bit_decode<S: #bnb::__private::Source>(
-                    __bnb_r: &mut S,
+                fn bit_decode<__S: #bnb::__private::Source>(
+                    __bnb_r: &mut __S,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     #decode_body
                 }
             }
             impl #name {
                 #[doc = "Decode one message from a bit cursor (a `BitReader`, `BufSource`, `BitBuf`, a streaming reader, …), advancing it; a seekable cursor is required if a variant seeks. The byte/bit order is the cursor's — use `decode_exact`/`decode_all` to bake the message's in."]
-                pub fn decode<S: #from_bound>(
-                    __bnb_r: &mut S,
+                pub fn decode<__S: #from_bound>(
+                    __bnb_r: &mut __S,
                 ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                     <Self as #bnb::BitDecode>::bit_decode(__bnb_r)
                 }
@@ -5076,10 +5090,10 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             impl #name {
                 #[doc = "Encode to a bit sink, given the context this type declares via `ctx(...)`."]
                 #[allow(unused_variables)]
-                pub fn encode_with<K: #bnb::__private::Sink>(
+                pub fn encode_with<__K: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut K,
-                    __ctx: #ctx_name,
+                    __bnb_w: &mut __K,
+                    __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #(#ctx_binds)*
                     #encode_body
@@ -5087,15 +5101,15 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 #[doc = "Encode to a `Vec<u8>` with context."]
                 pub fn to_bytes_with(
                     &self,
-                    __ctx: #ctx_name,
+                    __bnb_ctx: #ctx_name,
                 ) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
-                    #bnb::__private::encode_to_vec_with(#layout, |__bnb_w| self.encode_with(__bnb_w, __ctx.clone()))
+                    #bnb::__private::encode_to_vec_with(#layout, |__bnb_w| self.encode_with(__bnb_w, __bnb_ctx.clone()))
                 }
             }
             impl #bnb::EncodeWith<#ctx_name> for #name {
-                fn encode_with<K: #bnb::__private::Sink>(
+                fn encode_with<__K: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut K,
+                    __bnb_w: &mut __K,
                     args: #ctx_name,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     <#name>::encode_with(self, __bnb_w, args)
@@ -5109,9 +5123,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             quote! {
                 impl #bnb::EncodeWith<#ctx_name> for #name {
                     #[allow(unused_variables)]
-                    fn encode_with<K: #bnb::__private::Sink>(
+                    fn encode_with<__K: #bnb::__private::Sink>(
                         &self,
-                        __bnb_w: &mut K,
+                        __bnb_w: &mut __K,
                         args: #ctx_name,
                     ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                         <Self as #bnb::BitEncode>::bit_encode(self, __bnb_w)
@@ -5124,9 +5138,9 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
                 const LAYOUT: #bnb::Layout = #layout;
                 // A catch-all's captured selectors are bound by the arm but never written.
                 #[allow(unused_variables)]
-                fn bit_encode<K: #bnb::__private::Sink>(
+                fn bit_encode<__K: #bnb::__private::Sink>(
                     &self,
-                    __bnb_w: &mut K,
+                    __bnb_w: &mut __K,
                 ) -> ::core::result::Result<(), #bnb::__private::BitError> {
                     #encode_body
                 }

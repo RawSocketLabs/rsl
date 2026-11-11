@@ -97,8 +97,8 @@ pub(crate) fn parse_builder_attr(attr: &Attribute) -> syn::Result<Option<FieldDe
 /// Generates the builder type, `Foo::builder()`, the setters, and `build()`.
 ///
 /// `post_build`, when present, is spliced into `build()` after the value is
-/// constructed into the local `__value` and before it is returned (e.g. to run
-/// a soundness validator, `__value.validate()?;`). It must be a
+/// constructed into the local `__bnb_value` and before it is returned (e.g. to run
+/// a soundness validator, `__bnb_value.validate()?;`). It must be a
 /// statement (or statements) and may use `?` to short-circuit with a
 /// [`bnb::BuilderError`](::bnb::BuilderError).
 pub(crate) fn generate(
@@ -136,9 +136,9 @@ pub(crate) fn generate(
             quote!(#name::new() #(#withs)*)
         }
         BuildKind::Plain => quote!({
-            let mut __value = #name { #( #idents ),* };
-            #bnb::NormalizeEnumAliases::normalize_enum_aliases(&mut __value);
-            __value
+            let mut __bnb_value = #name { #( #idents ),* };
+            #bnb::NormalizeEnumAliases::normalize_enum_aliases(&mut __bnb_value);
+            __bnb_value
         }),
     };
 
@@ -172,9 +172,9 @@ pub(crate) fn generate(
             /// Returns the first unset required field before normalization or validation.
             #vis fn build(self) -> ::core::result::Result<#name, #bnb::BuilderError> {
                 #(#resolve)*
-                let __value = #construct;
+                let __bnb_value = #construct;
                 #post_build
-                ::core::result::Result::Ok(__value)
+                ::core::result::Result::Ok(__bnb_value)
             }
         }
     }
