@@ -10,7 +10,8 @@
 //! micro-benchmark of one operation. (No CI perf gate is attached; this is a local
 //! baseline only.) `byte_runs_2x255` isolates two 255-byte `count_prefix` byte runs,
 //! `counted_u16_1024`/`counted_u32_256` counted runs of wider integers beside a hand-written
-//! loop, and `fixed_44` a fixed-length message whose encoded size is known up front.
+//! loop, `fixed_44` a fixed-length message whose encoded size is known up front, and
+//! `stream_envelope/16x40` sixteen back-to-back `MessageStream::read_message` calls.
 //!
 //! Run: cargo bench -p bitsandbytes --bench `message_bench`
 //! (Reports under target/criterion/.)
@@ -249,30 +250,41 @@ fn bench_stream_reads(c: &mut Criterion) {
         }
     }
 
+    let envelope = |body: usize| {
+        Envelope {
+            body: vec![0x5a; body],
+        }
+        .to_bytes()
+        .unwrap()
+    };
+    // Each case: its name, the wire, and how many messages that wire holds. The last is
+    // sixteen 44-byte messages read back one call at a time, so with a chunk as long as
+    // the wire fifteen of the sixteen calls find their message already buffered. It shares
+    // the loop below so `read_message` keeps a single call site: a second one stops it
+    // being inlined here and moves every timing in this group.
+    let mut cases: Vec<(String, Vec<u8>, usize)> = [64, 1024, 16 * 1024]
+        .into_iter()
+        .map(|size| (size.to_string(), envelope(size), 1))
+        .collect();
+    cases.push(("16x40".to_owned(), envelope(40).repeat(16), 16));
+
     let mut group = c.benchmark_group("stream_envelope");
     group.sample_size(20);
     group.warm_up_time(Duration::from_millis(300));
     group.measurement_time(Duration::from_secs(2));
-    for size in [64, 1024, 16 * 1024] {
-        let wire = Envelope {
-            body: vec![0x5a; size],
-        }
-        .to_bytes()
-        .unwrap();
+    for (name, wire, messages) in &cases {
         group.throughput(Throughput::Bytes(wire.len() as u64));
         for chunk in [1, 64, wire.len()] {
-            group.bench_with_input(
-                BenchmarkId::new(size.to_string(), chunk),
-                &chunk,
-                |bench, &chunk| {
-                    let mut stream =
-                        bnb::MessageStream::bounded(Fragments { bytes: &[], chunk }, wire.len());
-                    bench.iter(|| {
-                        stream.get_mut().bytes = black_box(&wire);
+            group.bench_with_input(BenchmarkId::new(name, chunk), &chunk, |bench, &chunk| {
+                let mut stream =
+                    bnb::MessageStream::bounded(Fragments { bytes: &[], chunk }, wire.len());
+                bench.iter(|| {
+                    stream.get_mut().bytes = black_box(wire);
+                    for _ in 0..*messages {
                         black_box(stream.read_message::<Envelope>().unwrap());
-                    });
-                },
-            );
+                    }
+                });
+            });
         }
     }
     group.finish();

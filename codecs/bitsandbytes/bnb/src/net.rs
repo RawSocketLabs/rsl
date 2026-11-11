@@ -22,6 +22,7 @@ use crate::bitstream::encode_to_vec;
 use crate::{BitBuf, BitDecode, BitEncode, BitError, ErrorKind};
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, UdpSocket};
 #[cfg(feature = "mock")]
@@ -200,10 +201,31 @@ pub async fn read_message_async<
 ///
 /// [`read_message`]: MessageStream::read_message
 /// [`write_message`]: MessageStream::write_message
-#[derive(Debug)]
 pub struct MessageStream<S> {
     inner: S,
     buf: BitBuf,
+    /// Where [`read_message`](Self::read_message) has the stream put bytes before they are
+    /// appended to `buf`: [`SCRATCH_LEN`] bytes allocated with the wrapper, so a read never
+    /// allocates it. Nothing unread ever stays in it, so the parts are still `inner` and
+    /// `buf` alone.
+    scratch: Vec<u8>,
+}
+
+/// How many bytes [`MessageStream::read_message`] asks the stream for at a time.
+const SCRATCH_LEN: usize = 4096;
+
+// Hand-written so the scratch, which holds no state, stays out of the output.
+#[expect(
+    clippy::missing_fields_in_debug,
+    reason = "the scratch is 4 KiB of no state"
+)]
+impl<S: fmt::Debug> fmt::Debug for MessageStream<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MessageStream")
+            .field("inner", &self.inner)
+            .field("buf", &self.buf)
+            .finish()
+    }
 }
 
 impl<S> MessageStream<S> {
@@ -211,10 +233,7 @@ impl<S> MessageStream<S> {
     /// [`bounded`](Self::bounded) — a stream that never completes a frame would otherwise
     /// grow the buffer without bound.
     pub fn new(inner: S) -> Self {
-        Self {
-            inner,
-            buf: BitBuf::new(),
-        }
+        Self::from_parts(inner, BitBuf::new())
     }
 
     /// Wrap a stream with a **bounded** read buffer: a peer that streams bytes which never
@@ -223,10 +242,7 @@ impl<S> MessageStream<S> {
     /// [`ErrorKind::BufferFull`], rather than consuming memory
     /// without bound. The bounded counterpart to [`new`](Self::new) for untrusted streams.
     pub fn bounded(inner: S, cap: usize) -> Self {
-        Self {
-            inner,
-            buf: BitBuf::bounded(cap),
-        }
+        Self::from_parts(inner, BitBuf::bounded(cap))
     }
 
     /// Borrow the underlying stream for configuration or inspection. Reading it directly
@@ -259,9 +275,14 @@ impl<S> MessageStream<S> {
         (self.inner, self.buf)
     }
 
-    /// Reconstruct a wrapper without copying or discarding retained input.
+    /// Reconstruct a wrapper without copying or discarding retained input. Like every
+    /// constructor, it allocates the wrapper's 4 KiB read scratch, so reads never do.
     pub fn from_parts(inner: S, buf: BitBuf) -> Self {
-        Self { inner, buf }
+        Self {
+            inner,
+            buf,
+            scratch: vec![0; SCRATCH_LEN],
+        }
     }
 }
 
@@ -283,7 +304,8 @@ impl<S: Read> MessageStream<S> {
     /// Panics if the underlying `Read` violates its contract by reporting more bytes
     /// than its destination can hold.
     pub fn read_message<T: BitDecode + BitEncode>(&mut self) -> Result<T, MessageReadError> {
-        read_message(&mut self.inner, &mut self.buf, &mut [0; 4096])
+        // One scratch for the stream's life: a fresh one per call is 4 KiB zeroed per message.
+        read_message(&mut self.inner, &mut self.buf, &mut self.scratch)
     }
 }
 
@@ -1169,6 +1191,35 @@ mod component {
         stream.read_exact(&mut tail).unwrap();
         assert_eq!(tail, [5]);
         assert!(stream.try_into_inner().is_ok());
+    }
+
+    #[test]
+    fn read_message_keeps_one_scratch_and_parts_carry_the_read_ahead() {
+        let inner = Scripted {
+            bytes: io::Cursor::new(vec![1, 2, 3, 4, 5, 6]),
+            reads: 0,
+            fail: None,
+        };
+        let mut stream = MessageStream::new(inner);
+        // Allocated with the wrapper, and the same allocation after every read. Checked
+        // after each one: a scratch replaced twice can land back on the first address.
+        let scratch = stream.scratch.as_ptr();
+        assert_eq!(stream.scratch.len(), super::SCRATCH_LEN);
+        for want in [0x0102, 0x0304] {
+            assert_eq!(stream.read_message::<u16>().unwrap(), want);
+            assert_eq!(
+                stream.scratch.as_ptr(),
+                scratch,
+                "after reading {want:#06x}"
+            );
+            assert_eq!(stream.scratch.len(), super::SCRATCH_LEN);
+        }
+        assert!(!format!("{stream:?}").contains("scratch"));
+        // One read brought all six bytes; the two not yet decoded travel in the buffer.
+        let (inner, mut buffer) = stream.into_parts();
+        assert_eq!(inner.reads, 1);
+        assert_eq!(buffer.try_pull::<u16>().unwrap(), 0x0506);
+        assert!(buffer.is_empty());
     }
 
     #[test]
