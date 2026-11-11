@@ -13,6 +13,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use syn::ext::IdentExt;
 use syn::parse_macro_input;
 use syn::{Attribute, Data, DeriveInput, Expr, Fields, Ident, Type, Visibility};
 
@@ -101,14 +102,23 @@ pub(crate) fn parse_builder_attr(attr: &Attribute) -> syn::Result<Option<FieldDe
 /// a soundness validator, `__bnb_value.validate()?;`). It must be a
 /// statement (or statements) and may use `?` to short-circuit with a
 /// [`bnb::BuilderError`](::bnb::BuilderError).
+///
+/// # Errors
+/// At a field named `build`: its setter would be the builder's own `build()`.
 pub(crate) fn generate(
     name: &Ident,
     vis: &Visibility,
     fields: &[BField],
     kind: BuildKind,
     post_build: Option<&TokenStream2>,
-) -> TokenStream2 {
+) -> syn::Result<TokenStream2> {
     let bnb = crate::bnb_path();
+    // A setter is named after its field, so the only name the builder holds back is its own
+    // `build` (two fields cannot share a name, so setters never collide with each other).
+    let mut names = crate::GeneratedNames::new(&["build"], "the builder's own `build()`");
+    for f in fields {
+        names.claim(&f.ident, &f.ident.unraw().to_string(), "its builder setter")?;
+    }
     let builder_name = format_ident!("{}Builder", name);
     let idents: Vec<&Ident> = fields.iter().map(|f| &f.ident).collect();
     let tys: Vec<&Type> = fields.iter().map(|f| &f.ty).collect();
@@ -142,11 +152,12 @@ pub(crate) fn generate(
         }),
     };
 
-    quote! {
+    Ok(quote! {
         impl #name {
             #[doc = concat!("Returns a builder for [`", stringify!(#name), "`].")]
             #vis fn builder() -> #builder_name {
-                #builder_name::default()
+                // By trait path: a field named `default` has an inherent setter of that name.
+                <#builder_name as ::core::default::Default>::default()
             }
         }
 
@@ -177,7 +188,7 @@ pub(crate) fn generate(
                 ::core::result::Result::Ok(__bnb_value)
             }
         }
-    }
+    })
 }
 
 /// The standalone `#[derive(BitsBuilder)]` entry, for plain (non-`#[bitfield]`)
@@ -230,6 +241,6 @@ fn expand_derive_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     }
     let normalizer = normalizer_impl(&input.ident, &quote!(#(#normalize)*));
-    let builder = generate(&input.ident, &input.vis, &fields, BuildKind::Plain, None);
+    let builder = generate(&input.ident, &input.vis, &fields, BuildKind::Plain, None)?;
     Ok(quote!(#normalizer #builder))
 }

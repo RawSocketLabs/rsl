@@ -3515,7 +3515,7 @@ fn bin_struct(args: &BinArgs, s: &ItemStruct) -> syn::Result<TokenStream2> {
             &bfields,
             crate::builder::BuildKind::Plain,
             post_build.as_ref(),
-        )
+        )?
     };
 
     // `ctx(...)`: the single front-end owns the generated `<Name>Ctx` struct.

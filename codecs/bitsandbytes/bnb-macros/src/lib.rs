@@ -111,6 +111,44 @@ pub(crate) fn is_bare_ident(ty: &syn::Type, name: &str) -> bool {
     }
 }
 
+/// The names a macro generates on one type (methods and associated consts share a
+/// namespace), so a field whose generated items would reuse one gets an error at the field
+/// instead of rustc's duplicate-definition error from inside the generated impl.
+pub(crate) struct GeneratedNames {
+    /// Each claimed name with a phrase saying what holds it.
+    taken: Vec<(String, String)>,
+}
+
+impl GeneratedNames {
+    /// Starts from the names the macro generates on every type, all described by `what`.
+    pub(crate) fn new(fixed: &[&str], what: &str) -> Self {
+        let taken = fixed
+            .iter()
+            .map(|name| ((*name).to_string(), what.to_string()))
+            .collect();
+        Self { taken }
+    }
+
+    /// Claims `name` for `field`'s generated item `what`, or errors at the field when the
+    /// name is already held (a raw identifier is the same name as its unprefixed form).
+    pub(crate) fn claim(&mut self, field: &syn::Ident, name: &str, what: &str) -> syn::Result<()> {
+        use syn::ext::IdentExt;
+        let shown = field.unraw();
+        if let Some((_, holder)) = self.taken.iter().find(|(taken, _)| taken == name) {
+            return Err(syn::Error::new(
+                field.span(),
+                format!(
+                    "field `{shown}` needs the generated name `{name}` for {what}, but that \
+                     name is {holder}; rename the field"
+                ),
+            ));
+        }
+        self.taken
+            .push((name.to_string(), format!("{what} of field `{shown}`")));
+        Ok(())
+    }
+}
+
 /// The byte size of a `#[bitfield]`/`#[bitflags]` backing integer (`u8`…`u128`).
 pub(crate) fn backing_byte_count(backing: &syn::Ident) -> syn::Result<usize> {
     match backing.to_string().as_str() {
@@ -220,6 +258,16 @@ pub(crate) fn const_into_bits(
 /// — e.g. `repr(C)`, or `repr(align(N))`, neither of which can combine with
 /// `transparent`.
 ///
+/// ## Reserved names
+///
+/// Each field `x` generates `x()`, `with_x`, `set_x` and three hidden layout consts
+/// (`__bits_w_x`, `__bits_off_x`, `__bits_mask_x`) beside the type's own items, all in one
+/// namespace. A field whose generated names would repeat one of them is a compile error at
+/// the field. So a field cannot be named `new`, `to_raw`, `from_raw`, `to_bytes`,
+/// `from_bytes`, `to_be_bytes`, `to_le_bytes`, `from_be_bytes`, `from_le_bytes`, `WIDTH`
+/// (nor `builder` when `BitsBuilder` is derived), and a field `x` cannot sit beside a field
+/// `with_x` or `set_x`. Treat the `__bnb_`, `__bits_` and `__BITS_` prefixes as the macro's.
+///
 /// See the `bnb::guide::bitfields` page for runnable examples (bit/byte order,
 /// inferred vs. ranged widths, nesting).
 #[proc_macro_attribute]
@@ -256,6 +304,17 @@ pub fn bitfield(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// and the operator impls is a **`const fn`**, and the emitted struct is
 /// **`#[repr(transparent)]`** over its backing (suppressed by writing your own
 /// `#[repr(...)]`), as for `#[bitfield]`.
+///
+/// ## Reserved names
+///
+/// Each flag `x` generates the const `X`, `x()`, `with_x` and `set_x` beside the type's own
+/// methods, all in one namespace. A flag whose generated names would repeat one of them is
+/// a compile error at the field. So a flag cannot be named `empty`, `all`, `bits`,
+/// `from_bits`, `from_bits_truncate`, `contains`, `intersects`, `is_empty`, `insert`,
+/// `remove`, `toggle`, `set`, `union`, `intersection`, `difference`, `complement` or `iter`
+/// (treat the `__bnb_` and `__ALL_` prefixes as the macro's); two flags cannot differ only
+/// in case (they share a const, so a flag is written in lower case); and a flag `x` cannot
+/// sit beside a flag `with_x` or `set_x`.
 ///
 /// See the `bnb::guide::flags` page for runnable examples (set algebra, iteration,
 /// retain-vs-truncate, nesting).
@@ -473,6 +532,14 @@ pub fn bin(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// On a `#[bitfield]` struct, list `#[bitfield(...)]` **above** the `#[derive]`
 /// so it intercepts this marker.
+///
+/// ## Reserved names
+///
+/// The builder type is named `<Name>Builder`, so no other item in the module may have that
+/// name (the macro cannot see the module, so that one surfaces as rustc's own
+/// duplicate-definition error). Each setter is named after its field, so a field cannot be
+/// named `build` (a compile error at the field); every other field name is fine, `default`
+/// and `validate` included.
 ///
 /// See the `bnb::guide::builders` page for runnable examples (required-field errors,
 /// `default`/`default = expr`, the `#[bitfield]` intercept).

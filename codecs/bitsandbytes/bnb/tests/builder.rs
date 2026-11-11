@@ -120,4 +120,28 @@ mod macro_ {
             }
         );
     }
+
+    // A builder setter is named after its field, so only `build` is reserved there: a
+    // field named `default` or `validate` is an ordinary one.
+    #[derive(BitsBuilder, Debug, PartialEq)]
+    struct OrdinaryNames {
+        default: u8,
+        validate: u8,
+    }
+
+    #[test]
+    fn fields_named_default_and_validate_build() {
+        let built = OrdinaryNames::builder()
+            .default(1)
+            .validate(2)
+            .build()
+            .unwrap();
+        assert_eq!(
+            built,
+            OrdinaryNames {
+                default: 1,
+                validate: 2
+            }
+        );
+    }
 }

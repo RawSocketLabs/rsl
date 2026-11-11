@@ -1,0 +1,11 @@
+error: field `build` needs the generated name `build` for its builder setter, but that name is the builder's own `build()`; rename the field
+ --> tests/ui/builder_name_collision.rs:7:5
+  |
+7 |     build: u8,
+  |     ^^^^^
+
+error: field `build` needs the generated name `build` for its builder setter, but that name is the builder's own `build()`; rename the field
+  --> tests/ui/builder_name_collision.rs:13:5
+   |
+13 |     build: u8,
+   |     ^^^^^
