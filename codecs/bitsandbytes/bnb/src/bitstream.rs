@@ -968,7 +968,7 @@ pub struct BitWriter {
     order: BitOrder,
     byte: ByteOrder,
     /// Optional per-encode scratch (see [`Sink::scratch`]); not part of the written bytes.
-    scratch: Option<Box<dyn Any>>,
+    scratch: Option<Box<dyn Any + Send>>,
 }
 
 // Hand-written so the public `Clone`/`Debug` API survives the (un-`Clone`, un-`Debug`)
@@ -1032,7 +1032,8 @@ impl BitWriter {
     /// The escape hatch for codecs that need mutable state shared across a whole message's
     /// fields — a back-reference / compression dictionary (e.g. DNS name compression). The
     /// scratch lives for the encode and is dropped by [`into_bytes`](Self::into_bytes); it
-    /// is never written to the output and is not carried by [`Clone`].
+    /// is never written to the output and is not carried by [`Clone`]. It must be [`Send`],
+    /// so a writer holding one can still move to another thread or task.
     ///
     /// ```
     /// use bnb::{BitWriter, Sink};
@@ -1044,7 +1045,7 @@ impl BitWriter {
     /// assert_eq!(w.scratch().and_then(|s| s.downcast_ref::<u32>()), Some(&1));
     /// ```
     #[must_use]
-    pub fn with_scratch(mut self, scratch: Box<dyn Any>) -> Self {
+    pub fn with_scratch(mut self, scratch: Box<dyn Any + Send>) -> Self {
         self.scratch = Some(scratch);
         self
     }
@@ -1711,7 +1712,10 @@ impl Sink for BitWriter {
     }
     #[inline]
     fn scratch(&mut self) -> Option<&mut dyn Any> {
-        self.scratch.as_deref_mut()
+        // The stored box is `dyn Any + Send`; the trait hands out plain `dyn Any`.
+        self.scratch
+            .as_deref_mut()
+            .map(|scratch| scratch as &mut dyn Any)
     }
     // An aligned cursor sits exactly at the end of the buffer, and whole aligned bytes write
     // identically in both bit orders, so the run is appended as-is. It fails only when the
@@ -3589,6 +3593,14 @@ pub use bytes_io::{BytesReader, BytesWriter};
 mod unit {
     use super::*;
     use crate::{u4, u12};
+
+    #[test]
+    fn writers_stay_send_so_an_encode_can_move_across_threads() {
+        fn assert_send<T: Send>() {}
+        assert_send::<BitWriter>();
+        #[cfg(feature = "bytes")]
+        assert_send::<BytesWriter>();
+    }
 
     #[test]
     fn bits_in_saturates_at_the_last_whole_byte_instead_of_wrapping() {

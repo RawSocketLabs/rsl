@@ -353,7 +353,7 @@ pub fn bnb::bitstream::BitWriter::into_bytes(self) -> alloc::vec::Vec<u8>
 pub fn bnb::bitstream::BitWriter::new() -> Self
 pub fn bnb::bitstream::BitWriter::with_layout(bnb::bitstream::Layout) -> Self
 pub fn bnb::bitstream::BitWriter::with_order(bnb::BitOrder) -> Self
-pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<dyn core::any::Any>) -> Self
+pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>) -> Self
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
@@ -372,7 +372,7 @@ pub fn bnb::bitstream::BitWriter::default() -> bnb::bitstream::BitWriter
 impl core::fmt::Debug for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for bnb::bitstream::BitWriter
-impl !core::marker::Send for bnb::bitstream::BitWriter
+impl core::marker::Send for bnb::bitstream::BitWriter
 impl !core::marker::Sync for bnb::bitstream::BitWriter
 impl core::marker::Unpin for bnb::bitstream::BitWriter
 impl core::marker::UnsafeUnpin for bnb::bitstream::BitWriter
@@ -571,7 +571,7 @@ pub fn bnb::BytesWriter::default() -> bnb::BytesWriter
 impl core::fmt::Debug for bnb::BytesWriter
 pub fn bnb::BytesWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for bnb::BytesWriter
-impl !core::marker::Send for bnb::BytesWriter
+impl core::marker::Send for bnb::BytesWriter
 impl !core::marker::Sync for bnb::BytesWriter
 impl core::marker::Unpin for bnb::BytesWriter
 impl core::marker::UnsafeUnpin for bnb::BytesWriter
@@ -2725,7 +2725,7 @@ pub fn bnb::bitstream::BitWriter::into_bytes(self) -> alloc::vec::Vec<u8>
 pub fn bnb::bitstream::BitWriter::new() -> Self
 pub fn bnb::bitstream::BitWriter::with_layout(bnb::bitstream::Layout) -> Self
 pub fn bnb::bitstream::BitWriter::with_order(bnb::BitOrder) -> Self
-pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<dyn core::any::Any>) -> Self
+pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>) -> Self
 pub fn bnb::bitstream::BitWriter::write<T: bnb::Bits>(&mut self, T) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn bnb::bitstream::BitWriter::write_bits(&mut self, u128, u32) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::Sink for bnb::bitstream::BitWriter
@@ -2744,7 +2744,7 @@ pub fn bnb::bitstream::BitWriter::default() -> bnb::bitstream::BitWriter
 impl core::fmt::Debug for bnb::bitstream::BitWriter
 pub fn bnb::bitstream::BitWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for bnb::bitstream::BitWriter
-impl !core::marker::Send for bnb::bitstream::BitWriter
+impl core::marker::Send for bnb::bitstream::BitWriter
 impl !core::marker::Sync for bnb::bitstream::BitWriter
 impl core::marker::Unpin for bnb::bitstream::BitWriter
 impl core::marker::UnsafeUnpin for bnb::bitstream::BitWriter
@@ -2943,7 +2943,7 @@ pub fn bnb::BytesWriter::default() -> bnb::BytesWriter
 impl core::fmt::Debug for bnb::BytesWriter
 pub fn bnb::BytesWriter::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for bnb::BytesWriter
-impl !core::marker::Send for bnb::BytesWriter
+impl core::marker::Send for bnb::BytesWriter
 impl !core::marker::Sync for bnb::BytesWriter
 impl core::marker::Unpin for bnb::BytesWriter
 impl core::marker::UnsafeUnpin for bnb::BytesWriter
