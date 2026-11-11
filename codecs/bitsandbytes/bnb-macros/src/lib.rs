@@ -98,6 +98,21 @@ fn is_bare_ident(ty: &syn::Type, name: &str) -> bool {
     }
 }
 
+/// The byte size of a `#[bitfield]`/`#[bitflags]` backing integer (`u8`…`u128`).
+pub(crate) fn backing_byte_count(backing: &syn::Ident) -> syn::Result<usize> {
+    match backing.to_string().as_str() {
+        "u8" => Ok(1),
+        "u16" => Ok(2),
+        "u32" => Ok(4),
+        "u64" => Ok(8),
+        "u128" => Ok(16),
+        other => Err(syn::Error::new_spanned(
+            backing,
+            format!("backing must be u8/u16/u32/u64/u128, got `{other}`"),
+        )),
+    }
+}
+
 /// The `Bits::from_bits` contract as a `const`-evaluable expression over `#raw: u128`.
 ///
 /// A `const fn` cannot call trait methods on stable Rust, so generated accessors

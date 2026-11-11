@@ -254,7 +254,7 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
     let name = &item.ident;
     let vis = &item.vis;
     let backing = &args.backing;
-    let backing_bytes = backing_byte_count(backing)?;
+    let backing_bytes = crate::backing_byte_count(backing)?;
 
     // Outer attributes minus our own `#[bitfield]` (consumed as `attr`), with the
     // `BitsBuilder` and `Debug` derive markers intercepted (we build the builder, and a
@@ -856,18 +856,4 @@ fn split_outer_attrs(attrs: &[Attribute]) -> syn::Result<(Vec<Path>, Vec<Attribu
         }
     }
     Ok((derive_paths, others, has_builder, has_debug))
-}
-
-fn backing_byte_count(backing: &Ident) -> syn::Result<usize> {
-    match backing.to_string().as_str() {
-        "u8" => Ok(1),
-        "u16" => Ok(2),
-        "u32" => Ok(4),
-        "u64" => Ok(8),
-        "u128" => Ok(16),
-        other => Err(syn::Error::new_spanned(
-            backing,
-            format!("backing must be u8/u16/u32/u64/u128, got `{other}`"),
-        )),
-    }
 }

@@ -18,7 +18,8 @@
 //! Already own your transport and [`BitBuf`]? Use [`read_message`](crate::net::read_message) or, with `tokio-io`,
 //! `read_message_async` with caller-owned reusable scratch space.
 
-use crate::{BitBuf, BitDecode, BitEncode, BitError, BitWriter, ErrorKind};
+use crate::bitstream::encode_to_vec;
+use crate::{BitBuf, BitDecode, BitEncode, BitError, ErrorKind};
 use alloc::vec;
 use alloc::vec::Vec;
 use std::io::{self, Read, Write};
@@ -28,14 +29,6 @@ use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
 };
-
-/// Encode any message to a fresh `Vec` (generic over [`BitEncode`], unlike the inherent
-/// `to_bytes`).
-fn encode<T: BitEncode>(msg: &T) -> Result<Vec<u8>, BitError> {
-    let mut w = BitWriter::with_layout(<T as BitEncode>::LAYOUT);
-    msg.bit_encode(&mut w)?;
-    Ok(w.into_bytes())
-}
 
 /// A message-reader failure, preserving codec context or the original transport error.
 #[derive(Debug, thiserror::Error)]
@@ -326,7 +319,7 @@ impl<S: Write> MessageStream<S> {
     /// A codec [`BitError`] or an I/O write error. A failed write may have sent a prefix;
     /// retrying the whole message can duplicate it. This method does not flush.
     pub fn write_message<T: BitEncode>(&mut self, msg: &T) -> Result<(), BitError> {
-        self.inner.write_all(&encode(msg)?)?;
+        self.inner.write_all(&encode_to_vec(msg, T::LAYOUT)?)?;
         Ok(())
     }
 }
@@ -438,7 +431,7 @@ impl<D: DatagramSocket> MessageDatagram<D> {
     /// # Errors
     /// A codec [`BitError`] or an I/O send error.
     pub fn send_message<T: BitEncode>(&self, msg: &T, addr: &D::Addr) -> Result<usize, BitError> {
-        Ok(self.sock.send_to(&encode(msg)?, addr)?)
+        Ok(self.sock.send_to(&encode_to_vec(msg, T::LAYOUT)?, addr)?)
     }
 
     /// Receive one datagram and decode it as a `T`, with the sender's address.

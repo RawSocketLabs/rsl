@@ -70,7 +70,7 @@ fn expand_inner(args: &Args, item: &ItemStruct) -> syn::Result<TokenStream2> {
     let name = &item.ident;
     let vis = &item.vis;
     let backing = &args.backing;
-    let backing_bits = u32::try_from(backing_byte_count(backing)?)
+    let backing_bits = u32::try_from(crate::backing_byte_count(backing)?)
         .expect("backing primitive has at most 16 bytes")
         * 8;
     let outer: Vec<&Attribute> = item.attrs.iter().collect();
@@ -321,18 +321,4 @@ fn collect_flags(item: &ItemStruct, backing_bits: u32) -> syn::Result<Vec<Flag>>
 
 fn is_bool(ty: &Type) -> bool {
     matches!(ty, Type::Path(p) if p.path.is_ident("bool"))
-}
-
-fn backing_byte_count(backing: &Ident) -> syn::Result<usize> {
-    match backing.to_string().as_str() {
-        "u8" => Ok(1),
-        "u16" => Ok(2),
-        "u32" => Ok(4),
-        "u64" => Ok(8),
-        "u128" => Ok(16),
-        other => Err(syn::Error::new_spanned(
-            backing,
-            format!("backing must be u8/u16/u32/u64/u128, got `{other}`"),
-        )),
-    }
 }

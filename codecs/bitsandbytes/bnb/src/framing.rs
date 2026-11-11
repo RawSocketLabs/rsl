@@ -35,7 +35,8 @@
 //! one codec covers async streams (`Framed`, TCP) and async datagrams (`UdpFramed`, UDP) — the
 //! async mirror of the sync `MessageStream` / `MessageDatagram` split. See `examples/tokio_udp`.
 
-use crate::{BitDecode, BitEncode, BitWriter};
+use crate::bitstream::encode_to_vec;
+use crate::{BitDecode, BitEncode};
 use bytes::{Buf, BytesMut};
 use core::marker::PhantomData;
 use std::io;
@@ -98,10 +99,9 @@ impl<T: BitEncode> Encoder<T> for BinCodec<T> {
     type Error = io::Error;
 
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), io::Error> {
-        let mut w = BitWriter::with_layout(<T as BitEncode>::LAYOUT);
-        item.bit_encode(&mut w)
+        let bytes = encode_to_vec(&item, T::LAYOUT)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        dst.extend_from_slice(&w.into_bytes());
+        dst.extend_from_slice(&bytes);
         Ok(())
     }
 }

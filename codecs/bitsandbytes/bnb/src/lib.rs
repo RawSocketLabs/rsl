@@ -242,9 +242,6 @@ pub trait BitEnum: Bits {}
 /// Implementation details referenced by macro-generated code. Not a stable API.
 #[doc(hidden)]
 pub mod __private {
-    /// The `std::io::Write`-based encode helpers, behind the `std` feature.
-    #[cfg(feature = "std")]
-    pub use crate::bitstream::encode_to_writer_with;
     pub use crate::bitstream::{
         BitDecode, BitEncode, BitError, BitReader, BitWriter, CountPrefix, ErrorKind, FixedBitLen,
         Layout, SeekSource, Sink, Source, align_read, align_write, bits_of, decode_all,
