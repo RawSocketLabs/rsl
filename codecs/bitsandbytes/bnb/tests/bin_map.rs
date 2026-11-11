@@ -1,4 +1,4 @@
-//! `map`/`try_map` (ROADMAP Phase 2, P2.6): transform between the wire repr and the
+//! `map`/`try_map`: transform between the wire repr and the
 //! field type. `map` is infallible; `try_map` is fallible — a conversion error
 //! becomes `ErrorKind::Convert`. The matched inverse is `#[bw(map = …)]`.
 

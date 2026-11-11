@@ -1964,9 +1964,10 @@ where
     const BIT_LEN: u32 = <Self as Bits>::BITS;
 }
 
-/// Seals [`CountPrefix`] and [`codecs::leb128::Varint`](crate::codecs::leb128::Varint):
-/// the impl set is crate-owned (all wire-integer widths are already covered), so growing
-/// it later is non-breaking while a downstream impl can never observe a bound change.
+/// Seals [`Source`], [`Sink`], [`BitAmount`], [`CountPrefix`] and
+/// [`codecs::leb128::Varint`](crate::codecs::leb128::Varint): each impl set is
+/// crate-owned, so growing it later is non-breaking while a downstream impl can never
+/// observe a bound change.
 pub(crate) mod sealed {
     /// The sealing supertrait — unnameable downstream, so the traits above cannot be
     /// implemented outside this crate.
@@ -2333,10 +2334,6 @@ pub fn encode_to_vec<T: BitEncode>(value: &T, layout: Layout) -> Result<Vec<u8>,
     Ok(w.into_bytes())
 }
 
-/// Encodes `value` to any [`std::io::Write`]. Backs [`EncodeExt::encode`].
-///
-/// # Errors
-/// [`ErrorKind::Io`] on a write failure, else the encode error.
 /// Encode to a [`std::io::Write`] over a caller-supplied encode closure — backs
 /// [`EncodeExt::encode`] (the closure picks `bit_encode` vs `canonical_bit_encode`).
 ///
@@ -2371,14 +2368,14 @@ pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], 
 }
 
 /// Peeks up to `max` bytes without consuming them — reads them, then rewinds. Returns
-/// however many are available (fewer than `max` at end-of-input). Backs variable-width
-/// `#[bin]` enum magic dispatch (peek the longest magic, match a prefix, then seek past
-/// the matched one). Like other seeking directives it bounds the generated `decode`
-/// on [`SeekSource`]; a forward-only source fails at runtime with
-/// [`ErrorKind::NotSeekable`].
+/// however many are available (fewer than `max` at end-of-input). No longer emitted:
+/// `bitsandbytes-macros` 0.2–0.4 called it for variable-width `#[bin]` enum magic
+/// dispatch, which now goes through [`match_magic`]. It is bound on plain [`Source`],
+/// so a forward-only source fails at runtime with [`ErrorKind::NotSeekable`].
 ///
 /// # Errors
-/// [`ErrorKind::NotSeekable`] if the source can't rewind.
+/// [`ErrorKind::NotSeekable`] if the source can't rewind; other read errors propagate
+/// after rewinding.
 #[doc(hidden)]
 #[allow(clippy::cast_possible_truncation)] // Every successful peek read is exactly eight bits.
 pub fn peek_bytes<S: Source>(r: &mut S, max: usize) -> Result<Vec<u8>, BitError> {
@@ -3449,9 +3446,9 @@ impl<R: std::io::Read + std::io::Seek> Source for BufSeekReader<R> {
 #[cfg(feature = "std")]
 impl<R: std::io::Read + std::io::Seek> SeekSource for BufSeekReader<R> {}
 
-/// Zero-copy `bytes`-crate adapters (the `bytes` feature): own a `Bytes` frame to
-/// decode, encode into a `BytesMut` you `freeze()` to a `Bytes` — the async/tokio
-/// framing case. Off by default so the core stays dependency-light.
+/// `bytes`-crate adapters (the `bytes` feature): own a `Bytes` frame to decode
+/// (zero copy), encode into an owned buffer you `freeze()` to a `Bytes` — the
+/// async/tokio framing case. Off by default so the core stays dependency-light.
 #[cfg(feature = "bytes")]
 mod bytes_io {
     use alloc::vec::Vec;
@@ -3533,8 +3530,9 @@ mod bytes_io {
 
     impl SeekSource for BytesReader {}
 
-    /// A [`Sink`](super::Sink) that encodes into a `bytes::BytesMut`; [`freeze`]
-    /// hands off a zero-copy `Bytes`.
+    /// A [`Sink`](super::Sink) that encodes into an owned [`BitWriter`](super::BitWriter)
+    /// (a `Vec<u8>`, not a `bytes::BytesMut`); [`freeze`] converts that buffer into a
+    /// `Bytes`.
     ///
     /// [`freeze`]: BytesWriter::freeze
     #[derive(Clone, Debug, Default)]
@@ -5044,7 +5042,7 @@ mod component {
             );
         }
     }
-    /// `bitstream_source.rs` — Generic recursion over `Source` (ROADMAP Phase 1, chunk B1): one derived
+    /// `bitstream_source.rs` — Generic recursion over `Source`: one derived
     mod source {
 
         use bnb::{BitDecode, BitEncode, BitReader, BitWriter, StreamBitReader, u4, u12};
@@ -5142,7 +5140,7 @@ mod component {
         }
     }
 
-    /// `bitstream_entry.rs` — Entry points (ROADMAP Phase 1, chunk B2): `decode`/`peek`/`decode_exact`/
+    /// `bitstream_entry.rs` — Entry points: `decode`/`peek`/`decode_exact`/
     mod entry {
 
         use bnb::{
@@ -5326,7 +5324,7 @@ mod component {
         }
     }
 
-    /// `bitstream_errors.rs` — Position-aware errors (ROADMAP Phase 1): a decode/encode failure reports the
+    /// `bitstream_errors.rs` — Position-aware errors: a decode/encode failure reports the
     mod errors {
 
         use bnb::{BitDecode, BitEncode, BitError, BitReader, BitWriter, ErrorKind, u4, u12};
@@ -5433,7 +5431,7 @@ mod component {
         }
     }
 
-    /// `bin_buf_source.rs` — `BufSource` (ROADMAP Phase 3): a seekable `Source` over a forward `Read`. It
+    /// `bin_buf_source.rs` — `BufSource`: a seekable `Source` over a forward `Read`. It
     mod buf_source {
 
         use bnb::{BufSource, ErrorKind, Source, bin, u4};
@@ -5535,7 +5533,7 @@ mod component {
         }
     }
 
-    /// `bin_seek_reader.rs` — `SeekReader` (ROADMAP Phase 3b): a `SeekSource` over a `Read + Seek` (a file-like)
+    /// `bin_seek_reader.rs` — `SeekReader`: a `SeekSource` over a `Read + Seek` (a file-like)
     mod seek_reader {
 
         use bnb::{SeekReader, bin, u4};
@@ -6016,7 +6014,7 @@ mod component {
     }
 
     #[cfg(feature = "bytes")]
-    /// `bin_bytes.rs` — `bytes` integration (ROADMAP Phase 3, the `bytes` feature): zero-copy
+    /// `bin_bytes.rs` — `bytes` integration (the `bytes` feature): zero-copy
     mod bytes_adapters {
 
         use bnb::{BitEncode, BytesReader, BytesWriter, bin, u4, u12};

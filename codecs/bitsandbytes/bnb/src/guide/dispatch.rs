@@ -269,8 +269,9 @@
 //! - `tag()` / `magic()` return the variant's discriminant — generated only when there is a
 //!   single one to report (so not for variable-width magic, a typed fallback, or a hybrid);
 //!   `peek_variant` likewise needs an on-wire magic (so not under tag/hybrid dispatch).
-//! - With overlapping byte-string magics, declaration order decides — a magic that is a
-//!   prefix of another should come first, and a fallback must not begin like a magic.
+//! - With overlapping byte-string magics, declaration order decides: the first variant
+//!   whose magic matches wins. Declare the **longer** magic first — a magic that is a
+//!   prefix of a later one shadows it. A fallback must not begin like a magic.
 //! - Failed uniform-width magic dispatch reports the already-read integer or bytes.
 //!   Variable-width probes and arbitrary context tags report no observed value; this
 //!   absence is not an incomplete-input signal. Hybrid misses identify `TagOrMagic`

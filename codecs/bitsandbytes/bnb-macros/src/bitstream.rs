@@ -1983,8 +1983,8 @@ fn gen_encode(
             #[doc = "rewritten (so `decode` then `to_bytes` round-trips byte-for-byte). For the"]
             #[doc = "spec-normalized form, use `to_canonical_bytes` (generated when the message has"]
             #[doc = "a `reserved` or `calc` field). To write into an explicit bit sink (a `BitWriter`)"]
-            #[doc = "or a `std::io::Write`, bring [`BitEncode`](::bnb::BitEncode) /"]
-            #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.bit_encode(&mut sink)` /"]
+            #[doc = "or a `std::io::Write`, bring `BitEncode` /"]
+            #[doc = "`EncodeExt` into scope and call `.bit_encode(&mut sink)` /"]
             #[doc = "`.encode(&mut w)` (the latter is verbatim, `std` only)."]
             pub fn to_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                 #bnb::__private::encode_to_vec(self, #layout)
@@ -2208,7 +2208,8 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
                  no_builder, forward_only, big, little, bytes = big|little, bits = msb|lsb, magic = <expr>, \
-                 ctx(name: Ty, …), validate = <path>, tag = <ctx-param>, \
+                 ctx(name: Ty, …), auto_len(<field>.<nested> = count|bytes(<source>), …), \
+                 validate = <path>, tag = <ctx-param>, \
                  map/try_map = |w: Wire| …, bw_map = |s: &Self| Wire, wire/try_wire = WireType, \
                  codec = <module>, or codec(parse = <f>, write = <f>)",
             ));
@@ -4665,8 +4666,8 @@ fn bin_enum(args: &BinArgs, e: &syn::ItemEnum) -> syn::Result<TokenStream2> {
             }
             impl #name {
                 #[doc = "Encode to a `Vec<u8>`. To write into an explicit bit sink (a `BitWriter`)"]
-                #[doc = "or a `std::io::Write`, bring [`BitEncode`](::bnb::BitEncode) /"]
-                #[doc = "[`EncodeExt`](::bnb::EncodeExt) into scope and call `.bit_encode(&mut sink)` /"]
+                #[doc = "or a `std::io::Write`, bring `BitEncode` /"]
+                #[doc = "`EncodeExt` into scope and call `.bit_encode(&mut sink)` /"]
                 #[doc = "`.encode(&mut w)` (the latter is `std`-only)."]
                 pub fn to_bytes(&self) -> ::core::result::Result<#bnb::__private::Vec<u8>, #bnb::__private::BitError> {
                     #bnb::__private::encode_to_vec(self, #layout)

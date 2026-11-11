@@ -1,7 +1,7 @@
-//! Builder composition (ROADMAP Phase 1, chunk C): a codec struct derives
+//! Builder composition: a codec struct derives
 //! `BitsBuilder` alongside `BitDecode`/`BitEncode` — required-by-default
-//! construction that round-trips through the codec. (Folding the builder into one
-//! `#[bin]` macro is Phase 2; for now it composes as a separate derive.)
+//! construction that round-trips through the codec. (`#[bin]` folds the builder in;
+//! with the bare derives it composes as a separate derive.)
 
 mod macro_ {
 

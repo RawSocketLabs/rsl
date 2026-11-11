@@ -1,4 +1,4 @@
-//! `ctx` (ROADMAP Phase 2, P2.3, "Layer 1"): thread context from a parent into a
+//! `ctx` ("Layer 1"): thread context from a parent into a
 //! child's parse/serialize. A `#[bin(ctx(...))]` type gets inherent
 //! `decode_with`/`encode_with` + a generated `…Ctx` struct, and does **not**
 //! implement `BitDecode`/`BitEncode` (the core traits take no context). A

@@ -1,4 +1,4 @@
-//! `parse_with`/`write_with` (ROADMAP Phase 2): the field-level custom-codec escape
+//! `parse_with`/`write_with`: the field-level custom-codec escape
 //! hatch. `#[br(parse_with = f)]` reads the field with `f(r) -> Result<T, BitError>`
 //! and `#[bw(write_with = f)]` writes it with `f(&self.field, w) -> Result<(), _>`.
 

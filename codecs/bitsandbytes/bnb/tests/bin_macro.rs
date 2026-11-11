@@ -1,7 +1,7 @@
-//! `#[bin]` foundation (ROADMAP Phase 2, P2.0): one attribute macro folds the
-//! codec and the required-by-default builder, lowering to
-//! `#[derive(BitDecode, BitEncode, BitsBuilder)]` + `#[bit_stream(...)]`. Field
-//! directives (`#[br]`/`#[bw]`) arrive in later chunks.
+//! `#[bin]` foundation: one attribute macro folds the
+//! codec and the required-by-default builder (generated directly, not by lowering
+//! to the derives). Field directives (`#[br]`/`#[bw]`) are covered by the other
+//! `bin_*.rs` files.
 
 mod macro_ {
 

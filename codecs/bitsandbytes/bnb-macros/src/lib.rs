@@ -292,9 +292,10 @@ pub fn bit_enum(item: TokenStream) -> TokenStream {
 ///
 /// Each leaf field is read with `Source::read`, so any `bnb::Bits` type
 /// (`u1`..`u127`, `#[bitfield]`, `#[derive(BitEnum)]`) works as a field — no
-/// byte-alignment, seeks, or shift glue. A field marked **`#[nested]`** is itself
-/// a `BitDecode`/`BitEncode` message and is recursed into (a fixed one's
-/// `FixedBitLen::BIT_LEN` counts toward the parent's). `[u8; N]` payloads and
+/// byte-alignment, seeks, or shift glue. A field whose type is itself a
+/// `BitDecode`/`BitEncode` message is recursed into the same way (a fixed one's
+/// `FixedBitLen::BIT_LEN` counts toward the parent's); the old **`#[nested]`** marker
+/// is still accepted but does nothing. `[u8; N]` payloads and
 /// `#[br(count = …)]` `Vec`s are supported; a `count`-bearing message is
 /// variable-length and so does not implement `bnb::FixedBitLen`.
 ///
@@ -395,13 +396,14 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// written — the discriminant, or a verified signature on a tag-variant) and a **`tag`**
 /// selector taken from `ctx` (read-only, never on the wire). With per-variant `magic`s
 /// the enum reads the discriminant and matches (a single `==` for uniform widths, or a
-/// peek-and-`starts_with` for variable-width byte strings). With `#[bin(tag = <ctx-param>)]`
+/// probe of each byte string in declaration order, rewinding on a mismatch, for
+/// variable-width magics or a typed fallback). With `#[bin(tag = <ctx-param>)]`
 /// and variant `#[bin(tag = V)]` it dispatches on the selector and writes no discriminant;
 /// the two compose (and may even be mixed in one enum — tag priority, then magic). The
 /// "nothing matched" tail is a `#[catch_all]` (preserving the unknown discriminant) or a
 /// typed no-tag/no-magic fallback variant, not both; without either a magic enum is a
 /// closed set. An optional enum-level `magic` is a leading prefix. Variants may be unit,
-/// tuple, named, or `#[nested]`. The codec also generates `decode_as_<variant>`,
+/// tuple, or named. The codec also generates `decode_as_<variant>`,
 /// `peek_variant`/`<Name>Kind`, `decode_tagged`, and a `magic()`/`tag()` accessor where
 /// the discriminant is single-valued. See the `bnb::guide::dispatch` page.
 ///

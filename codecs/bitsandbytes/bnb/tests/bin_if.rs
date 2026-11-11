@@ -1,4 +1,4 @@
-//! `if` (ROADMAP Phase 2, P2.5): a conditional `Option<T>` field. On decode it is
+//! `if`: a conditional `Option<T>` field. On decode it is
 //! `Some(read)` when the condition (over earlier fields, as locals) holds, else
 //! `None` (consuming nothing). On encode the `Option`'s presence drives the write.
 

@@ -1,7 +1,6 @@
-//! Positioning (ROADMAP Phase 2): forward `pad_*`/`align_*` directives skip bits or
+//! Positioning: forward `pad_*`/`align_*` directives skip bits or
 //! align to a byte boundary around a field, with typed amounts from `bnb::prelude`
-//! (`4.bits()`, `1.bytes()`). Backward `seek`/`restore_position` need `SeekSource`
-//! (Phase 3).
+//! (`4.bits()`, `1.bytes()`). Backward `seek`/`restore_position` need `SeekSource`.
 
 mod macro_ {
 

@@ -1,4 +1,4 @@
-//! `magic` (ROADMAP Phase 2, P2.1): a leading constant verified on read and
+//! `magic`: a leading constant verified on read and
 //! emitted on write. Bit-aware — the magic may be sub-byte (`u3`), which binrw
 //! cannot express, and which legitimately keeps the struct on the bit-stream codec.
 

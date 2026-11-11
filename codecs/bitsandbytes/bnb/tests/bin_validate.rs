@@ -1,4 +1,4 @@
-//! `validate` (ROADMAP Phase 2, P2.8 — the dual-use answer to binrw `pre_assert`):
+//! `validate` (the dual-use answer to binrw `pre_assert`):
 //! a construction-soundness check run by `build()`. It is a free function
 //! `fn(&Self) -> Result<(), impl Display>` (not a method, so it isn't mistaken for
 //! protocol-context validity). A failure is `BuilderError::Invalid`. Crucially the

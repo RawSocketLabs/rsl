@@ -26,7 +26,7 @@
 //! `#[bin(codec = bnb::codecs::leb128)] struct Varint(pub u64);` — and use the type as
 //! a plain field everywhere (see the guide's "Per-type codecs" section).
 //!
-//! Naming note: this is **not** the `codec` module — that one (under the `tokio`
+//! Naming note: this is **not** the `framing` module — that one (under the `tokio`
 //! feature) is the async `Decoder`/`Encoder` adapter for framed transports; *this*
 //! module is the library of ready-made *field* codecs.
 //!

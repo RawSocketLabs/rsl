@@ -1,4 +1,4 @@
-//! Phase 2 capstone — `#[wire]`/`#[bitwire]` folded into `#[bin]`. `#[bin]` is the
+//! `#[wire]`/`#[bitwire]` folded into `#[bin]`. `#[bin]` is the
 //! unified codec: it now handles **byte-aligned** messages natively (no binrw, no
 //! right-tool guard), with the full directive surface the old `#[wire]` had — magic,
 //! a derived/`temp` count, a count-driven `Vec`, and the builder.

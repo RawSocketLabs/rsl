@@ -1,4 +1,4 @@
-//! Phase 1 capstone (ROADMAP exit): a **complete DMR frame** — slot type +
+//! Bit-codec capstone: a **complete DMR frame** — slot type +
 //! a 264-bit burst (with a 48-bit sync `BitEnum`) + a CRC payload — composed from
 //! the native bit codec and round-tripping with **no binrw**. Plus proptest
 //! round-trips and a golden byte vector.

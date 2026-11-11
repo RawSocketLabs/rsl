@@ -1,4 +1,4 @@
-//! Phase 2 ergonomics: `ctx` is **decode-only** (a `#[bin(ctx(...))]` type gets a plain
+//! `ctx` ergonomics: `ctx` is **decode-only** (a `#[bin(ctx(...))]` type gets a plain
 //! `BitEncode`/`to_bytes` unless its write side actually reads a ctx param), the generated
 //! `…Ctx` struct has a positional `new`, and a variant `Vec` field can carry per-element
 //! `ctx`.

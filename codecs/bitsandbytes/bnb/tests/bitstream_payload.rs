@@ -1,6 +1,6 @@
-//! Fixed payload fields (ROADMAP Phase 1, chunk E): a `[u8; N]` byte-array field
+//! Fixed payload fields: a `[u8; N]` byte-array field
 //! (read/written even at a non-byte-aligned offset). Variable-length `Vec` +
-//! `count` is Phase 2.
+//! `count` is covered by `bin_count.rs`.
 
 mod macro_ {
 

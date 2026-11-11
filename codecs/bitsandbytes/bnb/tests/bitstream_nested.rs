@@ -1,6 +1,6 @@
-//! Nested messages (ROADMAP Phase 1, chunk D): a `#[nested]` field is itself a
-//! `BitDecode`/`BitEncode` message, recursed into (not a `Bits` leaf). The marker
-//! is a Phase-1 mechanism; the end-state can auto-detect via universal impls.
+//! Nested messages: a field whose type is itself a `BitDecode`/`BitEncode` message is
+//! recursed into. The `#[nested]` marker used here is obsolete: it is still accepted,
+//! but no longer affects codegen (every field type decodes via `BitDecode`).
 
 mod macro_ {
 
@@ -60,7 +60,7 @@ mod macro_ {
         let err = Outer::bit_decode(&mut r).unwrap_err();
         assert!(matches!(err.kind, ErrorKind::UnexpectedEof { .. }));
         // Innermost (leaf) field wins the span — the failing field is Inner's `b`.
-        // (Dotted paths like `inner.b` are a Phase-2 refinement.)
+        // (Dotted paths like `inner.b` are not reported.)
         assert_eq!(err.field, Some("b"));
     }
 }

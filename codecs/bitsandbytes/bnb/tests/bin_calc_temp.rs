@@ -1,4 +1,4 @@
-//! `calc`/`temp` (ROADMAP Phase 2, P2.4): `#[br(temp)] #[bw(calc = …)]` reads a
+//! `calc`/`temp`: `#[br(temp)] #[bw(calc = …)]` reads a
 //! field into a local (usable by a later `count`) but does **not** store it —
 //! `#[bin]` drops it from the struct and the builder — and recomputes it on write,
 //! so the on-wire length can't drift from the `Vec`.

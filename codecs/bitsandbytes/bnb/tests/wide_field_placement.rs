@@ -7,7 +7,7 @@
 //!      equivalent). Two placement styles:
 //!        - auto-layout (widths)  -> `WIDTH = Σ fields`        (28 here)
 //!        - manual `#[bits(A..=B)]` ranges -> `WIDTH = backing` (32 here, gaps included)
-//!   2. `#[bin]` (Phase 2 stream codec) writes fields consecutively to a bit
+//!   2. `#[bin]` (the stream codec) writes fields consecutively to a bit
 //!      cursor; a `#[bitfield]` nests into it as a `Bits` leaf contributing `WIDTH`
 //!      bits. So you never hand-shift — declaration order + bit order + the chosen
 //!      placement style fully determine the layout.
@@ -86,7 +86,7 @@ mod macro_ {
     }
 
     // ---------------------------------------------------------------------------
-    // (2) The composition that matters for Phase 2: a packed word nested in a #[bin]
+    // (2) The composition that matters for `#[bin]`: a packed word nested in a #[bin]
     // stream where the *message* is not byte-aligned (a 4-bit tag in front). The
     // bitfield contributes its WIDTH (28) bits; the cursor straddles bytes for us.
     // ---------------------------------------------------------------------------

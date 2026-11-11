@@ -1,6 +1,6 @@
-//! LSB-first bit order (ROADMAP Phase 1, chunk F): a struct marked
+//! LSB-first bit order: a struct marked
 //! `#[bit_stream(bits = lsb)]` reads/writes least-significant-bit-first;
-//! MSB-first is the default. Per-struct only (mixed order via nesting is Phase 2).
+//! MSB-first is the default. Per-struct only.
 
 mod macro_ {
 

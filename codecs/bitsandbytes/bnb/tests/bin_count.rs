@@ -1,4 +1,4 @@
-//! `count` (ROADMAP Phase 2, P2.2): a `#[br(count = <expr>)]` `Vec<T>` field reads
+//! `count`: a `#[br(count = <expr>)]` `Vec<T>` field reads
 //! `expr` elements (the expr may name an earlier field); encode writes them all.
 //! A count-bearing message is variable-length, so it implements `BitDecode`/
 //! `BitEncode` but **not** `FixedBitLen`. Pairing count with `temp`/`calc` (so the

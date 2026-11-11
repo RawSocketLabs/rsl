@@ -1,4 +1,4 @@
-//! `big`/`little` byte order (ROADMAP Phase 2). Byte order is applied to
+//! `big`/`little` byte order. Byte order is applied to
 //! byte-multiple field values (binrw applies it only to byte-multiple types); the
 //! default is big-endian (network order). Sub-byte fields are unaffected.
 

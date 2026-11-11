@@ -1,4 +1,4 @@
-//! `restore_position` + `SeekSource` (ROADMAP Phase 3): `#[br(restore_position)]`
+//! `restore_position` + `SeekSource`: `#[br(restore_position)]`
 //! reads a field (a peek), then rewinds so a later field re-reads the same bytes.
 //! It needs a seekable source (the slice `BitReader`); on a forward stream it errors
 //! (`ErrorKind::NotSeekable`), and `#[bin(forward_only)]` makes it a compile error.

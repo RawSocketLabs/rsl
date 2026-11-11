@@ -16,8 +16,13 @@
 //! | `BufSeekReader` (`std`) | owned `Read + Seek` | yes (buffered; seeks only on a jump) | a large file / container you own |
 //! | `BytesReader` (`bytes` feature) | owned `Bytes` | yes | zero-copy async framing |
 //!
-//! Seeking is only needed by messages that use `#[br(restore_position)]`; everything
-//! else runs over the forward-only `StreamBitReader` too.
+//! Seeking is only needed by messages that use `#[br(restore_position)]` or
+//! `#[br(seek = …)]`, and by enums with variable-width magics or a typed fallback (the
+//! probe rewinds on a mismatch); their `decode` requires a
+//! [`SeekSource`](crate::SeekSource). Everything else runs over the forward-only
+//! `StreamBitReader` too. The bound covers only the message's own directives: a seeking
+//! message nested as a field still fails at run time (`ErrorKind::NotSeekable`) when
+//! it has to rewind a forward-only source.
 //!
 //! <div class="warning">
 //!
@@ -108,8 +113,9 @@
 //!
 //! # The `bytes` feature
 //!
-//! With `--features bytes`, `BytesReader`/`BytesWriter` decode from / encode to the
-//! `bytes` crate's `Bytes`/`BytesMut` for zero-copy async framing:
+//! With `--features bytes`, `BytesReader` decodes from an owned `bytes::Bytes` (zero
+//! copy) and `BytesWriter` encodes into an owned buffer that `freeze()` turns into a
+//! `Bytes`, for async framing:
 //!
 //! ```ignore
 //! // requires `bnb = { features = ["bytes"] }`

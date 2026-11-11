@@ -1,4 +1,4 @@
-//! ctx Layer 2 (ROADMAP Phase 2): the polymorphic `DecodeWith<A>`/`EncodeWith<A>`
+//! ctx Layer 2: the polymorphic `DecodeWith<A>`/`EncodeWith<A>`
 //! companion traits. Every `BitDecode` type is `DecodeWith<()>` (blanket); a
 //! `#[bin(ctx(...))]` type is `DecodeWith<…Ctx>`. So one generic bound `T:
 //! DecodeWith<A>` spans both context-free and context-taking messages — what a
