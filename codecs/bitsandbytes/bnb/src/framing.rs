@@ -30,6 +30,12 @@
 //! This convenience codec uses `T::LAYOUT` from `BitEncode`; directional/contextual codecs
 //! instead use [`BitBuf::try_pull_with`] with an explicit layout.
 //!
+//! **No maximum frame size.** The codec is stateless and takes whatever the message's own
+//! grammar asks for, so a peer that announces a huge `count` makes `Framed` keep buffering.
+//! When the peer is untrusted, bound it outside: frame an owned length-delimited envelope
+//! first (`tokio_util::codec::LengthDelimitedCodec` with `max_frame_length`), or wrap the
+//! codec in a `Decoder` that fails once `src.len()` passes your limit.
+//!
 //! The same `BinCodec` drives **datagrams**, too: `tokio_util::udp::UdpFramed::new(udp_socket,
 //! BinCodec::<T>::new())` is a `Stream<Item = (T, SocketAddr)>` + `Sink<(T, SocketAddr)>`. So
 //! one codec covers async streams (`Framed`, TCP) and async datagrams (`UdpFramed`, UDP) — the

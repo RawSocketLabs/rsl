@@ -344,6 +344,17 @@ blocks 1.0.
       rustdoc comparison cannot detect macro-expansion or behavioral changes.
       Advance the explicit baseline deliberately after release.
 - [ ] Lock the MSRV (1.85) and feature-flag set as part of the contract.
+- [ ] **Decode depth budget.** A self-containing message type recurses natively to an
+      input-chosen depth and can overflow the stack (an uncatchable abort; DESIGN §11.4).
+      Design a depth limit that returns a `BitError` instead — a counter on the `Source` or
+      in generated code — and measure it against the §13 instruction-count gate before
+      adopting, since it sits on every nested decode.
+- [ ] **`BitError` size, decided with the error-type review above.** `ErrorKind::BadMagic
+      { expected: u128, found: u128 }` holds `BitError` at 80 bytes, align 16. Boxing the pair
+      measured (0.9.0 review, rustc 1.99.1, scratch tree): 48 bytes, a generated enum
+      `decode_with` frame 1784 → 1128 B and code 5856 → 4847 B, truncated-input error path
+      25.1 → 20.5 ns, no success-path gain above noise. Not taken on its own: it breaks a
+      public variant for no hot-path win, so it rides with the `Convert` typing change.
 - [ ] A ready-made `internet_checksum` (RFC 1071) helper, surfaced by dogfooding (§A).
 - [ ] Plain `BitEncode` for `ctx` types whose encode needs no context (surfaced by
       `protocols/ROADMAP.md`).

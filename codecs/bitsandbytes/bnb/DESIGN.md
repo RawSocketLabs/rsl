@@ -633,7 +633,13 @@ points into the owned envelope; it adds no owned trait requirement to the DER pa
 Hints describe the next blocked operation, not the full frame size or a no-read-ahead
 promise. Error positions are buffer-local and can rebase after compaction. Buffer caps
 bound retained **wire bytes**, not allocations in returned values, parser recursion, or
-arbitrary callbacks. General variable-element parsing replays and can be quadratic under
+arbitrary callbacks. **Recursion is unbounded:** a message type that contains itself (through
+`Vec`, `Option` or `Box`) decodes by native recursion to a depth the input chooses, with no
+depth limit, so hostile input can overflow the stack — an abort the caller cannot catch
+(reproduced in the 0.9.0 review). Until a decode depth budget exists ([`ROADMAP.md`](ROADMAP.md)
+§C), the caller bounds it: cap the frame size so that worst-case depth (one level per byte
+consumed) times the per-level stack use fits the decoding thread's stack, or express the
+recursive part with a `parse_with` codec that counts depth and returns an error. General variable-element parsing replays and can be quadratic under
 tiny fragments: batch input, cap frame sizes/attempt frequency, or frame an opaque owned
 envelope first. No generalized resumable parser is implied. Async cancellation/partial
 writes remain owned by Tokio/transport callers; this does not make whole-message retries

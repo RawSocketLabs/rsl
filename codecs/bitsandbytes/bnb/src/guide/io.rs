@@ -208,6 +208,13 @@
 //! such grammars. Buffer caps bound retained wire bytes, **not** allocations owned by
 //! decoded values, recursion, or arbitrary custom-codec work.
 //!
+//! **Recursive message types have no depth limit.** A type that contains itself (through
+//! `Vec`, `Option` or `Box`) decodes by native recursion, as deep as the input says. Hostile
+//! input can therefore overflow the stack, which aborts the process and cannot be caught.
+//! Bound it yourself when the bytes are untrusted: cap the frame size so the worst-case depth
+//! fits the decoding thread's stack, or write the recursive part as a `parse_with` codec that
+//! counts depth and returns an error.
+//!
 //! Positions are local to the buffer; compaction can rebase them. Extract an owned
 //! length-delimited envelope before parsing formats with message-relative pointers
 //! (e.g. compressed DNS), or before lending bytes to a borrowed parser (e.g. DER).
