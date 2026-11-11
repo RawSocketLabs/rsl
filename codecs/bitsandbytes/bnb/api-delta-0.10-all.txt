@@ -1,0 +1,684 @@
+Removed items from the public API
+=================================
+(none)
+
+Changed items in the public API
+===============================
+-pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<dyn core::any::Any>) -> Self
++pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>) -> Self
+-pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<dyn core::any::Any>) -> Self
++pub fn bnb::bitstream::BitWriter::with_scratch(self, alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>) -> Self
+-impl !core::marker::Send for bnb::bitstream::BitWriter
++impl core::marker::Send for bnb::bitstream::BitWriter
+-impl !core::marker::Send for bnb::bitstream::BitWriter
++impl core::marker::Send for bnb::bitstream::BitWriter
+-impl !core::marker::Send for bnb::BytesWriter
++impl core::marker::Send for bnb::BytesWriter
+-impl !core::marker::Send for bnb::BytesWriter
++impl core::marker::Send for bnb::BytesWriter
+-pub fn u128::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
++pub fn u128::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+-pub fn u128::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
++pub fn u128::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+-pub fn u16::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
++pub fn u16::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+-pub fn u16::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
++pub fn u16::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+-pub fn u32::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
++pub fn u32::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+-pub fn u32::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
++pub fn u32::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+-pub fn u64::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
++pub fn u64::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+-pub fn u64::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
++pub fn u64::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
+
+Added items to the public API
+=============================
++pub fn bnb::bitstream::BufSource<R>::compact(&mut self)
++pub fn bnb::bitstream::BufSource<R>::compact(&mut self)
++pub bnb::error::WidthError::Negative
++pub bnb::error::WidthError::Negative::bits: u32
++pub bnb::error::WidthError::Negative::value: i128
++impl<T> core::clone::Clone for bnb::framing::BinCodec<T>
++impl<T> core::clone::Clone for bnb::framing::BinCodec<T>
++pub fn bnb::framing::BinCodec<T>::clone(&self) -> Self
++pub fn bnb::framing::BinCodec<T>::clone(&self) -> Self
++impl<T> core::fmt::Debug for bnb::framing::BinCodec<T>
++impl<T> core::fmt::Debug for bnb::framing::BinCodec<T>
++pub fn bnb::framing::BinCodec<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::framing::BinCodec<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl<T> core::marker::Copy for bnb::framing::BinCodec<T>
++impl<T> core::marker::Copy for bnb::framing::BinCodec<T>
++impl<T> alloc::borrow::ToOwned for bnb::framing::BinCodec<T> where T: core::clone::Clone
++impl<T> alloc::borrow::ToOwned for bnb::framing::BinCodec<T> where T: core::clone::Clone
++pub type bnb::framing::BinCodec<T>::Owned = T
++pub type bnb::framing::BinCodec<T>::Owned = T
++pub fn bnb::framing::BinCodec<T>::clone_into(&self, &mut T)
++pub fn bnb::framing::BinCodec<T>::clone_into(&self, &mut T)
++pub fn bnb::framing::BinCodec<T>::to_owned(&self) -> T
++pub fn bnb::framing::BinCodec<T>::to_owned(&self) -> T
++impl<T> core::clone::CloneToUninit for bnb::framing::BinCodec<T> where T: core::clone::Clone
++impl<T> core::clone::CloneToUninit for bnb::framing::BinCodec<T> where T: core::clone::Clone
++pub unsafe fn bnb::framing::BinCodec<T>::clone_to_uninit(&self, *mut u8)
++pub unsafe fn bnb::framing::BinCodec<T>::clone_to_uninit(&self, *mut u8)
++pub mod bnb::guide::upgrading
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u128, N>
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u128, N>::Error = bnb::error::WidthError
++pub fn bnb::UInt<u128, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u16, N>
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u16, N>::Error = bnb::error::WidthError
++pub fn bnb::UInt<u16, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u32, N>
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u32, N>::Error = bnb::error::WidthError
++pub fn bnb::UInt<u32, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u64, N>
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u64, N>::Error = bnb::error::WidthError
++pub fn bnb::UInt<u64, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i128> for bnb::UInt<u8, N>
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub type bnb::UInt<u8, N>::Error = bnb::error::WidthError
++pub fn bnb::UInt<u8, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i128) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i16> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i16) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i32> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i32) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i64> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i64) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<i8> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(i8) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<isize> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(isize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<u128> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(u128) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<u16> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(u16) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<u32> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(u32) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<u64> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(u64) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<u8> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(u8) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u128, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u128, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u16, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u16, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u32, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u32, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u64, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u64, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u8, N>
++impl<const N: usize> core::convert::TryFrom<usize> for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++pub fn bnb::UInt<u8, N>::try_from(usize) -> core::result::Result<Self, bnb::error::WidthError>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u128, N>
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u128, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u16, N>
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u16, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u32, N>
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u32, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u64, N>
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u64, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::Binary for bnb::UInt<u8, N>
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::UInt<u8, N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::LowerHex for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::Octal for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u128, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u16, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u32, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u64, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u8, N>
++impl<const N: usize> core::fmt::UpperHex for bnb::UInt<u8, N>
++pub bnb::WidthError::Negative
++pub bnb::WidthError::Negative::bits: u32
++pub bnb::WidthError::Negative::value: i128
+
