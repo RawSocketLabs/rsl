@@ -112,8 +112,8 @@ rust-version = "1.85"
 # BOTH `path` (used in-workspace) AND `version` (used by crates.io consumers once published).
 [workspace.dependencies]
 # --- owned, in-workspace (path + version) ---
-bnb = { package = "bitsandbytes", path = "codecs/bitsandbytes/bnb", version = "0.9.0", default-features = false }
-bnb-macros = { package = "bitsandbytes-macros", path = "codecs/bitsandbytes/bnb-macros", version = "=0.9.0" }
+bnb = { package = "bitsandbytes", path = "codecs/bitsandbytes/bnb", version = "0.10.0", default-features = false }
+bnb-macros = { package = "bitsandbytes-macros", path = "codecs/bitsandbytes/bnb-macros", version = "=0.10.0" }
 rawsock = { path = "transports/rawsock", version = "0.1.2", default-features = false }
 deps = { path = "deps", version = "0.1.0", default-features = false }
 netlink = { path = "protocols/system/netlink", version = "0.1.0", default-features = false }

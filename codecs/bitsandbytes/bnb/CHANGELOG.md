@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.10.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.9.0...bitsandbytes-v0.10.0) - 2026-11-11
+
+### Added
+
+- *(bitsandbytes)* [**breaking**] convert any primitive integer into a UInt with a range check
+- *(bitsandbytes)* make BinCodec Clone, Copy and Debug
+
+### Fixed
+
+- *(bitsandbytes)* correct the new macro diagnostics after review
+- *(bitsandbytes)* name the generated item a field's accessors collide with
+- *(bitsandbytes)* read a field type through a macro_rules type fragment
+- *(bitsandbytes)* keep generated names out of the user's namespace
+- *(bitsandbytes)* stop three inputs from panicking the macros
+- *(bitsandbytes)* ask nothing of the direction a narrowed type drops
+- *(bitsandbytes)* build a validate hook's error message without std
+- *(bitsandbytes)* [**breaking**] reject container options the item kind would ignore
+- *(bitsandbytes)* [**breaking**] reject conflicting and duplicate field directives
+- *(bitsandbytes)* measure an auto_len bytes source with its own write
+- *(bitsandbytes)* encode enum variant fields with the struct write generator
+- *(bitsandbytes)* retry an interrupted read in BufSource
+- *(bitsandbytes)* let a BufSource release consumed bytes with compact
+- *(bitsandbytes)* [**breaking**] end decode_all and decode_iter when a message does not advance
+- *(bitsandbytes)* [**breaking**] require Send scratch so writers can cross threads
+
+### Other
+
+- *(bitsandbytes)* record 0.10.0 qualification and plan 0.10.x and 0.11
+- qualify the bitsandbytes 0.10.0 candidate against 0.9.0 in major mode
+- *(bitsandbytes)* add an upgrade page for 0.9 to 0.10
+- *(bitsandbytes)* record the whole-crate review, its fixes and measurements
+- *(bitsandbytes)* prove MessageStream reads through the scratch it keeps
+- *(bitsandbytes)* benchmark mixed-width magic dispatch
+- *(bitsandbytes)* keep one read scratch per MessageStream
+- *(bitsandbytes)* convert byte-aligned integer runs in one pass
+- *(bitsandbytes)* allocate a fixed-length message's bytes once
+- *(bitsandbytes)* read and write unaligned fields a byte at a time
+- *(bitsandbytes)* stop the bitfield benches folding their input
+- *(bitsandbytes)* pin the behaviour six surviving mutants changed
+- *(bitsandbytes)* state the recursion and frame-size limits a caller must bound
+- *(bitsandbytes)* remove peek_bytes, unused since the 0.5.0 macros
+- *(bitsandbytes)* remove an unused private export and two duplicates
+- *(bitsandbytes)* correct documentation that no longer matches the code
+- *(bitsandbytes)* state that canonical encode covers a message's own fields
+
 ## [0.9.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.8.0...bitsandbytes-v0.9.0) - 2026-11-10
 
 ### Added
