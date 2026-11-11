@@ -8,8 +8,9 @@
 //! codec hits — unaligned bitfields, byte-aligned scalars, and a var-length `Vec` — so
 //! the number is an **informational baseline** for whole-message throughput, not a
 //! micro-benchmark of one operation. (No CI perf gate is attached; this is a local
-//! baseline only.) `byte_runs_2x255` isolates two 255-byte `count_prefix` byte runs, and
-//! `fixed_44` a fixed-length message whose encoded size is known up front.
+//! baseline only.) `byte_runs_2x255` isolates two 255-byte `count_prefix` byte runs,
+//! `counted_u16_1024`/`counted_u32_256` counted runs of wider integers beside a hand-written
+//! loop, and `fixed_44` a fixed-length message whose encoded size is known up front.
 //!
 //! Run: cargo bench -p bitsandbytes --bench `message_bench`
 //! (Reports under target/criterion/.)
@@ -320,9 +321,101 @@ fn bench_fixed(c: &mut Criterion) {
     g.finish();
 }
 
+/// A counted run of 16-bit integers: the element type is not a byte, so the run is not
+/// the `u8` byte-run path.
+#[bin(big)]
+struct Words {
+    #[brw(count_prefix = u16)]
+    words: Vec<u16>,
+}
+
+/// As [`Words`], with 32-bit elements.
+#[bin(big)]
+struct Dwords {
+    #[brw(count_prefix = u16)]
+    words: Vec<u32>,
+}
+
+/// Counted runs of `u16` and `u32`, each beside the loop one would write by hand for the
+/// same wire format (a big-endian `u16` count, then big-endian elements).
+#[allow(clippy::cast_possible_truncation)] // The counts are the literals below.
+fn bench_counted_runs(c: &mut Criterion) {
+    let words = Words {
+        words: (0..1024u16).map(|i| i.wrapping_mul(0x9E37)).collect(),
+    };
+    let wire = words.to_bytes().unwrap();
+    let mut g = c.benchmark_group("counted_u16_1024");
+    g.throughput(Throughput::Bytes(wire.len() as u64));
+    g.bench_function("encode", |b| {
+        b.iter(|| black_box(&words).to_bytes().unwrap());
+    });
+    g.bench_function("encode_hand", |b| {
+        b.iter(|| {
+            let items = &black_box(&words).words;
+            let mut out = Vec::with_capacity(2 + items.len() * 2);
+            out.extend_from_slice(&(items.len() as u16).to_be_bytes());
+            for item in items {
+                out.extend_from_slice(&item.to_be_bytes());
+            }
+            out
+        });
+    });
+    g.bench_function("decode", |b| {
+        b.iter(|| Words::decode_exact(black_box(&wire)).unwrap());
+    });
+    g.bench_function("decode_hand", |b| {
+        b.iter(|| {
+            let (count, body) = black_box(&wire[..]).split_at(2);
+            let count = usize::from(u16::from_be_bytes([count[0], count[1]]));
+            let items: Vec<u16> = body[..count * 2]
+                .chunks_exact(2)
+                .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                .collect();
+            items
+        });
+    });
+    g.finish();
+
+    let dwords = Dwords {
+        words: (0..256u32).map(|i| i.wrapping_mul(0x9E37_79B9)).collect(),
+    };
+    let wire = dwords.to_bytes().unwrap();
+    let mut g = c.benchmark_group("counted_u32_256");
+    g.throughput(Throughput::Bytes(wire.len() as u64));
+    g.bench_function("encode", |b| {
+        b.iter(|| black_box(&dwords).to_bytes().unwrap());
+    });
+    g.bench_function("encode_hand", |b| {
+        b.iter(|| {
+            let items = &black_box(&dwords).words;
+            let mut out = Vec::with_capacity(2 + items.len() * 4);
+            out.extend_from_slice(&(items.len() as u16).to_be_bytes());
+            for item in items {
+                out.extend_from_slice(&item.to_be_bytes());
+            }
+            out
+        });
+    });
+    g.bench_function("decode", |b| {
+        b.iter(|| Dwords::decode_exact(black_box(&wire)).unwrap());
+    });
+    g.bench_function("decode_hand", |b| {
+        b.iter(|| {
+            let (count, body) = black_box(&wire[..]).split_at(2);
+            let count = usize::from(u16::from_be_bytes([count[0], count[1]]));
+            let items: Vec<u32> = body[..count * 4]
+                .chunks_exact(4)
+                .map(|quad| u32::from_be_bytes([quad[0], quad[1], quad[2], quad[3]]))
+                .collect();
+            items
+        });
+    });
+    g.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = bench_message, bench_byte_runs, bench_fixed, bench_incremental, bench_element_replay, bench_stream_reads
+    targets = bench_message, bench_byte_runs, bench_fixed, bench_counted_runs, bench_incremental, bench_element_replay, bench_stream_reads
 }
 criterion_main!(benches);

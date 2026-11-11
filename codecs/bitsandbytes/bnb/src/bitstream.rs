@@ -1272,6 +1272,17 @@ pub trait Source: sealed::Sealed {
         read_into_per_byte(self, buf)
     }
 
+    /// Consumes and lends the next `n` bytes when the cursor is byte-aligned and all of them
+    /// are already in memory; otherwise `None`, consuming nothing. The hook behind bulk
+    /// counted runs of byte-multiple integers ([`BitDecode::decode_vec`]): a caller that gets
+    /// `None` reads the run element by element, so every error is that path's. The default
+    /// lends nothing; the sources that bulk-copy [`read_bytes`](Source::read_bytes) override it.
+    #[doc(hidden)]
+    fn aligned_run(&mut self, n: usize) -> Option<&[u8]> {
+        let _ = n;
+        None
+    }
+
     /// Lends this source through a window of exactly `n` bytes.
     ///
     /// Reads and seeks through the returned [`LimitedSource`] cannot cross the declared region.
@@ -1314,6 +1325,9 @@ fn read_bytes_per_byte<S: Source + ?Sized>(s: &mut S, n: usize) -> Result<Vec<u8
     Ok(v)
 }
 
+// Out of line: it is the fallback of every bulk `read_into`, and folded into a fixed
+// `[u8; N]` read it is unrolled N times around the one copy that read wants.
+#[inline(never)]
 fn read_into_per_byte<S: Source + ?Sized>(s: &mut S, buf: &mut [u8]) -> Result<(), BitError> {
     for slot in buf.iter_mut() {
         *slot = s.read::<u8>()?;
@@ -1341,6 +1355,17 @@ fn read_via_slice<T>(
     let result = read(&mut r);
     *cursor = r.bit_pos();
     result
+}
+
+/// [`BitReader::aligned_run`] for a source that keeps its own `cursor` into `bytes`: the
+/// next `n` bytes, with the cursor moved past them, when it is byte-aligned and they are all
+/// there. A cursor past the end (a `BytesReader` may seek there) has no run.
+fn aligned_run_at<'a>(bytes: &'a [u8], cursor: &mut usize, n: usize) -> Option<&'a [u8]> {
+    let mut r = BitReader::new(bytes);
+    r.seek_to_bit(*cursor).ok()?;
+    let run = r.aligned_run(n)?;
+    *cursor = r.bit_pos();
+    Some(run)
 }
 
 /// A borrowed [`Source`] window that prevents a nested decoder from crossing its declared length.
@@ -1596,6 +1621,12 @@ impl Source for IncrementalReader<'_> {
     fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
         self.0.read_into(buf).map_err(Self::shortfall)
     }
+
+    // A run that is all here needs no retry signal; a short one is `None`, read per element.
+    #[inline]
+    fn aligned_run(&mut self, n: usize) -> Option<&[u8]> {
+        self.0.aligned_run(n)
+    }
 }
 
 // The attempt is transactional with respect to its caller's cursor, not codec side effects.
@@ -1704,6 +1735,18 @@ pub trait Sink: sealed::Sealed {
         write_bytes_per_byte(self, bytes)
     }
 
+    /// Appends `n` zero bytes and lends them for filling, when the cursor is byte-aligned
+    /// and the longer output's bits can still be counted; otherwise `None`, writing nothing.
+    /// The hook behind bulk counted runs of byte-multiple integers
+    /// ([`BitEncode::encode_slice`]): a caller that gets `None` writes the run element by
+    /// element, so every error is that path's. The default lends nothing; the sinks that
+    /// bulk-copy [`write_bytes`](Sink::write_bytes) override it.
+    #[doc(hidden)]
+    fn aligned_tail(&mut self, n: usize) -> Option<&mut [u8]> {
+        let _ = n;
+        None
+    }
+
     /// Borrows this sink as a [`std::io::Write`] — the dual of [`Source::as_read`], for
     /// handing the cursor to `std::io`-based code from a `#[bw(write_with = …)]`. Writes 8
     /// bits per byte; see [`SinkWriter`]. Only with the `std` feature.
@@ -1780,6 +1823,10 @@ impl Source for BitReader<'_> {
             None => read_into_per_byte(self, buf),
         }
     }
+    #[inline]
+    fn aligned_run(&mut self, n: usize) -> Option<&[u8]> {
+        BitReader::aligned_run(self, n)
+    }
 }
 
 impl<'a> BitReader<'a> {
@@ -1844,6 +1891,21 @@ impl Sink for BitWriter {
         self.bit_pos = end;
         Ok(())
     }
+    // As `write_bytes`: an aligned cursor sits at the end of the buffer, so the tail is new.
+    #[inline]
+    fn aligned_tail(&mut self, n: usize) -> Option<&mut [u8]> {
+        if self.bit_pos % 8 != 0 {
+            return None;
+        }
+        let end = n
+            .checked_mul(8)
+            .and_then(|bits| self.bit_pos.checked_add(bits))?;
+        debug_assert_eq!(self.bit_pos / 8, self.bytes.len());
+        let start = self.bytes.len();
+        self.bytes.resize(start + n, 0);
+        self.bit_pos = end;
+        Some(&mut self.bytes[start..])
+    }
 }
 
 /// A message decoded from a bit stream — the recursion point a
@@ -1878,6 +1940,9 @@ pub trait BitDecode: Sized {
     /// Decode `count` consecutive elements. Used by generated context-free counted fields.
     /// The default grows only after each successful, forward-moving element; `u8` uses
     /// [`Source::read_bytes`] so buffered byte payloads can check availability before allocating.
+    /// `u16`, `u32`, `u64` and `u128` convert a byte-aligned run that is wholly in memory in
+    /// one pass, allocating once those bytes are known to be there, and otherwise read per
+    /// element like the default.
     /// An override must return **exactly** `count` elements in wire order, preserve element
     /// decoding, and advance for every nonempty result. It must not allocate from an
     /// untrusted count before proving the corresponding input is available. Wrappers
@@ -1888,17 +1953,88 @@ pub trait BitDecode: Sized {
     /// Like [`bit_decode`](Self::bit_decode), this direct source operation is not transactional;
     /// use a `BitBuf` attempt for rollback of buffered input.
     fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
-        let mut values = Vec::new();
-        for _ in 0..count {
-            let start = r.bit_pos();
-            let value = Self::bit_decode(r)?;
-            if r.bit_pos() <= start {
-                return Err(BitError::new(ErrorKind::NoProgress, start));
-            }
-            values.push(value);
-        }
-        Ok(values)
+        decode_vec_each(r, count)
     }
+}
+
+/// The element-by-element loop behind [`BitDecode::decode_vec`]'s default, and what every
+/// bulk override falls back to and is tested against: it grows only after each successful,
+/// forward-moving element.
+#[inline]
+fn decode_vec_each<T: BitDecode, S: Source>(r: &mut S, count: usize) -> Result<Vec<T>, BitError> {
+    let mut values = Vec::new();
+    for _ in 0..count {
+        let start = r.bit_pos();
+        let value = T::bit_decode(r)?;
+        if r.bit_pos() <= start {
+            return Err(BitError::new(ErrorKind::NoProgress, start));
+        }
+        values.push(value);
+    }
+    Ok(values)
+}
+
+/// The element-by-element loop behind [`BitEncode::encode_slice`]'s default, and what every
+/// bulk override falls back to and is tested against.
+#[inline]
+fn encode_slice_each<T: BitEncode, K: Sink>(items: &[T], w: &mut K) -> Result<(), BitError> {
+    for item in items {
+        item.bit_encode(w)?;
+    }
+    Ok(())
+}
+
+/// [`BitDecode::decode_vec`] for an `N`-byte integer: a byte-aligned run that is all in
+/// memory is converted in one pass, `be` or `le` by the source's byte order, into a `Vec`
+/// allocated only once [`Source::aligned_run`] has shown the bytes are there. Whole aligned
+/// bytes read the same in both bit orders, so the bit order does not enter. Any other run
+/// (unaligned, short, or a count whose byte length overflows) is [`decode_vec_each`]'s.
+#[inline]
+fn decode_int_run<T: BitDecode, S: Source, const N: usize>(
+    r: &mut S,
+    count: usize,
+    be: impl Fn([u8; N]) -> T,
+    le: impl Fn([u8; N]) -> T,
+) -> Result<Vec<T>, BitError> {
+    let big = r.byte_order() == ByteOrder::Big;
+    let Some(run) = count.checked_mul(N).and_then(|bytes| r.aligned_run(bytes)) else {
+        return decode_vec_each(r, count);
+    };
+    let wire = run
+        .chunks_exact(N)
+        .map(|chunk| <[u8; N]>::try_from(chunk).expect("chunks_exact yields N bytes"));
+    Ok(if big {
+        wire.map(be).collect()
+    } else {
+        wire.map(le).collect()
+    })
+}
+
+/// [`BitEncode::encode_slice`] for an `N`-byte integer, the dual of [`decode_int_run`]: on
+/// a byte-aligned sink the run is written in one pass into the tail [`Sink::aligned_tail`]
+/// lends, `be` or `le` by the sink's byte order. Any other run is [`encode_slice_each`]'s.
+#[inline]
+fn encode_int_run<T: BitEncode + Copy, K: Sink, const N: usize>(
+    items: &[T],
+    w: &mut K,
+    be: impl Fn(T) -> [u8; N],
+    le: impl Fn(T) -> [u8; N],
+) -> Result<(), BitError> {
+    let big = w.byte_order() == ByteOrder::Big;
+    let Some(tail) = items
+        .len()
+        .checked_mul(N)
+        .and_then(|bytes| w.aligned_tail(bytes))
+    else {
+        return encode_slice_each(items, w);
+    };
+    let wire = tail.chunks_exact_mut(N).zip(items);
+    if big {
+        wire.for_each(|(slot, &item)| slot.copy_from_slice(&be(item)));
+    } else {
+        wire.for_each(|(slot, &item)| slot.copy_from_slice(&le(item)));
+    }
+    Ok(())
 }
 
 /// A message whose encoded length is a **compile-time constant** — i.e. it has no
@@ -1949,7 +2085,8 @@ pub trait BitEncode {
     /// Encode every element of `items` verbatim, in order — the encode dual of
     /// [`BitDecode::decode_vec`], used by generated context-free `Vec` fields. The default
     /// calls [`bit_encode`](Self::bit_encode) per element; `u8` uses [`Sink::write_bytes`],
-    /// which a byte-aligned [`BitWriter`] appends in one copy. An override must write exactly
+    /// which a byte-aligned [`BitWriter`] appends in one copy, and `u16`, `u32`, `u64` and
+    /// `u128` write a byte-aligned run into it in one pass. An override must write exactly
     /// the bits, and fail with exactly the error, of that per-element loop.
     ///
     /// # Errors
@@ -1958,10 +2095,7 @@ pub trait BitEncode {
     where
         Self: Sized,
     {
-        for item in items {
-            item.bit_encode(w)?;
-        }
-        Ok(())
+        encode_slice_each(items, w)
     }
 }
 
@@ -2002,14 +2136,27 @@ macro_rules! bits_leaf_codec {
             r.read_bytes(count)
         }
     };
-    (@decode_bytes $other:ty) => {};
+    (@decode_bytes bool) => {};
+    // A wider integer is whole bytes too: a byte-aligned run is converted in one pass.
+    (@decode_bytes $int:ident) => {
+        #[inline]
+        fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
+            decode_int_run(r, count, <$int>::from_be_bytes, <$int>::from_le_bytes)
+        }
+    };
     (@encode_bytes u8) => {
         #[inline]
         fn encode_slice<K: Sink>(items: &[Self], w: &mut K) -> Result<(), BitError> {
             w.write_bytes(items)
         }
     };
-    (@encode_bytes $other:ty) => {};
+    (@encode_bytes bool) => {};
+    (@encode_bytes $int:ident) => {
+        #[inline]
+        fn encode_slice<K: Sink>(items: &[Self], w: &mut K) -> Result<(), BitError> {
+            encode_int_run(items, w, <$int>::to_be_bytes, <$int>::to_le_bytes)
+        }
+    };
 }
 bits_leaf_codec!(u8, u16, u32, u64, u128, bool);
 
@@ -3302,6 +3449,10 @@ impl Source for BitBuf {
             r.read_into(buf)
         })
     }
+
+    fn aligned_run(&mut self, n: usize) -> Option<&[u8]> {
+        aligned_run_at(&self.buf, &mut self.cursor, n)
+    }
 }
 
 impl SeekSource for BitBuf {}
@@ -3614,7 +3765,7 @@ mod bytes_io {
 
     use super::{
         BitError, BitOrder, BitReader, BitWriter, ByteOrder, Layout, SeekSource, Sink, Source,
-        read_via_slice,
+        aligned_run_at, read_via_slice,
     };
 
     /// A [`SeekSource`](super::SeekSource) that **owns** a `bytes::Bytes` frame (no
@@ -3685,6 +3836,9 @@ mod bytes_io {
                 r.read_into(buf)
             })
         }
+        fn aligned_run(&mut self, n: usize) -> Option<&[u8]> {
+            aligned_run_at(&self.data, &mut self.bit_pos, n)
+        }
     }
 
     impl SeekSource for BytesReader {}
@@ -3739,6 +3893,9 @@ mod bytes_io {
         }
         fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), BitError> {
             self.inner.write_bytes(bytes)
+        }
+        fn aligned_tail(&mut self, n: usize) -> Option<&mut [u8]> {
+            self.inner.aligned_tail(n)
         }
     }
 }
@@ -4680,7 +4837,7 @@ mod component {
         };
         use crate::{BitBuf, BitOrder, BitReader, BitWriter, ByteOrder, Layout, Sink, Source};
 
-        const LAYOUTS: [Layout; 4] = [
+        pub(super) const LAYOUTS: [Layout; 4] = [
             Layout {
                 bit: BitOrder::Msb,
                 byte: ByteOrder::Big,
@@ -4826,6 +4983,259 @@ mod component {
             for layout in LAYOUTS {
                 agree_write(|| BytesWriter::with_layout(layout), |w| w.freeze().to_vec());
             }
+        }
+    }
+
+    mod int_runs {
+        //! Bulk counted runs of `u16`/`u32`/`u64`/`u128` (`decode_vec`/`encode_slice`) against
+        //! the element loops they replace: identical values, errors and final cursor for every
+        //! source and sink that lends an aligned run, in all four layouts, at aligned and
+        //! unaligned starts, for complete and truncated input.
+        use super::byte_runs::LAYOUTS;
+        use crate::bitstream::{IncrementalReader, decode_vec_each, encode_slice_each};
+        use crate::{BitBuf, BitDecode, BitEncode, BitReader, BitWriter, ErrorKind, Layout};
+        use crate::{Sink, Source};
+        use core::fmt::Debug;
+
+        // Byte-aligned starts and starts inside a byte, in bits.
+        const STARTS: [usize; 6] = [0, 1, 4, 7, 8, 24];
+
+        // Every run length through 65 elements, and a few long ones.
+        fn counts() -> impl Iterator<Item = usize> {
+            (0..=65).chain([127, 256, 1000])
+        }
+
+        // Enough for 1000 `u128`s behind the latest start, and a little more.
+        fn data() -> Vec<u8> {
+            let mut state = 0x9E37_79B9_u32;
+            (0..16_100)
+                .map(|_| {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    state.to_be_bytes()[0]
+                })
+                .collect()
+        }
+
+        // How much input to offer a run that needs `need` bytes: more than enough, exactly
+        // enough, and short by one byte, by part of an element, by half, and by everything.
+        fn supplies(need: usize, width: usize) -> impl Iterator<Item = usize> {
+            let mut lens = vec![
+                need + 2,
+                need,
+                need.saturating_sub(1),
+                need.saturating_sub(width - 1),
+                need.saturating_sub(width),
+                need / 2,
+                0,
+            ];
+            lens.dedup();
+            lens.into_iter()
+        }
+
+        fn agree_decode<T, S>(mut bulk: S, mut each: S, count: usize, case: &str)
+        where
+            T: BitDecode + PartialEq + Debug,
+            S: Source,
+        {
+            let got = T::decode_vec(&mut bulk, count);
+            assert_eq!(got, decode_vec_each::<T, _>(&mut each, count), "{case}");
+            assert_eq!(bulk.bit_pos(), each.bit_pos(), "cursor: {case}");
+        }
+
+        // Every layout, start, count and supply for one element type, on one kind of source.
+        // A start the supplied input does not reach is skipped: no cursor can be put there.
+        fn decode_matches<'d, T, S>(
+            d: &'d [u8],
+            source: impl Fn(&'d [u8], Layout, usize) -> Option<S>,
+        ) where
+            T: BitDecode + PartialEq + Debug,
+            S: Source,
+        {
+            let width = size_of::<T>();
+            for layout in LAYOUTS {
+                for start in STARTS {
+                    for count in counts() {
+                        let need = start.div_ceil(8) + count * width;
+                        for len in supplies(need, width) {
+                            let case = format!(
+                                "{} {layout:?} start {start} count {count} of {len} bytes",
+                                core::any::type_name::<T>()
+                            );
+                            let (Some(bulk), Some(each)) = (
+                                source(&d[..len], layout, start),
+                                source(&d[..len], layout, start),
+                            ) else {
+                                continue;
+                            };
+                            agree_decode::<T, S>(bulk, each, count, &case);
+                        }
+                    }
+                }
+            }
+        }
+
+        // A count whose byte length overflows `usize`, and ones that merely exceed the input:
+        // the element path's error at the element path's position, nothing allocated up front.
+        fn hostile_counts_match<T: BitDecode + PartialEq + Debug>() {
+            let d = &data()[..40];
+            let width = size_of::<T>();
+            for count in [usize::MAX, usize::MAX / width + 1, usize::MAX / width, 41] {
+                for layout in LAYOUTS {
+                    let mk = || BitReader::with_layout(d, layout);
+                    let case = format!("{} count {count}", core::any::type_name::<T>());
+                    agree_decode::<T, _>(mk(), mk(), count, &case);
+                    let error = T::decode_vec(&mut mk(), count).unwrap_err();
+                    assert!(
+                        matches!(error.kind, ErrorKind::UnexpectedEof { .. }),
+                        "{case}"
+                    );
+                    assert_eq!(error.at, 40 / width * width * 8, "{case}");
+                }
+            }
+        }
+
+        fn reader(bytes: &[u8], layout: Layout, start: usize) -> Option<BitReader<'_>> {
+            let mut r = BitReader::with_layout(bytes, layout);
+            r.seek_to_bit(start).ok()?;
+            Some(r)
+        }
+
+        macro_rules! for_each_int {
+            ($check:ident $(, $arg:expr)*) => {{
+                $check::<u16, _>($($arg),*);
+                $check::<u32, _>($($arg),*);
+                $check::<u64, _>($($arg),*);
+                $check::<u128, _>($($arg),*);
+            }};
+        }
+
+        #[test]
+        fn bit_reader_runs_match_per_element_reads() {
+            let d = data();
+            for_each_int!(decode_matches, &d, reader);
+        }
+
+        // A short run must stay a retry signal with the failing element's own hint.
+        #[test]
+        fn incremental_reader_runs_match_per_element_reads() {
+            let d = data();
+            for_each_int!(decode_matches, &d, |bytes, layout, start| {
+                reader(bytes, layout, start).map(IncrementalReader)
+            });
+        }
+
+        #[test]
+        fn bit_buf_runs_match_per_element_reads() {
+            let d = data();
+            for_each_int!(decode_matches, &d, |bytes: &[u8], layout, start| {
+                let mut b = BitBuf::new().with_layout(layout);
+                b.push(bytes).unwrap();
+                b.seek_to_bit(start).ok()?;
+                Some(b)
+            });
+        }
+
+        // Its cursor may sit past the end, so no start is skipped here.
+        #[cfg(feature = "bytes")]
+        #[test]
+        fn bytes_reader_runs_match_per_element_reads() {
+            use crate::BytesReader;
+
+            let d = data();
+            for_each_int!(decode_matches, &d, |bytes: &[u8], layout, start| {
+                let mut r = BytesReader::with_layout(bytes::Bytes::copy_from_slice(bytes), layout);
+                r.seek_to_bit(start).unwrap();
+                Some(r)
+            });
+        }
+
+        #[test]
+        fn hostile_counts_are_the_element_paths_eof() {
+            hostile_counts_match::<u16>();
+            hostile_counts_match::<u32>();
+            hostile_counts_match::<u64>();
+            hostile_counts_match::<u128>();
+        }
+
+        fn items<T: BitDecode>(count: usize) -> Vec<T> {
+            let d = data();
+            decode_vec_each(&mut BitReader::new(&d), count).unwrap()
+        }
+
+        // Writes `lead` bits first so the run lands at every alignment.
+        fn encode_matches<T, K>(mk: impl Fn(Layout) -> K, finish: impl Fn(K) -> Vec<u8>)
+        where
+            T: BitDecode + BitEncode + Debug,
+            K: Sink,
+        {
+            for layout in LAYOUTS {
+                for lead in [0, 1, 4, 7, 8, 24] {
+                    for count in counts() {
+                        let run = items::<T>(count);
+                        let case = format!(
+                            "{} {layout:?} lead {lead} count {count}",
+                            core::any::type_name::<T>()
+                        );
+                        let (mut bulk, mut each) = (mk(layout), mk(layout));
+                        bulk.write_bits(0x16_DB5A, lead).unwrap();
+                        each.write_bits(0x16_DB5A, lead).unwrap();
+                        let got = T::encode_slice(&run, &mut bulk);
+                        assert_eq!(got, encode_slice_each(&run, &mut each), "{case}");
+                        assert_eq!(bulk.bit_pos(), each.bit_pos(), "cursor: {case}");
+                        assert_eq!(finish(bulk), finish(each), "bytes: {case}");
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn bit_writer_runs_match_per_element_writes() {
+            for_each_int!(
+                encode_matches,
+                BitWriter::with_layout,
+                BitWriter::into_bytes
+            );
+        }
+
+        #[cfg(feature = "bytes")]
+        #[test]
+        fn bytes_writer_runs_match_per_element_writes() {
+            use crate::BytesWriter;
+
+            for_each_int!(
+                encode_matches,
+                BytesWriter::with_layout,
+                |w: BytesWriter| w.freeze().to_vec()
+            );
+        }
+
+        // A run that would carry the bit position past `usize` is refused where the element
+        // path refuses it, before anything is appended.
+        fn overflowing_run_matches<T: BitDecode + BitEncode + Debug>() {
+            let run = items::<T>(3);
+            for layout in LAYOUTS {
+                let mk = || {
+                    let mut w = BitWriter::with_layout(layout);
+                    w.bit_pos = usize::MAX & !7;
+                    w
+                };
+                let (mut bulk, mut each) = (mk(), mk());
+                let got = T::encode_slice(&run, &mut bulk);
+                assert_eq!(got, encode_slice_each(&run, &mut each));
+                let error = got.unwrap_err();
+                assert!(matches!(error.kind, ErrorKind::PositionOverflow));
+                assert_eq!(error.at, usize::MAX & !7);
+                assert_eq!(bulk.bit_len(), each.bit_len());
+                assert_eq!(bulk.into_bytes(), [0u8; 0]);
+            }
+        }
+
+        #[test]
+        fn a_run_past_the_countable_position_is_the_element_paths_error() {
+            overflowing_run_matches::<u16>();
+            overflowing_run_matches::<u32>();
+            overflowing_run_matches::<u64>();
+            overflowing_run_matches::<u128>();
         }
     }
 

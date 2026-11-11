@@ -1024,22 +1024,22 @@ impl bnb::bitstream::BitEncode for u128
 pub const u128::LAYOUT: bnb::bitstream::Layout
 pub fn u128::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn u128::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub fn u128::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn u128::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::BitEncode for u16
 pub const u16::LAYOUT: bnb::bitstream::Layout
 pub fn u16::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn u16::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub fn u16::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn u16::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::BitEncode for u32
 pub const u32::LAYOUT: bnb::bitstream::Layout
 pub fn u32::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn u32::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub fn u32::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn u32::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::BitEncode for u64
 pub const u64::LAYOUT: bnb::bitstream::Layout
 pub fn u64::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn u64::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub fn u64::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn u64::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::BitEncode for u8
 pub const u8::LAYOUT: bnb::bitstream::Layout
 pub fn u8::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
@@ -4655,22 +4655,22 @@ impl bnb::bitstream::BitEncode for u128
 pub const u128::LAYOUT: bnb::bitstream::Layout
 pub fn u128::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn u128::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub fn u128::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn u128::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::BitEncode for u16
 pub const u16::LAYOUT: bnb::bitstream::Layout
 pub fn u16::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn u16::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub fn u16::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn u16::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::BitEncode for u32
 pub const u32::LAYOUT: bnb::bitstream::Layout
 pub fn u32::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn u32::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub fn u32::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn u32::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::BitEncode for u64
 pub const u64::LAYOUT: bnb::bitstream::Layout
 pub fn u64::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 pub fn u64::canonical_bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
-pub fn u64::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError> where Self: core::marker::Sized
+pub fn u64::encode_slice<K: bnb::bitstream::Sink>(&[Self], &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
 impl bnb::bitstream::BitEncode for u8
 pub const u8::LAYOUT: bnb::bitstream::Layout
 pub fn u8::bit_encode<K: bnb::bitstream::Sink>(&self, &mut K) -> core::result::Result<(), bnb::bitstream::BitError>
