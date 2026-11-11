@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.10.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.9.0...bitsandbytes-macros-v0.10.0) - 2026-11-11
+
+### Fixed
+
+- *(bitsandbytes)* correct the new macro diagnostics after review
+- *(bitsandbytes)* name the generated item a field's accessors collide with
+- *(bitsandbytes)* read a field type through a macro_rules type fragment
+- *(bitsandbytes)* keep generated names out of the user's namespace
+- *(bitsandbytes)* stop three inputs from panicking the macros
+- *(bitsandbytes)* ask nothing of the direction a narrowed type drops
+- *(bitsandbytes)* build a validate hook's error message without std
+- *(bitsandbytes)* [**breaking**] reject container options the item kind would ignore
+- *(bitsandbytes)* [**breaking**] reject conflicting and duplicate field directives
+- *(bitsandbytes)* measure an auto_len bytes source with its own write
+- *(bitsandbytes)* encode enum variant fields with the struct write generator
+- *(bitsandbytes)* [**breaking**] end decode_all and decode_iter when a message does not advance
+
+### Other
+
+- *(bitsandbytes)* generate the slice entry points from one place
+- *(bitsandbytes)* split the codec macro into modules
+- *(bitsandbytes)* allocate a fixed-length message's bytes once
+- *(bitsandbytes)* remove an unused private export and two duplicates
+- *(bitsandbytes)* correct documentation that no longer matches the code
+- *(bitsandbytes)* state that canonical encode covers a message's own fields
+
 ## [0.9.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.8.0...bitsandbytes-macros-v0.9.0) - 2026-11-10
 
 ### Added
