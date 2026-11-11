@@ -260,8 +260,8 @@ fn bench_stream_reads(c: &mut Criterion) {
     // Each case: its name, the wire, and how many messages that wire holds. The last is
     // sixteen 44-byte messages read back one call at a time, so with a chunk as long as
     // the wire fifteen of the sixteen calls find their message already buffered. It shares
-    // the loop below so `read_message` keeps a single call site: a second one stops it
-    // being inlined here and moves every timing in this group.
+    // the loop below so `read_message` keeps a single call site: a second one changes how
+    // it is compiled here and moves every timing in this group.
     let mut cases: Vec<(String, Vec<u8>, usize)> = [64, 1024, 16 * 1024]
         .into_iter()
         .map(|size| (size.to_string(), envelope(size), 1))

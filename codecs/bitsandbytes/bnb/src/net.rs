@@ -199,6 +199,10 @@ pub async fn read_message_async<
 /// [`write_message`] exchange `#[bin]` values — and one `MessageStream` serves *both*
 /// directions on a single connection, no `try_clone` needed.
 ///
+/// Each `MessageStream` holds a 4 KiB read scratch for its whole life, allocated when it
+/// is built (also by `from_parts`), so reading allocates nothing per message. A
+/// connection that only ever writes pays for it too.
+///
 /// [`read_message`]: MessageStream::read_message
 /// [`write_message`]: MessageStream::write_message
 pub struct MessageStream<S> {
@@ -1207,6 +1211,8 @@ mod component {
         assert_eq!(stream.scratch.len(), super::SCRATCH_LEN);
         for want in [0x0102, 0x0304] {
             assert_eq!(stream.read_message::<u16>().unwrap(), want);
+            // The stream's bytes went through this scratch, not a per-call one.
+            assert_eq!(stream.scratch[..6], [1, 2, 3, 4, 5, 6]);
             assert_eq!(
                 stream.scratch.as_ptr(),
                 scratch,
