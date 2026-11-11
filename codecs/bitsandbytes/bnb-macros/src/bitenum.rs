@@ -372,7 +372,7 @@ fn conv_impls(
 /// aliases or the `u8`/`u16`/`u32`/`u64`/`u128` primitives). Used only to decide
 /// whether the unit variants cover the whole domain.
 fn width_bits(ty: &Type) -> Option<u32> {
-    if let Type::Path(p) = ty {
+    if let Type::Path(p) = crate::ungroup(ty) {
         if let Some(seg) = p.path.segments.last() {
             if let Some(rest) = seg.ident.to_string().strip_prefix('u') {
                 if let Ok(n) = rest.parse::<u32>() {
@@ -388,7 +388,7 @@ fn width_bits(ty: &Type) -> Option<u32> {
 
 /// Returns the primitive name if `ty` is `u8`/`u16`/`u32`/`u64`/`u128`.
 fn primitive_of(ty: &Type) -> Option<&'static str> {
-    if let Type::Path(p) = ty {
+    if let Type::Path(p) = crate::ungroup(ty) {
         if let Some(seg) = p.path.segments.last() {
             return match seg.ident.to_string().as_str() {
                 "u8" => Some("u8"),

@@ -84,10 +84,23 @@ pub(crate) fn bits_leaf_codec_impl(
     }
 }
 
+/// `ty` without the invisible group a `macro_rules!` `$t:ty` fragment wraps it in (or
+/// redundant parentheses), so a check on a type's *shape* sees the type the user wrote.
+pub(crate) fn ungroup(mut ty: &syn::Type) -> &syn::Type {
+    loop {
+        ty = match ty {
+            syn::Type::Group(group) => &group.elem,
+            syn::Type::Paren(paren) => &paren.elem,
+            _ => return ty,
+        };
+    }
+}
+
 /// Whether `ty` is exactly the bare single-segment path `name` (no qualifier, no
-/// generics) — the only shape the const-dispatch helpers may convert inline.
-fn is_bare_ident(ty: &syn::Type, name: &str) -> bool {
-    if let syn::Type::Path(p) = ty {
+/// generics) — the only shape the const-dispatch helpers may convert inline. Seen through
+/// a `macro_rules!` type fragment ([`ungroup`]).
+pub(crate) fn is_bare_ident(ty: &syn::Type, name: &str) -> bool {
+    if let syn::Type::Path(p) = ungroup(ty) {
         p.qself.is_none()
             && p.path.leading_colon.is_none()
             && p.path.segments.len() == 1

@@ -325,6 +325,7 @@ fn collect_flags(item: &ItemStruct, backing_bits: u32) -> syn::Result<Vec<Flag>>
     Ok(flags)
 }
 
+/// Whether a flag field's type is `bool` (also through a `macro_rules!` type fragment).
 fn is_bool(ty: &Type) -> bool {
-    matches!(ty, Type::Path(p) if p.path.is_ident("bool"))
+    crate::is_bare_ident(ty, "bool")
 }

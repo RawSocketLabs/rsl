@@ -219,13 +219,12 @@ fn layout_token(attrs: &BitStreamAttrs) -> TokenStream2 {
 // marker. The attribute is still accepted (and stripped by `is_codec_field_attr`) for backward
 // compatibility, but it no longer affects codegen.
 
-/// If the field is a fixed `[u8; N]` byte array, returns its length expression.
+/// If the field is a fixed `[u8; N]` byte array, returns its length expression. Seen
+/// through a `macro_rules!` type fragment, like every shape check here.
 fn byte_array_len(f: &syn::Field) -> Option<&syn::Expr> {
-    if let syn::Type::Array(arr) = &f.ty {
-        if let syn::Type::Path(p) = &*arr.elem {
-            if p.path.is_ident("u8") {
-                return Some(&arr.len);
-            }
+    if let syn::Type::Array(arr) = crate::ungroup(&f.ty) {
+        if crate::is_bare_ident(&arr.elem, "u8") {
+            return Some(&arr.len);
         }
     }
     None
@@ -245,7 +244,7 @@ fn option_elem(f: &syn::Field) -> Option<&syn::Type> {
 
 /// The single type argument of `Wrapper<T>`, if `ty` is `Wrapper<T>`.
 fn single_generic<'a>(ty: &'a syn::Type, wrapper: &str) -> Option<&'a syn::Type> {
-    if let syn::Type::Path(p) = ty {
+    if let syn::Type::Path(p) = crate::ungroup(ty) {
         let seg = p.path.segments.last()?;
         if seg.ident == wrapper {
             if let syn::PathArguments::AngleBracketed(a) = &seg.arguments {
