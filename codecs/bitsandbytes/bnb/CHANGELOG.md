@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.10.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.10.0...bitsandbytes-v0.10.1) - 2026-11-12
+
+### Added
+
+- *(bitsandbytes)* cap BinCodec frames with with_max_frame
+- *(bitsandbytes)* bound decode recursion with a depth budget
+
+### Other
+
+- *(bitsandbytes)* add a fixed-work probe with tiered modes
+- *(bitsandbytes)* record the happy-path performance review and its plan
+- *(bitsandbytes)* tick the 0.10.0 baseline reset in the roadmap
+
 ## [0.10.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.9.0...bitsandbytes-v0.10.0) - 2026-11-11
 
 ### Added
