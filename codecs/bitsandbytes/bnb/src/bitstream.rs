@@ -1678,9 +1678,30 @@ pub(crate) fn decode_attempt<T: DecodeWith<A>, A>(
     args: A,
     eof: bool,
 ) -> Result<(T, usize), BitError> {
-    let mut reader = BitReader::with_layout(bytes, layout);
-    reader.seek_to_bit(start)?;
+    // Check the start once, then let each branch build its own reader in place, already
+    // positioned. Building one first and moving it into `IncrementalReader` reloads, in two
+    // wide loads, what was just written in narrow stores: two store-forwarding stalls per
+    // attempt (DESIGN.md §22, row 2).
+    let available = bits_in(bytes.len());
+    if start > available {
+        // What `BitReader::seek_to_bit` reports from bit 0.
+        return Err(BitError::new(
+            ErrorKind::UnexpectedEof {
+                needed: start,
+                remaining: available,
+            },
+            0,
+        ));
+    }
+    let reader = || BitReader {
+        bytes,
+        bit_pos: start,
+        order: layout.bit,
+        byte: layout.byte,
+        depth: 0,
+    };
     let (value, end) = if eof {
+        let mut reader = reader();
         let value = T::decode_with(&mut reader, args).map_err(|mut error| {
             if let ErrorKind::Incomplete { needed } = error.kind {
                 error.kind = ErrorKind::IncompleteAtEof { needed };
@@ -1689,7 +1710,7 @@ pub(crate) fn decode_attempt<T: DecodeWith<A>, A>(
         })?;
         (value, reader.bit_pos())
     } else {
-        let mut reader = IncrementalReader(reader);
+        let mut reader = IncrementalReader(reader());
         let value = T::decode_with(&mut reader, args)?;
         (value, reader.bit_pos())
     };
@@ -5390,7 +5411,7 @@ mod component {
     }
 
     mod incremental {
-        use crate::bitstream::{CountPrefix, decode_prefix, decode_prefix_with};
+        use crate::bitstream::{CountPrefix, decode_attempt, decode_prefix, decode_prefix_with};
         use crate::{BitBuf, BitDecode, BitError, DecodeWith, ErrorKind, Layout, Source, bin};
 
         #[bin(big)]
@@ -5405,6 +5426,37 @@ mod component {
         struct Blob {
             #[brw(count_prefix = u16)]
             body: Vec<u8>,
+        }
+
+        #[test]
+        fn an_attempt_starts_where_it_is_told_and_rejects_a_start_past_the_end() {
+            let wire = [0xFF, 7, 0, 0, 0, 9];
+            for eof in [false, true] {
+                // From bit 8: the message, and where it ended.
+                let (packet, end) =
+                    decode_attempt::<Packet, ()>(&wire, 8, Layout::default(), (), eof).unwrap();
+                assert_eq!(packet, Packet { tag: 7, value: 9 });
+                assert_eq!(end, 48);
+                // Past the end: the seek's own error, from bit 0, whatever `eof` says.
+                let error = decode_attempt::<Packet, ()>(&wire, 49, Layout::default(), (), eof)
+                    .unwrap_err();
+                assert_eq!(
+                    error.kind,
+                    ErrorKind::UnexpectedEof {
+                        needed: 49,
+                        remaining: 48
+                    }
+                );
+                assert_eq!(error.at, 0);
+                // At the end exactly is in range; nothing is there to read, which is a wait
+                // or a truncation as `eof` says.
+                let error = decode_attempt::<Packet, ()>(&wire, 48, Layout::default(), (), eof)
+                    .unwrap_err();
+                assert_eq!(error.at, 48);
+                assert_eq!(error.is_incomplete(), !eof, "{:?}", error.kind);
+                let truncated = matches!(error.kind, ErrorKind::UnexpectedEof { .. });
+                assert_eq!(truncated, eof, "{:?}", error.kind);
+            }
         }
 
         #[test]
