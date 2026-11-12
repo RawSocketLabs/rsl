@@ -27,9 +27,9 @@ bit/int/enum crates that inspired this one) [`ACKNOWLEDGMENTS.md`](ACKNOWLEDGMEN
 - [ ] Deliver: green `ci/circleci: rsl` on the branch, fast-forward `main`, the release-plz
       version PR, archive verification and detached fuzz lockfile refresh per
       [`docs/RELEASING.md`](../docs/RELEASING.md), publish.
-- [ ] After publication: `.github/ci/bnb.toml` back to `baseline = "0.10.0"`,
-      `release_type = "patch"`; libsdr moves its requirement from the 0.8.0 review pin to
-      `0.10.0`.
+- [x] After publication: `.github/ci/bnb.toml` back to `baseline = "0.10.0"`,
+      `release_type = "patch"` (`63f36a19`).
+- [ ] libsdr moves its requirement from the 0.8.0 review pin to `0.10.0`.
 
 ## Next — 0.10.x additions, then the 0.11 error-type release
 
