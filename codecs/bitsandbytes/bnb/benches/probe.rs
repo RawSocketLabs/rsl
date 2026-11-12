@@ -29,7 +29,7 @@
 
 use bnb::{
     BitBuf, BitDecode, BitEncode, BitEnum, BitError, bin, bitfield, u1, u2, u3, u4, u5, u6, u7,
-    u13, u48, u108,
+    u12, u13, u20, u28, u48, u108,
 };
 use std::hint::black_box;
 
@@ -172,6 +172,26 @@ struct Frame {
     #[nested]
     burst: Burst,
     crc: [u8; 2],
+}
+
+/// Fields of 12 to 28 bits that start or end inside a byte: the unaligned read at widths
+/// well under a `u128`.
+#[derive(BitDecode, BitEncode, Copy, Clone)]
+struct Unaligned {
+    a: u4,
+    b: u20,
+    c: u12,
+    d: u28,
+}
+
+/// The same fields with sixteen bytes after them, so every read has a full window behind
+/// its first byte; alone, `Unaligned` is read entirely within a buffer's last bytes.
+#[derive(BitDecode, BitEncode, Copy, Clone)]
+#[bit_stream(allow_byte_aligned)]
+struct UnalignedPadded {
+    #[nested]
+    head: Unaligned,
+    pad: [u8; 16],
 }
 
 #[bin(big)]
@@ -477,6 +497,18 @@ const MODES: &[Mode] = &[
     mode("dmr", "happy", 4 * M, |n| {
         let wire = frame();
         repeat(n, true, || Frame::decode_exact(black_box(&wire)));
+    }),
+    mode("unaligned_mid", "happy", 4 * M, |n| {
+        let wire = [SUB_BYTE.as_slice(), &SUB_BYTE, &SUB_BYTE[..6]].concat();
+        repeat(n, true, || UnalignedPadded::decode_exact(black_box(&wire)));
+    }),
+    mode("unaligned_tail", "happy", 8 * M, |n| {
+        repeat(n, true, || Unaligned::decode_exact(black_box(&SUB_BYTE[..8])));
+    }),
+    mode("unaligned_wide_tail", "happy", 4 * M, |n| {
+        // A burst alone: its last 108-bit field starts fourteen bytes from the end.
+        let wire = &frame()[1..34];
+        repeat(n, true, || Burst::decode_exact(black_box(wire)));
     }),
     mode("records_1024", "happy", 8_000, |n| {
         let wire = records();
