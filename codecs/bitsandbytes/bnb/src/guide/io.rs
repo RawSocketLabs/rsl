@@ -208,12 +208,16 @@
 //! such grammars. Buffer caps bound retained wire bytes, **not** allocations owned by
 //! decoded values, recursion, or arbitrary custom-codec work.
 //!
-//! **Recursive message types have no depth limit.** A type that contains itself (through
-//! `Vec`, `Option` or `Box`) decodes by native recursion, as deep as the input says. Hostile
-//! input can therefore overflow the stack, which aborts the process and cannot be caught.
-//! Bound it yourself when the bytes are untrusted: cap the frame size so the worst-case depth
-//! fits the decoding thread's stack, or write the recursive part as a `parse_with` codec that
-//! counts depth and returns an error.
+//! **Recursive message types are depth-limited, by levels.** A type that contains itself,
+//! directly or through another message, can only do so through a counted `Vec`, and a decode
+//! nests at most [`MAX_DECODE_DEPTH`](crate::MAX_DECODE_DEPTH) (128) non-empty `Vec`s of
+//! messages before failing with [`ErrorKind::TooDeep`](crate::ErrorKind::TooDeep). The limit
+//! counts levels, not stack bytes: 128 levels of a small message fit a 2 MiB thread stack in a
+//! debug build, but a message with a large decoder frame (say, a 4 KiB array held inline) can
+//! overflow it first, which aborts the process. For such types, decode on a thread whose stack
+//! holds 128 of their frames, or cap the frame size so the input cannot reach that depth.
+//! Recursion inside a `parse_with` codec or a hand-written `BitDecode` impl is that code's to
+//! bound.
 //!
 //! Positions are local to the buffer; compaction can rebase them. Extract an owned
 //! length-delimited envelope before parsing formats with message-relative pointers

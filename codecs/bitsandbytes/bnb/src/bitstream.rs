@@ -222,7 +222,28 @@ pub enum ErrorKind {
         /// Number of bits left inside the region.
         remaining: usize,
     },
+    /// Decoding would nest more than [`MAX_DECODE_DEPTH`] non-empty `Vec`s of messages (a
+    /// message that contains itself, directly or through another). Reported where the
+    /// over-limit `Vec`'s first element would start, with that field's name.
+    TooDeep,
 }
+
+/// How many non-empty `Vec`s of messages a decode nests before failing with
+/// [`ErrorKind::TooDeep`]. A message can contain itself only through such a `Vec`, so the
+/// element loops are what count (one level per non-empty `Vec`, not per element); a run of
+/// leaves (integers, `bool`, `uN`, bitfields, enums, flags) is never charged, so the result does
+/// not depend on the source. Recursion inside a `parse_with` codec or a hand-written
+/// [`BitDecode::bit_decode`] is that code's own to bound.
+///
+/// The limit counts levels, not bytes of stack: 128 levels of a small message fit a 2 MiB
+/// thread stack in a debug build, but a message with a large decoder frame (big arrays held
+/// inline, many fields) can still overflow a small stack before the limit. Decode such types
+/// on a thread whose stack holds `MAX_DECODE_DEPTH` of their frames, or cap the input.
+pub const MAX_DECODE_DEPTH: u32 = 128;
+
+// Sources keep the count in a `u16`: beside the two one-byte order fields it costs no extra
+// store when a reader is built.
+const _: () = assert!(MAX_DECODE_DEPTH < u16::MAX as u32);
 
 impl BitError {
     /// Builds an error at absolute bit offset `at`, with no field recorded yet.
@@ -340,6 +361,7 @@ impl fmt::Display for BitError {
                 )?;
             }
             ErrorKind::NoProgress => f.write_str("decoder made no forward progress")?,
+            ErrorKind::TooDeep => write!(f, "messages nested deeper than {MAX_DECODE_DEPTH}")?,
             ErrorKind::TrailingBytes { remaining } => {
                 write!(f, "{remaining} trailing bytes after the message")?;
             }
@@ -879,6 +901,8 @@ pub struct BitReader<'a> {
     bit_pos: usize,
     order: BitOrder,
     byte: ByteOrder,
+    /// Nesting of generated element loops; see [`MAX_DECODE_DEPTH`].
+    depth: u16,
 }
 
 impl<'a> BitReader<'a> {
@@ -908,6 +932,7 @@ impl<'a> BitReader<'a> {
             bit_pos: 0,
             order: layout.bit,
             byte: layout.byte,
+            depth: 0,
         }
     }
 
@@ -1205,6 +1230,12 @@ pub trait Source: sealed::Sealed {
     /// Propagates the reader's [`BitError`].
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError>;
 
+    /// How many generated element loops are open on this source, for
+    /// [`MAX_DECODE_DEPTH`]. Required, not defaulted, so every source (wrappers included)
+    /// keeps its own count or forwards to the one it wraps.
+    #[doc(hidden)]
+    fn __bnb_depth(&mut self) -> &mut u16;
+
     /// The current absolute bit offset (for position-aware errors).
     fn bit_pos(&self) -> usize;
 
@@ -1444,6 +1475,10 @@ impl<S: Source> fmt::Debug for LimitedSource<'_, S> {
 impl<S: Source> sealed::Sealed for LimitedSource<'_, S> {}
 
 impl<S: Source> Source for LimitedSource<'_, S> {
+    #[doc(hidden)]
+    fn __bnb_depth(&mut self) -> &mut u16 {
+        self.source.__bnb_depth()
+    }
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let remaining = self.remaining_bits();
         if n as usize > remaining {
@@ -1561,6 +1596,10 @@ impl IncrementalReader<'_> {
 }
 
 impl Source for IncrementalReader<'_> {
+    #[doc(hidden)]
+    fn __bnb_depth(&mut self) -> &mut u16 {
+        self.0.__bnb_depth()
+    }
     // Inline, so a generated decoder's constant width reaches the reader's fast paths. The
     // shortfall is built directly rather than converted from the reader's end-of-input
     // error: one out-of-line construction instead of a build, a move and a rewrite.
@@ -1784,6 +1823,10 @@ impl<K: Sink> std::io::Write for SinkWriter<'_, K> {
 impl sealed::Sealed for BitReader<'_> {}
 
 impl Source for BitReader<'_> {
+    #[doc(hidden)]
+    fn __bnb_depth(&mut self) -> &mut u16 {
+        &mut self.depth
+    }
     // Forced for the same reason as the inherent method it forwards to.
     #[expect(clippy::inline_always, reason = "measured: DESIGN §19")]
     #[inline(always)]
@@ -1952,16 +1995,25 @@ pub trait BitDecode: Sized {
     /// A source/element error, or [`ErrorKind::NoProgress`] for a zero-width element.
     /// Like [`bit_decode`](Self::bit_decode), this direct source operation is not transactional;
     /// use a `BitBuf` attempt for rollback of buffered input.
+    ///
+    /// The default counts one level of [`MAX_DECODE_DEPTH`] for a non-empty `Vec`, because a
+    /// message can contain itself only this way; the crate's leaf types (integers, `bool`,
+    /// `uN`, and what `#[bitfield]`, `BitEnum` and `#[bitflags]` generate) override it and are
+    /// never charged.
     fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
-        decode_vec_each(r, count)
+        nested_vec(r, count, |r| decode_vec_each(r, count))
     }
 }
 
-/// The element-by-element loop behind [`BitDecode::decode_vec`]'s default, and what every
-/// bulk override falls back to and is tested against: it grows only after each successful,
-/// forward-moving element.
+/// The element-by-element loop behind [`BitDecode::decode_vec`]'s default (which runs it one
+/// depth level down), what leaf types decode with, and what every bulk override falls back
+/// to and is tested against: it grows only after each successful, forward-moving element.
+#[doc(hidden)]
 #[inline]
-fn decode_vec_each<T: BitDecode, S: Source>(r: &mut S, count: usize) -> Result<Vec<T>, BitError> {
+pub fn decode_vec_each<T: BitDecode, S: Source>(
+    r: &mut S,
+    count: usize,
+) -> Result<Vec<T>, BitError> {
     let mut values = Vec::new();
     for _ in 0..count {
         let start = r.bit_pos();
@@ -1972,6 +2024,36 @@ fn decode_vec_each<T: BitDecode, S: Source>(r: &mut S, count: usize) -> Result<V
         values.push(value);
     }
     Ok(values)
+}
+
+/// Runs the loop decoding `count` elements one level deeper, failing with
+/// [`ErrorKind::TooDeep`] past [`MAX_DECODE_DEPTH`]; an empty `Vec` enters nothing. The
+/// previous depth is restored whatever `f` returns, so a source that outlives a failed
+/// decode is not charged for it.
+#[doc(hidden)]
+#[inline]
+pub fn nested_vec<S: Source, T>(
+    r: &mut S,
+    count: usize,
+    f: impl FnOnce(&mut S) -> Result<Vec<T>, BitError>,
+) -> Result<Vec<T>, BitError> {
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    let depth = *r.__bnb_depth();
+    if u32::from(depth) >= MAX_DECODE_DEPTH {
+        return Err(too_deep(r.bit_pos()));
+    }
+    *r.__bnb_depth() = depth + 1;
+    let out = f(r);
+    *r.__bnb_depth() = depth;
+    out
+}
+
+#[cold]
+#[inline(never)]
+fn too_deep(at: usize) -> BitError {
+    BitError::new(ErrorKind::TooDeep, at)
 }
 
 /// The element-by-element loop behind [`BitEncode::encode_slice`]'s default, and what every
@@ -2136,7 +2218,13 @@ macro_rules! bits_leaf_codec {
             r.read_bytes(count)
         }
     };
-    (@decode_bytes bool) => {};
+    // A leaf cannot contain itself, so its runs are not charged against the depth budget.
+    (@decode_bytes bool) => {
+        #[inline]
+        fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
+            decode_vec_each(r, count)
+        }
+    };
     // A wider integer is whole bytes too: a byte-aligned run is converted in one pass.
     (@decode_bytes $int:ident) => {
         #[inline]
@@ -2174,6 +2262,10 @@ macro_rules! ip_addr_codec {
             fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError> {
                 Ok(<$t>::from_bits(r.read::<$int>()?))
             }
+            #[inline]
+            fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
+                decode_vec_each(r, count)
+            }
         }
         #[cfg(feature = "std")]
         impl BitEncode for $t {
@@ -2200,6 +2292,11 @@ where
     #[inline]
     fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError> {
         r.read::<Self>()
+    }
+
+    #[inline]
+    fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
+        decode_vec_each(r, count)
     }
 }
 
@@ -2727,6 +2824,8 @@ pub struct StreamBitReader<R> {
     /// (like every other `Source`); **byte** order is applied to whole values by
     /// [`read`](Self::read) / `Source::read`.
     layout: Layout,
+    /// Nesting of generated element loops; see [`MAX_DECODE_DEPTH`].
+    depth: u16,
 }
 
 #[cfg(feature = "std")]
@@ -2747,6 +2846,7 @@ impl<R: std::io::Read> StreamBitReader<R> {
             lead_bits: 0,
             pos: 0,
             layout,
+            depth: 0,
         }
     }
 
@@ -2844,6 +2944,10 @@ impl<R: std::io::Read> sealed::Sealed for StreamBitReader<R> {}
 
 #[cfg(feature = "std")]
 impl<R: std::io::Read> Source for StreamBitReader<R> {
+    #[doc(hidden)]
+    fn __bnb_depth(&mut self) -> &mut u16 {
+        &mut self.depth
+    }
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         StreamBitReader::read_bits(self, n)
     }
@@ -2904,6 +3008,8 @@ pub struct BufSource<R> {
     cap: usize,
     layout: Layout,
     eof: bool,
+    /// Nesting of generated element loops; see [`MAX_DECODE_DEPTH`].
+    depth: u16,
 }
 
 #[cfg(feature = "std")]
@@ -2931,6 +3037,7 @@ impl<R: std::io::Read> BufSource<R> {
             cap,
             layout,
             eof: false,
+            depth: 0,
         }
     }
 
@@ -2993,6 +3100,10 @@ impl<R: std::io::Read> sealed::Sealed for BufSource<R> {}
 
 #[cfg(feature = "std")]
 impl<R: std::io::Read> Source for BufSource<R> {
+    #[doc(hidden)]
+    fn __bnb_depth(&mut self) -> &mut u16 {
+        &mut self.depth
+    }
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         if n > 128 {
             return Err(BitError::new(
@@ -3106,6 +3217,8 @@ pub struct BitBuf {
     cap: Option<usize>,
     /// Byte/bit order for the [`Source`] impl (the `decode(&mut bitbuf)` path); default msb/big.
     layout: Layout,
+    /// Nesting of generated element loops; see [`MAX_DECODE_DEPTH`].
+    depth: u16,
 }
 
 impl Clone for BitBuf {
@@ -3124,6 +3237,7 @@ impl Clone for BitBuf {
             cursor: self.cursor,
             cap: self.cap,
             layout: self.layout,
+            depth: 0,
         }
     }
 }
@@ -3145,6 +3259,7 @@ impl BitBuf {
             cursor: 0,
             cap: None,
             layout: Layout::default(),
+            depth: 0,
         }
     }
 
@@ -3159,6 +3274,7 @@ impl BitBuf {
             cursor: 0,
             cap: Some(cap),
             layout: Layout::default(),
+            depth: 0,
         }
     }
 
@@ -3405,6 +3521,10 @@ impl core::error::Error for CapacityError {}
 impl sealed::Sealed for BitBuf {}
 
 impl Source for BitBuf {
+    #[doc(hidden)]
+    fn __bnb_depth(&mut self) -> &mut u16 {
+        &mut self.depth
+    }
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let mut r = BitReader::with_layout(&self.buf, self.layout);
         r.seek_to_bit(self.cursor)?;
@@ -3487,6 +3607,8 @@ pub struct SeekReader<R> {
     inner: R,
     bit_pos: usize,
     layout: Layout,
+    /// Nesting of generated element loops; see [`MAX_DECODE_DEPTH`].
+    depth: u16,
 }
 
 #[cfg(feature = "std")]
@@ -3504,6 +3626,7 @@ impl<R: std::io::Read + std::io::Seek> SeekReader<R> {
             inner,
             bit_pos: 0,
             layout,
+            depth: 0,
         }
     }
 }
@@ -3513,6 +3636,10 @@ impl<R: std::io::Read + std::io::Seek> sealed::Sealed for SeekReader<R> {}
 
 #[cfg(feature = "std")]
 impl<R: std::io::Read + std::io::Seek> Source for SeekReader<R> {
+    #[doc(hidden)]
+    fn __bnb_depth(&mut self) -> &mut u16 {
+        &mut self.depth
+    }
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let span = ByteSpan::new(self.bit_pos, n)?;
         self.inner
@@ -3668,6 +3795,8 @@ pub struct BufSeekReader<R> {
     bit_pos: usize,
     /// The bit and byte order values are read in.
     layout: Layout,
+    /// Nesting of generated element loops; see [`MAX_DECODE_DEPTH`].
+    depth: u16,
 }
 
 #[cfg(feature = "std")]
@@ -3687,6 +3816,7 @@ impl<R: std::io::Read + std::io::Seek> BufSeekReader<R> {
             stream_pos: None,
             bit_pos: 0,
             layout,
+            depth: 0,
         }
     }
 
@@ -3726,6 +3856,10 @@ impl<R: std::io::Read + std::io::Seek> sealed::Sealed for BufSeekReader<R> {}
 
 #[cfg(feature = "std")]
 impl<R: std::io::Read + std::io::Seek> Source for BufSeekReader<R> {
+    #[doc(hidden)]
+    fn __bnb_depth(&mut self) -> &mut u16 {
+        &mut self.depth
+    }
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let span = ByteSpan::new(self.bit_pos, n)?;
         let positioned = self.position(span.start);
@@ -3776,6 +3910,8 @@ mod bytes_io {
         data: bytes::Bytes,
         bit_pos: usize,
         layout: Layout,
+        /// Nesting of generated element loops; see [`MAX_DECODE_DEPTH`](super::MAX_DECODE_DEPTH).
+        depth: u16,
     }
 
     impl BytesReader {
@@ -3792,6 +3928,7 @@ mod bytes_io {
                 data,
                 bit_pos: 0,
                 layout,
+                depth: 0,
             }
         }
     }
@@ -3799,6 +3936,10 @@ mod bytes_io {
     impl super::sealed::Sealed for BytesReader {}
 
     impl Source for BytesReader {
+        #[doc(hidden)]
+        fn __bnb_depth(&mut self) -> &mut u16 {
+            &mut self.depth
+        }
         fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
             let mut br = BitReader::with_layout(&self.data, self.layout);
             br.seek_to_bit(self.bit_pos)?;
@@ -4363,6 +4504,7 @@ mod unit {
     struct TinySource<'a> {
         bytes: &'a [u8],
         pos: usize,
+        depth: u16,
     }
     impl sealed::Sealed for TinySource<'_> {}
 
@@ -4390,6 +4532,9 @@ mod unit {
         fn bit_pos(&self) -> usize {
             self.pos
         }
+        fn __bnb_depth(&mut self) -> &mut u16 {
+            &mut self.depth
+        }
     }
 
     #[test]
@@ -4397,6 +4542,7 @@ mod unit {
         let s = TinySource {
             bytes: &[0],
             pos: 0,
+            depth: 0,
         };
         assert_eq!(s.byte_order(), ByteOrder::Big);
     }
@@ -4406,6 +4552,7 @@ mod unit {
         let mut s = TinySource {
             bytes: &[0, 0],
             pos: 0,
+            depth: 0,
         };
         assert_eq!(s.seek_to_bit(8).unwrap_err().kind, ErrorKind::NotSeekable);
     }
@@ -4415,6 +4562,7 @@ mod unit {
         let mut s = TinySource {
             bytes: &[0xAB, 0xCD],
             pos: 0,
+            depth: 0,
         };
         assert_eq!(s.read::<u8>().unwrap(), 0xAB);
         assert_eq!(s.read::<u8>().unwrap(), 0xCD);
@@ -4425,6 +4573,7 @@ mod unit {
         let mut s = TinySource {
             bytes: &[0x0A, 0x0B, 0x0C, 0x0D, 0x0E],
             pos: 4,
+            depth: 0,
         };
         // Unaligned: each byte straddles two input bytes.
         assert_eq!(s.read_bytes(2).unwrap(), [0xA0, 0xB0]);

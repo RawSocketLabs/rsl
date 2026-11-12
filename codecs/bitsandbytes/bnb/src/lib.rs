@@ -192,7 +192,7 @@ mod wirelen;
 pub use bitstream::{
     BitAmount, BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, CapacityError,
     DecodeWith, DispatchKind, DispatchValue, EncodeWith, EnumDispatchError, ErrorKind, FixedBitLen,
-    Layout, LimitedSource, SeekSource, Sink, Source,
+    Layout, LimitedSource, MAX_DECODE_DEPTH, SeekSource, Sink, Source,
 };
 pub use wirelen::WireLen;
 
@@ -247,10 +247,10 @@ pub mod __private {
         BitDecode, BitEncode, BitError, BitReader, BitWriter, CountPrefix, ErrorKind, FixedBitLen,
         Layout, SeekSource, Sink, Source, align_read, align_write, bits_of, decode_all,
         decode_exact, decode_exact_with, decode_iter, decode_mapped_msg, decode_peek,
-        decode_peek_with, decode_prefix, decode_try_mapped_msg, encode_fixed_to_vec,
-        encode_mapped_msg, encode_to_vec, encode_to_vec_with, match_magic, read_byte_array,
-        read_mapped, read_try_mapped, skip_read, skip_write, verify_magic, write_byte_array,
-        write_mapped,
+        decode_peek_with, decode_prefix, decode_try_mapped_msg, decode_vec_each,
+        encode_fixed_to_vec, encode_mapped_msg, encode_to_vec, encode_to_vec_with, match_magic,
+        nested_vec, read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write,
+        verify_magic, write_byte_array, write_mapped,
     };
     pub use crate::builder::normalization::{NormalizeDispatch, NormalizeProbe};
     pub use crate::error::UnknownDiscriminant;

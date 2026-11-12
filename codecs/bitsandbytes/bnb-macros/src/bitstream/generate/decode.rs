@@ -188,18 +188,22 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         Ok(quote! {
             let #id = {
                 let __bnb_n = #checked_count;
-                let mut __bnb_v: #bnb::__private::Vec<#elem> = #bnb::__private::Vec::new();
-                for _ in 0..__bnb_n {
-                    let __bnb_start = #bnb::__private::Source::bit_pos(__bnb_r);
-                    #read_elem
-                    if #bnb::__private::Source::bit_pos(__bnb_r) <= __bnb_start {
-                        return ::core::result::Result::Err(#bnb::__private::BitError::new(
-                            #bnb::__private::ErrorKind::NoProgress, __bnb_start,
-                        ).in_field(#id_str));
-                    }
-                    __bnb_v.push(__bnb_e);
-                }
-                __bnb_v
+                // One level deeper for the depth budget; the closure returns this loop's errors.
+                #bnb::__private::nested_vec(__bnb_r, __bnb_n, |__bnb_r| {
+                        let mut __bnb_v: #bnb::__private::Vec<#elem> = #bnb::__private::Vec::new();
+                        for _ in 0..__bnb_n {
+                            let __bnb_start = #bnb::__private::Source::bit_pos(__bnb_r);
+                            #read_elem
+                            if #bnb::__private::Source::bit_pos(__bnb_r) <= __bnb_start {
+                                return ::core::result::Result::Err(#bnb::__private::BitError::new(
+                                    #bnb::__private::ErrorKind::NoProgress, __bnb_start,
+                                ).in_field(#id_str));
+                            }
+                            __bnb_v.push(__bnb_e);
+                        }
+                        ::core::result::Result::Ok(__bnb_v)
+                    })
+                    .map_err(|e| e.in_field(#id_str))?
             };
         })
     } else {

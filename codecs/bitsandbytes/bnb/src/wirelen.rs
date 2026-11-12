@@ -17,6 +17,7 @@
 
 use crate::bitstream::{BitDecode, BitEncode, BitError, CountPrefix, FixedBitLen, Sink, Source};
 use crate::field::Bits;
+use alloc::vec::Vec;
 
 /// A wire length/count field: [`Auto`](Self::Auto)-derived by default, or an explicit
 /// [`Set`](Self::Set) override. See the [directive guide](crate::guide::directives).
@@ -90,6 +91,11 @@ impl<T: Bits> BitDecode for WireLen<T> {
     #[inline]
     fn bit_decode<S: Source>(r: &mut S) -> Result<Self, BitError> {
         Ok(WireLen::Set(r.read::<T>()?))
+    }
+
+    #[inline]
+    fn decode_vec<S: Source>(r: &mut S, count: usize) -> Result<Vec<Self>, BitError> {
+        crate::bitstream::decode_vec_each(r, count)
     }
 }
 

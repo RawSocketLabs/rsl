@@ -638,13 +638,13 @@ points into the owned envelope; it adds no owned trait requirement to the DER pa
 Hints describe the next blocked operation, not the full frame size or a no-read-ahead
 promise. Error positions are buffer-local and can rebase after compaction. Buffer caps
 bound retained **wire bytes**, not allocations in returned values, parser recursion, or
-arbitrary callbacks. **Recursion is unbounded:** a message type that contains itself (through
-`Vec`, `Option` or `Box`) decodes by native recursion to a depth the input chooses, with no
-depth limit, so hostile input can overflow the stack — an abort the caller cannot catch
-(reproduced in the 0.9.0 review). Until a decode depth budget exists ([`ROADMAP.md`](ROADMAP.md)
-§C), the caller bounds it: cap the frame size so that worst-case depth (one level per byte
-consumed) times the per-level stack use fits the decoding thread's stack, or express the
-recursive part with a `parse_with` codec that counts depth and returns an error. General variable-element parsing replays and can be quadratic under
+arbitrary callbacks. **Recursion is depth-limited** (§20, 0.10.1): a message type can contain
+itself only through a counted `Vec`, and decoding fails with `ErrorKind::TooDeep` past
+`MAX_DECODE_DEPTH` nested non-empty `Vec`s of messages (the abort reproduced in the 0.9.0
+review). The limit counts levels, not stack bytes: a message with a large decoder frame can
+still overflow a small thread stack below it, so for such types the caller sizes the stack
+for 128 frames or caps the frame size. Recursion inside a `parse_with` codec or a
+hand-written `BitDecode` impl stays the codec's to bound. General variable-element parsing replays and can be quadratic under
 tiny fragments: batch input, cap frame sizes/attempt frequency, or frame an opaque owned
 envelope first. No generalized resumable parser is implied. Async cancellation/partial
 writes remain owned by Tokio/transport callers; this does not make whole-message retries
@@ -1853,3 +1853,102 @@ A second independent review (2026-11-10) found, and the follow-up commit fixed:
 | Nit | Selector accessors can clash with user methods | Documented in `guide::dispatch` |
 | Nit, recorded | Identical condition sets on two variants compile silently; the overflow assert is reported at the enum attribute; no UI cases for magic + named tags, a tuple catch-all, empty `tag()`, or a duplicate `tag` | Follow-ups, not changed |
 | Note | `tokens_mention` now ignores `name:` labels, so a ctx struct whose only mention was a label switches from `encode_with` to a plain `BitEncode` | Listed in the 0.9.0 breaking-change notes |
+
+## 20. Decode depth budget (0.10.1)
+
+A message type that contains itself decoded by native recursion to a depth the input chose,
+so hostile input overflowed the stack: an abort no caller could catch (§11.4, reproduced in
+the 0.9.0 review and again here as the failing test). Generated decoders now fail with
+`ErrorKind::TooDeep` once more than `MAX_DECODE_DEPTH` (128) non-empty element loops are
+open on one source.
+
+### Contract and design (owner decisions, 2026-11-11, after a skeptic review)
+
+- **What counts.** Generated code can recurse only through a counted `Vec`: there is no
+  `BitDecode` for `Box` or `Option` (`#[br(if)]` reads an `Option` field without one), and a
+  directly self-containing field has infinite size. So the two element loops count — the
+  default `BitDecode::decode_vec` and the context-taking loop the macro emits — once per
+  non-empty `Vec`, not per element or per message. That also bounds indirect recursion
+  (A → B → A), which the macro cannot see, and charges nothing to a message with no `Vec` of
+  messages (the probe's `NumericDispatch`, `dmr_frame`). Leaves opt out rather than messages
+  opting in, so a missed message generator cannot reopen the abort: every leaf `BitDecode`
+  (integers, `bool`, IP addresses, `UInt`, `WireLen`, and the impl `#[bitfield]`/`BitEnum`/
+  `#[bitflags]` emit) overrides `decode_vec` with the uncharged loop, and the integer bulk
+  path falls back to it. A first version charged the shared loop, so a leaf run counted only
+  when the bulk path declined it: the same bytes at the limit decoded from a slice and failed
+  from a `StreamBitReader` (found in review). A hand-written impl that keeps the default is
+  charged, which is conservative. Recursion inside a `parse_with` codec or a hand-written
+  `bit_decode` is that code's to bound.
+- **Where the count lives.** A required, hidden `Source::__bnb_depth(&mut self) -> &mut u16`.
+  `Source` is sealed, so a required method breaks no one, and being required makes every
+  source decide (owned count, or forwarding: `LimitedSource` and `IncrementalReader` forward
+  to what they wrap). `__private::nested_vec` checks, increments, runs the loop, and restores
+  the previous count whatever the loop returns, so a source that outlives a failed decode
+  (`StreamBitReader`, `BufSource`, a `BitBuf` used directly) is not charged for it. An
+  incremental attempt builds a fresh reader, so its count starts at zero.
+- **Limit.** `pub const MAX_DECODE_DEPTH: u32 = 128` (serde_json's default), no setter in
+  0.10.x; a knob can be added later without breaking anything. It counts levels, not stack
+  bytes: 128 levels of the test's `Node` decode on a 2 MiB thread stack (Tokio's worker
+  default) in a debug build, but the reviewer's `Fat` (a 4 KiB array inline) overflows that
+  stack at the limit. The docs say so and keep the caller-side advice (stack for 128 frames,
+  or a frame cap) for large types.
+- **Name.** `ErrorKind::TooDeep`, a unit variant beside `TooWide`, chosen with 0.11's
+  error-type decisions in view (ROADMAP). `ErrorKind` stays 48 bytes and `BitError` 80.
+  Reported at the over-limit `Vec`'s first element, with the field name.
+
+### Tests
+
+`tests/bin_depth.rs`, on 2 MiB threads: the limit decodes, one past it is `TooDeep` at the
+right bit, a 1 MiB chain errors instead of aborting (it aborted with `SIGABRT` before the
+change), width does not count, the ctx loop and indirect recursion are bounded, a reused
+`BitBuf` decodes a chain at the limit after a too-deep failure, byte-at-a-time `pull`
+attempts do not add up, a leaf run at the limit decodes from both a slice and a stream, and
+enum-payload recursion is bounded. Hand mutations, each caught: no restore (1 test fails), `>=` → `>`
+(4), no empty-`Vec` skip (5), no increment (the binary aborts), the default `decode_vec`
+uncharged (aborts), the integer bulk fallback charged (1). The `decode` fuzz target gained
+the recursive shape with an exact oracle (129 leading nonzero bytes are `TooDeep`) and a
+`recursive_deep` seed; 2,000,000 runs, no findings.
+
+### Independent review (2026-11-11)
+
+| Severity | Finding | Disposition |
+|---|---|---|
+| Blocking | The docs promised `TooDeep` instead of a stack overflow and dropped the caller-side advice, but the limit counts levels: `Fat` (a 4 KiB array inline) overflows a 2 MiB debug stack at 128 levels (run by the reviewer). | Docs (`MAX_DECODE_DEPTH`, `guide::io`, §11.4) state that the limit counts levels, not stack bytes, and keep the advice for large types. |
+| Should-fix | Leaf runs were charged only when the integer bulk path declined them, so the same bytes at the limit decoded from a slice and failed from a `StreamBitReader` (run by the reviewer). | Leaves opt out (above). `leaf_runs_are_not_charged_on_any_source`; charging the bulk fallback again fails it. |
+| Should-fix | The roadmap tick for the baseline reset belonged to another concern. | Its own commit. |
+| Nit | `incremental_attempts_restart_the_count` cannot fail on a missing restore (each attempt builds a fresh reader). | Renamed `incremental_attempts_do_not_share_a_count`; the restore is pinned by the reused-`BitBuf` test. |
+| Nit | No enum-payload recursion test. | `enum_payload_recursion_is_bounded`. |
+| Nit | The ctx loop's outer `in_field` is redundant for `NoProgress`. | Kept: it names the field on `TooDeep`, and `in_field` keeps the innermost. |
+
+### Performance (gate against the `bitsandbytes-v0.10.0` tag)
+
+Environment as §19: Rust 1.99.1, Threadripper 7970X, `taskset -c 61`, system allocator,
+default features (`net` for `stream_envelope`), one target directory per tree, three
+alternating rounds, 1 s warm-up, 3 s measurement, lowest of three medians.
+
+- **Probe, unchanged:** 270.22 / 1243.22 / 148.91 instructions per message (chunk 5 / 1 /
+  80), identical before and after. A `u32` count first cost exactly one instruction per
+  attempt (271.22 / 1248.22 / 149.91): zeroing it was a separate store next to the order
+  bytes' `movw`. A `u16` sits beside the two one-byte order fields and is zeroed by the same
+  store; a `u8` brought the extra instruction back.
+- **Suites** (final code, after review): in the plain builds, ten of 61 benchmarks fall
+  outside 0.95–1.05. Each of the ten was then rerun in builds made with
+  `-C llvm-args=-align-all-functions=6` (§19's placement check; the `net` build for
+  `stream_envelope`), along with the dispatch, sub-byte, DMR, counted-run, byte-run,
+  `fixed_44` and 1024-byte envelope groups. Every one reads within ±5% there
+  (`stream_envelope/*/1`, 1.08–1.14 in the plain builds, reads 1.003–1.036 with overlapping
+  ranges; the `*_hand` reference loops, which call no bnb code, read 1.30 plain and 1.00
+  aligned), except:
+
+| Benchmark (aligned builds) | 0.10.0 | Candidate | Ratio |
+|---|---:|---:|---:|
+| `enum_dispatch/bytes_invalid` | 35.05 ns | 37.73 ns | 1.076 |
+| `enum_dispatch/integer_invalid` | 30.61 ns | 28.00 ns | 0.915 |
+
+**Accepted regression (owner approval, 2026-11-11).** `bytes_invalid` is repeatable (ranges
+do not overlap). The disassembly of its inlined loop shows why: building the `BitReader` with
+the new field changes register allocation, so one argument is spilled and reloaded per
+iteration and the frame grows by 16 bytes. `integer_invalid` moved the other way in the same
+builds. No variant tried (a `u8` count) removed it without costing the probe. Approved at
++6% (34.85 → 36.95 ns, first version); the final code reads +7.6%. It is a failure path, the
+trade the root `AGENTS.md` happy-path rule prefers.

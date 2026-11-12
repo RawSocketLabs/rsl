@@ -38,18 +38,9 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
 
 ### 0.10.x, in this order
 
-1. **Decode depth budget.** The one remaining way input can abort a process: a message type
-   that contains itself recurses natively to an input-chosen depth (`DESIGN.md` §11.4).
-   - Outcome: a nested decode past the limit returns a new `ErrorKind` (the enum is
-     `#[non_exhaustive]`, so this is additive) instead of overflowing the stack.
-   - To settle first, with a design review because it touches `Source`: where the counter
-     lives (a defaulted hook on `Source` entered by generated code, or a counter the generated
-     decoder threads itself); which decodes count (every nested `#[bin]` message, since the
-     macro cannot see indirect recursion, or only where a type can reach itself); the default
-     limit and how a caller changes it; that an incremental attempt restarts the count.
-   - Gate: the instruction probe unchanged for messages that do not nest, a measured cost for
-     those that do (`dmr_frame` nests), and a fuzz target over a recursive type that asserts
-     an error where today there is an abort.
+1. ~~**Decode depth budget.**~~ Done (`DESIGN.md` §20): `ErrorKind::TooDeep` past
+   `MAX_DECODE_DEPTH` (128) nested non-empty element loops; probe unchanged; one accepted
+   failing-path regression (`enum_dispatch/bytes_invalid`, +6–8%).
 2. **A frame cap for `BinCodec`.** `BinCodec::with_max_frame(bytes)`: fail once more than
    that is buffered and the message is still incomplete. Default unlimited, so existing code
    is unchanged; the codec stays stateless (the cap is configuration).

@@ -111,6 +111,7 @@ pub bnb::bitstream::ErrorKind::NoProgress
 pub bnb::bitstream::ErrorKind::NotByteAligned
 pub bnb::bitstream::ErrorKind::NotSeekable
 pub bnb::bitstream::ErrorKind::PositionOverflow
+pub bnb::bitstream::ErrorKind::TooDeep
 pub bnb::bitstream::ErrorKind::TooWide
 pub bnb::bitstream::ErrorKind::TooWide::width: usize
 pub bnb::bitstream::ErrorKind::TrailingBits
@@ -937,6 +938,7 @@ impl<T> core::convert::From<T> for bnb::bitstream::StreamBitReader<R>
 pub fn bnb::bitstream::StreamBitReader<R>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::bitstream::StreamBitReader<R>
 impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::StreamBitReader<R>
+pub const bnb::bitstream::MAX_DECODE_DEPTH: u32
 pub trait bnb::bitstream::BitAmount: core::marker::Copy + bnb::bitstream::sealed::Sealed
 pub fn bnb::bitstream::BitAmount::bits(self) -> u32
 pub fn bnb::bitstream::BitAmount::bytes(self) -> u32
@@ -2545,6 +2547,7 @@ pub bnb::ErrorKind::NoProgress
 pub bnb::ErrorKind::NotByteAligned
 pub bnb::ErrorKind::NotSeekable
 pub bnb::ErrorKind::PositionOverflow
+pub bnb::ErrorKind::TooDeep
 pub bnb::ErrorKind::TooWide
 pub bnb::ErrorKind::TooWide::width: usize
 pub bnb::ErrorKind::TrailingBits
@@ -4569,6 +4572,7 @@ impl<T> core::convert::From<T> for bnb::error::UnknownDiscriminant
 pub fn bnb::error::UnknownDiscriminant::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::error::UnknownDiscriminant
 impl<T> tracing::instrument::WithSubscriber for bnb::error::UnknownDiscriminant
+pub const bnb::MAX_DECODE_DEPTH: u32
 pub trait bnb::BitAmount: core::marker::Copy + bnb::bitstream::sealed::Sealed
 pub fn bnb::BitAmount::bits(self) -> u32
 pub fn bnb::BitAmount::bytes(self) -> u32

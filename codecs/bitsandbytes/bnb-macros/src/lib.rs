@@ -68,6 +68,14 @@ pub(crate) fn bits_leaf_codec_impl(
             ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
                 __bnb_r.read::<Self>()
             }
+            // A leaf cannot contain itself: its runs are not charged against the depth budget.
+            #[inline]
+            fn decode_vec<__BnbS: #bnb::__private::Source>(
+                __bnb_r: &mut __BnbS,
+                __bnb_count: usize,
+            ) -> ::core::result::Result<#bnb::__private::Vec<Self>, #bnb::__private::BitError> {
+                #bnb::__private::decode_vec_each(__bnb_r, __bnb_count)
+            }
         }
         impl #bnb::__private::BitEncode for #name {
             #[inline]

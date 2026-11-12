@@ -86,6 +86,15 @@ struct Jump {
     target: u8,
 }
 
+/// Contains itself through a counted `Vec`: each nonzero byte opens one more level.
+#[bin]
+#[derive(Debug)]
+struct Node {
+    n: u8,
+    #[br(count = n)]
+    kids: Vec<Node>,
+}
+
 fuzz_target!(|data: &[u8]| {
     if let Some(&raw) = data.first() {
         let mut built = Tagged::builder()
@@ -119,6 +128,14 @@ fuzz_target!(|data: &[u8]| {
         Jump::decode_iter(data).take(bound + 1).count() <= bound,
         "a slice walk must terminate"
     );
+
+    // A recursive type ends in an error, never a stack overflow: past the depth budget
+    // (129 leading nonzero bytes open 129 nested `Vec`s) it is exactly `TooDeep`.
+    let deep = usize::try_from(bnb::MAX_DECODE_DEPTH).unwrap();
+    let node = Node::decode_exact(data);
+    if data.len() > deep && data[..=deep].iter().all(|&b| b != 0) {
+        assert_eq!(node.unwrap_err().kind, bnb::ErrorKind::TooDeep);
+    }
 
     // Property 3 — decode ∘ encode = id for the fixed-length total parsers. Any
     // byte string of the right length decodes (the parser is total) and re-encodes
