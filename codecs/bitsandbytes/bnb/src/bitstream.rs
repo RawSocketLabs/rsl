@@ -208,7 +208,8 @@ pub enum ErrorKind {
     NotSeekable,
     /// A `BufSource` (with `std`) would have to retain more than its cap to finish the read —
     /// the bytes held since the start, or since the last `BufSource::compact`, plus the
-    /// message in progress exceed the configured bound (never unbounded).
+    /// message in progress exceed the configured bound (never unbounded). Also a message
+    /// longer than a `BinCodec::with_max_frame` cap (with `tokio`), reported at the cap.
     BufferFull {
         /// The cap, in bytes.
         cap: usize,

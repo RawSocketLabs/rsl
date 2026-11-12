@@ -30,11 +30,12 @@
 //! This convenience codec uses `T::LAYOUT` from `BitEncode`; directional/contextual codecs
 //! instead use [`BitBuf::try_pull_with`] with an explicit layout.
 //!
-//! **No maximum frame size.** The codec is stateless and takes whatever the message's own
-//! grammar asks for, so a peer that announces a huge `count` makes `Framed` keep buffering.
-//! When the peer is untrusted, bound it outside: frame an owned length-delimited envelope
-//! first (`tokio_util::codec::LengthDelimitedCodec` with `max_frame_length`), or wrap the
-//! codec in a `Decoder` that fails once `src.len()` passes your limit.
+//! **Frame size.** [`BinCodec::new`] takes whatever the message's own grammar asks for, so a
+//! peer that announces a huge `count` makes `Framed` keep buffering. When the peer is
+//! untrusted, use [`BinCodec::with_max_frame`]: a message longer than the cap fails with
+//! [`ErrorKind::BufferFull`], as soon as that many bytes are buffered without completing it,
+//! or when it decodes whole from one larger read. The cap bounds each message's bytes, not
+//! what decoding allocates; `Framed`'s buffer can pass it by one read before `decode` runs.
 //!
 //! The same `BinCodec` drives **datagrams**, too: `tokio_util::udp::UdpFramed::new(udp_socket,
 //! BinCodec::<T>::new())` is a `Stream<Item = (T, SocketAddr)>` + `Sink<(T, SocketAddr)>`. So
@@ -42,7 +43,7 @@
 //! async mirror of the sync `MessageStream` / `MessageDatagram` split. See `examples/tokio_udp`.
 
 use crate::bitstream::encode_to_vec;
-use crate::{BitDecode, BitEncode};
+use crate::{BitDecode, BitEncode, BitError, ErrorKind};
 use bytes::{Buf, BytesMut};
 use core::fmt;
 use core::marker::PhantomData;
@@ -51,13 +52,52 @@ use tokio_util::codec::{Decoder, Encoder};
 
 /// A [`tokio_util::codec`] codec that frames any bnb `#[bin]` message `T`. Construct with
 /// [`BinCodec::new`] and hand it to [`Framed`](tokio_util::codec::Framed).
-pub struct BinCodec<T>(PhantomData<T>);
+pub struct BinCodec<T> {
+    // `usize::MAX` is no cap: no buffer reaches it.
+    max_frame: usize,
+    message: PhantomData<T>,
+}
 
 impl<T> BinCodec<T> {
-    /// A codec for messages of type `T`.
+    /// A codec for messages of type `T`, with no maximum frame size.
     #[must_use]
     pub fn new() -> Self {
-        Self(PhantomData)
+        Self::with_max_frame(usize::MAX)
+    }
+
+    /// A codec for messages of type `T` that rejects any message longer than `bytes`.
+    ///
+    /// `decode` and `decode_eof` fail with [`ErrorKind::BufferFull`] (`cap` is `bytes`) when a
+    /// message spans more than `bytes`: once `bytes` are buffered and it has not ended (still
+    /// incomplete, or truncated at EOF, as for a `UdpFramed` datagram), or when it decodes
+    /// whole from a larger read. So the answer does not depend on how the input was split
+    /// into reads. Errors the message raises inside the cap keep their own kind. The buffer
+    /// is left unchanged, and bytes after the message do not count. A cap of 0 rejects every
+    /// message.
+    ///
+    /// ```
+    /// # use bnb::{BinCodec, ErrorKind, bin};
+    /// # use bytes::BytesMut;
+    /// # use tokio_util::codec::Decoder;
+    /// #[bin]
+    /// #[derive(Debug)]
+    /// struct Blob {
+    ///     n: u8,
+    ///     #[br(count = n)]
+    ///     data: Vec<u8>,
+    /// }
+    ///
+    /// let mut codec = BinCodec::<Blob>::with_max_frame(16);
+    /// let mut wire = BytesMut::from(&[200; 16][..]); // announces 200 bytes; 16 arrived
+    /// let err = bnb::BitError::from(codec.decode(&mut wire).unwrap_err());
+    /// assert_eq!(err.kind, ErrorKind::BufferFull { cap: 16 });
+    /// ```
+    #[must_use]
+    pub fn with_max_frame(bytes: usize) -> Self {
+        Self {
+            max_frame: bytes,
+            message: PhantomData,
+        }
     }
 }
 
@@ -79,7 +119,11 @@ impl<T> Copy for BinCodec<T> {}
 
 impl<T> fmt::Debug for BinCodec<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("BinCodec")
+        let mut f = f.debug_struct("BinCodec");
+        if self.max_frame != usize::MAX {
+            f.field("max_frame", &self.max_frame);
+        }
+        f.finish()
     }
 }
 
@@ -92,30 +136,53 @@ impl<T: BitDecode + BitEncode> Decoder for BinCodec<T> {
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<T>, io::Error> {
-        Self::attempt(src, false)
+        self.attempt(src, false)
     }
 
     fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<T>, io::Error> {
-        Self::attempt(src, true)
+        self.attempt(src, true)
     }
 }
 
 impl<T: BitDecode + BitEncode> BinCodec<T> {
-    fn attempt(src: &mut BytesMut, eof: bool) -> Result<Option<T>, io::Error> {
+    fn attempt(self, src: &mut BytesMut, eof: bool) -> Result<Option<T>, io::Error> {
         if src.is_empty() {
             return Ok(None);
         }
-        match crate::bitstream::decode_attempt(&src[..], 0, T::LAYOUT, (), eof) {
-            Ok((item, end)) => {
+        let result = crate::bitstream::decode_attempt(&src[..], 0, T::LAYOUT, (), eof);
+        match result {
+            Ok((item, end)) if end.div_ceil(8) <= self.max_frame => {
                 src.advance(end.div_ceil(8));
                 Ok(Some(item))
             }
+            Ok(_) => Err(self.frame_too_long()),
+            // The cap is buffered and the message has not ended: it is longer than the cap.
+            Err(e) if src.len() >= self.max_frame && ran_out(&e, eof) => Err(self.frame_too_long()),
             // Only a partial frame is buffered — ask `Framed` to read more (don't consume).
             Err(e) if e.is_incomplete() => Ok(None),
             // A genuine framing error.
             Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e)),
         }
     }
+
+    #[cold]
+    #[inline(never)]
+    fn frame_too_long(self) -> io::Error {
+        let cap = self.max_frame;
+        let err = BitError::new(ErrorKind::BufferFull { cap }, cap.saturating_mul(8));
+        io::Error::new(io::ErrorKind::InvalidData, err)
+    }
+}
+
+/// Whether an attempt stopped for want of input: `Incomplete`, or truncation at a finite EOF
+/// (`UdpFramed` calls only `decode_eof`).
+fn ran_out(e: &BitError, eof: bool) -> bool {
+    e.is_incomplete()
+        || eof
+            && matches!(
+                e.kind,
+                ErrorKind::UnexpectedEof { .. } | ErrorKind::IncompleteAtEof { .. }
+            )
 }
 
 impl<T: BitEncode> Encoder<T> for BinCodec<T> {
@@ -145,6 +212,8 @@ mod component {
         let codec = BinCodec::<Opaque>::new();
         let copy = codec;
         assert_eq!(format!("{codec:?} {copy:?}"), "BinCodec BinCodec");
+        let capped = BinCodec::<Opaque>::with_max_frame(9);
+        assert_eq!(format!("{capped:?}"), "BinCodec { max_frame: 9 }");
     }
 
     #[test]
@@ -326,6 +395,149 @@ mod component {
         let mut buf = BytesMut::from(&[0x00, 0x00, 0x07][..]); // full frame, wrong magic
         let err = codec.decode(&mut buf).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    /// A length-prefixed message: one byte of count, then that many bytes.
+    #[bin(big)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct Var {
+        n: u8,
+        #[br(count = n)]
+        data: Vec<u8>,
+    }
+
+    fn frame(n: u8) -> Vec<u8> {
+        let mut wire = vec![n];
+        wire.extend(core::iter::repeat_n(0xAB, n.into()));
+        wire
+    }
+
+    fn buffer_full(err: std::io::Error) -> (bnb::ErrorKind, usize) {
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        let err = bnb::BitError::from(err);
+        (err.kind, err.at)
+    }
+
+    #[test]
+    fn a_frame_of_exactly_the_cap_decodes() {
+        let mut codec = BinCodec::<Var>::with_max_frame(5);
+        let mut wire = BytesMut::from(&frame(4)[..]);
+        assert_eq!(codec.decode(&mut wire).unwrap().unwrap().data.len(), 4);
+        assert!(wire.is_empty());
+    }
+
+    #[test]
+    fn an_incomplete_frame_below_the_cap_waits() {
+        let mut codec = BinCodec::<Var>::with_max_frame(5);
+        let mut wire = BytesMut::from(&frame(4)[..4]);
+        assert_eq!(codec.decode(&mut wire).unwrap(), None);
+        assert_eq!(wire.len(), 4);
+    }
+
+    #[test]
+    fn an_incomplete_frame_at_the_cap_fails_and_keeps_the_buffer() {
+        // Five bytes buffered and still incomplete: the frame is longer than five.
+        let mut codec = BinCodec::<Var>::with_max_frame(5);
+        let mut wire = BytesMut::from(&frame(200)[..5]);
+        let (kind, at) = buffer_full(codec.decode(&mut wire).unwrap_err());
+        assert_eq!(kind, bnb::ErrorKind::BufferFull { cap: 5 });
+        assert_eq!(at, 5 * 8);
+        assert_eq!(wire.len(), 5);
+    }
+
+    #[test]
+    fn an_oversize_frame_fails_however_it_arrives() {
+        // Whole in one read, or a byte at a time: the same frame gets the same answer.
+        let mut codec = BinCodec::<Var>::with_max_frame(5);
+        let mut wire = BytesMut::from(&frame(5)[..]);
+        let (kind, at) = buffer_full(codec.decode(&mut wire).unwrap_err());
+        assert_eq!(kind, bnb::ErrorKind::BufferFull { cap: 5 });
+        assert_eq!(at, 5 * 8);
+        assert_eq!(wire.len(), 6);
+        let mut wire = BytesMut::new();
+        let result = frame(5).iter().find_map(|byte| {
+            wire.extend_from_slice(&[*byte]);
+            codec.decode(&mut wire).transpose()
+        });
+        let (kind, _) = buffer_full(result.unwrap().unwrap_err());
+        assert_eq!(kind, bnb::ErrorKind::BufferFull { cap: 5 });
+    }
+
+    #[test]
+    fn truncation_at_eof_reports_the_cap_once_it_is_buffered() {
+        // `UdpFramed` calls only `decode_eof`: a datagram as long as the cap that does not
+        // hold the message is over the cap; a shorter one is truncated.
+        let mut codec = BinCodec::<Var>::with_max_frame(5);
+        let mut wire = BytesMut::from(&frame(200)[..5]);
+        let (kind, _) = buffer_full(codec.decode_eof(&mut wire).unwrap_err());
+        assert_eq!(kind, bnb::ErrorKind::BufferFull { cap: 5 });
+        assert_eq!(wire.len(), 5);
+        let mut wire = BytesMut::from(&frame(200)[..4]);
+        let (kind, _) = buffer_full(codec.decode_eof(&mut wire).unwrap_err());
+        assert!(
+            matches!(kind, bnb::ErrorKind::UnexpectedEof { .. }),
+            "{kind:?}"
+        );
+    }
+
+    #[test]
+    fn an_oversize_frame_at_eof_fails() {
+        let mut codec = BinCodec::<Var>::with_max_frame(5);
+        let mut wire = BytesMut::from(&frame(5)[..]);
+        let (kind, _) = buffer_full(codec.decode_eof(&mut wire).unwrap_err());
+        assert_eq!(kind, bnb::ErrorKind::BufferFull { cap: 5 });
+        assert_eq!(wire.len(), 6);
+    }
+
+    #[test]
+    fn errors_inside_the_cap_keep_their_kind() {
+        // A full frame with the wrong magic, at and past a cap it does not fit.
+        let mut codec = BinCodec::<Magic>::with_max_frame(2);
+        for eof in [false, true] {
+            let mut wire = BytesMut::from(&[0x00, 0x00, 0x07][..]);
+            let err = if eof {
+                codec.decode_eof(&mut wire)
+            } else {
+                codec.decode(&mut wire)
+            };
+            let (kind, _) = buffer_full(err.unwrap_err());
+            assert!(matches!(kind, bnb::ErrorKind::BadMagic { .. }), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_sub_byte_frame_counts_its_padded_final_byte() {
+        // 12 bits take two bytes on the wire.
+        let mut wire = BytesMut::new();
+        BinCodec::<bnb::u12>::new()
+            .encode(bnb::u12::new(0xbcd), &mut wire)
+            .unwrap();
+        let mut one = BinCodec::<bnb::u12>::with_max_frame(1);
+        let (kind, _) = buffer_full(one.decode(&mut wire.clone()).unwrap_err());
+        assert_eq!(kind, bnb::ErrorKind::BufferFull { cap: 1 });
+        let mut two = BinCodec::<bnb::u12>::with_max_frame(2);
+        assert_eq!(two.decode(&mut wire).unwrap().unwrap().value(), 0xbcd);
+        assert!(wire.is_empty());
+    }
+
+    #[test]
+    fn bytes_after_the_frame_do_not_count() {
+        let mut codec = BinCodec::<Var>::with_max_frame(2);
+        let mut wire = BytesMut::from(&frame(1)[..]);
+        wire.extend_from_slice(&frame(1));
+        wire.extend_from_slice(&[0xFF; 64]);
+        assert_eq!(codec.decode(&mut wire).unwrap().unwrap().data, [0xAB]);
+        assert_eq!(codec.decode(&mut wire).unwrap().unwrap().data, [0xAB]);
+        assert_eq!(wire.len(), 64);
+    }
+
+    #[test]
+    fn the_default_codec_has_no_cap() {
+        let mut codec = BinCodec::<Var>::new();
+        let mut wire = BytesMut::from(&frame(255)[..255]);
+        assert_eq!(codec.decode(&mut wire).unwrap(), None);
+        wire.extend_from_slice(&[0xAB]);
+        assert_eq!(codec.decode(&mut wire).unwrap().unwrap().data.len(), 255);
     }
 
     #[test]

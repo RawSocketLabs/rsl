@@ -1444,9 +1444,10 @@ pub fn bnb::error::UnknownDiscriminant::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::error::UnknownDiscriminant
 impl<T> tracing::instrument::WithSubscriber for bnb::error::UnknownDiscriminant
 pub mod bnb::framing
-pub struct bnb::framing::BinCodec<T>(_)
+pub struct bnb::framing::BinCodec<T>
 impl<T> bnb::framing::BinCodec<T>
 pub fn bnb::framing::BinCodec<T>::new() -> Self
+pub fn bnb::framing::BinCodec<T>::with_max_frame(usize) -> Self
 impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec::decoder::Decoder for bnb::framing::BinCodec<T>
 pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
 pub type bnb::framing::BinCodec<T>::Item = T
@@ -2720,9 +2721,10 @@ impl<T> core::convert::From<T> for bnb::WireLen<T>
 pub fn bnb::WireLen<T>::from(T) -> T
 impl<T> tracing::instrument::Instrument for bnb::WireLen<T>
 impl<T> tracing::instrument::WithSubscriber for bnb::WireLen<T>
-pub struct bnb::BinCodec<T>(_)
+pub struct bnb::BinCodec<T>
 impl<T> bnb::framing::BinCodec<T>
 pub fn bnb::framing::BinCodec<T>::new() -> Self
+pub fn bnb::framing::BinCodec<T>::with_max_frame(usize) -> Self
 impl<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode> tokio_util::codec::decoder::Decoder for bnb::framing::BinCodec<T>
 pub type bnb::framing::BinCodec<T>::Error = std::io::error::Error
 pub type bnb::framing::BinCodec<T>::Item = T

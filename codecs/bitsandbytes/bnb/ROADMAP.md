@@ -41,9 +41,9 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
 1. ~~**Decode depth budget.**~~ Done (`DESIGN.md` §20): `ErrorKind::TooDeep` past
    `MAX_DECODE_DEPTH` (128) nested non-empty element loops; probe unchanged; one accepted
    failing-path regression (`enum_dispatch/bytes_invalid`, +6–8%).
-2. **A frame cap for `BinCodec`.** `BinCodec::with_max_frame(bytes)`: fail once more than
-   that is buffered and the message is still incomplete. Default unlimited, so existing code
-   is unchanged; the codec stays stateless (the cap is configuration).
+2. ~~**A frame cap for `BinCodec`.**~~ Done (`DESIGN.md` §21):
+   `BinCodec::with_max_frame(bytes)` fails with `ErrorKind::BufferFull` once a message spans
+   more than `bytes`; `new()` stays unlimited and the codec stays stateless.
 3. **Transport readers for read-only types.** `net::read_message`, `MessageStream` and
    `BinCodec` require `BitEncode` only to learn the layout. Give them `_with` forms (layout
    and context supplied) or bound them on the hidden `DecodeLayout` that 0.10 introduced, so a
@@ -80,8 +80,9 @@ Decisions, one at a time, each written up before code:
    success-path change) or store what dispatch read as bytes with a length, which needs no
    allocation on the error path. Measure both on the failing paths, where a smaller error
    should also remove the store-forwarding stall found in §19.
-3. **Names for the variants 0.10.x adds** (depth, frame cap): choose them with decision 1 in
-   view so 0.11 does not rename them.
+3. **Names for the variants 0.10.x adds** (`TooDeep`): choose them with decision 1 in view
+   so 0.11 does not rename them. The frame cap reuses `BufferFull { cap }`; decide whether
+   it keeps doing so.
 4. **Whether `field` becomes a path** (the innermost field name today), only if a consumer
    needs it.
 

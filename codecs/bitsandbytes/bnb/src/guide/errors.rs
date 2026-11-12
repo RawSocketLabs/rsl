@@ -58,7 +58,8 @@
 //!   the full `io::Error`). `NotSeekable`/`BufferFull` are exactly what you hit moving from
 //!   slices to streams (a `restore_position` on a forward stream; a message larger than a
 //!   `BufSource` cap, with `std`). A `BufSource` loop that never calls `compact` also ends in
-//!   `BufferFull`, and a seek back before compacted bytes is `NotSeekable`.
+//!   `BufferFull`, and a seek back before compacted bytes is `NotSeekable`. A message longer
+//!   than a `BinCodec::with_max_frame` cap is `BufferFull` too.
 //!
 //! ```
 //! use bnb::{bin, ErrorKind};

@@ -1952,3 +1952,53 @@ iteration and the frame grows by 16 bytes. `integer_invalid` moved the other way
 builds. No variant tried (a `u8` count) removed it without costing the probe. Approved at
 +6% (34.85 → 36.95 ns, first version); the final code reads +7.6%. It is a failure path, the
 trade the root `AGENTS.md` happy-path rule prefers.
+
+## 21. `BinCodec` frame cap (0.10.1)
+
+`BinCodec` took whatever a message's grammar asked for, so a peer announcing a huge `count`
+made `Framed` buffer without limit (recorded as an owner decision in §19 and documented;
+the workaround was an outer `LengthDelimitedCodec` or a hand-written wrapping `Decoder`).
+
+### Contract
+
+- `BinCodec::with_max_frame(bytes)`; `new()` is `with_max_frame(usize::MAX)`, so existing
+  code is unchanged. The codec stays `Copy` and keeps no state between calls: the cap is
+  configuration.
+- A message is over the cap when it spans more than `bytes`. `decode` reports that as soon
+  as `bytes` are buffered and the attempt is still `Incomplete`, and both `decode` and
+  `decode_eof` report it when a complete message decodes past the cap, so one frame gets
+  the same answer however the input was split into reads. Bytes after the message do not
+  count.
+- The error reuses `ErrorKind::BufferFull { cap }` (a retained-bytes cap, as for
+  `BufSource`), positioned at `cap * 8` (saturating) and wrapped in `InvalidData`; no new
+  variant ahead of the 0.11 error-type release. The buffer is left unchanged, as for every
+  other `BinCodec` error.
+- Other errors keep priority: the cap is checked only on success and when the attempt ran
+  out of input (`Incomplete`, or `UnexpectedEof`/`IncompleteAtEof` at EOF), so a bad magic
+  inside the cap is still `BadMagic`. The EOF case matters for `UdpFramed`, which calls only
+  `decode_eof`: a datagram as long as the cap that does not hold the message reports the
+  cap, as `Framed` would. One imprecision, accepted: a truncated bounded region inside such a
+  datagram also reads as over the cap.
+- The cap bounds buffered wire bytes, not what decoding allocates.
+
+### Tests and evidence
+
+Ten component tests in `framing.rs` (written first, failing to compile without the method):
+exactly the cap decodes; incomplete below the cap waits; incomplete at the cap fails with
+the buffer kept; an oversize frame fails whole or byte by byte; EOF truncation at and below
+the cap; an oversize frame at EOF; `BadMagic` keeps its kind at and past the cap; a 12-bit
+message needs a cap of 2 (its padded final byte counts); trailing bytes do not count; the
+default has no cap; `Debug` with and without a cap. Hand mutants killed: `<=`→`<` and
+`true` on the success guard, `>=`→`>` on the ran-out check, position `0`, `end / 8` (the
+sub-byte test), dropping the EOF arm of the ran-out check, and checking the cap before the
+error kind (the `BadMagic` test). `cargo public-api` regenerated; `cargo semver-checks`
+against `bitsandbytes-v0.10.0` passes as a patch in default, no-default and all-features
+modes. Independent review: no blocking findings; its should-fixes (the `UdpFramed` EOF
+path, the sub-byte, EOF and priority tests, this section, the ROADMAP) are applied. A
+`BinCodec` fuzz shape stays with ROADMAP 0.10.x item 5.
+
+### Performance
+
+The success path adds one compare of the end offset it already computes; the over-cap
+error is built out of line (`#[cold]`). No benchmark or probe drives `BinCodec` (the probe
+measures `BitBuf`), so none was rerun; the decode path the suites measure is unchanged.
