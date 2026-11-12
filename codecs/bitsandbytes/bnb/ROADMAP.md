@@ -56,9 +56,11 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          message through `BitBuf` at chunk 44, 5 and 1, the shared attempt compiled out of
          line, and encode; results consumed by reference; each mode carries its gate tier.
          Baselines on the tag and on `main` are in `DESIGN.md` §22.
-   - [ ] **Phase 1, changes nothing pays for.** Build the reader in place in
-         `decode_attempt`; one 16-byte load for wide unaligned reads; `#[inline]` on
-         `net::read_limit` and `shortfall`.
+   - [x] **Phase 1, changes nothing pays for.** The reader built in place in
+         `decode_attempt`; one 16-byte load for unaligned reads; `#[inline]` on
+         `net::read_limit` and `shortfall`. No probe mode costs more in any tier;
+         `dmr_frame/decode` 0.52 and `stream_envelope` 0.69–0.91 against 0.10.0
+         (`DESIGN.md` §22, phase 1).
    - [ ] **Phase 2, inline typed reads.** `Source::read` on `BitReader` and
          `IncrementalReader` (with the 32-bit saturation check), then `BytesReader` and
          `LimitedSource`. Owner decision if the buffered probe cannot be held exactly.

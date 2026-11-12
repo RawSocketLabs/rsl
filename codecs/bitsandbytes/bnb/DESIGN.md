@@ -2172,3 +2172,97 @@ frame cap (the rest of `codec_decode`'s four).
 
 The raw output is kept on the measuring machine only, beside the 0.10.0 Criterion baseline
 (the tag's numbers come from the tag's tree with this bench file added).
+
+### Phase 1: changes nothing pays for (2026-11-12)
+
+Three commits, each measured with the probe on its parent. The probe first gained three
+modes, because review found the unaligned-read change reached cases nothing measured:
+`unaligned_mid` and `unaligned_tail` (fields of 12 to 28 bits with sixteen bytes after them,
+and at the very end of a buffer) and `unaligned_wide_tail` (a 108-bit field fourteen bytes
+from the end). That makes 36 modes; decoding `Burst` on its own moved `dmr` from 708.99 to
+730.99, and no other mode. The table below is the baseline from here on.
+
+1. **`decode_attempt` builds its reader in place** (row 2). It checks the start once,
+   reporting what `BitReader::seek_to_bit` reported, and each branch builds a reader that is
+   already positioned. Two forms that still seek after building (one reader per branch; one
+   reader inside the `IncrementalReader` both branches use) gave the same cycle gain but
+   added three instructions per attempt where a consumer inlines the attempt
+   (`buffered_fixed44_*`: +4, +29 and +133 per message); the form taken leaves those modes
+   identical.
+2. **`extract_unaligned_bits` loads its window whole** (row 3) when sixteen bytes lie behind
+   the field's first byte, at any width. Within a buffer's last fifteen bytes it folds as
+   before, in a `u64` when the field touches at most eight bytes: the guard alone cost a
+   narrow tail read five instructions (454.99 → 459.99), and the `u64` fold turns that into
+   a gain. The fold's 17th-byte arms became unreachable and are gone. Rejected: one path
+   that zero-pads a short tail into a 16-byte array and loads that. It had the fewest
+   instructions (`unaligned_tail` 378.99) and the most cycles (93 → 114): the load reads
+   back bytes just stored one at a time, the same stall as row 2.
+3. **`net::read_limit` and `shortfall` are `#[inline]`** (row 5).
+
+Instructions per unit (`--features tokio`, core 61), parent, then after each commit, and
+cycles before and after all three. The other 22 modes are instruction-identical
+throughout, in every tier:
+
+| Mode | Tier | Parent | 1 | 2 | 3 | Cycles |
+|---|---|---:|---:|---:|---:|---|
+| `dmr` | happy | 730.99 | 730.99 | 425.99 | 425.99 | 160.1 → 94.1 |
+| `unaligned_mid` | happy | 509.99 | 509.99 | 360.99 | 360.99 | 103.0 → 83.7 |
+| `unaligned_tail` | happy | 454.99 | 454.99 | 414.99 | 414.99 | 93.0 → 72.0 |
+| `unaligned_wide_tail` | happy | 603.99 | 603.99 | 408.99 | 408.99 | 138.3 → 93.5 |
+| `prefix_envelope` | happy | 296.99 | 289.99 | 289.99 | 289.99 | 99.7 → 68.6 |
+| `prefix_eof_envelope` | happy | 282.99 | 281.99 | 281.99 | 281.99 | 66.6 → 66.1 |
+| `prefix_fixed44` | happy | 607.99 | 601.99 | 601.99 | 601.99 | 157.8 → 127.7 |
+| `pull_short` | expected | 238.99 | 231.99 | 231.99 | 231.99 | 110.2 → 74.2 |
+| `prefix_short_envelope` | expected | 202.99 | 195.99 | 195.99 | 195.99 | 88.4 → 53.1 |
+| `prefix_short_fixed44` | expected | 1,782.99 | 1,775.99 | 1,775.99 | 1,775.99 | 439.4 → 412.9 |
+| `stream_16x40_whole` | happy | 370.55 | 363.55 | 363.55 | 356.30 | 173.4 → 119.6 |
+| `stream_16x40_64` | expected | 638.42 | 627.05 | 627.05 | 592.30 | 291.4 → 211.1 |
+| `stream_16x40_1` | expected | 7,319.83 | 7,298.83 | 7,298.83 | 6,615.83 | 1,644.2 → 1,341.3 |
+| `codec_decode` | happy | 470.99 | 463.99 | 463.99 | 463.99 | 135.2 → 111.5 |
+
+The old buffered probe reads 270.24 / 1243.24 / 148.92, as before.
+
+**Criterion**, §19's method against the 0.10.0 tag (three alternating pinned rounds, lowest
+median; ns):
+
+| Benchmark | 0.10.0 | Phase 1 | Ratio |
+|---|---:|---:|---:|
+| `dmr_frame/decode` | 30.97 | 16.16 | 0.52 |
+| `stream_envelope/64/64` | 88.50 | 60.87 | 0.69 |
+| `stream_envelope/1024/64` | 228.32 | 169.94 | 0.74 |
+| `stream_envelope/16x40/64` | 984.92 | 758.75 | 0.77 |
+| `stream_envelope/1024/1028` | 81.11 | 62.43 | 0.77 |
+| `stream_envelope/16x40/704` | 623.83 | 500.93 | 0.80 |
+| `stream_envelope/64/68` | 52.37 | 43.21 | 0.83 |
+| `stream_envelope/16x40/1` | 5,341.8 | 4,438.2 | 0.83 |
+| `stream_envelope/16384/64` | 2,240.9 | 1,867.3 | 0.83 |
+| `stream_envelope/64/1` | 477.69 | 404.43 | 0.85 |
+| `stream_envelope/1024/1` | 5,960.0 | 5,272.4 | 0.88 |
+| `stream_envelope/16384/1` | 93,204 | 83,222 | 0.89 |
+| `stream_envelope/16384/16388` | 617.72 | 558.87 | 0.91 |
+
+Of the other 48 benchmarks, 42 read 0.95–1.05. The six outside were rerun in builds made
+with `-C llvm-args=-align-all-functions=6` (§19's placement check): `byte_aligned/encode`
+1.052 → 0.994, `counted_u32_256/encode` 1.116 → 0.986, `counted_u32_256/decode_hand` 1.323
+→ 1.002, `counted_u16_1024/decode` 0.885 → 1.005, `incremental_envelope/1024/1500` 0.943 (not
+rerun; faster). `enum_dispatch/bytes_invalid` stays at 1.084 there, with `integer_invalid`
+at 0.917: §20's accepted depth-budget pair (1.076 and 0.915), which these commits leave
+instruction-identical (`bytes_invalid`, `numeric_invalid` above). `incremental_envelope`
+does not move (0.94–1.04): its attempt is inlined in that executable, which is why the old
+harness never saw row 2.
+
+**Tests.** `an_attempt_starts_where_it_is_told_and_rejects_a_start_past_the_end` pins the
+start check, both `eof` values and the boundary; it passes against the old body too. The
+`extract_bits` differential also runs each read with bytes after the field, so a narrow
+read takes the whole-window path. Nineteen hand mutants killed: three on the attempt (the
+bound, the start position, the error's position), eight on the window load (the spill
+bound and never spilling, both 17th-byte shifts, both final shifts, both `lead` shifts),
+three on the `u128` fold (the mask and both shifts), five on the `u64` fold (the
+eight-byte bound, the mask and its width, both shifts). 856 tests with all
+features, 780 with default; clippy in both; MSRV 1.85 and the `no_std` build.
+
+**Independent review.** No blocking finding. Applied: the dead fold arms removed; the
+unmeasured narrow and tail reads measured (which found the five-instruction cost above);
+this record; the boundary assertions in the attempt's test; a comment that called
+`shortfall` per-read. It confirmed error parity for every input of the attempt, and the
+window arithmetic by an independent model over 2,045,760 cases.
