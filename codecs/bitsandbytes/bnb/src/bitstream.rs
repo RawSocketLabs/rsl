@@ -782,43 +782,74 @@ fn extract_unaligned_bits(buf: &[u8], pos: usize, n: usize, order: BitOrder) -> 
     if n == 0 {
         return 0;
     }
-    // The field starts `lead` bits into its first byte and touches `span.len()` bytes.
-    // That is at most 17 (128 bits from a non-zero offset), one more than a `u128` window
-    // holds, so a 17th byte is folded in separately.
+    // The field starts `lead` bits into its first byte.
     let lead = pos % 8;
+    // With sixteen bytes at hand, load the window whole, whatever the field's width: the
+    // fold below costs about ten instructions per byte (DESIGN.md §22, row 3).
+    if let Some(window) = buf.get(pos / 8..).and_then(<[u8]>::first_chunk::<16>) {
+        // A 128-bit field from a non-zero offset touches 17 bytes, one more than the
+        // window holds: the 17th is merged in separately.
+        let spills = lead + n > 128;
+        return match order {
+            BitOrder::Msb => {
+                // The field's first bit to the top; `lead` vacated bits at the bottom.
+                let mut top = u128::from_be_bytes(*window) << lead;
+                if spills {
+                    top |= u128::from(buf[pos / 8 + 16] >> (8 - lead));
+                }
+                top >> (128 - n)
+            }
+            BitOrder::Lsb => {
+                // The field's first bit to the bottom; `lead` vacated bits at the top.
+                let mut low = u128::from_le_bytes(*window) >> lead;
+                if spills {
+                    low |= u128::from(buf[pos / 8 + 16]) << (128 - lead);
+                }
+                low & (u128::MAX >> (128 - n))
+            }
+        };
+    }
+    // Within a buffer's last fifteen bytes the field touches at most fifteen, so they fit
+    // one window, folded in a byte at a time.
     let span = &buf[pos / 8..(pos + n).div_ceil(8)];
-    let (window_bytes, overflow) = span.split_at(span.len().min(16));
+    // Up to eight bytes fold in a `u64`, at a third of the `u128` fold's cost per byte.
+    if span.len() <= 8 {
+        let mask = u64::MAX >> (64 - n);
+        let field = match order {
+            BitOrder::Msb => {
+                let window = span
+                    .iter()
+                    .fold(0u64, |acc, &byte| (acc << 8) | u64::from(byte));
+                window >> (span.len() * 8 - lead - n)
+            }
+            BitOrder::Lsb => {
+                let window = span
+                    .iter()
+                    .rev()
+                    .fold(0u64, |acc, &byte| (acc << 8) | u64::from(byte));
+                window >> lead
+            }
+        };
+        return u128::from(field & mask);
+    }
     let mask = u128::MAX >> (128 - n);
     match order {
         // The window is the bytes as one big-endian number: the field's first bit is the
         // highest, `lead` bits below the window's top.
         BitOrder::Msb => {
-            let window = window_bytes
+            let window = span
                 .iter()
                 .fold(0u128, |acc, &byte| (acc << 8) | u128::from(byte));
-            let field = match overflow.first() {
-                // `tail` bits of the field spill into the 17th byte, as its high bits.
-                Some(&last) => {
-                    let tail = lead + n - 128;
-                    (window << tail) | u128::from(last >> (8 - tail))
-                }
-                None => window >> (window_bytes.len() * 8 - lead - n),
-            };
-            field & mask
+            (window >> (span.len() * 8 - lead - n)) & mask
         }
         // The window is the bytes as one little-endian number: the field's first bit is
         // `lead` bits above the window's bottom.
         BitOrder::Lsb => {
-            let window = window_bytes
+            let window = span
                 .iter()
                 .rev()
                 .fold(0u128, |acc, &byte| (acc << 8) | u128::from(byte));
-            let field = match overflow.first() {
-                // A 17th byte implies `lead > 0`; its low bits are the field's top ones.
-                Some(&last) => (window >> lead) | (u128::from(last) << (128 - lead)),
-                None => window >> lead,
-            };
-            field & mask
+            (window >> lead) & mask
         }
     }
 }
@@ -4128,10 +4159,18 @@ mod unit {
                         // Exactly as long as the read needs, so one that reaches for a
                         // byte past its last touched one is out of bounds.
                         let buf = &noisy[..usize::div_ceil(pos + n, 8)];
+                        let reference = extract_bits_bitwise(buf, pos, n, order);
                         assert_eq!(
                             extract_bits(buf, pos, n, order),
-                            extract_bits_bitwise(buf, pos, n, order),
+                            reference,
                             "{order:?} pos {pos} n {n}"
+                        );
+                        // And with bytes after the field, where a narrow read can load a
+                        // whole window: the bytes it does not want must not leak in.
+                        assert_eq!(
+                            extract_bits(&noisy, pos, n, order),
+                            reference,
+                            "{order:?} pos {pos} n {n}, with a tail"
                         );
                     }
                 }
