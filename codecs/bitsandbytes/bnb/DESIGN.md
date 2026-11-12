@@ -2002,3 +2002,80 @@ path, the sub-byte, EOF and priority tests, this section, the ROADMAP) are appli
 The success path adds one compare of the end offset it already computes; the over-cap
 error is built out of line (`#[cold]`). No benchmark or probe drives `BinCodec` (the probe
 measures `BitBuf`), so none was rerun; the decode path the suites measure is unchanged.
+
+## 22. Happy-path performance review (2026-11-12)
+
+A review of the runtime and the generated codec at `839ccecf` through one lens, under the
+root `AGENTS.md` rule that prefers decoding valid input faster over failing faster. Three
+reviewers (slice decode core, generated code, streaming and transports), then two
+independent reviewers told to refute every finding. Nothing was changed; the work it led to
+is ROADMAP 0.10.x item 4.
+
+**Status of the numbers.** Measured on scratch copies, Threadripper 7970X, Rust 1.99.1,
+default features, pinned, with other reviewers running at the same time. They size the
+work; they are not gate measurements. Each phase re-measures against `bitsandbytes-v0.10.0`
+by §19's method. "ins" is user instructions per decode from a fixed-work probe.
+
+### Main result
+
+Most of the lost speed is an inlining boundary, not failure-path protection. §19 pinned
+`read_bits` inline, one level below `Source::read`, the function generated decoders call;
+`read` stays out of line (18 call sites in `message_bench`, 24 in `bitstream_bench`), so
+each field pays a call, a `Result` returned through memory and runtime order branches. §10's
+statement that these paths are forced inline into generated decoders is not true of `read`.
+
+### Confirmed
+
+| # | Where | Cost | Prototype result | Who pays |
+|---|---|---|---|---|
+| 1 | `Source::read` not inlined (`bitstream.rs`) | call + 80-byte `Result` per field | `fixed_44/decode` 20.7 → 9.05 ns, `ipv4ish_message/decode` 36.0 → 19.1, `byte_aligned/decode` 15.1 → 9.06, `sub_byte/msb_decode` 32.9 → 22.9 (with row 3) | buffered probe 270.22 / 1243.22 / 148.91 → 341.22 / 1490.22 / 219.91 as built; 271.22 / 1260.22 / 149.91 with `IncrementalReader::read_bits` pinned too |
+| 2 | `decode_attempt` moves the reader it just built | two store-forwarding stalls where the attempt is not inlined | `stream_envelope/16x40/704` 662 → 529 ns; `BinCodec::decode`, 68-byte frame, 33.0 → 27.6 ns; failing `pull` 107.6 → 74.6 cycles | nothing |
+| 3 | `extract_unaligned_bits` folds 16 bytes singly | 162 ins per wide read | `dmr_frame/decode` 31.0 → 16.2 ns; 66,304 cases equal | nothing |
+| 4 | Fixed-length messages check per field | ~55 ins per scalar field | `fixed_44/decode` 20.0 → 7.4 ns, `sub_byte/msb_decode` 33 → 11.6 | a lone `Incomplete` attempt up to +10% cycles; see below |
+| 5 | `net::read_limit`, `shortfall` out of line | 11.6% of `stream_envelope/16384/1` | `1024/1` 6.42 → ~5.4 µs, `16384/1` 100.8 → 85 µs; `incremental_envelope` flat | nothing |
+| 6 | Transport encode allocates, then copies | `BinCodec::encode` 70.4 ns against `to_bytes` 34.8 ns (44 bytes); 467 against 210 ns (16 KiB) | not built | nothing |
+| 7 | `decode_exact` copies the message on success | 11–15 cycles per call, in three placements | not built | nothing |
+| 8 | Stream readers read one byte per `read_exact` | 16 KiB payload 58–130 µs against 0.155 µs from a slice | not built | error behaviour, see below |
+| 9 | The probe covers one enum through `BitBuf` with `decode_attempt` inlined | read identically across row 2's 20% gain and a 1.37× regression | — | — |
+
+Row 4 as prototyped is not mergeable: row 1 already gives about 80% of its byte-aligned
+gain (sub-byte, 657 → 160 ins, is what remains); it turns the public `FixedBitLen` from a
+sizing hint into a decode-correctness contract; it puts inline hints in generated code,
+which §19 says none carries; and `ipv4ish_message/decode` read slower (34.9 → 38.4 ns).
+
+Row 8 is the one clear case of a failure path protected at the happy path's expense. The
+reviewer's claim that bulk reads keep errors identical was refuted: `PositionOverflow`
+mid-run differs, and the amount a third-party reader consumes on a failed `read_exact(n)`
+is unspecified. It needs a differential test before any change.
+
+Smaller, confirmed as costs with unbuilt fixes: `LimitedSource` 3.6× an unwindowed read
+(no consumer outside bnb); `BytesReader::read_bits` 1.84× `BitReader` (none); byte-string
+magic fallthrough about 72 ins per missed variant (none; §19 has it as measured only);
+per-field error decoration is about 750 of the 1,010 bytes of one five-field decoder (size,
+not executed instructions); `assert`, range and prefix rejections allocate a `String`
+(failure only, API-visible, 0.11); transport reads are capped at the 4 KiB scratch (the
+floor without the copy is not reachable without zeroing, which §19 measured).
+
+### Hypotheses, to research before scheduling
+
+- An inline aligned fast path on `IncrementalReader::read_bytes`/`read_into`. The stall is
+  in the disassembly; reading its share of samples as its cost was unsound (the function was
+  instruction-identical in two builds that timed 172 and 404 ns).
+- `BitBuf` compaction: O(cap) per message when a bounded buffer is kept full; the unbounded
+  case was not measured and the proposed policy contradicts the type's documentation.
+- A start capacity for variable-length `encode_to_vec`.
+- The fixes for rows 6–8 and the smaller items.
+
+### Refuted, and corrections to earlier records
+
+- §19 does not gate on `*_invalid` benchmarks: its sentence is a result, no variant was
+  rejected over one, and the tiers are already in the root `AGENTS.md`. Phase 0 writes them
+  into the gate text.
+- "Copies of the 80-byte error" (ROADMAP §E) is, on the failing attempt, one stalled load of
+  the error's last 16-byte lane; boxing `BadMagic` does not touch the success-path stalls.
+- Protections worth keeping: no pre-allocation from an untrusted count costs under 1%
+  (298,177 against 295,275 ins on 1,024 records); `BinCodec` staying stateless costs
+  150–200 ns over eleven failed attempts on a 16 KiB blob.
+
+Not checked by anyone: non-default features, 32-bit, MSRV 1.85 and `no_std` builds of any
+prototype.

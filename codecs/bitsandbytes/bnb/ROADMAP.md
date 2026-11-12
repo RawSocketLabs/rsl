@@ -48,11 +48,47 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    `BinCodec` require `BitEncode` only to learn the layout. Give them `_with` forms (layout
    and context supplied) or bound them on the hidden `DecodeLayout` that 0.10 introduced, so a
    `#[bin(read_only)]` type works through every transport.
-4. **Performance left open by §19:** the `incremental_envelope` cases (profile the
-   failing-attempt path; the cost is copies of the 80-byte error, so re-measure after 0.11
-   if that lands first); the runtime file split with `#[inline]` decisions on
-   `try_pull_with`/`decode_attempt` measured one at a time; a benchmark for direct
-   constant-width `read_bits`/`write_bits` loops before tuning them.
+4. **Happy-path performance** (the 2026-11-12 review, `DESIGN.md` §22, under the root
+   `AGENTS.md` happy-path rule). None of it changes the API. In phases, each change its own
+   commit, measured against `bitsandbytes-v0.10.0`:
+   - [ ] **Phase 0, instruments.** Probe modes for a fixed struct, a sub-byte struct,
+         counted records, a variable-tail message, a fixed struct through `BitBuf` at chunk
+         1 and 5, and a consumer in which `decode_attempt` is not inlined; `black_box` by
+         reference; the three tiers (happy path, expected-often failure, terminal failure)
+         written into the gate text. New baseline on `main`, old probe numbers unchanged.
+   - [ ] **Phase 1, changes nothing pays for.** Build the reader in place in
+         `decode_attempt`; one 16-byte load for wide unaligned reads; `#[inline]` on
+         `net::read_limit` and `shortfall`.
+   - [ ] **Phase 2, inline typed reads.** `Source::read` on `BitReader` and
+         `IncrementalReader` (with the 32-bit saturation check), then `BytesReader` and
+         `LimitedSource`. Owner decision if the buffered probe cannot be held exactly.
+         Afterwards re-measure and close or keep §E's enum `decode_exact` specialization and
+         constant-width items, which are this boundary under other names.
+   - [ ] **Phase 3, encode.** `MessageStream` keeps a write buffer; `BinCodec` writes
+         straight into `dst` and truncates on error; bare `#[derive(BitEncode)]` gets the
+         pre-sized `to_bytes`; `Sink::write` inlined as the mirror of phase 2.
+   - [ ] **Phase 4, fixed-length messages.** Design review first. One availability check
+         per message instead of one per field, keyed on a macro-only marker so
+         `FixedBitLen` stays a sizing hint; go or no-go on what phase 2 leaves (mainly
+         sub-byte messages); no slowdown on variable-tail messages.
+   - [ ] **Phase 5, stream readers.** A differential test (per-byte against bulk, across
+         readers and error kinds) first, then bulk reads for `StreamBitReader` and
+         `BufSource`; the 4 KiB scratch cap on transport reads. Owner approves every
+         behaviour the test shows changing (`PositionOverflow` mid-run, third-party
+         readers' `read_exact`, `DESIGN.md` §12.1).
+   - [ ] **Phase 6, small items.** Byte-string magic fallthrough; a cold helper for
+         per-field error decoration; `LimitedSource` byte runs. Static-text rejections that
+         allocate go to 0.11 decision 1.
+   - [ ] **Research, in scratch copies, before any of it is scheduled** (after phase 0 and
+         the phase 1 `decode_attempt` change, because the stalls move with neighbouring
+         code): an inline fast path for `IncrementalReader::read_bytes`/`read_into`
+         (store-forward counters, not sample share); `BitBuf` compaction on an unbounded
+         buffer under backlog; a start capacity for variable-length encodes; keeping the
+         `Result` whole in `decode_exact`; one prototype each for the unbuilt phase 6 fixes.
+         One report, a number and a go or no-go per row; rejections recorded in §22.
+   Still open from §19 and not covered above: the runtime file split, which needs the
+   phase 0 non-inlined consumer before `#[inline]` decisions on `try_pull_with` and
+   `decode_attempt` can be measured.
 5. **Verification debt:** `cargo mutants --in-diff` over the 0.9.0..0.10.0 runtime diff; the
    unit suite on a 32-bit target; fuzz shapes not yet covered (LSB and little-endian layouts,
    `parse_with` codecs, `LimitedSource`, `decode_prefix`, `BinCodec`, a recursive type); run
@@ -472,14 +508,16 @@ blocks 1.0.
 - [ ] **Incremental envelope path** — the byte-wise read commit left four
       `incremental_envelope` cases 2–6% slower (3 to 94 ns per envelope; accepted,
       `DESIGN.md` §19). Profile the failing-attempt path the way the one-byte-chunk case was
-      (store-forwarding on the 80-byte error) and recover it.
+      (store-forwarding on the 80-byte error) and recover it. Now 0.10.x item 4, phase 1 and
+      its research row (`DESIGN.md` §22).
 - [ ] **Split `bnb/src/bitstream.rs` into modules.** Built and rejected once: the move
       changed how the incremental pull path is compiled in consumers (12–23% slower,
       `DESIGN.md` §19). Needs measured `#[inline]` decisions on `try_pull_with` /
       `decode_attempt` first; the macro crate's split is done.
 - [ ] Direct calls to `read_bits`/`write_bits` with a constant width in a hand-written loop
       fold less than they did where the old read happened to inline (`DESIGN.md` §19). No
-      in-tree code does this; add a bench before tuning it.
+      in-tree code does this; add a bench before tuning it. Generated decoders are in the
+      same position (`DESIGN.md` §22): 0.10.x item 4, phase 2.
 - [ ] Macro compile-time / codegen-bloat sanity check — still open (a `cargo build
       --timings` / expanded-output size pass on a representative multi-message crate).
 
@@ -592,7 +630,8 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
 - [ ] **[perf] Remaining per-byte runs.** `LimitedSource` (needs a no-allocation,
       hint-preserving delegation), `StreamBitReader`/`BufSource`/`SeekReader`/`BufSeekReader`
       (mid-run EOF/`BufferFull`/I/O semantics must stay per-byte-identical), and unaligned runs
-      (shift-merge). Measure a consumer first; all are correct today.
+      (shift-merge). Measure a consumer first; all are correct today. Measured in
+      `DESIGN.md` §22: 0.10.x item 4, phases 5 and 6.
 - [x] **[decided] Auto-`FixedBitLen` for fixed-wire mapped types → keep the manual one-liner.**
       Nesting a fixed-wire mapped type as a plain field needs a hand-written
       `impl FixedBitLen { const BIT_LEN = <Wire as FixedBitLen>::BIT_LEN; }` (surfaced building
@@ -686,6 +725,7 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       through `decode_exact_with` cut slice-path rejection ~28% and four-byte success ~23%
       (`DESIGN.md` §13) but duplicates every enum's decode body. Needs its own gate and an enum
       `TrailingBytes`/trait-path parity test first: a `decode_peek_with` mutant survived.
+      Re-measure after 0.10.x item 4, phase 2, which gets most of it without duplication.
 - [x] **Encode-model parity for tagged-union enums** *(resolved by the carried-mode removal)* — the
       canonical/`validate` surface stays **struct-only**; a `#[bin]` enum encodes verbatim (the
       boundary is already documented as intentional in the guide/DESIGN: canonical form and validity
