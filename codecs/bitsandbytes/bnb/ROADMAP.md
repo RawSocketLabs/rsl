@@ -66,28 +66,29 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          `LimitedSource`. Owner decision if the buffered probe cannot be held exactly.
          Afterwards re-measure and close or keep §E's enum `decode_exact` specialization and
          constant-width items, which are this boundary under other names.
-   - [ ] **Phase 3, encode.** `MessageStream` keeps a write buffer; `BinCodec` writes
-         straight into `dst` and truncates on error; bare `#[derive(BitEncode)]` gets the
-         pre-sized `to_bytes`; `Sink::write` inlined as the mirror of phase 2.
+   - [ ] **Phase 3, encode.** A size hint for `to_bytes` on variable-length and
+         bare-derive messages (researched: one allocation at any size, encode 0.30–0.62);
+         `MessageStream` keeps a write buffer; `BinCodec` writes straight into `dst` and
+         truncates on error; `Sink::write` inlined as the mirror of phase 2.
    - [ ] **Phase 4, fixed-length messages.** Design review first. One availability check
          per message instead of one per field, keyed on a macro-only marker so
          `FixedBitLen` stays a sizing hint; go or no-go on what phase 2 leaves (mainly
          sub-byte messages); no slowdown on variable-tail messages.
    - [ ] **Phase 5, stream readers.** A differential test (per-byte against bulk, across
          readers and error kinds) first, then bulk reads for `StreamBitReader` and
-         `BufSource`; the 4 KiB scratch cap on transport reads. Owner approves every
-         behaviour the test shows changing (`PositionOverflow` mid-run, third-party
+         `BufSource`. Transport reads past the 4 KiB scratch are researched (a 1 MiB
+         envelope in 8 socket reads instead of 258) and retried on the phase 2 base. Owner
+         approves every behaviour that changes (`PositionOverflow` mid-run, third-party
          readers' `read_exact`, `DESIGN.md` §12.1).
-   - [ ] **Phase 6, small items.** Byte-string magic fallthrough; a cold helper for
-         per-field error decoration; `LimitedSource` byte runs. Static-text rejections that
-         allocate go to 0.11 decision 1.
-   - [ ] **Research, in scratch copies, before any of it is scheduled** (after phase 0 and
-         the phase 1 `decode_attempt` change, because the stalls move with neighbouring
-         code): an inline fast path for `IncrementalReader::read_bytes`/`read_into`
-         (store-forward counters, not sample share); `BitBuf` compaction on an unbounded
-         buffer under backlog; a start capacity for variable-length encodes; keeping the
-         `Result` whole in `decode_exact`; one prototype each for the unbuilt phase 6 fixes.
-         One report, a number and a go or no-go per row; rejections recorded in §22.
+   - [ ] **Phase 6, small items.** Researched and go: byte-string magic fallthrough
+         (`magic_eighth` 713 → 188 instructions), `LimitedSource` (a windowed message
+         2,096 → 602), and the inline fast path on `IncrementalReader::read_into`. Retried
+         on the phase 2 base: the same on `read_bytes`, and `#[cold]` on
+         `BitError::in_field`. Owner decision: `BitBuf` compaction on unbounded buffers.
+         Static-text rejections that allocate go to 0.11 decision 1.
+   - [x] **Research, in scratch copies, before any of it was scheduled.** Nine prototypes,
+         a number and a verdict each in `DESIGN.md` §22. No-go: keeping the `Result`
+         whole in `decode_exact`, and an out-of-line helper for per-field error decoration.
    Still open from §19 and not covered above: the runtime file split, which needs the
    phase 0 non-inlined consumer before `#[inline]` decisions on `try_pull_with` and
    `decode_attempt` can be measured.

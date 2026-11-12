@@ -2271,3 +2271,35 @@ unmeasured narrow and tail reads measured (which found the five-instruction cost
 this record; the boundary assertions in the attempt's test; a comment that called
 `shortfall` per-read. It confirmed error parity for every input of the attempt, and the
 window arithmetic by an independent model over 2,045,760 cases.
+
+### Research before phases 2 to 6 (2026-11-12)
+
+Nine prototypes for the hypotheses and the unbuilt fixes, each in a scratch copy of
+`da7a8aa6`, measured with the probe against a parent built from the same probe file
+(instructions; cycles as ranges over three or more pinned rounds, taken while two other
+measurements shared the machine) and with Criterion where a benchmark covers the path.
+Every prototype below passed the 856-test suite, clippy, the `no_std` check and
+`cargo +1.85 check` in its copy. Nothing is merged; the prototypes are kept on the
+measuring machine.
+
+| Question | Result | Verdict |
+|---|---|---|
+| Inline fast path on `IncrementalReader::read_into` | `prefix_fixed44` 601.99 → 569.99, `buffered_fixed44_whole` 739.06 → 707.06, `buffered_fixed44_1` −80 per message; 33 of 38 modes identical, none worse | Go |
+| The same on `read_bytes` | Where the decoder is out of line the success reload goes: a new `pull_whole8` mode 354.99 → 327.99 and 111–115 → 83 cycles, and Criterion whole-message cases 0.82–0.92. The `expected` tier pays: `prefix_short_envelope` +25 (53–57 → 68–69 cycles), `pull_short8` +16, `stream_16x40_1` +36 | Not as built; one shape is untried (test the shortage inline before the aligned test). Retry after phase 2 |
+| Keep the `Result` whole in `decode_exact` (row 7) | The copy does not go: it widens from 48 bytes to the whole 80, because rustc 1.99.1 does not build the decoder's `Result` in the return slot. `numeric_valid` 33 → 41–45 cycles, `fixed44` +8% | No-go. Row 7 is closed as not fixable from this function |
+| Per-field error decoration through a cold out-of-line helper | Decoders grow (`Packet` 1,010 → 1,349 bytes, `SubByte` 4,932 → 10,655): each block gains a copy in and out, and the inliner spends the freed budget elsewhere. `records_1024` +68% cycles, `prefix_short_envelope` +74–85% | No-go |
+| `#[cold]` alone on `BitError::in_field` | Fifteen gated modes lose 1 to 458 instructions (`ipv4ish` 769.99 → 722.99, `fixed44` → 491.99); seven gain 1 to 3; `records_1024` +2.2% cycles | Retry after phase 2: the gains are row 1's inlining arriving by accident |
+| A size hint for `to_bytes` on variable-length and bare-derive messages | One allocation at any size (was 2 to 12). `packet_encode` 1,089.97 → 545.97, `ipv4ish_encode` 1,556.97 → 817.97, `dmr_encode` 2,733.94 → 1,996.94; Criterion `byte_runs_2x255/encode` 0.30, `ipv4ish_message/encode` 0.43, `byte_aligned/encode` 0.46; every non-encode mode identical. The returned `Vec` has exact capacity. Does not reach `#[bin]` enums, `to_bytes_with` or the generic `encode_to_vec` behind the transports | Go, in phase 3. A flat 64-byte start capacity was rejected (9 allocations left on 1,024 records, 64 bytes held for a 5-byte message) |
+| `BitBuf` compaction | Reproduced on a bounded buffer kept full: 78 / 610 / 10,400 ns per 44-byte message at 4.4 KiB / 64 KiB / 1 MiB, against 33–37 drained first. An unbounded buffer whose capacity fits the backlog exactly has the same cost. Compacting an unbounded buffer only when the dead prefix is at least the live bytes makes it 36–39 ns at every size, with no gated mode worse, for one reallocation and twice the peak capacity under backlog. A bounded buffer has no fix short of a ring or twice the storage | Owner decision (it rewrites two documented promises and doubles peak memory under backlog). The bounded case gets a documentation sentence either way |
+| Transport reads past the 4 KiB scratch | `take(hint).read_to_end` into the buffer's own `Vec` when the hint is at least the scratch: a 1 MiB envelope takes 8 socket reads instead of 258 (357–370 → 146 µs), 64 KiB 17 → 3 (24 → 12.5 µs); it reads less past the message than today (exactly the hint). In memory the gain is 13–15%, none for a reader without `read_buf`. Two `happy` modes read worse in cycles through an unrelated inlining flip (`stream_16x40_whole` 116–121 → 134–138, `codec_decode` 111–115 → 133–136) | Retry after phase 2, with the sync and async paths together; §12.1 changes |
+| `LimitedSource` | Forwarding `aligned_run`, byte runs built on it, and `#[inline]` on its `read_bits` with a cold boundary error: a windowed 44-byte message 2,095.98 → 601.98, a windowed 64-byte run 6,603.96 → 329.96, `Incomplete` through the window 2,128.96 → 1,450.96; nothing worse in any tier. 94,110-case differential identical, three mutants detected. Without the `#[inline]`, two failing modes pay 9 and 22 instructions | Go |
+| Byte-string magic fallthrough | The generator emits one lend of the longest magic and prefix compares in order, falling back to today's chain when the lend is unavailable: `magic_eighth` 712.99 → 187.98, `magic_first` 207.99 → 159.99, `magic_miss` 782.97 → 274.96, a one-byte-at-a-time pull 5,771 → 4,270; `mixed_magic/slice_eighth` 27.19 → 9.60 ns. Nothing worse; the eight-variant decoder grows 2,354 → 4,071 bytes. 128,130-case differential identical, three mutants detected. Four other shapes regressed something (a runtime-only lend lost the first-byte early-out: `magic_eighth` → 827.99) | Go |
+
+**What the research changed about the order.** Five of the prototypes moved gated modes by
+flipping an inlining decision they did not touch (whether `decode_with` is inlined into
+the attempt, whether `extract_bits` is inlined into `match_magic`). The parent's own
+`magic_*` numbers are bistable: adding a mode that instantiates a second reader moved
+`magic_eighth` from 712.99 to 1,237.98 with no source change. Phase 2 pins that boundary,
+so it goes first, and the three "retry" rows are measured again on top of it. When reading
+any count for a change of this kind, first compare which of `decode_with`, `decode_attempt`
+and `pull` is inlined into which, in parent and candidate.
