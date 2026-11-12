@@ -43,6 +43,10 @@ pub enum MessageReadError {
     Io(#[from] io::Error),
 }
 
+// These two run at most once per transport read (`shortfall` once per failed attempt). Out
+// of line each returned its `Result` through memory: together 11.6% of a
+// one-byte-fragment stream read (DESIGN.md §22, row 5).
+#[inline]
 fn shortfall(error: BitError) -> Result<usize, MessageReadError> {
     match error.kind {
         ErrorKind::Incomplete { needed } => Ok(needed.unwrap_or(1).max(1)),
@@ -50,6 +54,7 @@ fn shortfall(error: BitError) -> Result<usize, MessageReadError> {
     }
 }
 
+#[inline]
 fn read_limit(buffer: &BitBuf, scratch: &[u8]) -> Result<usize, MessageReadError> {
     if buffer.read_capacity() == Some(0) {
         Err(BitError::new(
