@@ -376,6 +376,10 @@ allowed exception. Keep the public surface fully documented.
 - `benches/bitstream_bench.rs` — the `#[bin]`/derive codec throughput.
 - `benches/message_bench.rs` — whole-message encode/decode.
 - `benches/seek_bench.rs` — the seekable reader adapters.
+- `benches/probe.rs` + `benches/probe.sh` — fixed-work modes for `perf stat`: instructions
+  and cycles per unit of work, each mode tagged with its gate tier (`DESIGN.md` §22). This is the
+  deterministic half of the performance gate; run `benches/probe.sh` on parent and
+  candidate. Not Criterion: `cargo bench` only self-checks it.
 
 Run: `cargo bench -p bitsandbytes`.
 

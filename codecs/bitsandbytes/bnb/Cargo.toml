@@ -150,5 +150,9 @@ harness = false
 name = "seek_bench"
 harness = false
 
+[[bench]]
+name = "probe"
+harness = false
+
 [lints]
 workspace = true

@@ -1058,7 +1058,8 @@ default bnb features, CPU affinity 2. Screening runs use 40 samples, 0.2 s warmu
 0.6 s measurement; final alternating comparisons use 60 samples, 0.5 s warmup, and 1 s
 measurement, repeated three times per executable. Both use 10,000 resamples and no plots.
 Repeatable regressions beyond baseline variation require optimization or explicit approval,
-not a silent larger budget. The user retained this strict gate.
+not a silent larger budget. The user retained this strict gate. (Since 2026-11-12 the
+gate is applied by tier: §22, phase 0.)
 
 The initial inline constructor preserved `BitError` (80 bytes), `ErrorKind` (48 bytes),
 and representative `Result` sizes (80 bytes), with zero successful-path allocations.
@@ -2039,7 +2040,8 @@ statement that these paths are forced inline into generated decoders is not true
 | 9 | The probe covers one enum through `BitBuf` with `decode_attempt` inlined | read identically across row 2's 20% gain and a 1.37× regression | — | — |
 
 Row 4 as prototyped is not mergeable: row 1 already gives about 80% of its byte-aligned
-gain (sub-byte, 657 → 160 ins, is what remains); it turns the public `FixedBitLen` from a
+gain (sub-byte is what remains: 657 → 160 ins in that reviewer's probe executable, where
+the base reads lower than the 854 of phase 0's); it turns the public `FixedBitLen` from a
 sizing hint into a decode-correctness contract; it puts inline hints in generated code,
 which §19 says none carries; and `ipv4ish_message/decode` read slower (34.9 → 38.4 ns).
 
@@ -2079,3 +2081,94 @@ floor without the copy is not reachable without zeroing, which §19 measured).
 
 Not checked by anyone: non-default features, 32-bit, MSRV 1.85 and `no_std` builds of any
 prototype.
+
+### Phase 0: instruments (2026-11-12)
+
+`benches/probe.rs` is a new bench executable of fixed-work modes, and `benches/probe.sh`
+runs every mode under `perf stat` and prints instructions and cycles per unit. It is
+separate from the Criterion executables, which are untouched: their timings stay comparable
+with the 0.10.0 baseline, and `BNB_DISPATCH_PROBE=buffered` in `bitstream_bench` still reads
+270.22 / 1243.22 / 148.91. What it adds over that probe:
+
+- struct decoders (`fixed44`, `packet`, `sub_byte`, `ipv4ish`, `dmr`, `records_1024`), not
+  only one enum;
+- the shared attempt compiled out of line, as consumers get it (`prefix_*`, `pull_short`,
+  `stream_*`, `codec_decode`). That holds in the `tokio` build, which is therefore the
+  gate's build; in a default-features build of the same file `pull_short` and the
+  `prefix_*fixed44` modes inline it, and `pull_short` reads 177 instructions and 40 cycles
+  instead of 239 and 110. The script looks for the call in each of those modes' code and
+  names any mode that lost it;
+- a fixed message through `BitBuf` at chunk 44, 5 and 1 (`buffered_fixed44_*`), the case a
+  per-message availability check (row 4) has to hold. These inline the attempt in both
+  builds, as row 9 says of the old probe, so the successful out-of-line attempt is covered
+  only by `prefix_*`, `stream_*` and `codec_decode`;
+- results consumed by reference. The dispatch benchmarks in `bitstream_bench` pass an
+  80-byte `Result` to `black_box` by value, which adds a constant to both sides of every
+  comparison; they are left as they are so they stay comparable with the tag;
+- encode modes for phase 3.
+
+**The gate, by tier** (the root `AGENTS.md` rule applied to this crate; it replaces reading
+§13's "strict gate" as covering every benchmark alike). Each mode carries its tier:
+
+- `happy`, valid input: a repeatable regression needs a fix or the owner's approval.
+- `expected`, failures a working consumer meets constantly (`Incomplete` while streaming,
+  dispatch fallthrough): gated exactly as `happy`.
+- `terminal`, rejections (`*_invalid`, `magic_miss`, `fixed44_short`, `fixed44_trailing`):
+  measured and recorded with every change, and bounded (no new allocation, no growth with
+  input size), but a marginal regression that buys a `happy` or `expected` gain is accepted
+  without escalation. Both numbers go in the record. Open decision: the rule also calls "a
+  probe that usually misses" a hot path, and a consumer that tries one type after another
+  meets exactly these dispatch misses. They are tiered `terminal` here, as the rule's
+  "rejected magic"; such a consumer has no cheaper path today, and whether it gets one (a
+  non-allocating "is this one of mine" check) is the owner's call.
+- `encode`: as `happy`.
+
+A change is measured with this probe on parent and candidate (instructions decide; cycles
+indicate, and move with placement), with the Criterion suites by §19's method, and with the
+old buffered probe. Adding a mode can move the others, since the modes share monomorphized
+readers as a consumer's message types do: re-baseline after adding one.
+
+Baseline, `--features tokio`, Rust 1.99.1, Threadripper 7970X, core 61, process startup
+subtracted. Instructions agree across two runs to 0.03 per unit; cycles are the lower of
+two. The tag and `main` differ by the depth budget (one instruction per out-of-line attempt
+and about one per counted record; nothing in the modes that inline the attempt) and the
+frame cap (the rest of `codec_decode`'s four).
+
+| Mode | Tier | 0.10.0 ins/unit | `839ccecf` ins/unit | `839ccecf` cycles/unit |
+|---|---|---:|---:|---:|
+| `fixed44` | happy | 506.99 | 507.99 | 97.6 |
+| `packet` | happy | 359.99 | 360.99 | 74.9 |
+| `sub_byte` | happy | 853.99 | 853.99 | 160.7 |
+| `ipv4ish` | happy | 768.99 | 769.99 | 173.9 |
+| `dmr` | happy | 707.99 | 708.99 | 154.0 |
+| `records_1024` | happy | 273,617.44 | 274,671.40 | 49,060.1 |
+| `numeric_valid` | happy | 142.00 | 142.00 | 33.0 |
+| `bytes_valid` | happy | 141.00 | 141.00 | 34.0 |
+| `magic_first` | happy | 207.99 | 207.99 | 40.0 |
+| `prefix_envelope` | happy | 295.99 | 296.99 | 99.7 |
+| `prefix_eof_envelope` | happy | 281.99 | 282.99 | 67.0 |
+| `prefix_fixed44` | happy | 606.99 | 607.99 | 159.7 |
+| `buffered_fixed44_whole` | happy | 739.06 | 739.06 | 182.1 |
+| `magic_eighth` | expected | 712.99 | 712.99 | 128.0 |
+| `buffered_fixed44_5` | expected | 7,558.98 | 7,558.98 | 1,987.2 |
+| `buffered_fixed44_1` | expected | 35,376.96 | 35,376.97 | 9,290.0 |
+| `pull_short` | expected | 237.99 | 238.99 | 110.2 |
+| `prefix_short_envelope` | expected | 201.99 | 202.99 | 88.5 |
+| `prefix_short_fixed44` | expected | 1,781.99 | 1,782.99 | 438.9 |
+| `numeric_invalid` | terminal | 237.99 | 237.99 | 114.9 |
+| `bytes_invalid` | terminal | 338.99 | 338.99 | 144.4 |
+| `magic_miss` | terminal | 782.97 | 782.97 | 188.0 |
+| `fixed44_short` | terminal | 1,675.98 | 1,676.97 | 355.0 |
+| `fixed44_trailing` | terminal | 507.99 | 508.99 | 94.3 |
+| `fixed44_encode` | encode | 758.99 | 758.99 | 164.1 |
+| `packet_encode` | encode | 1,089.97 | 1,089.97 | 275.3 |
+| `ipv4ish_encode` | encode | 1,556.97 | 1,556.98 | 353.6 |
+| `dmr_encode` | encode | 2,733.95 | 2,733.95 | 592.1 |
+| `stream_16x40_whole` | happy | 369.55 | 370.55 | 172.7 |
+| `stream_16x40_64` | expected | 636.80 | 638.43 | 292.1 |
+| `stream_16x40_1` | expected | 7,316.84 | 7,319.84 | 1,651.9 |
+| `codec_decode` | happy | 466.99 | 470.99 | 134.7 |
+| `codec_encode` | encode | 1,553.99 | 1,553.99 | 361.8 |
+
+The raw output is kept on the measuring machine only, beside the 0.10.0 Criterion baseline
+(the tag's numbers come from the tag's tree with this bench file added).

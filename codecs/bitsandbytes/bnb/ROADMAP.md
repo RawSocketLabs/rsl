@@ -51,11 +51,11 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
 4. **Happy-path performance** (the 2026-11-12 review, `DESIGN.md` §22, under the root
    `AGENTS.md` happy-path rule). None of it changes the API. In phases, each change its own
    commit, measured against `bitsandbytes-v0.10.0`:
-   - [ ] **Phase 0, instruments.** Probe modes for a fixed struct, a sub-byte struct,
-         counted records, a variable-tail message, a fixed struct through `BitBuf` at chunk
-         1 and 5, and a consumer in which `decode_attempt` is not inlined; `black_box` by
-         reference; the three tiers (happy path, expected-often failure, terminal failure)
-         written into the gate text. New baseline on `main`, old probe numbers unchanged.
+   - [x] **Phase 0, instruments.** `benches/probe.rs` and `benches/probe.sh`: fixed-work
+         modes for struct decoders, counted records, a variable-tail message, a fixed
+         message through `BitBuf` at chunk 44, 5 and 1, the shared attempt compiled out of
+         line, and encode; results consumed by reference; each mode carries its gate tier.
+         Baselines on the tag and on `main` are in `DESIGN.md` §22.
    - [ ] **Phase 1, changes nothing pays for.** Build the reader in place in
          `decode_attempt`; one 16-byte load for wide unaligned reads; `#[inline]` on
          `net::read_limit` and `shortfall`.
