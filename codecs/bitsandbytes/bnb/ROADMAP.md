@@ -96,6 +96,12 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    `parse_with` codecs, `LimitedSource`, `decode_prefix`, `BinCodec`, a recursive type); run
    the examples' assertions in CI; pin the CI image's toolchain to `rust-toolchain.toml` so
    trybuild snapshots cannot drift.
+6. **A dispatch check that builds no error**, when a consumer needs it. A caller that tries
+   one message type after another pays for a full `NoMatchingVariant`/`BadMagic` on every
+   miss (118 to 188 cycles against 33 for a hit, with an allocation). A generated,
+   allocation-free "would this type's dispatch accept these bytes" check is the escape hatch
+   the root `AGENTS.md` rule asks for; until then dispatch misses are gated as terminal
+   failures (`DESIGN.md` §22, phase 0). New public API, additive: design review first.
 
 ### 0.11.0 — error types (breaking, once)
 

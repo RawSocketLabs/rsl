@@ -24,8 +24,8 @@
 //! `buffered_fixed44_*` modes inline the attempt in both builds.
 //!
 //! Dispatch misses (`*_invalid`, `magic_miss`) are tiered `terminal`, as the rule's
-//! "rejected magic". A consumer that probes one type after another meets them routinely
-//! and has no cheaper path today; whether it gets one is an open decision (§22).
+//! "rejected magic" (owner decision, §22). A consumer that probes one type after another
+//! meets them routinely; the cheaper path for it is ROADMAP 0.10.x item 6, not a gate here.
 
 use bnb::{
     BitBuf, BitDecode, BitEncode, BitEnum, BitError, bin, bitfield, u1, u2, u3, u4, u5, u6, u7,

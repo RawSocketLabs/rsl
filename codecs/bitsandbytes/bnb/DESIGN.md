@@ -2116,11 +2116,16 @@ with the 0.10.0 baseline, and `BNB_DISPATCH_PROBE=buffered` in `bitstream_bench`
 - `terminal`, rejections (`*_invalid`, `magic_miss`, `fixed44_short`, `fixed44_trailing`):
   measured and recorded with every change, and bounded (no new allocation, no growth with
   input size), but a marginal regression that buys a `happy` or `expected` gain is accepted
-  without escalation. Both numbers go in the record. Open decision: the rule also calls "a
-  probe that usually misses" a hot path, and a consumer that tries one type after another
-  meets exactly these dispatch misses. They are tiered `terminal` here, as the rule's
-  "rejected magic"; such a consumer has no cheaper path today, and whether it gets one (a
-  non-allocating "is this one of mine" check) is the owner's call.
+  without escalation. Both numbers go in the record. Owner decision, 2026-11-12: dispatch
+  misses stay `terminal`. The rule also calls "a probe that usually misses" a hot path, and
+  a consumer that tries one type after another meets exactly these misses, but a miss
+  already costs 118 to 188 cycles against 33 for a hit, most of it building the error:
+  gating would protect such a consumer from a few percent, where a non-allocating "is this
+  one of mine" check would save it most of each miss. That check is the rule's escape
+  hatch, on the ROADMAP (0.10.x item 6) for when a consumer needs it. A decode that
+  succeeds is never a miss, whichever variant it lands on: tag dispatch is a `match`,
+  uniform-width magic one read and an `==` chain, and only mixed-width byte-string magics
+  pay per earlier variant (`magic_eighth`, tier `expected`).
 - `encode`: as `happy`.
 
 A change is measured with this probe on parent and candidate (instructions decide; cycles
