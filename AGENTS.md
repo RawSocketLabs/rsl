@@ -41,6 +41,13 @@ One directory per domain group; each crate's own (or its group's) `AGENTS.md` ho
   unsafe policy is `unsafe_op_in_unsafe_fn = deny`; crates that guarantee zero unsafe pin
   `#![forbid(unsafe_code)]` at crate level (bnb); rawsock is `deny` with one `unsafe` block, in the `#[allow(unsafe_code)]` fn `link_addr`.
 - **Formatting / toolchain / MSRV** — root `rustfmt.toml`, `rust-toolchain.toml`, MSRV 1.85.
+- **Parsing performance: optimize the happy path.** When a change trades speed, prefer
+  decoding valid input faster over failing faster. A marginal regression on a failure path
+  (invalid input, rejected magic, `TrailingBytes`) is acceptable when it buys a happy-path
+  gain; record both numbers. Failures that are expected often are hot paths, not error paths:
+  `Incomplete` during streaming, dispatch fallthrough to a later variant, a probe that usually
+  misses. Keep those fast or give an escape hatch. Worst-case failure cost must stay bounded
+  and measured (no new allocation storms, quadratic work or stalls).
 - **Versioning** — per-crate SemVer via `release-plz` (scope = crate name, e.g. `feat(dns): …`).
   Publication is opted in per package in `release-plz.toml`; today only the `bitsandbytes` pair
   (`bitsandbytes` + `bitsandbytes-macros`) is release-enabled and published to crates.io (see
