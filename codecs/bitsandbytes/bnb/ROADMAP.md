@@ -61,11 +61,14 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          `net::read_limit` and `shortfall`. No probe mode costs more in any tier;
          `dmr_frame/decode` 0.52 and `stream_envelope` 0.69–0.91 against 0.10.0
          (`DESIGN.md` §22, phase 1).
-   - [ ] **Phase 2, inline typed reads.** `Source::read` on `BitReader` and
-         `IncrementalReader` (with the 32-bit saturation check), then `BytesReader` and
-         `LimitedSource`. Owner decision if the buffered probe cannot be held exactly.
-         Afterwards re-measure and close or keep §E's enum `decode_exact` specialization and
-         constant-width items, which are this boundary under other names.
+   - [ ] **Phase 2, inline typed reads.** Done for `BitReader` and the incremental
+         reader: a whole-byte value at a byte-aligned cursor is one load, any other read
+         the inlined bit path, and the incremental reader's `read_bytes` is inline down to
+         the copy. `fixed_44/decode` 0.46 and `ipv4ish_message/decode` 0.60 against 0.10.0;
+         the buffered probe reads 246.22 / 1227.22 / 124.91, lower at every chunk size, so
+         no owner decision was needed (`DESIGN.md` §22, phase 2). Left: `BytesReader` and
+         `LimitedSource`, then re-measure and close or keep §E's enum `decode_exact`
+         specialization and constant-width items, which are this boundary under other names.
    - [ ] **Phase 3, encode.** A size hint for `to_bytes` on variable-length and
          bare-derive messages (researched: one allocation at any size, encode 0.30–0.62);
          `MessageStream` keeps a write buffer; `BinCodec` writes straight into `dst` and
@@ -83,8 +86,8 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    - [ ] **Phase 6, small items.** Researched and go: byte-string magic fallthrough
          (`magic_eighth` 713 → 188 instructions), `LimitedSource` (a windowed message
          2,096 → 602), and the inline fast path on `IncrementalReader::read_into`. Retried
-         on the phase 2 base: the same on `read_bytes`, and `#[cold]` on
-         `BitError::in_field`. Owner decision: `BitBuf` compaction on unbounded buffers.
+         on the phase 2 base: `#[cold]` on `BitError::in_field` (the fast path on
+         `read_bytes` went in with phase 2). Owner decision: `BitBuf` compaction on unbounded buffers.
          Static-text rejections that allocate go to 0.11 decision 1.
    - [x] **Research, in scratch copies, before any of it was scheduled.** Nine prototypes,
          a number and a verdict each in `DESIGN.md` §22. No-go: keeping the `Result`

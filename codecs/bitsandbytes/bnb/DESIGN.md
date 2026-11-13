@@ -525,7 +525,9 @@ against ~434 ps; the earlier "unpack ~190 ps" was the benchmark harness folding 
 (the common case for headers and `[u8; N]` payloads) concatenates whole bytes, and a read of
 at most eight bits is taken from the one or two bytes it touches. On the slice reader those
 two paths and the bounds check are forced inline into generated decoders, where a field's
-constant width folds them down. A wider read that starts or ends inside a byte gathers the
+constant width folds them down, and a typed read of whole bytes from a byte-aligned cursor
+is one load and at most a byte swap (§22, phase 2, which is also where `read` itself, the
+call a generated decoder makes, became inline). A wider read that starts or ends inside a byte gathers the
 bytes it touches into one `u128` window and shifts the field out; an unaligned write ORs
 into each touched byte the bits that fall there. Both live in functions kept out of line so
 the inlined paths stay small (§19 has the measurements behind these choices). Byte runs
@@ -2303,3 +2305,178 @@ the attempt, whether `extract_bits` is inlined into `match_magic`). The parent's
 so it goes first, and the three "retry" rows are measured again on top of it. When reading
 any count for a change of this kind, first compare which of `decode_with`, `decode_attempt`
 and `pull` is inlined into which, in parent and candidate.
+
+### Phase 2: inline typed reads on the slice readers (2026-11-12)
+
+Row 1, for `BitReader` and the incremental reader behind `decode_prefix`, `BitBuf` and the
+transports. `BytesReader` and `LimitedSource` are the rest of the phase and are not in
+these commits. Two commits, each measured with the probe on its parent.
+
+1. **`Source::read` is overridden on both readers and forced inline.** A value that is a
+   whole number of bytes, read from a byte-aligned cursor, is one bounds check, one load
+   and at most a byte swap (`BitReader::take_whole_bytes`): aligned whole bytes are the
+   value big-endian or little-endian by the effective byte order alone, whatever the bit
+   order, because each bit order's natural layout is swapped exactly when the declared
+   order is the other one. A short read goes straight to the cold constructor `read_bits`
+   uses (`read_error`, or `incomplete` on the incremental reader), so the error, its
+   position and the cursor are unchanged. Every other read (a width that is not whole
+   bytes, or an unaligned cursor) inlines the old body, `read_by_bits`, which is also what
+   the trait's default calls for every other source. The bound is `bytes_in(len)`,
+   `bits_in(len) / 8` written as a clamp, so the 32-bit saturation of §18 holds on this
+   path too. `IncrementalReader::read_bits` is pinned inline with it, and the public
+   inherent `BitReader::read` forwards to the override.
+2. **`IncrementalReader::read_bytes` is inline down to the copy**, with the shortage tested
+   first and built out of line (the shape the research left untried). Commit 1 makes
+   decoders larger, and `Envelope`'s stops being inlined into `decode_attempt`. Out of
+   line, it receives the `Vec` from `read_bytes` in three narrow stores and reloads it in
+   one wide load: `perf annotate` put 93% of that decoder's samples on the instruction
+   after the reload. Commit 2 removes the stall. On the phase 1 base alone it is not a
+   gain (`prefix_envelope`, `stream_16x40_whole` and `codec_decode` +3 instructions,
+   `stream_16x40_1` +18), which is why it follows commit 1 and is not phase 6's.
+
+Instructions per unit (`--features tokio`, core 61): the phase 1 base, after each commit,
+and cycles at the three points. The five encode modes are instruction-identical.
+
+| Mode | Tier | Base | 1 | 2 | Cycles |
+|---|---|---:|---:|---:|---|
+| `fixed44` | happy | 507.99 | 225.99 | 225.99 | 100.4 → 47.0 → 47.1 |
+| `packet` | happy | 360.99 | 184.99 | 184.99 | 75.3 → 42.3 → 43.1 |
+| `sub_byte` | happy | 853.99 | 691.99 | 691.99 | 160.1 → 110.8 → 110.7 |
+| `ipv4ish` | happy | 769.99 | 435.99 | 435.99 | 173.9 → 99.6 → 97.4 |
+| `dmr` | happy | 425.99 | 421.99 | 421.99 | 91.1 → 94.4 → 92.1 |
+| `unaligned_mid` | happy | 360.99 | 361.99 | 361.99 | 84.2 → 82.3 → 84.5 |
+| `unaligned_tail` | happy | 414.99 | 415.99 | 415.99 | 72.1 → 72.1 → 71.0 |
+| `unaligned_wide_tail` | happy | 408.99 | 405.99 | 405.99 | 93.6 → 92.5 → 92.3 |
+| `records_1024` | happy | 274,670.74 | 108,737.71 | 108,737.81 | 49,160.7 → 17,226.8 → 17,254.0 |
+| `numeric_valid` | happy | 142.00 | 100.00 | 100.00 | 33.2 → 31.0 → 31.1 |
+| `bytes_valid` | happy | 141.00 | 102.00 | 102.00 | 34.1 → 30.1 → 30.1 |
+| `magic_first` | happy | 207.99 | 169.99 | 169.99 | 40.0 → 36.3 → 36.3 |
+| `prefix_envelope` | happy | 289.99 | 270.99 | 252.99 | 68.3 → 98.2 → 56.9 |
+| `prefix_eof_envelope` | happy | 281.99 | 242.99 | 242.99 | 67.0 → 56.0 → 55.8 |
+| `prefix_fixed44` | happy | 601.99 | 286.99 | 286.99 | 129.1 → 65.0 → 63.3 |
+| `buffered_fixed44_whole` | happy | 739.06 | 424.06 | 424.06 | 183.1 → 109.3 → 107.5 |
+| `stream_16x40_whole` | happy | 356.30 | 337.30 | 319.30 | 121.9 → 133.6 → 117.1 |
+| `codec_decode` | happy | 463.99 | 444.99 | 426.99 | 116.2 → 138.2 → 106.6 |
+| `magic_eighth` | expected | 712.99 | 674.99 | 674.99 | 120.9 → 119.1 → 118.0 |
+| `buffered_fixed44_5` | expected | 7,558.97 | 3,886.04 | 3,886.04 | 1,977.8 → 1,176.0 → 1,155.2 |
+| `buffered_fixed44_1` | expected | 35,376.96 | 18,201.95 | 18,201.95 | 9,220.9 → 5,596.4 → 5,240.7 |
+| `pull_short` | expected | 231.99 | 169.99 | 153.99 | 74.5 → 48.3 → 45.0 |
+| `prefix_short_envelope` | expected | 195.99 | 167.99 | 151.99 | 53.1 → 66.0 → 61.5 |
+| `prefix_short_fixed44` | expected | 1,775.99 | 615.99 | 615.99 | 425.0 → 166.6 → 167.7 |
+| `stream_16x40_64` | expected | 592.30 | 555.80 | 527.80 | 206.3 → 223.9 → 210.4 |
+| `stream_16x40_1` | expected | 6,615.83 | 6,557.83 | 6,526.83 | 1,356.4 → 1,379.3 → 1,355.8 |
+| `numeric_invalid` | terminal | 237.99 | 238.99 | 238.99 | 116.2 → 117.3 → 114.8 |
+| `bytes_invalid` | terminal | 338.99 | 340.99 | 340.99 | 145.0 → 146.5 → 145.9 |
+| `magic_miss` | terminal | 782.97 | 786.97 | 786.97 | 187.4 → 189.0 → 186.1 |
+| `fixed44_short` | terminal | 1,676.97 | 552.97 | 552.97 | 369.6 → 138.1 → 138.3 |
+| `fixed44_trailing` | terminal | 508.99 | 226.99 | 226.99 | 94.5 → 42.2 → 39.7 |
+
+The old buffered probe reads 246.22 / 1227.22 / 124.91 after both commits, against
+270.22 / 1243.22 / 148.91: lower at every chunk size, so the owner decision the plan
+reserved for it was not needed.
+
+**What pays.**
+
+- `unaligned_mid` and `unaligned_tail` (`happy`) gain one instruction per decode, with
+  cycles level or lower. Their fields are 4 to 28 bits wide and take the inlined
+  `read_by_bits`; the bare inline pin below costs the same one.
+- `prefix_short_envelope` (`expected`): 44 fewer instructions and 53 → 61–62 cycles. The
+  failing attempt's 80-byte error is now copied by the out-of-line decoder and again by
+  `decode_attempt`, a stalled reload each; with the decoder inlined into the attempt, as
+  the base happened to have it, it was copied once. Nothing in this crate can force that
+  inlining (generated code carries no hints, §19). The realistic waits improve or hold:
+  `pull_short`, `buffered_fixed44_1` and `_5`, `prefix_short_fixed44`, `stream_16x40_1`.
+  The fix for the copy itself is a smaller error, which is 0.11's.
+- Three `terminal` modes gain 1 to 4 instructions.
+- Code size. `Fixed44`'s incremental decoder goes from 270 to 849 instructions, because
+  each whole-byte field carries the aligned load and the inlined unaligned fallback. The
+  probe's `.text` grows 335,827 → 347,923 bytes and `bitstream_bench`'s 2,311,382 →
+  2,315,158.
+- `pull_short` now has the attempt inlined into `pull` (`probe.sh` reports it), so it no
+  longer measures the out-of-line attempt; `prefix_short_envelope` still does.
+
+**Variants built and rejected**, each a probe build against the same parent:
+
+| Variant | Result |
+|---|---|
+| `#[inline(always)]` on the trait's default `read` and on `IncrementalReader::read_bits`, nothing else | `fixed44` 371.99, `records_1024` −29%, but the old buffered probe 287.22 / 1344.22 / 165.91, and `prefix_envelope`, `stream_16x40_whole` and `codec_decode` +22–58% in cycles at unchanged instructions (the stall of commit 2). `Fixed44`'s decoder 828 instructions: both bit orders' loads and a runtime byte swap at every field |
+| The whole-byte load through `aligned_run`, anything it declines to the general path at the optimizer's discretion | `sub_byte` unchanged at 853.99 (its fields were not inlined); buffered probe 251.22 / 1264.22 / 129.91, the middle figure above the base |
+| The same, with the declined read forced out of line | `dmr` +24 (+5.6%), `unaligned_wide_tail` +25, buffered probe at one-byte chunks 1428.22: a short read ran the fast path's check, then a call, then the general check |
+| As taken, but an unaligned whole-byte read out of line | The smallest code (`Fixed44`'s decoder 462 instructions, `.text` 340,163) and the lowest counts on aligned shapes (`fixed44` 215.99, `numeric_valid` 92.00; buffered probe 238.22 / 1187.22 / 116.91, and 283–287 cycles per message at one-byte chunks against 349–357). `dmr` 425.99 → 450.99 and 91 → 104 cycles, `unaligned_wide_tail` +26. Not taken, because a gated `happy` mode pays; why one out-of-line 48-bit read costs that much was not found, and the variant is worth another look if code size becomes the constraint |
+| As taken, bounded by `bits_in(len) / 8` instead of the clamp | The old buffered probe at one-byte chunks 1244.22, one above the base; `records_1024` +2.8% |
+
+**Criterion**, §19's method against the 0.10.0 tag (three alternating pinned rounds, lowest
+median; ns). These are cumulative with phase 1. The machine was under heavy unrelated load
+for part of the run (15-minute load average over 190 on 64 threads), so ratios near 1 are
+weaker than usual; the gains are far outside that.
+
+| Benchmark | 0.10.0 | Phase 2 | Ratio |
+|---|---:|---:|---:|
+| `fixed_44/decode` | 19.91 | 9.12 | 0.46 |
+| `dmr_frame/decode` | 31.51 | 16.08 | 0.51 |
+| `stream_envelope/16x40/704` | 664.27 | 376.31 | 0.57 |
+| `ipv4ish_message/decode` | 35.27 | 21.18 | 0.60 |
+| `stream_envelope/64/68` | 56.83 | 35.33 | 0.62 |
+| `byte_aligned/decode` | 15.08 | 9.50 | 0.63 |
+| `stream_envelope/16x40/64` | 1,007.8 | 647.26 | 0.64 |
+| `stream_envelope/64/64` | 89.26 | 57.79 | 0.65 |
+| `sub_byte/msb_decode` | 34.11 | 22.87 | 0.67 |
+| `sub_byte/lsb_decode` | 31.63 | 21.59 | 0.68 |
+| `stream_envelope/1024/1028` | 84.29 | 57.56 | 0.68 |
+| `incremental_envelope/64/68` | 30.00 | 24.24 | 0.81 |
+| `stream_envelope/16x40/1` | 5,451.6 | 4,353.3 | 0.80 |
+| `incremental_element_replay/64/1` | 86,681 | 72,840 | 0.84 |
+| `incremental_envelope/1024/1` | 12,248 | 11,456 | 0.94 |
+| `enum_dispatch/integer_valid` | 9.02 | 8.33 | 0.92 |
+
+The other `stream_envelope`, `incremental_envelope` and `incremental_element_replay` cases
+read 0.79–0.95, except three large-payload ones at 0.98–1.01. Every encode benchmark reads
+0.96–1.03.
+
+Four benchmarks read above 1.05 in that run or in the function-aligned rerun (§19's
+placement check) and were measured again on the idle machine, three alternating rounds:
+
+- `counted_u32_256/decode_hand` 1.355, aligned 0.965. It does not call this crate; phase 1
+  saw the same figure. Placement.
+- `byte_runs_2x255/decode` 1.041, aligned 1.061; idle 0.99 and 0.98. Noise from the load.
+- `enum_dispatch/bytes_invalid` 1.105, aligned 1.050; idle, against the phase 1 base, 1.01
+  (37.47 → 37.84). It is §20's accepted figure against the tag and does not move here.
+- `enum_dispatch/buffered_chunk_1` 1.074, aligned 1.050; idle, against the phase 1 base,
+  1.03 in each of three rounds (1,080 → 1,113 ns lowest). This one is real and is in the
+  `expected` tier: 16 fewer instructions per message (1243.22 → 1227.22) and about 3% more
+  time, cycles 339–371 → 349–357 on the fixed-work probe. Four of its five attempts fail,
+  and each failing attempt's error takes the extra copy described under
+  `prefix_short_envelope`. `buffered_chunk_5` reads 0.98 and `buffered_chunk_80` 0.96–0.98
+  in the same builds. The variant that kept unaligned reads out of line read 283–287
+  cycles here, by keeping the enum's decoder small enough to inline into the attempt.
+
+**Tests.** `read_takes_whole_bytes_exactly_as_the_bit_path_does` reads sixteen types
+(1 to 128 bits, a 24-bit type declaring each byte order, zero-width and 136-bit) at every
+cursor of every buffer length from 0 to 20 bytes, in all four layouts, through the trait
+on both readers and through the inherent method, against `read_by_bits`: value or error
+kind and position, and the cursor afterwards.
+`the_incremental_reader_reads_a_byte_run_as_the_per_byte_loop_does_or_waits` does the same
+for `read_bytes`, including `usize::MAX` bytes; `bytes_in_is_bits_in_counted_in_bytes` pins
+the clamp at the saturation edge, which no host buffer can reach. Twenty-one hand mutants
+killed: the byte-order arms swapped, the big-endian value left-aligned, the type's own
+order ignored or overridden, the cursor not advanced or advanced by bytes, the fast path
+taken unaligned, too wide or for a sub-byte width, both shortage errors, the clamp removed
+or one early, the run one byte late or unbounded, four on `read_bytes`, and the byte order
+dropped from the general path. The mutant that stops the cursor advancing makes a counted
+read allocate without bound: the runner caps the test binary's address space and time.
+859 tests with all features, 783 with default; clippy in both; MSRV 1.85 and the `no_std`
+build for `thumbv7em-none-eabi`, a 32-bit target.
+
+**Independent review.** No blocking finding; the equivalence claim was not refuted. The
+reviewer derived the byte-order identity from `extract_bits` and `apply_byte_order` for
+all four layouts, checked that every writer of `bit_pos` keeps it within `bits_in(len)`,
+and ran an independent model over 7,435,800 cases (widths 0 to 1024, lengths 0 to 24,
+every cursor, both readers, `read_bytes` to `usize::MAX`) with overflow checks on. Applied:
+the two changes split into two commits; `extract_bits`'s doc and §10 no longer call it the
+only path; this record; a comment that claimed the stall on every blob; zero-width and
+72- and 104-bit types in the test; a `debug_assert!` on `take_whole_bytes`'s precondition.
+Not done: nothing pins that the inherent `read` takes the fast path (its mutant is
+behaviour-equivalent).
+
+Not measured: `BytesReader`, `LimitedSource` and the stream readers, which keep the
+default `read` and whose benchmarks moved only within the noise above.
