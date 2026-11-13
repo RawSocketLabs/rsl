@@ -721,6 +721,15 @@ const MODES: &[Mode] = &[
         let message = Frame::decode_exact(&frame()).unwrap();
         repeat(n, true, || black_box(&message).to_bytes());
     }),
+    // Variable-length encodes: the output is sized from the message, not known up front.
+    mode("envelope_encode", "encode", 4 * M, |n| {
+        let message = Envelope::decode_exact(&envelope()).unwrap();
+        repeat(n, true, || black_box(&message).to_bytes());
+    }),
+    mode("records_encode", "encode", 8_000, |n| {
+        let message = Records::decode_exact(&records()).unwrap();
+        repeat(n, true, || black_box(&message).to_bytes());
+    }),
     #[cfg(feature = "net")]
     per_16(mode("stream_16x40_whole", "happy", M / 4, |n| stream(n, 704))),
     #[cfg(feature = "net")]
