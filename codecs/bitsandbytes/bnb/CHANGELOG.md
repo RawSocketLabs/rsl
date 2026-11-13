@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.10.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.10.0...bitsandbytes-v0.10.1) - 2026-11-13
+
+### Added
+
+- *(bitsandbytes)* cap BinCodec frames with with_max_frame
+- *(bitsandbytes)* bound decode recursion with a depth budget
+
+### Other
+
+- *(bitsandbytes)* record the encode size hint
+- *(bitsandbytes)* size variable-length to_bytes before writing
+- *(bitsandbytes)* probe variable-length encodes
+- *(bitsandbytes)* record the magic fallthrough and close an enum item
+- *(bitsandbytes)* dispatch byte-string magics from one look
+- *(bitsandbytes)* probe magic dispatch through a buffer and on short input
+- *(bitsandbytes)* record the rest of phase 2
+- *(bitsandbytes)* inline BytesReader's typed read
+- *(bitsandbytes)* read through a window at the wrapped reader's speed
+- *(bitsandbytes)* probe windowed and BytesReader decodes
+- *(bitsandbytes)* record phase 2 of the happy-path plan
+- *(bitsandbytes)* inline the incremental reader's byte-run read
+- *(bitsandbytes)* inline typed reads on the slice readers
+- *(bitsandbytes)* record the performance research results
+- *(bitsandbytes)* record the dispatch-miss tier decision
+- *(bitsandbytes)* record phase 1 of the performance plan
+- *(bitsandbytes)* inline the per-read helpers of the net readers
+- *(bitsandbytes)* load an unaligned read's window whole
+- *(bitsandbytes)* build the attempt's reader in place
+- *(bitsandbytes)* probe unaligned reads by width and place
+- *(bitsandbytes)* add a fixed-work probe with tiered modes
+- *(bitsandbytes)* record the happy-path performance review and its plan
+- *(bitsandbytes)* tick the 0.10.0 baseline reset in the roadmap
+
 ## [0.10.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.9.0...bitsandbytes-v0.10.0) - 2026-11-11
 
 ### Added
