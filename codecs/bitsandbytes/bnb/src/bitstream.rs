@@ -4095,8 +4095,8 @@ mod bytes_io {
     use alloc::vec::Vec;
 
     use super::{
-        BitError, BitOrder, BitReader, BitWriter, ByteOrder, Layout, SeekSource, Sink, Source,
-        aligned_run_at, read_via_slice,
+        BitError, BitOrder, BitReader, BitWriter, Bits, ByteOrder, Layout, SeekSource, Sink,
+        Source, aligned_run_at, read_via_slice,
     };
 
     /// A [`SeekSource`](super::SeekSource) that **owns** a `bytes::Bytes` frame (no
@@ -4137,12 +4137,24 @@ mod bytes_io {
         fn __bnb_depth(&mut self) -> &mut u16 {
             &mut self.depth
         }
+        #[inline]
         fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
             let mut br = BitReader::with_layout(&self.data, self.layout);
             br.seek_to_bit(self.bit_pos)?;
             let v = br.read_bits(n)?;
             self.bit_pos = Source::bit_pos(&br);
             Ok(v)
+        }
+        // The slice reader's typed read on the bytes in hand, so a whole-byte value is its
+        // one load here too. Forced inline as that read is (DESIGN §22).
+        #[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+        #[inline(always)]
+        fn read<T: Bits>(&mut self) -> Result<T, BitError> {
+            let mut br = BitReader::with_layout(&self.data, self.layout);
+            br.seek_to_bit(self.bit_pos)?;
+            let value = br.read()?;
+            self.bit_pos = Source::bit_pos(&br);
+            Ok(value)
         }
         fn bit_pos(&self) -> usize {
             self.bit_pos
@@ -7764,7 +7776,41 @@ mod component {
     /// `bin_bytes.rs` — `bytes` integration (the `bytes` feature): zero-copy
     mod bytes_adapters {
 
-        use bnb::{BitEncode, BytesReader, BytesWriter, bin, u4, u12};
+        use crate::bitstream::read_by_bits;
+        use bnb::{
+            BitEncode, BitOrder, ByteOrder, BytesReader, BytesWriter, Layout, Source, bin, u4, u12,
+            u24,
+        };
+
+        #[test]
+        fn a_typed_read_is_the_read_taken_bit_by_bit_at_any_cursor() {
+            let wire = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF1, 0x23];
+            for bit in [BitOrder::Msb, BitOrder::Lsb] {
+                for byte in [ByteOrder::Big, ByteOrder::Little] {
+                    let layout = Layout { bit, byte };
+                    // Past the end too: the reader may seek anywhere, and a read from
+                    // there is the seek's error.
+                    for pos in 0..=wire.len() * 8 + 9 {
+                        let at = || {
+                            let mut reader = BytesReader::with_layout(wire.to_vec().into(), layout);
+                            reader.seek_to_bit(pos).unwrap();
+                            reader
+                        };
+                        macro_rules! each {
+                            ($($value:ty),*) => {$(
+                                let (mut fast, mut slow) = (at(), at());
+                                let got = fast.read::<$value>().map_err(|e| (e.kind, e.at));
+                                let expected = read_by_bits::<_, $value>(&mut slow)
+                                    .map_err(|e| (e.kind, e.at));
+                                assert_eq!(got, expected, "{layout:?} pos {pos}");
+                                assert_eq!(fast.bit_pos(), slow.bit_pos(), "{layout:?} pos {pos}");
+                            )*};
+                        }
+                        each!(u4, u8, u12, u16, u24, u32, u64, u128);
+                    }
+                }
+            }
+        }
 
         #[bin]
         #[derive(Debug, PartialEq, Eq, Clone)]
