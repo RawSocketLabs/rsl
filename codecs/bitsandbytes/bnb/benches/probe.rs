@@ -231,6 +231,18 @@ enum MixedMagic {
     Eighth(u32),
 }
 
+/// Byte-string magics where a whole message is shorter than the longest magic, so a
+/// dispatch that looks at the longest magic's worth of input cannot.
+#[bin(big)]
+enum ShortMagic {
+    #[bin(magic = b"OK")]
+    Ack(u8),
+    #[bin(magic = b"ERROR:")]
+    Fail(u8),
+    #[bin(magic = b"NO")]
+    Nak(u8),
+}
+
 /// A transport envelope: a length, then that many bytes.
 #[bin(big)]
 struct Envelope {
@@ -403,6 +415,38 @@ fn buffered(n: u64, chunk: usize) {
     }
 }
 
+/// `n` passes over one message of each `MixedMagic` variant, pushed `chunk` bytes at a time
+/// into a bounded `BitBuf`. At one byte a time the dispatch runs on a partial magic.
+#[inline(never)]
+fn buffered_magic(n: u64, chunk: usize) {
+    let corpus = [
+        &b"AB"[..],
+        b"CDE",
+        b"FGHI",
+        b"JK",
+        b"LMNOP",
+        b"QRS",
+        b"TUVWXY",
+        b"Z0",
+    ]
+    .map(|magic| [magic, &[0, 0, 0, 7]].concat())
+    .concat();
+    let mut buffer = BitBuf::bounded(corpus.len());
+    for _ in 0..n {
+        let mut messages = 0;
+        for part in black_box(&corpus[..]).chunks(chunk) {
+            buffer.push(part).unwrap();
+            while let Some(message) = buffer.pull::<MixedMagic>().unwrap() {
+                black_box(&message);
+                messages += 1;
+            }
+        }
+        if messages != 8 {
+            wrong_outcome();
+        }
+    }
+}
+
 /// `n` failed pulls of an envelope that is one byte short, the wait every streaming
 /// consumer sits in.
 #[inline(never)]
@@ -512,6 +556,11 @@ const fn per_16(mut mode: Mode) -> Mode {
     mode
 }
 
+const fn per_8(mut mode: Mode) -> Mode {
+    mode.units = 8;
+    mode
+}
+
 const M: u64 = 1_000_000;
 
 #[rustfmt::skip]
@@ -608,6 +657,16 @@ const MODES: &[Mode] = &[
         let mut wire = fixed44();
         wire.push(0);
         repeat(n, false, || Fixed44::decode_exact(black_box(&wire)));
+    }),
+    // Mixed-width magic dispatch through `BitBuf`, and where the input is shorter than
+    // the longest magic.
+    per_8(mode("buffered_magic_whole", "happy", M / 2, |n| buffered_magic(n, 59))),
+    per_8(mode("buffered_magic_1", "expected", M / 8, |n| buffered_magic(n, 1))),
+    mode("magic_short_first", "happy", 8 * M, |n| {
+        repeat(n, true, || ShortMagic::decode_exact(black_box(b"OK\x07")));
+    }),
+    mode("magic_short_third", "expected", 8 * M, |n| {
+        repeat(n, true, || ShortMagic::decode_exact(black_box(b"NO\x07")));
     }),
     // A bounded region (`Source::limit_bytes`): every read goes through `LimitedSource`.
     mode("limit_fixed44", "happy", 4 * M, |n| {
