@@ -102,7 +102,9 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          3.7%). Done, on the owner's decision: the inline fast path on
          `IncrementalReader::read_into` (a whole fixed message with a byte array 7–10%
          cheaper from a prefix or a buffer; the same message fed one byte at a time 7.5%
-         more cycles). Decided, to do: `BitBuf` compaction on unbounded buffers (take it).
+         more cycles), and `BitBuf` compaction on unbounded buffers (a push no longer
+         moves the backlog: 3,450 → 334 instructions per message at 1,489 messages
+         behind, for up to twice the backlog held).
          Static-text rejections that allocate go to 0.11 decision 1.
    - [x] **Research, in scratch copies, before any of it was scheduled.** Nine prototypes,
          a number and a verdict each in `DESIGN.md` §22. No-go: keeping the `Result`

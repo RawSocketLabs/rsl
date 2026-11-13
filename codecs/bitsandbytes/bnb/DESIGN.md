@@ -3013,3 +3013,60 @@ copied run not written, a miss reported as success, a short read left as end of 
 the lend one byte short). 897 tests with all features across both crates, 797 with
 default; clippy; MSRV 1.85 and the 32-bit `no_std` build. No separate review: twenty
 lines whose equivalence the differential states directly.
+
+### Phase 6: `BitBuf` compaction on unbounded buffers (2026-11-12)
+
+**Owner decision, 2026-11-12: take it.** As researched. `BitBuf::push` reclaimed the
+consumed prefix (one `memmove` of everything unread) whenever the new bytes would
+otherwise make the buffer grow. A consumer that had fallen behind therefore moved its
+whole backlog on every push, once the allocation fitted that backlog: the cost of a push
+grew with how far behind the consumer was.
+
+An unbounded buffer now reclaims only once the consumed bytes are at least as many as the
+unread ones, and grows otherwise. Each byte moved is then paid for by a byte reclaimed,
+whatever the backlog. A bounded buffer cannot grow, so it still reclaims whenever new
+bytes would not fit; it also reclaims, as before, once consumed bytes match unread ones.
+
+The probe gained three modes (57 with `tokio`): one message pulled and one pushed over a
+buffer holding 100 or 1,489 unread 44-byte messages, unbounded with an allocation that
+fits the backlog exactly, and bounded at that size.
+
+| Mode | Base | Candidate | Cycles |
+|---|---:|---:|---|
+| `backlog_100` | 581.96 | 334.41 | 280.4 → 96.2 |
+| `backlog_1489` | 3,449.84 | 333.93 | 2,889.1 → 99.3 |
+| `backlog_bounded_100` | 587.96 | 588.96 | 283.4 → 282.7 |
+| `buffered_fixed44_whole` | 396.05 | 389.05 | level |
+| `buffered_fixed44_1` | 18,307.89 | 18,300.89 | level |
+| `stream_16x40_1` | 6,526.77 | 6,519.76 | level |
+
+The buffered and stream modes read 3 to 7 instructions lower; every other mode is
+identical. The cost of a push no longer depends on the backlog: 334 instructions at 100
+messages behind and at 1,489.
+
+**What pays.**
+
+- Memory under backlog. An unbounded buffer holds its consumed prefix until that prefix
+  matches the unread bytes, so it reaches just under twice the backlog in length, and
+  its allocation, which only ever grows, up to twice that again after a doubling. Before,
+  it stayed at the backlog's size. It reallocates once to get there.
+- `backlog_bounded_100` gains one instruction (the bound is tested once more). A bounded
+  buffer kept nearly full still moves its backlog on each push: there is no fix short of
+  a ring or twice the storage, and the type's documentation now says to give it room for
+  twice the backlog if that matters.
+- Two documented statements changed: the type's "reclaims them in place (one memmove,
+  only when it avoids a reallocation)" and `push`'s "reclaiming ... when useful" now state
+  the rule above.
+
+**Tests.** `component::bitbuf`: 1,000 steps over a 100-message backlog decode every
+message in order, hold under twice the backlog plus one push throughout, and peak at
+exactly 1,188 bytes, which is where the consumed prefix first matches the unread bytes
+(so the backlog was not slid on each push, and not left to grow further); the consumed
+prefix is left alone at one consumed to three unread and reclaimed at two and two; a
+bounded buffer reclaims to fit a message that would not otherwise fit, and leaves the
+prefix alone when there is room. Six hand mutants killed (the old rule, never reclaiming,
+strictly more consumed than unread, half as many, a bounded buffer reclaiming on every
+push, a bounded buffer not reclaiming to fit). 900 tests with all features across both
+crates, 800 with default; clippy; rustdoc; MSRV 1.85 and the 32-bit `no_std` build. No
+separate review: one condition, researched and measured twice, with the owner's decision
+on its memory cost.
