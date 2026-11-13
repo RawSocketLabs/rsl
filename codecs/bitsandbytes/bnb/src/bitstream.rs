@@ -3583,12 +3583,17 @@ impl<R: std::io::Read> SeekSource for BufSource<R> {}
 /// next message. It's the *pushable*, in-memory counterpart to `BufSource` (which pulls from a
 /// `Read`). `no_std`-compatible (`alloc` only).
 ///
-/// **Reclaim is deferred and in place.** `pull` doesn't drain consumed bytes — the next
-/// [`push`](Self::push) reclaims them in place (one memmove, only when
-/// it avoids a reallocation), so a steady push/pull loop reuses the same allocation without
-/// per-message churn. For a guaranteed-fixed footprint (real-time / `no_std`), construct a
-/// [`bounded`](Self::bounded) buffer: it allocates once, [`push`](Self::push) refuses bytes
-/// past the cap instead of growing, and [`grow`](Self::grow) is the only thing that reallocates.
+/// **Reclaim is deferred and in place.** `pull` doesn't drain consumed bytes — a later
+/// [`push`](Self::push) reclaims them in place (one memmove), once the consumed bytes are
+/// at least as many as the unread ones. A steady push/pull loop so reuses the same
+/// allocation without per-message churn, and a consumer that falls behind does not have
+/// its whole backlog moved on every push: an unbounded buffer grows instead, to at most
+/// about twice the unread bytes it holds, and never shrinks. For a guaranteed-fixed
+/// footprint (real-time / `no_std`), construct a [`bounded`](Self::bounded) buffer: it
+/// allocates once, [`push`](Self::push) refuses bytes past the cap instead of growing, and
+/// [`grow`](Self::grow) is the only thing that reallocates. A bounded buffer reclaims
+/// whenever new bytes would not otherwise fit, so one kept nearly full moves its backlog on
+/// each push; give it room for twice the backlog you expect if that matters.
 ///
 /// `BitBuf` is also a [`SeekSource`], so it reads through the same [`decode`](crate::BitDecode)
 /// entry points as every other cursor: `Type::decode(&mut bitbuf)` advances its cursor (then call
@@ -3701,9 +3706,10 @@ impl BitBuf {
         self.cap
     }
 
-    /// Reclaim consumed whole bytes (drain everything before the cursor's byte) when doing so
-    /// avoids a reallocation or the dead prefix has grown to dominate the live bytes. Keeps the
-    /// footprint near the working set without compacting on every push.
+    /// Reclaim consumed whole bytes (drain everything before the cursor's byte) once they are
+    /// at least as many as the unread ones, or, in a bounded buffer, whenever the new bytes
+    /// would not otherwise fit. Keeps the footprint within twice the working set without
+    /// moving a backlog on every push.
     fn make_room(&mut self, additional: usize) {
         let dead = self.cursor / 8;
         if dead == 0 {
@@ -3714,14 +3720,19 @@ impl BitBuf {
         // cap: Source can rewind into the dead prefix and make every retained byte live.
         let limit = self.cap.unwrap_or(self.buf.capacity());
         let would_grow = additional > limit - self.buf.len();
-        if would_grow || dead >= live {
+        // A bounded buffer cannot grow, so it compacts whenever the bytes would not fit.
+        // An unbounded one compacts only once the dead prefix is at least the live
+        // bytes, so each byte moved is paid for by a byte reclaimed however large the
+        // backlog; until then it grows instead.
+        if dead >= live || (would_grow && self.cap.is_some()) {
             self.buf.drain(..dead);
             self.cursor -= dead * 8;
         }
     }
 
-    /// Append bytes, reclaiming consumed whole bytes in place when useful. An unbounded
-    /// buffer grows as needed; a bounded buffer never reallocates here.
+    /// Append bytes, reclaiming consumed whole bytes in place when they are at least as many
+    /// as the unread ones (or, in a bounded buffer, when the new bytes would not otherwise
+    /// fit). An unbounded buffer grows as needed; a bounded buffer never reallocates here.
     ///
     /// # Errors
     /// [`CapacityError`] if the bytes don't fit a [`bounded`](Self::bounded) buffer's capacity
@@ -8422,6 +8433,71 @@ mod component {
             a: u16,
             b: u32,
         } // little-endian, byte-aligned (6 bytes)
+
+        /// `count` six-byte messages numbered from `first`, as one byte string.
+        fn numbered(first: u32, count: u32) -> Vec<u8> {
+            (first..first + count)
+                .flat_map(|b| LeMsg { a: 7, b }.to_bytes().unwrap())
+                .collect()
+        }
+
+        #[test]
+        fn an_unbounded_buffer_grows_rather_than_move_a_backlog() {
+            // A hundred unread messages in an allocation that fits them exactly.
+            let mut buffer = BitBuf::new();
+            buffer.push(&numbered(0, 100)).unwrap();
+            let mut most = 0;
+            for step in 0..1_000_u32 {
+                let message = buffer.pull::<LeMsg>().unwrap().unwrap();
+                assert_eq!(message.b, step, "in order, none lost");
+                buffer.push(&numbered(100 + step, 1)).unwrap();
+                most = most.max(buffer.buf.len());
+                // What is consumed is reclaimed by the time it matches what is unread, so
+                // the buffer holds under twice its backlog and one push.
+                let live = buffer.buf.len() - buffer.cursor / 8;
+                assert_eq!(live, 600);
+                assert!(buffer.buf.len() < 2 * live + 6, "step {step}");
+            }
+            // And the backlog was not slid down on every push: the consumed prefix was
+            // left in place until, with 594 bytes unread before a push, it reached 594.
+            assert_eq!(most, 588 + 600);
+        }
+
+        #[test]
+        fn an_unbounded_buffer_reclaims_once_the_consumed_bytes_match_the_unread() {
+            let mut buffer = BitBuf::new();
+            buffer.push(&numbered(0, 4)).unwrap();
+            buffer.pull::<LeMsg>().unwrap().unwrap();
+            // One consumed, three unread: the next push leaves the consumed bytes be.
+            buffer.push(&[]).unwrap();
+            assert_eq!(buffer.cursor, 48);
+            buffer.pull::<LeMsg>().unwrap().unwrap();
+            // Two and two: reclaimed, and the unread messages are still there in order.
+            buffer.push(&[]).unwrap();
+            assert_eq!((buffer.cursor, buffer.buf.len()), (0, 12));
+            assert_eq!(buffer.pull::<LeMsg>().unwrap().unwrap().b, 2);
+            assert_eq!(buffer.pull::<LeMsg>().unwrap().unwrap().b, 3);
+        }
+
+        #[test]
+        fn a_bounded_buffer_reclaims_whenever_new_bytes_would_not_fit() {
+            // Room for four messages, full; one is consumed, three are unread.
+            let mut buffer = BitBuf::bounded(24);
+            buffer.push(&numbered(0, 4)).unwrap();
+            buffer.pull::<LeMsg>().unwrap().unwrap();
+            // The fifth fits only where the first was.
+            buffer.push(&numbered(4, 1)).unwrap();
+            assert_eq!((buffer.cursor, buffer.buf.len()), (0, 24));
+            for b in 1..5 {
+                assert_eq!(buffer.pull::<LeMsg>().unwrap().unwrap().b, b);
+            }
+            // With room to spare, and fewer bytes consumed than unread, nothing moves.
+            let mut buffer = BitBuf::bounded(48);
+            buffer.push(&numbered(0, 4)).unwrap();
+            buffer.pull::<LeMsg>().unwrap().unwrap();
+            buffer.push(&numbered(4, 1)).unwrap();
+            assert_eq!((buffer.cursor, buffer.buf.len()), (48, 30));
+        }
 
         #[test]
         fn pull_is_none_until_a_whole_message_arrives_then_reclaims() {
