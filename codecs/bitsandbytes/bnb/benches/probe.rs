@@ -496,6 +496,38 @@ fn stream(n: u64, chunk: usize) {
     }
 }
 
+/// `n` rounds of sixteen 44-byte envelopes written through a `MessageStream` to a writer
+/// that keeps nothing: the encode and the hand-over, without a socket.
+#[cfg(feature = "net")]
+#[inline(never)]
+fn stream_write(n: u64) {
+    use std::io::{self, Write};
+
+    struct Discard(u64);
+    impl Write for Discard {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0 += black_box(buf).len() as u64;
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let message = Envelope {
+        body: vec![0x5A; 40],
+    };
+    let mut stream = bnb::MessageStream::new(Discard(0));
+    for _ in 0..n {
+        for _ in 0..16 {
+            stream.write_message(black_box(&message)).unwrap();
+        }
+    }
+    if stream.get_mut().0 != n * 16 * 44 {
+        wrong_outcome();
+    }
+}
+
 /// `n` whole 68-byte frames through `BinCodec::decode`. Refilling the buffer (a 68-byte
 /// copy) is part of each unit.
 #[cfg(feature = "tokio")]
@@ -736,6 +768,8 @@ const MODES: &[Mode] = &[
     per_16(mode("stream_16x40_64", "expected", M / 4, |n| stream(n, 64))),
     #[cfg(feature = "net")]
     per_16(mode("stream_16x40_1", "expected", M / 32, |n| stream(n, 1))),
+    #[cfg(feature = "net")]
+    per_16(mode("stream_write_16x40", "encode", M / 4, stream_write)),
     #[cfg(feature = "bytes")]
     mode("bytes_reader_fixed44", "happy", 4 * M, |n| {
         let wire = bytes::Bytes::from(fixed44());
