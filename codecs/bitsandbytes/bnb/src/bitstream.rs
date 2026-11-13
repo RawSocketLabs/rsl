@@ -1360,7 +1360,10 @@ pub trait Source: sealed::Sealed {
     /// allocation. The default is the correct-first per-byte loop; the slice-backed sources
     /// ([`BitReader`], `BitBuf`, `BytesReader`, and a [`LimitedSource`] window over one of
     /// them) copy a byte-aligned, fully available run in one step and otherwise run that
-    /// same loop, so values, errors, and the cursor match.
+    /// same loop, so values, errors, and the cursor match. The readers over `std::io::Read`
+    /// (`StreamBitReader`, `BufSource`) ask their reader for a byte-aligned run in steps: at
+    /// most 4 KiB before any of it has arrived, then as much again as has, with the values,
+    /// errors and cursor of the loop.
     ///
     /// # Errors
     /// As [`read_bits`](Source::read_bits).
@@ -1373,7 +1376,7 @@ pub trait Source: sealed::Sealed {
     /// `no_std` paths. Bulk-copied under the same conditions as `read_bytes`.
     ///
     /// # Errors
-    /// As [`read_bits`](Source::read_bits).
+    /// As [`read_bits`](Source::read_bits). What `buf` holds after an error is unspecified.
     fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
         read_into_per_byte(self, buf)
     }
@@ -3281,6 +3284,12 @@ pub fn write_byte_array<const N: usize, K: Sink>(arr: &[u8; N], w: &mut K) -> Re
 /// Use [`BitBuf::try_pull`] for buffered, retryable message decoding. Non-EOF I/O failures
 /// keep their original [`ErrorKind::Io`] kind.
 ///
+/// Whole bytes read from between two bytes (a `u32`, a `[u8; N]`, a counted `Vec<u8>`) are
+/// asked of the reader together, through [`Read::read`](std::io::Read::read), again while
+/// it returns fewer than were asked for. A read that starts or ends inside a byte takes the
+/// stream one byte at a time, through [`Read::read_exact`](std::io::Read::read_exact).
+/// Either way the reader is never asked for more than the field in hand needs.
+///
 /// # Examples
 ///
 /// ```
@@ -3353,6 +3362,35 @@ impl<R: std::io::Read> StreamBitReader<R> {
     /// have consumed input; do not retry the field on this reader. Use `BitBuf`
     /// when the caller needs transactional incremental attempts.
     pub fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+        if self.lead_bits != 0 || n % 8 != 0 || n > 128 {
+            return self.read_bits_per_byte(n);
+        }
+        // Whole bytes from between two bytes: asked of the reader together. Bytes in
+        // stream order are the value most significant first under `Msb` and least
+        // significant first under `Lsb`, which is what the loop below accumulates.
+        let at = self.pos;
+        let end = at
+            .checked_add(n as usize)
+            .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, at))?;
+        let mut bytes = [0u8; 16];
+        let count = (n / 8) as usize;
+        let wanted = match self.layout.bit {
+            BitOrder::Msb => &mut bytes[16 - count..],
+            BitOrder::Lsb => &mut bytes[..count],
+        };
+        if let (_, Some(stopped)) = pull(&mut self.inner, wanted) {
+            return Err(BitError::new(stopped.in_a_stream(), at));
+        }
+        self.pos = end;
+        Ok(match self.layout.bit {
+            BitOrder::Msb => u128::from_be_bytes(bytes),
+            BitOrder::Lsb => u128::from_le_bytes(bytes),
+        })
+    }
+
+    /// [`read_bits`](Self::read_bits) one byte of the stream at a time: the form that
+    /// serves a read starting or ending inside a byte.
+    fn read_bits_per_byte(&mut self, n: u32) -> Result<u128, BitError> {
         if n > 128 {
             return Err(BitError::new(
                 ErrorKind::TooWide { width: n as usize },
@@ -3374,12 +3412,7 @@ impl<R: std::io::Read> StreamBitReader<R> {
             if self.lead_bits == 0 {
                 let mut b = [0u8; 1];
                 if let Err(error) = self.inner.read_exact(&mut b) {
-                    let kind = if error.kind() == std::io::ErrorKind::UnexpectedEof {
-                        ErrorKind::Incomplete { needed: None }
-                    } else {
-                        ErrorKind::Io(error.kind())
-                    };
-                    return Err(BitError::new(kind, at));
+                    return Err(BitError::new(stream_failure(error.kind()), at));
                 }
                 self.lead = u32::from(b[0]);
                 self.lead_bits = 8;
@@ -3423,7 +3456,76 @@ impl<R: std::io::Read> StreamBitReader<R> {
             self.layout.byte,
         )))
     }
+
+    /// Reads whole bytes into `dst` from a byte-aligned cursor and counts them, stopping
+    /// where a byte-by-byte read would: at the end of the input, at a reader error, or at
+    /// the last byte the position can count. Says what stopped it short, if anything did.
+    fn fill(&mut self, dst: &mut [u8]) -> Option<BitError> {
+        debug_assert_eq!(self.lead_bits, 0);
+        let fits = dst.len().min((usize::MAX - self.pos) / 8);
+        let (got, stopped) = pull(&mut self.inner, &mut dst[..fits]);
+        self.pos += got * 8;
+        stopped
+            .map(Stopped::in_a_stream)
+            .or((fits < dst.len()).then_some(ErrorKind::PositionOverflow))
+            .map(|kind| BitError::new(kind, self.pos))
+    }
 }
+
+/// Why a reader gave fewer bytes than it was asked for.
+#[cfg(feature = "std")]
+enum Stopped {
+    /// It has no more: a read returned nothing.
+    End,
+    Failed(std::io::ErrorKind),
+}
+
+#[cfg(feature = "std")]
+impl Stopped {
+    /// What it means under a [`StreamBitReader`], where the end of the input is a message
+    /// that is not all there yet.
+    fn in_a_stream(self) -> ErrorKind {
+        match self {
+            Stopped::End => ErrorKind::Incomplete { needed: None },
+            Stopped::Failed(kind) => stream_failure(kind),
+        }
+    }
+}
+
+/// Reads from `inner` until `dst` is full, as reading it one byte at a time would: an
+/// interrupted read is tried again, the end of the input or an error stops it. Returns how
+/// many bytes came and what stopped them, if anything did.
+#[cfg(feature = "std")]
+fn pull<R: std::io::Read>(inner: &mut R, dst: &mut [u8]) -> (usize, Option<Stopped>) {
+    let mut got = 0;
+    while got < dst.len() {
+        match inner.read(&mut dst[got..]) {
+            Ok(0) => return (got, Some(Stopped::End)),
+            // A reader cannot have filled more than it was lent.
+            Ok(count) => got += count.min(dst.len() - got),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return (got, Some(Stopped::Failed(error.kind()))),
+        }
+    }
+    (got, None)
+}
+
+/// What a failed read of the stream under a [`StreamBitReader`] means: the end of the
+/// input is a message that is not all there yet, anything else is the reader's own error.
+#[cfg(feature = "std")]
+fn stream_failure(kind: std::io::ErrorKind) -> ErrorKind {
+    if kind == std::io::ErrorKind::UnexpectedEof {
+        ErrorKind::Incomplete { needed: None }
+    } else {
+        ErrorKind::Io(kind)
+    }
+}
+
+/// The most bytes a byte run asks a reader for before any have arrived; after that, as
+/// many again as it has. A count read off the wire therefore allocates for input that
+/// came, not for what it claims.
+#[cfg(feature = "std")]
+const RUN_STEP: usize = 4096;
 
 #[cfg(feature = "std")]
 impl<R: std::io::Read> sealed::Sealed for StreamBitReader<R> {}
@@ -3436,6 +3538,28 @@ impl<R: std::io::Read> Source for StreamBitReader<R> {
     }
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         StreamBitReader::read_bits(self, n)
+    }
+    /// A run from a byte-aligned cursor asks the reader for as much as it still needs at
+    /// a time; values, errors and the bytes consumed are those of reading it byte by byte.
+    fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
+        if self.lead_bits != 0 {
+            return read_bytes_per_byte(self, n);
+        }
+        let mut bytes = Vec::new();
+        while bytes.len() < n {
+            let have = bytes.len();
+            bytes.resize(have + (n - have).min(have.max(RUN_STEP)), 0);
+            if let Some(error) = self.fill(&mut bytes[have..]) {
+                return Err(error);
+            }
+        }
+        Ok(bytes)
+    }
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
+        if self.lead_bits != 0 {
+            return read_into_per_byte(self, buf);
+        }
+        self.fill(buf).map_or(Ok(()), Err)
     }
     fn bit_pos(&self) -> usize {
         self.pos
@@ -3557,27 +3681,57 @@ impl<R: std::io::Read> BufSource<R> {
                     self.bit_pos,
                 ));
             }
-            let want = (byte_end - self.base - self.buf.len()).min(self.cap - self.buf.len());
+            let want = (byte_end - self.base - self.buf.len())
+                .min(self.cap - self.buf.len())
+                .min(self.buf.len().max(RUN_STEP));
+            // Cleared once for the step, however many reads the reader takes to fill it.
             let start = self.buf.len();
             self.buf.resize(start + want, 0);
-            match self.inner.read(&mut self.buf[start..]) {
-                Ok(0) => {
-                    self.buf.truncate(start);
-                    self.eof = true;
-                }
-                Ok(got) => self.buf.truncate(start + got),
-                // Nothing was read: go round again, as the `read_exact` behind the other
-                // readers does.
-                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
-                    self.buf.truncate(start);
-                }
-                Err(e) => {
-                    self.buf.truncate(start);
-                    return Err(BitError::new(ErrorKind::Io(e.kind()), self.bit_pos));
+            let (got, stopped) = pull(&mut self.inner, &mut self.buf[start..]);
+            self.buf.truncate(start + got);
+            match stopped {
+                None => {}
+                Some(Stopped::End) => self.eof = true,
+                Some(Stopped::Failed(kind)) => {
+                    return Err(BitError::new(ErrorKind::Io(kind), self.bit_pos));
                 }
             }
         }
         Ok(())
+    }
+
+    /// Retains and consumes up to `n` whole bytes from a byte-aligned cursor, stopping
+    /// where `n` single-byte reads would. Returns where the bytes it got lie in `buf`, and
+    /// what stopped it short, if anything did.
+    fn take_run(&mut self, n: usize) -> (core::ops::Range<usize>, Option<BitError>) {
+        debug_assert_eq!(self.bit_pos % 8, 0);
+        let start = self.bit_pos / 8;
+        let fits = n.min((usize::MAX - self.bit_pos) / 8);
+        let (mut end, mut stopped) = (start, None);
+        // A run of no bytes reads nothing, not even what a forward seek skipped.
+        if fits > 0 {
+            let filled = self.fill_to(start + fits);
+            let retained = self.base + self.buf.len();
+            end = retained.clamp(start, start + fits);
+            stopped = match filled {
+                Err(error) => Some(error.kind),
+                Ok(()) if end < start + fits => Some(ErrorKind::UnexpectedEof {
+                    needed: 8,
+                    remaining: 0,
+                }),
+                Ok(()) => None,
+            };
+        }
+        if stopped.is_none() && fits < n {
+            stopped = Some(ErrorKind::PositionOverflow);
+        }
+        self.bit_pos = end * 8;
+        // After a forward seek the cursor can lie past everything retained.
+        let at = (start - self.base).min(self.buf.len());
+        (
+            at..at + (end - start),
+            stopped.map(|kind| BitError::new(kind, self.bit_pos)),
+        )
     }
 }
 
@@ -3620,6 +3774,26 @@ impl<R: std::io::Read> Source for BufSource<R> {
         let acc = extract_bits(&self.buf, at, n as usize, self.layout.bit);
         self.bit_pos += n as usize;
         Ok(acc)
+    }
+    /// A run from a byte-aligned cursor is retained in as few reads as the reader allows
+    /// and copied out once; values, errors, the cursor and what is retained are those of
+    /// reading it byte by byte.
+    fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
+        if self.bit_pos % 8 != 0 {
+            return read_bytes_per_byte(self, n);
+        }
+        match self.take_run(n) {
+            (_, Some(error)) => Err(error),
+            (run, None) => Ok(self.buf[run].to_vec()),
+        }
+    }
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
+        if self.bit_pos % 8 != 0 {
+            return read_into_per_byte(self, buf);
+        }
+        let (run, stopped) = self.take_run(buf.len());
+        buf[..run.len()].copy_from_slice(&self.buf[run]);
+        stopped.map_or(Ok(()), Err)
     }
     fn bit_pos(&self) -> usize {
         self.bit_pos
@@ -6557,6 +6731,526 @@ mod component {
             for layout in LAYOUTS {
                 agree_write(|| BytesWriter::with_layout(layout), |w| w.freeze().to_vec());
             }
+        }
+    }
+
+    #[cfg(feature = "std")]
+    mod stream_runs {
+        //! Byte runs on the readers over `std::io::Read` against the per-byte loops they
+        //! replace: the same values, errors, partial fills and cursor, the same bytes taken
+        //! from the reader and the same ones retained, whatever the reader does on the way.
+        use crate::bitstream::RUN_STEP;
+        use crate::{
+            BitError, BitOrder, BufSource, ByteOrder, ErrorKind, Layout, Source, StreamBitReader,
+        };
+        use core::fmt;
+        use std::io;
+
+        /// A reader with a script: its bytes, the most it hands over per call, and what it
+        /// answers, once, when asked for the byte at an offset.
+        #[derive(Clone)]
+        struct Scripted {
+            data: Vec<u8>,
+            at: usize,
+            chunk: usize,
+            events: Vec<(usize, io::ErrorKind)>,
+        }
+
+        impl io::Read for Scripted {
+            fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+                if let Some(index) = self.events.iter().position(|event| event.0 == self.at) {
+                    return Err(self.events.remove(index).1.into());
+                }
+                // No `chunk`: a different amount at every offset.
+                let chunk = if self.chunk == 0 {
+                    1 + self.at % 7
+                } else {
+                    self.chunk
+                };
+                // Up to the next event and no further, so it fires however much is asked.
+                let stop = self
+                    .events
+                    .iter()
+                    .map(|event| event.0)
+                    .filter(|&offset| offset > self.at)
+                    .min()
+                    .unwrap_or(self.data.len());
+                let count = out.len().min(chunk).min(stop - self.at);
+                out[..count].copy_from_slice(&self.data[self.at..self.at + count]);
+                self.at += count;
+                Ok(count)
+            }
+        }
+
+        // What a reader has given up and has left to say: its bytes are the same in both.
+        impl fmt::Debug for Scripted {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "at {} events {:?}", self.at, self.events)
+            }
+        }
+
+        fn noise(state: &mut u64) -> u64 {
+            *state ^= *state << 13;
+            *state ^= *state >> 7;
+            *state ^= *state << 17;
+            *state
+        }
+
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a test index, reduced first"
+        )]
+        fn below(state: &mut u64, bound: usize) -> usize {
+            (noise(state) % bound as u64) as usize
+        }
+
+        fn pick<T: Copy>(state: &mut u64, from: &[T]) -> T {
+            from[below(state, from.len())]
+        }
+
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        enum Op {
+            Bits(u32),
+            Bytes(usize),
+            Into(usize),
+            Seek(usize),
+            Compact,
+        }
+
+        #[derive(Debug, PartialEq)]
+        enum Outcome {
+            Bits(Result<u128, BitError>),
+            Bytes(Result<Vec<u8>, BitError>),
+            Into(Result<(), BitError>, Vec<u8>),
+            Seek(Result<(), BitError>),
+            Compact,
+        }
+
+        impl Outcome {
+            /// The error of a byte run, or that it gave all it was asked for.
+            fn of_a_run(&self) -> Option<Result<(), &ErrorKind>> {
+                match self {
+                    Outcome::Bytes(result) => {
+                        Some(result.as_ref().map(|_bytes| ()).map_err(|e| &e.kind))
+                    }
+                    Outcome::Into(result, _) => Some(result.as_ref().copied().map_err(|e| &e.kind)),
+                    _ => None,
+                }
+            }
+        }
+
+        /// How a reader read bits before it asked for bytes together: the reference.
+        type BitsByByte<S> = fn(&mut S, u32) -> Result<u128, BitError>;
+
+        /// One step, through the reader's own reads or through `reference`, one byte of
+        /// a run at a time.
+        fn apply<S: Source>(
+            s: &mut S,
+            op: Op,
+            reference: Option<BitsByByte<S>>,
+            compact: fn(&mut S),
+        ) -> Outcome {
+            #[expect(clippy::cast_possible_truncation, reason = "eight bits were read")]
+            let byte = |s: &mut S, bits: BitsByByte<S>| bits(s, 8).map(|value| value as u8);
+            match (op, reference) {
+                (Op::Bits(n), None) => Outcome::Bits(s.read_bits(n)),
+                (Op::Bits(n), Some(bits)) => Outcome::Bits(bits(s, n)),
+                (Op::Bytes(n), None) => Outcome::Bytes(s.read_bytes(n)),
+                (Op::Bytes(n), Some(bits)) => {
+                    Outcome::Bytes((0..n).map(|_| byte(s, bits)).collect())
+                }
+                (Op::Into(n), None) => {
+                    let mut buf = vec![0xEE; n];
+                    Outcome::Into(s.read_into(&mut buf), buf)
+                }
+                (Op::Into(n), Some(bits)) => {
+                    let mut buf = vec![0xEE; n];
+                    let result = buf
+                        .iter_mut()
+                        .try_for_each(|slot| byte(s, bits).map(|value| *slot = value));
+                    Outcome::Into(result, buf)
+                }
+                (Op::Seek(pos), _) => Outcome::Seek(s.seek_to_bit(pos)),
+                (Op::Compact, _) => {
+                    compact(s);
+                    Outcome::Compact
+                }
+            }
+        }
+
+        /// Runs `program` on two readers built alike, one through its own reads and one
+        /// through `reference`, and holds them to the same outcome and the same state
+        /// after every step. Returns the outcome of each byte run.
+        fn in_step<S: Source + fmt::Debug>(
+            make: impl Fn() -> S,
+            program: &[Op],
+            reference: BitsByByte<S>,
+            compact: fn(&mut S),
+            case: &str,
+        ) -> Vec<Result<(), ErrorKind>> {
+            let (mut bulk, mut plain) = (make(), make());
+            let mut runs = Vec::new();
+            for (step, &op) in program.iter().enumerate() {
+                let outcome = apply(&mut bulk, op, None, compact);
+                assert_eq!(
+                    outcome,
+                    apply(&mut plain, op, Some(reference), compact),
+                    "{case}, step {step}: {op:?}"
+                );
+                assert_eq!(
+                    format!("{bulk:?}"),
+                    format!("{plain:?}"),
+                    "{case}, after step {step}: {op:?}"
+                );
+                runs.extend(outcome.of_a_run().map(|run| run.map_err(Clone::clone)));
+            }
+            runs
+        }
+
+        const LAYOUTS: [Layout; 4] = [
+            Layout {
+                bit: BitOrder::Msb,
+                byte: ByteOrder::Big,
+            },
+            Layout {
+                bit: BitOrder::Msb,
+                byte: ByteOrder::Little,
+            },
+            Layout {
+                bit: BitOrder::Lsb,
+                byte: ByteOrder::Big,
+            },
+            Layout {
+                bit: BitOrder::Lsb,
+                byte: ByteOrder::Little,
+            },
+        ];
+
+        /// A reader of random bytes with up to two things going wrong on the way.
+        fn script(state: &mut u64) -> Scripted {
+            let len = match below(state, 16) {
+                0 => 0,
+                1 => 9_000,
+                2..=5 => below(state, 12),
+                _ => below(state, 300),
+            };
+            let data = (0..len).map(|_| noise(state).to_le_bytes()[0]).collect();
+            let kinds = [
+                io::ErrorKind::Interrupted,
+                io::ErrorKind::Interrupted,
+                io::ErrorKind::WouldBlock,
+                io::ErrorKind::ConnectionReset,
+                io::ErrorKind::UnexpectedEof,
+            ];
+            // In the long input, often where a step of a run ends.
+            let events = (0..below(state, 3))
+                .map(|_| {
+                    let at = if len == 9_000 && below(state, 2) == 0 {
+                        pick(state, &[4_095, 4_096, 4_097, 8_192])
+                    } else {
+                        below(state, len + 1)
+                    };
+                    (at, pick(state, &kinds))
+                })
+                .collect();
+            Scripted {
+                data,
+                at: 0,
+                chunk: pick(state, &[0, 0, 1, 2, 3, 7, 64, 5_000, usize::MAX]),
+                events,
+            }
+        }
+
+        /// Ten steps: mostly byte runs of every size, a count no input could back among
+        /// them, with bit reads between that leave the cursor inside a byte or on one.
+        fn program(state: &mut u64, len: usize) -> Vec<Op> {
+            let size = |state: &mut u64| match below(state, 10) {
+                0 => 0,
+                1..=5 => below(state, 20),
+                6 | 7 => below(state, 300),
+                8 => below(state, 12_000),
+                _ => usize::MAX >> below(state, 4),
+            };
+            (0..10)
+                .map(|_| match below(state, 16) {
+                    0..=2 => Op::Bits(pick(
+                        state,
+                        &[0, 1, 3, 4, 5, 7, 8, 8, 16, 24, 32, 40, 64, 128, 129, 136],
+                    )),
+                    3..=8 => Op::Bytes(size(state)),
+                    9..=13 => Op::Into(size(state).min(12_000)),
+                    // To a byte as often as into one.
+                    14 => Op::Seek(below(state, len * 8 + 70) & !(7 * below(state, 2))),
+                    _ => Op::Compact,
+                })
+                .collect()
+        }
+
+        /// How often each way a run can end was met, so a differential that never left the
+        /// easy path fails instead of passing.
+        fn met(runs: &[Result<(), ErrorKind>], kind: impl Fn(&ErrorKind) -> bool) -> usize {
+            runs.iter()
+                .filter(|run| run.as_ref().err().is_some_and(&kind))
+                .count()
+        }
+
+        #[test]
+        fn a_stream_readers_runs_are_its_byte_by_byte_reads() {
+            let mut state = 0x9E37_79B9_7F4A_7C15;
+            let mut runs = Vec::new();
+            for case in 0..4_000 {
+                let reader = script(&mut state);
+                let layout = pick(&mut state, &LAYOUTS);
+                // One case in eight starts where the position is about to stop counting.
+                let near_the_end = (below(&mut state, 8) == 0).then(|| below(&mut state, 300));
+                let program = program(&mut state, reader.data.len());
+                let make = || {
+                    let mut subject = StreamBitReader::with_layout(reader.clone(), layout);
+                    if let Some(short) = near_the_end {
+                        subject.pos = usize::MAX - short;
+                    }
+                    subject
+                };
+                runs.extend(in_step(
+                    make,
+                    &program,
+                    StreamBitReader::read_bits_per_byte,
+                    |_| (),
+                    &format!("case {case}"),
+                ));
+            }
+            assert!(runs.iter().filter(|run| run.is_ok()).count() > 2_000);
+            assert!(met(&runs, |kind| matches!(kind, ErrorKind::Incomplete { .. })) > 500);
+            assert!(met(&runs, |kind| matches!(kind, ErrorKind::Io(_))) > 100);
+            assert!(met(&runs, |kind| matches!(kind, ErrorKind::PositionOverflow)) > 100);
+        }
+
+        #[test]
+        fn a_retaining_readers_runs_are_its_byte_by_byte_reads() {
+            let mut state = 0xD1B5_4A32_D192_ED03;
+            let mut runs = Vec::new();
+            for case in 0..4_000 {
+                let reader = script(&mut state);
+                let layout = pick(&mut state, &LAYOUTS);
+                let cap = pick(
+                    &mut state,
+                    &[
+                        0,
+                        1,
+                        3,
+                        16,
+                        64,
+                        4_095,
+                        4_096,
+                        4_097,
+                        5_000,
+                        64 * 1024,
+                        usize::MAX,
+                    ],
+                );
+                let near_the_end = (below(&mut state, 8) == 0).then(|| below(&mut state, 40));
+                let program = program(&mut state, reader.data.len());
+                let make = || {
+                    let mut subject =
+                        BufSource::with_capacity_and_layout(reader.clone(), cap, layout);
+                    if let Some(short) = near_the_end {
+                        // As after a long stream, compacted: `short` bytes still count.
+                        subject.base = usize::MAX / 8 - short;
+                        subject.bit_pos = subject.base * 8;
+                    }
+                    subject
+                };
+                runs.extend(in_step(
+                    make,
+                    &program,
+                    Source::read_bits,
+                    BufSource::compact,
+                    &format!("case {case}"),
+                ));
+            }
+            assert!(runs.iter().filter(|run| run.is_ok()).count() > 2_000);
+            assert!(
+                met(&runs, |kind| matches!(
+                    kind,
+                    ErrorKind::UnexpectedEof { .. }
+                )) > 500
+            );
+            assert!(met(&runs, |kind| matches!(kind, ErrorKind::Io(_))) > 100);
+            assert!(met(&runs, |kind| matches!(kind, ErrorKind::BufferFull { .. })) > 100);
+            assert!(met(&runs, |kind| matches!(kind, ErrorKind::PositionOverflow)) > 100);
+        }
+
+        /// A reader that counts what it is asked for.
+        struct Asked<'a> {
+            data: &'a [u8],
+            calls: usize,
+            largest: usize,
+        }
+
+        impl io::Read for Asked<'_> {
+            fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+                self.calls += 1;
+                self.largest = self.largest.max(out.len());
+                self.data.read(out)
+            }
+        }
+
+        fn asked(data: &[u8]) -> Asked<'_> {
+            Asked {
+                data,
+                calls: 0,
+                largest: 0,
+            }
+        }
+
+        #[test]
+        fn a_run_is_asked_of_the_reader_in_as_few_reads_as_it_takes() {
+            let data = vec![0x5A; 30_000];
+
+            let mut stream = StreamBitReader::new(asked(&data));
+            assert_eq!(stream.read_bytes(100).unwrap(), [0x5A; 100]);
+            stream.read_into(&mut [0; 16]).unwrap();
+            assert_eq!(stream.inner.calls, 2);
+            // So is a value of whole bytes, unless it starts inside a byte.
+            assert_eq!(stream.read::<u64>().unwrap(), 0x5A5A_5A5A_5A5A_5A5A);
+            assert_eq!(stream.inner.calls, 3);
+            stream.read_bits(4).unwrap();
+            stream.read::<u32>().unwrap();
+            stream.read_bits(4).unwrap();
+            assert_eq!(stream.inner.calls, 8);
+            stream.inner.calls = 2;
+            // A long run is asked for a step at a time, each as large as what has come.
+            assert_eq!(
+                stream.read_bytes(RUN_STEP + 900).unwrap().len(),
+                RUN_STEP + 900
+            );
+            assert_eq!((stream.inner.calls, stream.inner.largest), (4, RUN_STEP));
+            assert_eq!(stream.bit_pos(), (129 + RUN_STEP + 900) * 8);
+            stream.read_bytes(4 * RUN_STEP).unwrap();
+            assert_eq!(
+                (stream.inner.calls, stream.inner.largest),
+                (7, 2 * RUN_STEP)
+            );
+
+            let mut retaining = BufSource::new(asked(&data));
+            assert_eq!(retaining.read_bytes(100).unwrap(), [0x5A; 100]);
+            retaining.read_into(&mut [0; 16]).unwrap();
+            assert_eq!(retaining.inner.calls, 2);
+            assert_eq!(
+                retaining.read_bytes(RUN_STEP + 900).unwrap().len(),
+                RUN_STEP + 900
+            );
+            assert_eq!(
+                (retaining.inner.calls, retaining.inner.largest),
+                (4, RUN_STEP)
+            );
+            assert_eq!(retaining.bit_pos(), (116 + RUN_STEP + 900) * 8);
+            // What is retained counts as what has come: released, the steps start over.
+            retaining.compact();
+            retaining.read_bytes(4 * RUN_STEP).unwrap();
+            assert_eq!(
+                (retaining.inner.calls, retaining.inner.largest),
+                (7, 2 * RUN_STEP)
+            );
+        }
+
+        /// A reader that hands over one byte a call, leaves its mark on everything it was
+        /// lent, and counts the bytes it finds cleared.
+        struct Trickle {
+            left: usize,
+            cleared: usize,
+        }
+
+        impl io::Read for Trickle {
+            fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+                if self.left == 0 || out.is_empty() {
+                    return Ok(0);
+                }
+                self.cleared += out
+                    .iter()
+                    .map(|&byte| usize::from(byte == 0))
+                    .sum::<usize>();
+                out.fill(0xA5);
+                self.left -= 1;
+                Ok(1)
+            }
+        }
+
+        #[test]
+        fn a_reader_that_trickles_is_not_lent_a_freshly_cleared_step_for_every_read() {
+            // What is cleared is the work done besides the reader's: a step cleared again
+            // for each byte that comes would be the square of the run.
+            let run = 3 * RUN_STEP - 300;
+            let trickle = || Trickle {
+                left: run,
+                cleared: 0,
+            };
+
+            let mut stream = StreamBitReader::new(trickle());
+            assert_eq!(stream.read_bytes(run).unwrap(), vec![0xA5; run]);
+            assert!(stream.inner.cleared <= 2 * run, "{}", stream.inner.cleared);
+
+            let mut retaining = BufSource::new(trickle());
+            assert_eq!(retaining.read_bytes(run).unwrap(), vec![0xA5; run]);
+            assert!(
+                retaining.inner.cleared <= 2 * run,
+                "{}",
+                retaining.inner.cleared
+            );
+        }
+
+        /// A reader that says it filled more than it was lent.
+        struct Boastful;
+
+        impl io::Read for Boastful {
+            fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+                out.fill(7);
+                Ok(usize::MAX)
+            }
+        }
+
+        #[test]
+        fn a_reader_that_claims_more_than_it_was_lent_is_held_to_what_it_was_lent() {
+            let mut stream = StreamBitReader::new(Boastful);
+            assert_eq!(stream.read::<u32>().unwrap(), 0x0707_0707);
+            assert_eq!(stream.read_bytes(5).unwrap(), [7; 5]);
+            let mut three = [0; 3];
+            stream.read_into(&mut three).unwrap();
+            assert_eq!((three, stream.bit_pos()), ([7; 3], 96));
+
+            let mut retaining = BufSource::new(Boastful);
+            assert_eq!(retaining.read::<u32>().unwrap(), 0x0707_0707);
+            assert_eq!(retaining.read_bytes(5).unwrap(), [7; 5]);
+            retaining.read_into(&mut three).unwrap();
+            assert_eq!((three, retaining.bit_pos()), ([7; 3], 96));
+        }
+
+        #[test]
+        fn a_count_no_input_backs_does_not_size_what_is_asked_or_held() {
+            let data = [7; 10];
+
+            let mut stream = StreamBitReader::new(asked(&data));
+            let error = stream.read_bytes(usize::MAX / 16).unwrap_err();
+            assert_eq!(
+                (error.kind, error.at),
+                (ErrorKind::Incomplete { needed: None }, 80)
+            );
+            assert_eq!(stream.inner.largest, RUN_STEP);
+
+            let mut retaining = BufSource::with_capacity(asked(&data), usize::MAX);
+            let error = retaining.read_bytes(usize::MAX / 16).unwrap_err();
+            assert_eq!(
+                (error.kind, error.at),
+                (
+                    ErrorKind::UnexpectedEof {
+                        needed: 8,
+                        remaining: 0
+                    },
+                    80
+                )
+            );
+            assert_eq!(retaining.inner.largest, RUN_STEP);
+            assert!(retaining.buf.capacity() <= 2 * RUN_STEP);
         }
     }
 
