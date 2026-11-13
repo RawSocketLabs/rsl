@@ -1321,8 +1321,9 @@ pub trait Source: sealed::Sealed {
     /// are pushed as they are read, bounded by the input — a hostile huge `n` against a
     /// short source is a fast [`UnexpectedEof`](ErrorKind::UnexpectedEof), not an
     /// allocation. The default is the correct-first per-byte loop; the slice-backed sources
-    /// ([`BitReader`], `BitBuf`, `BytesReader`) copy a byte-aligned, fully available run in
-    /// one step and otherwise run that same loop, so values, errors, and the cursor match.
+    /// ([`BitReader`], `BitBuf`, `BytesReader`, and a [`LimitedSource`] window over one of
+    /// them) copy a byte-aligned, fully available run in one step and otherwise run that
+    /// same loop, so values, errors, and the cursor match.
     ///
     /// # Errors
     /// As [`read_bits`](Source::read_bits).
@@ -1508,6 +1509,16 @@ impl<'a, S: Source> LimitedSource<'a, S> {
             ))
         }
     }
+
+    /// The error for a read of `needed` bits with `remaining` left in the window.
+    #[cold]
+    #[inline(never)]
+    fn past_end(&self, needed: usize, remaining: usize) -> BitError {
+        BitError::new(
+            ErrorKind::UnexpectedEof { needed, remaining },
+            self.source.bit_pos(),
+        )
+    }
 }
 
 impl<S: Source> fmt::Debug for LimitedSource<'_, S> {
@@ -1528,18 +1539,28 @@ impl<S: Source> Source for LimitedSource<'_, S> {
     fn __bnb_depth(&mut self) -> &mut u16 {
         self.source.__bnb_depth()
     }
+    // Inline, so a generated decoder's constant width reaches the wrapped reader's fast
+    // paths through the window check; the boundary error is built out of line.
+    #[inline]
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let remaining = self.remaining_bits();
         if n as usize > remaining {
-            return Err(BitError::new(
-                ErrorKind::UnexpectedEof {
-                    needed: n as usize,
-                    remaining,
-                },
-                self.source.bit_pos(),
-            ));
+            return Err(self.past_end(n as usize, remaining));
         }
         self.source.read_bits(n)
+    }
+
+    // The window check of `read_bits`, then the wrapped reader's own typed read, so a
+    // slice reader's whole-byte load is reached through the window. Forced inline as that
+    // read is: left to the optimizer it stayed a call per field (DESIGN §22).
+    #[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+    #[inline(always)]
+    fn read<T: Bits>(&mut self) -> Result<T, BitError> {
+        let remaining = self.remaining_bits();
+        if T::BITS as usize > remaining {
+            return Err(self.past_end(T::BITS as usize, remaining));
+        }
+        self.source.read()
     }
 
     fn bit_pos(&self) -> usize {
@@ -1565,6 +1586,36 @@ impl<S: Source> Source for LimitedSource<'_, S> {
             ));
         }
         self.source.seek_to_bit(pos)
+    }
+
+    // As `BitReader`: a run the window lends is copied whole, and any other runs the
+    // per-byte loop through this window, so errors, positions and hints are that loop's.
+    // Not the wrapped source's `read_bytes`: over the incremental reader that reports the
+    // whole shortfall, where the loop reports the first missing byte.
+    fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
+        match self.aligned_run(n) {
+            Some(run) => Ok(run.to_vec()),
+            None => read_bytes_per_byte(self, n),
+        }
+    }
+
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
+        match self.aligned_run(buf.len()) {
+            Some(run) => {
+                buf.copy_from_slice(run);
+                Ok(())
+            }
+            None => read_into_per_byte(self, buf),
+        }
+    }
+
+    // The wrapped source's run when it lies inside the window; a run that would cross the
+    // window's end is `None`, so the element-by-element path reports the boundary.
+    fn aligned_run(&mut self, n: usize) -> Option<&[u8]> {
+        if n > self.remaining_bits() / 8 {
+            return None;
+        }
+        self.source.aligned_run(n)
     }
 }
 
@@ -4457,6 +4508,172 @@ mod unit {
                             read_bytes_per_byte(&mut slow, n).map_err(|e| (e.kind, e.at));
                         assert_eq!(got, expected, "{order:?} pos {pos} n {n}");
                         assert_eq!(fast.bit_pos(), slow.bit_pos());
+                    }
+                }
+            }
+        }
+    }
+
+    /// A window as it was before it lent runs and forwarded typed reads: `read_bits` checks
+    /// the boundary, seeks stay inside it, and every other read is the trait's default.
+    struct PlainWindow<'a, S: Source>(LimitedSource<'a, S>);
+
+    impl<S: Source> sealed::Sealed for PlainWindow<'_, S> {}
+
+    impl<S: Source> Source for PlainWindow<'_, S> {
+        fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
+            self.0.read_bits(n)
+        }
+        fn __bnb_depth(&mut self) -> &mut u16 {
+            self.0.__bnb_depth()
+        }
+        fn bit_pos(&self) -> usize {
+            self.0.bit_pos()
+        }
+        fn byte_order(&self) -> ByteOrder {
+            self.0.byte_order()
+        }
+        fn bit_order(&self) -> BitOrder {
+            self.0.bit_order()
+        }
+        fn seek_to_bit(&mut self, pos: usize) -> Result<(), BitError> {
+            self.0.seek_to_bit(pos)
+        }
+    }
+
+    /// Every read a window serves, at `pos` in a window of `window` bytes from byte 1 of
+    /// `source`, against [`PlainWindow`]: the value or the error and its position, the
+    /// cursor afterwards, and for `read_into` the bytes written before a failure.
+    fn assert_window_matches_the_plain_one<S: Source>(
+        make: impl Fn() -> S,
+        window: usize,
+        pos: usize,
+        context: &str,
+    ) {
+        use crate::{u4, u24};
+        fn flat<T>(result: Result<T, BitError>) -> Result<T, (ErrorKind, usize)> {
+            result.map_err(|e| (e.kind, e.at))
+        }
+        // `$fast` and `$plain`: the two windows over fresh sources, both at `pos`.
+        macro_rules! windows {
+            ($fast:ident, $plain:ident) => {
+                let (mut fast_source, mut plain_source) = (make(), make());
+                for source in [&mut fast_source, &mut plain_source] {
+                    source.seek_to_bit(8).unwrap();
+                }
+                let mut $fast = LimitedSource::bytes(&mut fast_source, window).unwrap();
+                let mut $plain =
+                    PlainWindow(LimitedSource::bytes(&mut plain_source, window).unwrap());
+                $fast.seek_to_bit(pos).unwrap();
+                $plain.seek_to_bit(pos).unwrap();
+            };
+        }
+        // Both windows run `op`, and agree on its result and where the cursor ends.
+        macro_rules! same {
+            ($what:expr, |$w:ident| $op:expr) => {{
+                windows!(fast, plain);
+                let got = {
+                    let $w = &mut fast;
+                    ($op, Source::bit_pos($w))
+                };
+                let expected = {
+                    let $w = &mut plain;
+                    ($op, Source::bit_pos($w))
+                };
+                assert_eq!(
+                    got, expected,
+                    "{context} window {window} pos {pos}, {}",
+                    $what
+                );
+            }};
+        }
+        macro_rules! typed {
+            ($($value:ty),*) => {
+                $(same!(stringify!($value), |w| flat(w.read::<$value>()));)*
+            };
+        }
+        typed!(
+            u4,
+            u8,
+            u16,
+            u24,
+            u32,
+            u64,
+            u128,
+            Own<true>,
+            Own<false>,
+            Blank<0>,
+            Blank<136>
+        );
+        for n in (0..=5).chain([usize::MAX]) {
+            same!(format!("read_bytes({n})"), |w| flat(w.read_bytes(n)));
+        }
+        for n in 0..=5 {
+            same!(format!("read_into({n})"), |w| {
+                let mut buf = [0xEE; 5];
+                (flat(w.read_into(&mut buf[..n])), buf)
+            });
+            // A lent run is the bytes the per-byte loop reads, and leaves the cursor where
+            // that loop does; a declined one consumes nothing.
+            windows!(fast, plain);
+            let lent = fast.aligned_run(n).map(<[u8]>::to_vec);
+            let what = format!("{context} window {window} pos {pos}, aligned_run({n})");
+            match lent {
+                Some(run) => {
+                    assert_eq!(flat(plain.read_bytes(n)), Ok(run), "{what}");
+                    assert_eq!(Source::bit_pos(&fast), plain.bit_pos(), "{what}");
+                }
+                None => assert_eq!(Source::bit_pos(&fast), pos, "{what}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_window_reports_its_boundary_at_the_cursor_and_lends_up_to_it() {
+        let mut reader = BitReader::new(&[0x11, 0x22, 0x33, 0x44]);
+        reader.seek_to_bit(8).unwrap();
+        let mut window = reader.limit_bytes(2).unwrap();
+        // A run that fills the window exactly is lent; one byte more is not.
+        assert_eq!(window.aligned_run(3), None);
+        assert_eq!(window.aligned_run(2), Some(&[0x22, 0x33][..]));
+        window.seek_to_bit(16).unwrap();
+        // One byte is left: a wider read stops at the boundary, typed or by bits, and says
+        // so from where the cursor is.
+        let boundary = ErrorKind::UnexpectedEof {
+            needed: 16,
+            remaining: 8,
+        };
+        let error = window.read::<u16>().unwrap_err();
+        assert_eq!((error.kind, error.at), (boundary.clone(), 16));
+        let error = window.read_bits(16).unwrap_err();
+        assert_eq!((error.kind, error.at), (boundary, 16));
+        assert_eq!(window.read::<u8>().unwrap(), 0x33);
+    }
+
+    #[test]
+    fn a_window_reads_as_its_per_bit_form_does_over_both_slice_readers() {
+        let mut state = 0xC2B2_AE3D_27D4_EB4F;
+        let noisy: Vec<u8> = (0..20)
+            .map(|_| noise(&mut state).to_le_bytes()[0])
+            .collect();
+        for bit in [BitOrder::Msb, BitOrder::Lsb] {
+            for byte in [ByteOrder::Big, ByteOrder::Little] {
+                let layout = Layout { bit, byte };
+                // Buffers that end before, at and after the window's end, so a read meets
+                // the window's boundary and the input's end in either order; the widest
+                // window holds a 128-bit read from inside a byte, and a too-wide one.
+                for len in [1, 2, 3, 5, 9, 14, 20] {
+                    let buf = &noisy[..len];
+                    for window in [0, 1, 2, 3, 4, 8, 13, 18] {
+                        let reachable = (8 + window * 8).min(len * 8);
+                        for pos in 8..=reachable {
+                            let slice = || BitReader::with_layout(buf, layout);
+                            let context = format!("{layout:?} len {len}");
+                            assert_window_matches_the_plain_one(slice, window, pos, &context);
+                            let incremental = || IncrementalReader(slice());
+                            let context = format!("{layout:?} len {len}, incremental");
+                            assert_window_matches_the_plain_one(incremental, window, pos, &context);
+                        }
                     }
                 }
             }
