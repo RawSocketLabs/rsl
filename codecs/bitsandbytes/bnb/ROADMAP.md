@@ -83,10 +83,18 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          `DESIGN.md` §22, phase 3. Still unhinted, and unscheduled: `to_canonical_bytes`
          of a variable-length message, `to_bytes_with`, `#[bin]` enums, and
          `MessageDatagram::send_message`, which takes `&self` and allocates per datagram.
-   - [ ] **Phase 4, fixed-length messages.** Design review first. One availability check
-         per message instead of one per field, keyed on a macro-only marker so
-         `FixedBitLen` stays a sizing hint; go or no-go on what phase 2 leaves (mainly
-         sub-byte messages); no slowdown on variable-tail messages.
+   - [x] **Phase 4, fixed-length messages.** Done: a fixed-length message whose fields are
+         each at most eight bits, or whole bytes on a byte boundary, decodes from one
+         window of its whole length, with one availability check instead of one per field
+         (`fixed44` 226 → 122 instructions, `sub_byte` 692 → 281, `records_1024` 0.57 of
+         its parent). A failure in the window is discarded and the field-by-field body
+         runs, so errors are unchanged and `FixedBitLen` stays a sizing hint. Other
+         messages compile to the old body alone. A short attempt pays 14 to 15
+         instructions (owner accepted, 2026-11-13); a rejected message decodes twice
+         (`fixed44_rejected` +49, terminal). `DESIGN.md` §22, phase 4. Open: a
+         per-type way to turn the window off for a type known to arrive in pieces (owner
+         decides the spelling); the distance to the measured ceiling (`sub_byte` 103,
+         `fixed44` 55), unscheduled.
    - [ ] **Phase 5, stream readers.** A differential test (per-byte against bulk, across
          readers and error kinds) first, then bulk reads for `StreamBitReader` and
          `BufSource`. Transport reads past the 4 KiB scratch are researched (a 1 MiB

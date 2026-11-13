@@ -3070,3 +3070,172 @@ push, a bounded buffer not reclaiming to fit). 900 tests with all features acros
 crates, 800 with default; clippy; rustdoc; MSRV 1.85 and the 32-bit `no_std` build. No
 separate review: one condition, researched and measured twice, with the owner's decision
 on its memory cost.
+
+### Phase 4: a fixed-length message decodes from one window (2026-11-13)
+
+**Owner decisions.** 2026-11-12: build it and measure; a message with a wide unaligned
+field skips the window by a compile-time rule, not by slack bytes or an opt-in.
+2026-11-13: merge with the expected-tier cost recorded below.
+
+**The ceiling.** A throwaway experiment (not committed) on the phase 3 base, instructions
+per decode with cycles in brackets:
+
+| How the message is decoded | `Fixed44` | `SubByte` (18 fields of 1 to 7 bits) |
+|---|---:|---:|
+| `decode_exact` on the base | 226 (46) | 692 (111) |
+| Generated decoder over a window of constant length, called as a function | 208 (37) | 669 (105) |
+| Field reads written into the caller, ordinary reader | 176 (33) | 512 (80) |
+| Field reads written into the caller, window of constant length | 55 (18) | 103 (33) |
+
+A window of constant length buys nothing by itself. The gain needs the reader's length to
+be a constant and the field reads to sit in the same function as that reader, so the
+per-field bounds and alignment checks fold.
+
+**Mechanism.** The generated `bit_decode` of a fixed-length message starts with an attempt
+that the old body follows unchanged:
+
+1. `fixed_window` asks the source for `aligned_run(N)`, `N` being `BIT_LEN` rounded up to
+   bytes, and wraps the lent `&[u8; N]` in a `BitReader` with the source's bit order, byte
+   order and depth budget. A source that does not lend, is not byte-aligned, or holds
+   fewer than `N` bytes returns `None`, and the old body runs.
+2. The same magic check and field reads are emitted a second time, as text, against that
+   reader, in a closure that returns the fields as a tuple.
+3. On success the source's cursor is settled at the start plus what the window actually
+   consumed, and `Self` is built once from the tuple.
+4. On any failure the cursor is put back and the old body runs from the start.
+
+Every error is therefore the field-by-field body's, with its kind, field path and offset.
+`FixedBitLen::BIT_LEN` only sizes the window: a hand-written wrong one costs a wasted
+attempt (too large: the window is not lent as often; too small: the window runs short and
+is discarded), never a wrong value or cursor. The roadmap's macro-only marker for trusting
+the length was not needed. Generated code carries no inline hint; `fixed_window` is
+`#[inline(always)]` in the runtime, measured.
+
+**The rule.** The first build put every fixed-length message through the window and made
+wide unaligned fields slower (`dmr` +20% instructions, `unaligned_mid` +32%): a window is
+exactly the message's length, so a 20-bit or 108-bit field near its end loses the 16
+bytes of slack the phase 1 wide read relies on. `FixedBitLen` gained a hidden, defaulted
+associated constant, `__BNB_WINDOW`, which is additive: a hand-written impl gets
+"unknown". Leaf types (`u8` to `u128`, `UInt<T, N>`, bit enums and bitfields, `WireLen`)
+report "leaf"; a message reports the result of the const fn `window_kind` over its
+fields' widths and kinds in order:
+
+- a leaf suits a window if it is at most 8 bits, or is whole bytes starting on a byte
+  boundary;
+- a nested message suits it if it suits a window itself and starts on a byte boundary;
+- anything else, including an unknown kind, does not, and neither does the message.
+
+The magic and byte arrays count as leaves; fields that take no input (`ignore`, `calc`)
+are left out. The attempt is guarded by that constant, so a message the rule leaves out
+compiles to the old body alone, and `dmr` and the `unaligned_*` modes are identical to
+`main`. A message with a `dbg` field emits no constant: its trace would otherwise print
+twice, and from a parent's window at an offset inside that window.
+
+**Measurements.** Rust 1.99.1 (the machine's `stable` moved to 1.100.0 during this phase;
+every table in this section is 1.99.1), against `main` at `00af68ca` with the probe's new
+mode, instructions per decode. The probe gained `fixed44_rejected` (58 modes with
+`tokio`): the 44-byte message with an `assert` on its sixth field that fails.
+
+| Mode | Tier | `main` | Candidate | Cycles |
+|---|---|---:|---:|---|
+| `fixed44` | happy | 225.99 | 121.99 | 47.0 → 40.2 |
+| `packet` | happy | 184.99 | 115.99 | 42.0 → 38.0 |
+| `sub_byte` | happy | 691.98 | 280.98 | 110.5 → 87.1 |
+| `records_1024` | happy | 108,709.41 | 61,606.43 | 17,204.2 → 10,999.4 |
+| `prefix_fixed44` | happy | 258.99 | 140.99 | 63.9 → 51.0 |
+| `limit_fixed44` | happy | 308.98 | 152.98 | 74.4 → 41.2 |
+| `limit_prefix_fixed44` | happy | 341.98 | 185.98 | 93.3 → 55.1 |
+| `buffered_fixed44_whole` | happy | 389.05 | 271.05 | 102.7 → 91.1 |
+| `backlog_100` | happy | 334.41 | 216.41 | 96.0 → 86.1 |
+| `backlog_bounded_100` | happy | 588.96 | 470.96 | 282.6 → 269.1 |
+| `bytes_reader_fixed44` | happy | 271.98 | 199.98 | 53.7 → 53.6 |
+| `bytes_reader_sub_byte` | happy | 772.98 | 150.98 | 123.0 → 57.8 |
+| `buffered_fixed44_5` | expected | 3,879.27 | 3,882.39 | 1,253.3 → 1,260.2 |
+| `buffered_fixed44_1` | expected | 18,300.89 | 18,790.89 | 5,479.1 → 5,635.7 |
+| `prefix_short_fixed44` | expected | 619.98 | 633.98 | 169.5 → 172.4 |
+| `limit_prefix_short_fixed44` | expected | 836.96 | 851.96 | 198.9 → 205.2 |
+| `fixed44_short` | terminal | 552.96 | 566.96 | 137.9 → 142.3 |
+| `limit_fixed44_short` | terminal | 786.96 | 793.96 | 199.7 → 202.6 |
+| `fixed44_rejected` | terminal | 295.98 | 344.98 | 109.8 → 109.4 |
+| `fixed44_trailing` | terminal | 226.98 | 122.98 | 40.2 → 34.0 |
+| `limit_fixed44_long` | terminal | 314.96 | 163.96 | 71.9 → 45.8 |
+
+Every other mode is identical in instructions, `records_encode` aside (6 fewer in
+82,384): variable-length messages, the magic and dispatch modes, the other encode modes,
+and the stream modes (the stream readers do not lend).
+
+**What pays.**
+
+- Expected tier. An attempt that is short asks for the window, is refused, and decodes
+  field by field as before: 14 to 15 instructions per attempt. A 44-byte message fed one
+  byte at a time pays it 43 times, +490 instructions (+2.7%, cycles +2.9%); fed in
+  five-byte pieces, +0.1% (cycles +0.5%). An earlier run of the same code read +8.7% and
+  +7.9% in cycles on those two modes; the instruction counts were the same. Owner
+  accepted, 2026-11-13.
+- A rejection decodes twice. A magic that does not match or an `assert` that fails is
+  met in the window first, then again field by field for its error: `fixed44_rejected`
+  +49 instructions (+16.6%), cycles level. The bound is one more decode of the fields
+  before the failure. Terminal tier.
+- What ran before a failure in the window runs again: user expressions in `assert`,
+  `calc` and `magic`, and the `Drop` of a field already built. The guide's `assert` entry
+  now says so and asks for expressions free of side effects.
+- Code size. Each message the rule admits carries two bodies: the probe's `.text` goes
+  424,419 → 433,123 bytes. Every fixed-length message's generated code holds the second body
+  for the compiler to discard where the rule says no; build time was not measured.
+- `Source::aligned_run` gained a documented requirement: a source that lends must be able
+  to seek back over what it lent. Every lending source in the crate could already.
+
+**Open.**
+
+- The distance to the ceiling: `sub_byte` 281 against 103, `fixed44` 122 against 55. Not
+  chased. The first build measured `fixed44` 106 and `packet` 107; the reviewed one
+  measures 122 and 116. The difference was not isolated; the changes between them are the
+  rule's guard, which is a constant, and the tuple the window returns.
+- A per-type way to turn the window off, for a type its author knows arrives in pieces.
+  The owner asked whether the macro can be told what to expect; it can, by a `#[bin]`
+  option, which is additive. Its spelling is the owner's decision and is not in this
+  change.
+
+**Tests.** `component::window`, each decode compared with the same type behind a wrapper
+that never lends: the rule admits what a window serves and nothing else (sub-byte fields
+anywhere, whole-byte fields only on a byte boundary, nested messages, the magic, unknown
+kinds); a message that suits a window asks its source for one lend and one that does not
+asks for none; a window decodes what field by field decodes on every input, valid, short
+and rejected, with the same value, error and cursor, through `BitReader`,
+`IncrementalReader`, `BitBuf`, `BytesReader` and `LimitedSource`; a declared width that is
+too small or too large only sizes the window; a message with its own `Drop` and a field
+that is not `Copy` compiles and is built once; a traced message and its parent ask
+their source for no lend. `tests/bin_hygiene.rs`: a trait of the user's that gives every
+type a by-value `bit_pos` does not place the cursor (the test fails with the generated
+method call restored). 906 tests with all features across both crates, 817 with
+default; clippy with both; `cargo fmt`; the library and the generated code of
+`nostd-check` on Rust 1.85; the 32-bit `no_std` build under `stable`, since the pinned
+1.99.1 has no `thumbv7em-none-eabi` target here. One compile-error snapshot
+(`tests/ui/uint_width_backing.rs`) mismatches under the pinned toolchain, on `main` as
+well, for want of `rust-src`; the container run checks it.
+
+**Mutants.** Nine hand mutants of the runtime (the rule's three arms, the alignment
+bookkeeping, the window's layout and depth) and eight of the generator, all killed. A
+ninth generator mutant, a traced message taking its own window, survived because the
+guard it removed was redundant with the missing constant; the guard was deleted.
+
+**Independent review.** Two blocking findings on the first build, both fixed and tested
+above: a message with its own `Drop` and a non-`Copy` field stopped compiling (the
+generated code took `Self` apart), and a `dbg` field in a nested message was traced from
+the parent's window at the wrong offset. The reviewer's own harness, the base's decoder
+against the candidate's, agreed on 869,136 outcomes across the lending readers.
+
+A second review, of the fixed build, found one more blocking defect: the generated code
+read the window's cursor by method call, and a trait in the user's scope with a by-value
+`bit_pos` for every type answers before the reader's own `&self` method. The value
+decoded correctly and the cursor stayed where it started, so `decode_exact` reported
+trailing bytes. The call now goes by path (`Source::bit_pos`), with the hygiene test
+above. It also asked for the twice-run `Drop` to be documented, the rejection cost to be
+measured (`fixed44_rejected`), and the traced test to count lends; all three are in. Its
+differential against `main` covered 14 message shapes (magic, `assert`, `calc`, `ignore`,
+nesting three deep, mixed bit orders, 0-bit and 12-bit messages) at about 160,000 decodes
+each over five start offsets and four layouts, through every lending reader: identical
+values and cursors. It confirmed both earlier fixes, and that `Source` is sealed, so no
+third-party source can lend. Left as they are: a field named `__bnb_used` or
+`__bnb_start` does not compile, and a user expression naming `__bnb_r` sees the window's
+position; both names are inside the reserved prefix.
