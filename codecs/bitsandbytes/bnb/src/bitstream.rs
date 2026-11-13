@@ -1343,8 +1343,9 @@ pub trait Source: sealed::Sealed {
 
     /// Consumes and lends the next `n` bytes when the cursor is byte-aligned and all of them
     /// are already in memory; otherwise `None`, consuming nothing. The hook behind bulk
-    /// counted runs of byte-multiple integers ([`BitDecode::decode_vec`]): a caller that gets
-    /// `None` reads the run element by element, so every error is that path's. The default
+    /// counted runs of byte-multiple integers ([`BitDecode::decode_vec`]) and behind
+    /// byte-string magic dispatch: a caller that gets `None` reads element by element, or
+    /// byte by byte, so every error is that path's. The default
     /// lends nothing; the sources that bulk-copy [`read_bytes`](Source::read_bytes) override it.
     #[doc(hidden)]
     fn aligned_run(&mut self, n: usize) -> Option<&[u8]> {
@@ -2944,13 +2945,37 @@ pub fn read_byte_array<const N: usize, S: Source>(r: &mut S) -> Result<[u8; N], 
 /// Match one byte-string magic in declaration order, consuming it only on a full match.
 /// A finite EOF rules out this candidate; incremental exhaustion with a matching prefix
 /// requests more input before any later candidate or fallback can be selected.
-/// No lookahead allocation is needed, and a mismatch stops at its first differing byte.
+/// No lookahead allocation is needed: a magic that is all in memory at a byte boundary is
+/// compared where it lies, and any other is read a byte at a time.
 ///
 /// # Errors
 /// Propagates non-finite-EOF source errors, rewinding before returning.
+// Inline, so the generated chain compares each constant magic in place when the whole of
+// it is in memory at a byte boundary. Every read of the per-byte loop would then have
+// succeeded, so its answer is this one; anything else takes that loop, out of line.
 #[doc(hidden)]
+#[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+#[inline(always)]
 pub fn match_magic<S: Source>(r: &mut S, magic: &[u8]) -> Result<bool, BitError> {
     let start = r.bit_pos();
+    if let Some(matched) = r.aligned_run(magic.len()).map(|run| run == magic) {
+        if !matched {
+            r.seek_to_bit(start)?;
+        }
+        return Ok(matched);
+    }
+    match_magic_per_byte(r, magic, start)
+}
+
+/// [`match_magic`] one byte at a time from `start`, for a magic that is not all in memory
+/// at a byte boundary: it stops at the first differing byte, and reports running out of
+/// input as the source does.
+#[inline(never)]
+fn match_magic_per_byte<S: Source>(
+    r: &mut S,
+    magic: &[u8],
+    start: usize,
+) -> Result<bool, BitError> {
     for &expected in magic {
         match r.read_bits(8) {
             Ok(found) if found == u128::from(expected) => {}
@@ -2969,6 +2994,34 @@ pub fn match_magic<S: Source>(r: &mut S, magic: &[u8]) -> Result<bool, BitError>
         }
     }
     Ok(true)
+}
+
+/// With the longest magic's worth of bytes in memory at a byte boundary: the index of the
+/// first of `magics`, in declaration order, that the input starts with, consuming it, or
+/// `magics.len()` and nothing consumed when none does. No read of a [`match_magic`] chain
+/// can fail on such input, so this is that chain's answer, from one lend and constant
+/// compares. Otherwise `None`, consuming nothing: the caller runs the chain.
+///
+/// # Errors
+/// The source's seek, after a lend. No source in this crate lends a run it cannot seek
+/// back over, so none returns it.
+#[doc(hidden)]
+#[inline]
+pub fn peek_magic<S: Source>(r: &mut S, magics: &[&[u8]]) -> Result<Option<usize>, BitError> {
+    let start = r.bit_pos();
+    let longest = magics.iter().map(|magic| magic.len()).max().unwrap_or(0);
+    let peeked = r.aligned_run(longest).map(|window| {
+        magics
+            .iter()
+            .position(|magic| window.starts_with(magic))
+            .map_or((magics.len(), 0), |hit| (hit, magics[hit].len()))
+    });
+    let Some((hit, len)) = peeked else {
+        return Ok(None);
+    };
+    // The lend consumed the longest magic: leave the cursor after the winner's.
+    r.seek_to_bit(start + len * 8)?;
+    Ok(Some(hit))
 }
 
 /// Writes a fixed `[u8; N]` byte array. Backs a `[u8; N]` payload field.
@@ -4690,6 +4743,124 @@ mod unit {
                 }
             }
         }
+    }
+
+    /// Magic dispatch as the generated code runs it: the winner from one look at the longest
+    /// magic when that is lent, else from the chain; `one` is how the chain tries a magic.
+    /// Returns the winner's index (`magics.len()` for none) or the chain's error.
+    fn dispatch<S: Source>(
+        r: &mut S,
+        magics: &[&[u8]],
+        peek: bool,
+        one: impl Fn(&mut S, &[u8]) -> Result<bool, BitError>,
+    ) -> Result<usize, (ErrorKind, usize)> {
+        let flat = |e: BitError| (e.kind, e.at);
+        if peek {
+            if let Some(hit) = peek_magic(r, magics).map_err(flat)? {
+                return Ok(hit);
+            }
+        }
+        for (index, magic) in magics.iter().enumerate() {
+            if one(r, magic).map_err(flat)? {
+                return Ok(index);
+            }
+        }
+        Ok(magics.len())
+    }
+
+    #[test]
+    fn magic_dispatch_from_a_lent_run_picks_what_the_byte_by_byte_chain_picks() {
+        // A magic that is a prefix of a later one, one that is a prefix of an earlier one,
+        // a shared first byte, and the empty magic last (it matches anything).
+        let sets: [&[&[u8]]; 3] = [
+            &[b"AB", b"ABC", b"CDE", b"C", b"TUVWXY"],
+            &[b"TUVWXY", b"TU", b"Z"],
+            &[b"OK", b"ERROR:", b""],
+        ];
+        for magics in sets {
+            // Every magic whole, cut short at each length, and with each byte changed, alone
+            // and with bytes after it, so the longest magic is sometimes there and sometimes
+            // not.
+            let mut inputs = vec![Vec::new(), b"??".to_vec()];
+            for magic in magics {
+                for cut in 0..=magic.len() {
+                    for tail in [&b""[..], b"\x07", b"\x07\x08\x09\x0A\x0B\x0C"] {
+                        inputs.push([&magic[..cut], tail].concat());
+                    }
+                }
+                for flip in 0..magic.len() {
+                    let mut near = [magic, &b"\x07\x08\x09\x0A\x0B\x0C"[..]].concat();
+                    near[flip] ^= 0x20;
+                    inputs.push(near);
+                }
+            }
+            for input in &inputs {
+                // From a byte boundary and from inside a byte, behind one lead byte.
+                let wire = [&[0xA5][..], input].concat();
+                for start in [8, 5] {
+                    let context = format!("{magics:?} input {input:02X?} from bit {start}");
+                    let slice = || {
+                        let mut reader = BitReader::new(&wire);
+                        reader.seek_to_bit(start).unwrap();
+                        reader
+                    };
+                    let chain = |r: &mut BitReader<'_>, magic: &[u8]| {
+                        let from = r.bit_pos();
+                        match_magic_per_byte(r, magic, from)
+                    };
+                    let (mut fast, mut slow) = (slice(), slice());
+                    let expected = (dispatch(&mut slow, magics, false, chain), slow.bit_pos());
+                    let got = (
+                        dispatch(&mut fast, magics, true, match_magic),
+                        fast.bit_pos(),
+                    );
+                    assert_eq!(got, expected, "{context}");
+                    let mut fast = slice();
+                    let got = (
+                        dispatch(&mut fast, magics, false, match_magic),
+                        fast.bit_pos(),
+                    );
+                    assert_eq!(got, expected, "{context}, chain only");
+
+                    // The incremental reader waits where the slice reader rules a magic out.
+                    let chain = |r: &mut IncrementalReader<'_>, magic: &[u8]| {
+                        let from = r.bit_pos();
+                        match_magic_per_byte(r, magic, from)
+                    };
+                    let (mut fast, mut slow) =
+                        (IncrementalReader(slice()), IncrementalReader(slice()));
+                    let expected = (dispatch(&mut slow, magics, false, chain), slow.bit_pos());
+                    let got = (
+                        dispatch(&mut fast, magics, true, match_magic),
+                        fast.bit_pos(),
+                    );
+                    assert_eq!(got, expected, "{context}, incremental");
+                    let mut fast = IncrementalReader(slice());
+                    let got = (
+                        dispatch(&mut fast, magics, false, match_magic),
+                        fast.bit_pos(),
+                    );
+                    assert_eq!(got, expected, "{context}, incremental, chain only");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_peek_that_cannot_see_the_longest_magic_consumes_nothing() {
+        let magics: &[&[u8]] = &[b"OK", b"ERROR:"];
+        // Five bytes: one short of the longest magic, though the first magic is all there.
+        let mut reader = BitReader::new(b"OK\x07\x08\x09");
+        assert_eq!(peek_magic(&mut reader, magics).unwrap(), None);
+        assert_eq!(reader.bit_pos(), 0);
+        // Six: the first magic wins and only its two bytes are consumed.
+        let mut reader = BitReader::new(b"OK\x07\x08\x09\x0A");
+        assert_eq!(peek_magic(&mut reader, magics).unwrap(), Some(0));
+        assert_eq!(reader.bit_pos(), 16);
+        // No magic there: the count of magics, and nothing consumed.
+        let mut reader = BitReader::new(b"NOPE!!");
+        assert_eq!(peek_magic(&mut reader, magics).unwrap(), Some(2));
+        assert_eq!(reader.bit_pos(), 0);
     }
 
     #[test]

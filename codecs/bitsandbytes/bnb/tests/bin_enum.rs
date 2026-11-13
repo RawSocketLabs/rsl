@@ -743,4 +743,118 @@ mod macro_ {
         );
         assert_eq!(RawVariant::r#Type(7).to_bytes().unwrap(), [1, 7]);
     }
+
+    // ── Mixed-width magics with a typed fallback: the variant, and where decoding stops,
+    //    are the first magic in declaration order that the input starts with, through
+    //    every reader, whether or not the longest magic's worth of input is in memory. ──
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum Mixed {
+        #[bin(magic = b"AB")]
+        Short(u8),
+        // Never chosen: `AB` is tried first and is its prefix.
+        #[bin(magic = b"ABCDEF")]
+        Shadowed(u8),
+        #[bin(magic = b"CDEFGH")]
+        Long(u8),
+        #[bin(magic = b"CD")]
+        Prefix(u8),
+        Other {
+            tag: u8,
+            value: u8,
+        },
+    }
+
+    /// `Mixed` on a complete `input`, worked out by hand: the value and the bytes it took,
+    /// or `None` when the chosen variant runs out of input.
+    fn mixed_by_hand(input: &[u8]) -> Option<(Mixed, usize)> {
+        type Variant = fn(u8) -> Mixed;
+        let magics: [(&[u8], Variant); 4] = [
+            (b"AB", Mixed::Short),
+            (b"ABCDEF", Mixed::Shadowed),
+            (b"CDEFGH", Mixed::Long),
+            (b"CD", Mixed::Prefix),
+        ];
+        for (magic, variant) in magics {
+            if let Some(rest) = input.strip_prefix(magic) {
+                return rest.first().map(|&v| (variant(v), magic.len() + 1));
+            }
+        }
+        match *input {
+            [tag, value, ..] => Some((Mixed::Other { tag, value }, 2)),
+            _ => None,
+        }
+    }
+
+    /// `Mixed` decoded from `source`, which starts at bit `from`: the value and the bytes
+    /// consumed, or `None` for any error.
+    fn mixed_through<S: bnb::SeekSource>(mut source: S, from: usize) -> Option<(Mixed, usize)> {
+        use bnb::BitDecode;
+        let value = Mixed::bit_decode(&mut source).ok()?;
+        Some((value, (source.bit_pos() - from) / 8))
+    }
+
+    #[test]
+    fn mixed_width_magics_pick_the_same_variant_through_every_reader() {
+        use bnb::{BitBuf, BitOrder, BitReader, Source};
+
+        // Every string of up to four of these bytes, then each magic whole, cut short and
+        // with one byte changed, alone and with bytes after it: inputs shorter than the
+        // longest magic, exactly as long, and longer.
+        let alphabet = *b"ABCDEFGHX";
+        let mut inputs: Vec<Vec<u8>> = vec![Vec::new()];
+        let mut level = inputs.clone();
+        for _ in 0..4 {
+            level = level
+                .iter()
+                .flat_map(|head| alphabet.map(|byte| [&head[..], &[byte]].concat()))
+                .collect();
+            inputs.extend(level.iter().cloned());
+        }
+        for magic in [&b"AB"[..], b"ABCDEF", b"CDEFGH", b"CD"] {
+            for cut in 0..=magic.len() {
+                for tail in [&b""[..], b"\x07", b"\x07\x08\x09\x0A\x0B\x0C\x0D"] {
+                    inputs.push([&magic[..cut], tail].concat());
+                }
+            }
+            for flip in 0..magic.len() {
+                let mut near = [magic, &b"\x07\x08\x09\x0A\x0B\x0C\x0D"[..]].concat();
+                near[flip] ^= 0x20;
+                inputs.push(near);
+            }
+        }
+
+        for input in &inputs {
+            let expected = mixed_by_hand(input);
+            let context = format!("input {input:02X?}");
+            for order in [BitOrder::Msb, BitOrder::Lsb] {
+                let got = mixed_through(BitReader::with_order(input, order), 0);
+                assert_eq!(got, expected, "{context}, slice {order:?}");
+            }
+            // A window that ends where the input does, over a buffer that goes on: the
+            // window's end falls inside a magic the buffer could still lend.
+            let padded = [&[0xEE][..], input, b"ABCDEFGH"].concat();
+            let mut reader = BitReader::new(&padded);
+            reader.seek_to_bit(8).unwrap();
+            let got = mixed_through(reader.limit_bytes(input.len()).unwrap(), 8);
+            assert_eq!(got, expected, "{context}, window");
+
+            let mut buffer = BitBuf::new();
+            buffer.push(input).unwrap();
+            assert_eq!(mixed_through(buffer, 0), expected, "{context}, BitBuf");
+
+            #[cfg(feature = "bytes")]
+            {
+                let reader = bnb::BytesReader::new(input.clone().into());
+                assert_eq!(mixed_through(reader, 0), expected, "{context}, BytesReader");
+            }
+
+            // A prefix decode waits while a longer magic could still arrive, so it is
+            // compared only once the longest magic and its payload are all there.
+            if input.len() > 6 {
+                let got = Mixed::decode_prefix(input).ok();
+                assert_eq!(got, expected, "{context}, prefix");
+            }
+        }
+    }
 }

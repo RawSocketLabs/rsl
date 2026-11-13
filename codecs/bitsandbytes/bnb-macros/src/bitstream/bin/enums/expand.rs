@@ -453,32 +453,55 @@ pub(in crate::bitstream::bin) fn bin_enum(
     // The decode dispatch. Magic: a single `__bnb_m` read + an `==` chain (uniform width, no
     // fallback), or a `match_magic` probe chain (variable width / fallback,
     // so the tail can re-read the unconsumed magic). Tag: a `match` on the selector. The
-    // tail body is the final else.
+    // tail body is the final else, or the `_` arm where the chain yields an index.
     //
-    // The magic block: a single `__bnb_m` read + `==` chain (uniform width), or a
-    // `match_magic` chain (variable width / fallback), ending in the tail body.
+    // The magic block: a single `__bnb_m` read + `==` chain (uniform width), or, for
+    // variable width / fallback, the winner's index from `peek_magic` or else a
+    // `match_magic` chain, then a `match` on it that ends in the tail body.
     // Used directly for pure-magic dispatch, and as the selector `match`'s fall-through
     // under hybrid (tag takes priority, then magic).
     let magic_block = if !magic_dispatch {
         quote!()
     } else if use_peek {
-        let mut chain = tail_body.clone();
-        for v in dispatch.variants.iter().rev() {
+        // The winner's index: from one look at the longest magic's worth of input when that
+        // much is in memory, else from the declaration-order chain. Then the winner's body.
+        let mut magics = Vec::new();
+        let mut arms = Vec::new();
+        for v in &dispatch.variants {
             if v.role() == VariantRole::MagicOnly {
                 let Some(Magic::Bytes(bytes)) = v.magic.as_ref() else {
                     unreachable!("peek path validated to byte-string magics");
                 };
                 let bytes = bytes.iter();
+                let index = magics.len();
+                magics.push(quote!(&[#(#bytes),*]));
                 let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
-                chain = quote! {
-                    if #bnb::__private::match_magic(__bnb_r, &[#(#bytes),*])? {
+                arms.push(quote! {
+                    #index => {
                         #(#reads)*
                         ::core::result::Result::Ok(#ctor)
-                    } else #chain
-                };
+                    }
+                });
             }
         }
-        chain
+        let none = magics.len();
+        let mut chain = quote!({ #none });
+        for (index, magic) in magics.iter().enumerate().rev() {
+            chain = quote! {
+                if #bnb::__private::match_magic(__bnb_r, #magic)? { #index } else #chain
+            };
+        }
+        quote! {
+            let __bnb_hit: usize =
+                match #bnb::__private::peek_magic(__bnb_r, &[#(#magics),*])? {
+                    ::core::option::Option::Some(__bnb_hit) => __bnb_hit,
+                    ::core::option::Option::None => #chain,
+                };
+            match __bnb_hit {
+                #(#arms)*
+                _ => #tail_body
+            }
+        }
     } else {
         let read = rep_magic
             .expect("magic dispatch has a representative magic")

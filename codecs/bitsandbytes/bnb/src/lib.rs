@@ -249,8 +249,8 @@ pub mod __private {
         decode_exact, decode_exact_with, decode_iter, decode_mapped_msg, decode_peek,
         decode_peek_with, decode_prefix, decode_try_mapped_msg, decode_vec_each,
         encode_fixed_to_vec, encode_mapped_msg, encode_to_vec, encode_to_vec_with, match_magic,
-        nested_vec, read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write,
-        verify_magic, write_byte_array, write_mapped,
+        nested_vec, peek_magic, read_byte_array, read_mapped, read_try_mapped, skip_read,
+        skip_write, verify_magic, write_byte_array, write_mapped,
     };
     pub use crate::builder::normalization::{NormalizeDispatch, NormalizeProbe};
     pub use crate::error::UnknownDiscriminant;
