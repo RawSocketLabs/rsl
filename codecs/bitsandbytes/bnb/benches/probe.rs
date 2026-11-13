@@ -28,8 +28,8 @@
 //! meets them routinely; the cheaper path for it is ROADMAP 0.10.x item 6, not a gate here.
 
 use bnb::{
-    BitBuf, BitDecode, BitEncode, BitEnum, BitError, bin, bitfield, u1, u2, u3, u4, u5, u6, u7,
-    u12, u13, u20, u28, u48, u108,
+    BitBuf, BitDecode, BitEncode, BitEnum, BitError, Source, bin, bitfield, u1, u2, u3, u4, u5, u6,
+    u7, u12, u13, u20, u28, u48, u108,
 };
 use std::hint::black_box;
 
@@ -236,6 +236,44 @@ enum MixedMagic {
 struct Envelope {
     #[brw(count_prefix = u32)]
     body: Vec<u8>,
+}
+
+/// A one-byte region length, then one message that must fill that region exactly: the
+/// length-delimited container `Source::limit_bytes` exists for.
+fn in_region<T: BitDecode, S: Source>(r: &mut S) -> Result<T, BitError> {
+    let len = usize::from(r.read::<u8>()?);
+    let mut region = r.limit_bytes(len)?;
+    let value = T::bit_decode(&mut region)?;
+    region.finish()?;
+    Ok(value)
+}
+
+/// `Fixed44` behind a window: typed reads and a `[u8; 16]` through `LimitedSource`.
+#[bin(big, read_only)]
+#[allow(dead_code)]
+struct Limited44 {
+    #[br(parse_with = in_region)]
+    inner: Fixed44,
+}
+
+/// `Envelope` behind a window: a counted `Vec<u8>` run through `LimitedSource`.
+#[bin(big, read_only)]
+#[allow(dead_code)]
+struct LimitedEnvelope {
+    #[br(parse_with = in_region)]
+    inner: Envelope,
+}
+
+/// `wire` behind a length byte that declares `declared` bytes.
+fn region(declared: u8, wire: &[u8]) -> Vec<u8> {
+    [&[declared][..], wire].concat()
+}
+
+/// One `T` from a `BytesReader` over `wire`, the reader a `bytes`-based consumer decodes
+/// from. Cloning the `Bytes` is a reference-count bump, not a copy.
+#[cfg(feature = "bytes")]
+fn from_bytes_reader<T: BitDecode>(wire: &bytes::Bytes) -> Result<T, BitError> {
+    T::bit_decode(&mut bnb::BytesReader::new(wire.clone()))
 }
 
 fn fixed44() -> Vec<u8> {
@@ -571,6 +609,42 @@ const MODES: &[Mode] = &[
         wire.push(0);
         repeat(n, false, || Fixed44::decode_exact(black_box(&wire)));
     }),
+    // A bounded region (`Source::limit_bytes`): every read goes through `LimitedSource`.
+    mode("limit_fixed44", "happy", 4 * M, |n| {
+        let wire = region(44, &fixed44());
+        repeat(n, true, || Limited44::decode_exact(black_box(&wire)));
+    }),
+    mode("limit_prefix_fixed44", "happy", 4 * M, |n| {
+        let wire = region(44, &fixed44());
+        repeat(n, true, || Limited44::decode_prefix(black_box(&wire)));
+    }),
+    mode("limit_envelope", "happy", 2 * M, |n| {
+        let wire = region(68, &envelope());
+        repeat(n, true, || LimitedEnvelope::decode_exact(black_box(&wire)));
+    }),
+    mode("limit_prefix_envelope", "happy", 2 * M, |n| {
+        let wire = region(68, &envelope());
+        repeat(n, true, || LimitedEnvelope::decode_prefix(black_box(&wire)));
+    }),
+    mode("limit_prefix_short_fixed44", "expected", 2 * M, |n| {
+        let wire = region(44, &fixed44());
+        repeat(n, false, || Limited44::decode_prefix(black_box(&wire[..44])));
+    }),
+    mode("limit_prefix_short_envelope", "expected", 2 * M, |n| {
+        let wire = region(68, &envelope());
+        repeat(n, false, || LimitedEnvelope::decode_prefix(black_box(&wire[..68])));
+    }),
+    mode("limit_fixed44_short", "terminal", 2 * M, |n| {
+        // The region ends one byte before the message does.
+        let wire = region(43, &fixed44()[..43]);
+        repeat(n, false, || Limited44::decode_exact(black_box(&wire)));
+    }),
+    mode("limit_fixed44_long", "terminal", 2 * M, |n| {
+        // The region holds one byte more than the message: not consumed exactly.
+        let mut wire = region(45, &fixed44());
+        wire.push(0);
+        repeat(n, false, || Limited44::decode_exact(black_box(&wire)));
+    }),
     // Encode.
     mode("fixed44_encode", "encode", 4 * M, |n| {
         let message = Fixed44::decode_exact(&fixed44()).unwrap();
@@ -594,6 +668,21 @@ const MODES: &[Mode] = &[
     per_16(mode("stream_16x40_64", "expected", M / 4, |n| stream(n, 64))),
     #[cfg(feature = "net")]
     per_16(mode("stream_16x40_1", "expected", M / 32, |n| stream(n, 1))),
+    #[cfg(feature = "bytes")]
+    mode("bytes_reader_fixed44", "happy", 4 * M, |n| {
+        let wire = bytes::Bytes::from(fixed44());
+        repeat(n, true, || from_bytes_reader::<Fixed44>(black_box(&wire)));
+    }),
+    #[cfg(feature = "bytes")]
+    mode("bytes_reader_sub_byte", "happy", 4 * M, |n| {
+        let wire = bytes::Bytes::from_static(&SUB_BYTE);
+        repeat(n, true, || from_bytes_reader::<SubByte>(black_box(&wire)));
+    }),
+    #[cfg(feature = "bytes")]
+    mode("bytes_reader_envelope", "happy", 4 * M, |n| {
+        let wire = bytes::Bytes::from(envelope());
+        repeat(n, true, || from_bytes_reader::<Envelope>(black_box(&wire)));
+    }),
     #[cfg(feature = "tokio")]
     mode("codec_decode", "happy", 8 * M, codec_decode),
     #[cfg(feature = "tokio")]
