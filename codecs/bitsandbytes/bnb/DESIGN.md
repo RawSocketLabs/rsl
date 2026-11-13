@@ -2961,3 +2961,46 @@ retention rule and bound above; a write after a failed write; the `Debug` commen
 upgrade guide's sentence on what a stream holds.
 
 With this, phase 3 is complete.
+
+### Phase 6: two re-measurements on the phase 3 base (2026-11-12)
+
+Neither is merged. Both were measured with the 54-mode probe against `6faf531d`.
+
+**`#[cold]` on `BitError::in_field`: not taken.** The research row read as a gain before
+phase 2 and was held back as "row 1's inlining arriving by accident". On the current base
+it is a wash that fails the gate. It still helps some modes (`records_1024` 108,711 →
+106,663 instructions, `ipv4ish_encode` 485.96 → 460.96, `codec_encode` 236.98 → 224.98,
+`bytes_invalid` −10), and it costs gated ones: `records_encode` 82,385 → 85,460 (+3.7%),
+`bytes_valid` +2, `dmr` +2, `unaligned_wide_tail` +2, `prefix_envelope`,
+`prefix_eof_envelope` and `stream_16x40_whole` +1, `buffered_fixed44_1` +23 per message,
+and the old buffered probe at one-byte chunks 1227.26 → 1231.26. The attribute moves
+block placement across every generated decoder and encoder at once, with no mechanism
+that favours the happy path in particular. Closed.
+
+**The inline fast path on `IncrementalReader::read_into`: an owner decision.** The
+researched change (an aligned run that is all there is copied inline, a `[u8; N]` field
+at constant size; anything else goes out of line) still does what it did for a message
+that is all there, and no longer does for one that is not:
+
+| Mode | Tier | Base | Candidate | Cycles |
+|---|---|---:|---:|---|
+| `prefix_fixed44` | happy | 286.99 | 258.99 | 72.9 → 63.1 |
+| `buffered_fixed44_whole` | happy | 424.06 | 396.05 | 124.6 → 102.4 |
+| `buffered_fixed44_5` | expected | 3,886.11 | 3,884.77 | level |
+| `prefix_short_fixed44` | expected | 615.99 | 619.98 | level (679–708M → 689–694M per run) |
+| `buffered_fixed44_1` | expected | 18,202.42 | 18,307.90 | +7.5% (2,550–2,562M → 2,744–2,758M per run, three rounds) |
+
+Every other mode is instruction-identical. So a fixed message carrying a byte array is
+about 7 to 10% cheaper to decode from a prefix or a buffer when it is whole, and a
+connection fed one byte at a time pays 0.6% more instructions and a repeatable 7.5% more
+cycles on that message: each of the sixteen attempts that end inside the array now makes
+the lend check inline and then the call, and the decoder's layout shifts with it. Before
+phase 2 the same change read −80 instructions per message on that mode; the base it was
+researched on had the array's read behind two calls. A second shape, which sends a miss
+to the old out-of-line body unchanged, was worse (+2.0% instructions on
+`buffered_fixed44_1`, +1.3% and +12% cycles on `buffered_fixed44_5`).
+
+Under the happy-path rule this trade reads as worth taking: the mode that pays is the
+most fragmented feed there is, and five-byte chunks are level. It is still a repeatable
+cost in a gated tier, which the gate reserves for the owner. The diff is kept on the
+measuring machine.

@@ -96,11 +96,13 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    - [ ] **Phase 6, small items.** Done: byte-string magic fallthrough (one look at the
          longest magic when it is in memory, else the chain, each magic compared where it
          lies: `magic_eighth` 675 → 150 instructions, `mixed_magic/slice_eighth` 25.4 →
-         8.8 ns, a buffered message 554 → 185; `DESIGN.md` §22). Researched and go: the
-         inline fast path on `IncrementalReader::read_into`. `LimitedSource` went in with
-         phase 2. Retried
-         on the phase 2 base: `#[cold]` on `BitError::in_field` (the fast path on
-         `read_bytes` went in with phase 2). Owner decision: `BitBuf` compaction on unbounded buffers.
+         8.8 ns, a buffered message 554 → 185; `DESIGN.md` §22). `LimitedSource` and the
+         fast path on `read_bytes` went in with phase 2. Re-measured and closed, not
+         taken: `#[cold]` on `BitError::in_field` (a wash that costs `records_encode`
+         3.7%). Owner decisions: the inline fast path on `IncrementalReader::read_into`
+         (a whole fixed message with a byte array 7–10% cheaper from a prefix or a
+         buffer; the same message fed one byte at a time 7.5% more cycles), and `BitBuf`
+         compaction on unbounded buffers.
          Static-text rejections that allocate go to 0.11 decision 1.
    - [x] **Research, in scratch copies, before any of it was scheduled.** Nine prototypes,
          a number and a verdict each in `DESIGN.md` §22. No-go: keeping the `Result`
