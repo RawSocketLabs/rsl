@@ -70,8 +70,8 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          its window (a windowed 44-byte message 2,089 → 309 instructions, a windowed
          64-byte run 6,599 → 285), and `BytesReader` takes the slice reader's typed read
          (850 → 272). `DESIGN.md` §22, phase 2. Re-measured afterwards: §E's enum
-         `decode_exact` specialization (recommendation there: close) and its
-         constant-width item (still open for hand-written loops).
+         `decode_exact` specialization (closed) and its constant-width item (still open
+         for hand-written loops).
    - [ ] **Phase 3, encode.** A size hint for `to_bytes` on variable-length and
          bare-derive messages (researched: one allocation at any size, encode 0.30–0.62);
          `MessageStream` keeps a write buffer; `BinCodec` writes straight into `dst` and
@@ -86,10 +86,12 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          envelope in 8 socket reads instead of 258) and retried on the phase 2 base. Owner
          approves every behaviour that changes (`PositionOverflow` mid-run, third-party
          readers' `read_exact`, `DESIGN.md` §12.1).
-   - [ ] **Phase 6, small items.** Researched and go: byte-string magic fallthrough
-         (`magic_eighth` 713 → 188 instructions; do it first, its inlining still flips
-         between builds) and the inline fast path on `IncrementalReader::read_into`.
-         `LimitedSource` went in with phase 2. Retried
+   - [ ] **Phase 6, small items.** Done: byte-string magic fallthrough (one look at the
+         longest magic when it is in memory, else the chain, each magic compared where it
+         lies: `magic_eighth` 675 → 150 instructions, `mixed_magic/slice_eighth` 25.4 →
+         8.8 ns, a buffered message 554 → 185; `DESIGN.md` §22). Researched and go: the
+         inline fast path on `IncrementalReader::read_into`. `LimitedSource` went in with
+         phase 2. Retried
          on the phase 2 base: `#[cold]` on `BitError::in_field` (the fast path on
          `read_bytes` went in with phase 2). Owner decision: `BitBuf` compaction on unbounded buffers.
          Static-text rejections that allocate go to 0.11 decision 1.
@@ -739,7 +741,7 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       u8), tag = sel)] enum E { #[bin(tag = 1)] T(u8), #[bin(magic = b"A")] M(u8), #[bin(magic =
       b"CDE")] N }`. Pre-existing; found in the `DESIGN.md` §13 review. Until fixed, a hybrid
       dispatch miss with `observed() == None` is unreachable.
-- [ ] **[perf] Context-free enum `decode_exact` specialization.** Emitting the decode body
+- [x] **[perf] Context-free enum `decode_exact` specialization** *(closed 2026-11-12, not built)*. Emitting the decode body
       through `decode_exact_with` cut slice-path rejection ~28% and four-byte success ~23%
       (`DESIGN.md` §13) but duplicates every enum's decode body. Needs its own gate and an enum
       `TrailingBytes`/trait-path parity test first: a `decode_peek_with` mutant survived.
@@ -747,8 +749,7 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       duplication (`numeric_valid` 142 → 100 instructions, `bytes_valid` 141 → 102,
       `enum_dispatch/integer_valid` 0.92 against 0.10.0). The rejection half did not move
       (239 and 341), and a dispatch miss is in the `terminal` tier by the owner's decision
-      of 2026-11-12, with 0.10.x item 6 as its escape hatch. Recommendation: close this
-      item; awaiting the owner's word.
+      of 2026-11-12, with 0.10.x item 6 as its escape hatch. Closed on the owner's go.
 - [x] **Encode-model parity for tagged-union enums** *(resolved by the carried-mode removal)* — the
       canonical/`validate` surface stays **struct-only**; a `#[bin]` enum encodes verbatim (the
       boundary is already documented as intentional in the guide/DESIGN: canonical form and validity

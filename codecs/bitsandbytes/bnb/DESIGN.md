@@ -2559,3 +2559,80 @@ mutant capping the checked width at 128 had survived); this record and the roadm
 corrections; the two changes as two commits; `Source::read_bytes`'s list of bulk copiers;
 the test seeking through the window; `past_end` in the type's own `impl`; the
 `BytesReader` test moved to `component`.
+
+### Phase 6: byte-string magic fallthrough (2026-11-12)
+
+Taken first in phase 6 because its inlining was the last unstable boundary (the probe's
+magic modes moved by 60–78% twice with no library change, above). The change is the
+research row's as built there: the generator's single look at the longest magic, and the
+chain's own magics compared where they lie.
+
+- **`peek_magic`** (`__private`, hidden). When the source lends the longest magic's worth
+  of bytes (`aligned_run`: a byte-aligned cursor, all of them in memory), the winner is
+  the first magic in declaration order that the lent bytes start with, or none; the
+  cursor is left after the winner's magic, or at the start. No read of the chain can fail
+  on such input, so this is the chain's answer. Otherwise it consumes nothing and says so.
+- **`match_magic`** is forced inline and takes a lent run of the magic's own length when
+  there is one: compare, and seek back on a miss. Anything else is the old loop, now
+  `match_magic_per_byte`, out of line. This is what the chain runs when the longest magic
+  is not there (a message shorter than it, the end of input, a buffer still filling).
+- **The generator** (mixed-width magics or a fallback variant, the path already bounded
+  on `SeekSource`) emits the winner's index from `peek_magic` or else from the chain, then
+  one `match` on it; the fallback or the no-match error is the `_` arm. No inline hint in
+  generated code.
+
+The probe first gained four modes (51 with `tokio`): the eight `MixedMagic` variants
+pulled from a bounded `BitBuf`, fed whole and one byte at a time, and an enum whose whole
+message is shorter than its longest magic. Adding them moved no existing mode.
+Instructions per unit, base and candidate; the other 44 modes are instruction-identical.
+
+| Mode | Tier | Base | Candidate | Cycles |
+|---|---|---:|---:|---|
+| `magic_first` | happy | 169.99 | 119.99 | 37.0 → 31.1 |
+| `magic_short_first` | happy | 166.99 | 105.99 | 29.0 → 18.6 |
+| `buffered_magic_whole` | happy | 553.98 | 185.36 | 107.6 → 51.1 |
+| `magic_eighth` | expected | 674.98 | 149.98 | 117.0 → 34.0 |
+| `magic_short_third` | expected | 310.99 | 228.99 | 53.0 → 39.0 |
+| `buffered_magic_1` | expected | 4,969.05 | 3,569.67 | 1,228.8 → 997.3 |
+| `magic_miss` | terminal | 786.96 | 276.96 | 190.9 → 138.7 |
+
+Criterion, three alternating pinned rounds against the parent, lowest median:
+`mixed_magic/slice_eighth` 25.42 → 8.83 ns (0.35), `mixed_magic/slice_first` 9.50 → 8.62
+(0.91); `enum_dispatch/bytes_valid`, `bytes_invalid` and `mixed_1_in_16_invalid`, which
+are uniform-width and do not take this path, 1.00, 0.97 and 1.00.
+
+What pays: code size. The eight-variant decoder grows from 969 to 1,377 instructions (the
+constant compares of the look, plus the chain kept for when the look is unavailable); the
+probe's `.text` 400,051 → 404,499 bytes. Nothing pays in instructions or cycles in any
+tier. A variant that is the eighth of eight now costs about what the first does, so
+declaration order no longer matters to speed when the longest magic is in memory.
+
+**Tests.** `unit::magic_dispatch_from_a_lent_run_picks_what_the_byte_by_byte_chain_picks`
+runs the generated control flow by hand (look, else chain) against the per-byte chain
+over both slice readers, from a byte boundary and from inside a byte, on three magic sets
+(a magic that is a prefix of a later one, of an earlier one, and the empty magic) with
+every magic whole, cut at each length and with each byte changed.
+`unit::a_peek_that_cannot_see_the_longest_magic_consumes_nothing` pins the look alone.
+`macro_::mixed_width_magics_pick_the_same_variant_through_every_reader` decodes a generated
+enum (four magics of two and six bytes, one shadowed, and a typed fallback) on 7,457
+inputs through the slice reader in both bit orders, a window that ends inside a magic the
+buffer could still lend, `BitBuf`, `BytesReader` and `decode_prefix`, against the variant
+and length worked out by hand. Eleven hand mutants killed, eight in the runtime (the
+compare inverted, a miss left consumed, a suffix match, the last match, the wrong index
+for none, the cursor left at the start or after the longest magic, the shortest magic
+looked at) and three in the generator (the chain reversed, the no-match index, the look's
+answer ignored). 876 tests with all features across both crates, 788 with default; clippy
+in both; MSRV 1.85 and the 32-bit `no_std` build.
+
+**Independent review.** No blocking finding. One harness built against the parent and
+against the change gave 593,112 identical lines (value, the error in full, cursor) over
+nine enum shapes, every reader in the crate, `BitBuf` at every split, windows of every
+length including one inside another and inside `decode_prefix`; a mutant build differed
+on 46,331. It confirmed that every source that lends is seekable and byte-aligned when it
+lends, so the seek after a lend cannot fail. Applied: `match_magic`'s doc no longer says a
+mismatch stops at its first differing byte (true only of the per-byte loop); `peek_magic`'s
+error section; this record; the integration test above, because the unit test copies the
+generator's control flow and so cannot see a generator bug; two stale comments. Noted and
+not fixed here, as it predates this change: a `ctx` enum on this path does not compile
+(the generated `decode_with` bounds `SeekSource` and is called from a `Source`), so the
+hybrid embedding of this block is unreachable today. ROADMAP §E already has it.
