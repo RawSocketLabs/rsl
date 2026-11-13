@@ -1634,6 +1634,28 @@ impl IncrementalReader<'_> {
         )
     }
 
+    /// The retry signal for a byte run that is `missing` whole bytes short.
+    #[cold]
+    #[inline(never)]
+    fn incomplete_bytes(&self, missing: usize) -> BitError {
+        BitError::new(
+            ErrorKind::Incomplete {
+                needed: Some(missing),
+            },
+            self.0.bit_pos(),
+        )
+    }
+
+    /// [`Source::read_bytes`] from between bytes, for a run known to be all here.
+    #[inline(never)]
+    fn read_bytes_unaligned(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
+        let mut bytes = Vec::with_capacity(n);
+        for _ in 0..n {
+            bytes.push(self.read::<u8>()?);
+        }
+        Ok(bytes)
+    }
+
     fn shortfall(mut error: BitError) -> BitError {
         if let ErrorKind::UnexpectedEof { needed, remaining } = error.kind {
             error.kind = ErrorKind::Incomplete {
@@ -1691,30 +1713,22 @@ impl Source for IncrementalReader<'_> {
         self.0.seek_to_bit(pos).map_err(Self::shortfall)
     }
 
+    // Inline down to the copy, so the `Vec` reaches the caller in registers. Returned from a
+    // call it is written in three narrow stores, and a decoder that is itself out of line
+    // reloads it in one wide load: a store-forwarding stall per blob, measured in DESIGN
+    // §22, phase 2. The shortage is tested first and its error built out of line.
+    #[inline]
     fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
         let available = self.0.remaining_bits() / 8;
         if n > available {
-            return Err(BitError::new(
-                ErrorKind::Incomplete {
-                    needed: Some(n - available),
-                },
-                self.bit_pos(),
-            ));
+            return Err(self.incomplete_bytes(n - available));
         }
         // Only reserve after proving the full byte payload is physically available.
         // Retrying a fragmented length-prefixed blob therefore does not repeatedly
         // allocate/copy its growing prefix. Unaligned reads retain their bit-order semantics.
-        if self.bit_pos() % 8 == 0 {
-            let start = self.bit_pos() / 8;
-            let bytes = self.0.bytes[start..start + n].to_vec();
-            self.0.bit_pos += n * 8;
-            Ok(bytes)
-        } else {
-            let mut bytes = Vec::with_capacity(n);
-            for _ in 0..n {
-                bytes.push(self.read::<u8>()?);
-            }
-            Ok(bytes)
+        match self.0.aligned_run(n) {
+            Some(run) => Ok(run.to_vec()),
+            None => self.read_bytes_unaligned(n),
         }
     }
 
@@ -4411,6 +4425,38 @@ mod unit {
                         }
                         each!(bool, u4, u12, u8, u16, u24, u32, u40, u64, u128);
                         each!(u72, u104, Own<true>, Own<false>, Blank<0>, Blank<136>);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_incremental_reader_reads_a_byte_run_as_the_per_byte_loop_does_or_waits() {
+        let wire = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC];
+        for order in [BitOrder::Msb, BitOrder::Lsb] {
+            for pos in 0..=wire.len() * 8 {
+                let at = || {
+                    let mut reader = BitReader::with_order(&wire, order);
+                    reader.bit_pos = pos;
+                    IncrementalReader(reader)
+                };
+                let available = (wire.len() * 8 - pos) / 8;
+                for n in (0..=7).chain([usize::MAX]) {
+                    let mut fast = at();
+                    let got = fast.read_bytes(n).map_err(|e| (e.kind, e.at));
+                    if n > available {
+                        // A wait for exactly the missing bytes, with nothing consumed and
+                        // nothing allocated from `n`.
+                        let needed = Some(n - available);
+                        assert_eq!(got, Err((ErrorKind::Incomplete { needed }, pos)));
+                        assert_eq!(fast.bit_pos(), pos);
+                    } else {
+                        let mut slow = at();
+                        let expected =
+                            read_bytes_per_byte(&mut slow, n).map_err(|e| (e.kind, e.at));
+                        assert_eq!(got, expected, "{order:?} pos {pos} n {n}");
+                        assert_eq!(fast.bit_pos(), slow.bit_pos());
                     }
                 }
             }
