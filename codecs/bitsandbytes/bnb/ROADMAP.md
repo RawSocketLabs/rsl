@@ -99,10 +99,10 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          8.8 ns, a buffered message 554 → 185; `DESIGN.md` §22). `LimitedSource` and the
          fast path on `read_bytes` went in with phase 2. Re-measured and closed, not
          taken: `#[cold]` on `BitError::in_field` (a wash that costs `records_encode`
-         3.7%). Owner decisions: the inline fast path on `IncrementalReader::read_into`
-         (a whole fixed message with a byte array 7–10% cheaper from a prefix or a
-         buffer; the same message fed one byte at a time 7.5% more cycles), and `BitBuf`
-         compaction on unbounded buffers.
+         3.7%). Done, on the owner's decision: the inline fast path on
+         `IncrementalReader::read_into` (a whole fixed message with a byte array 7–10%
+         cheaper from a prefix or a buffer; the same message fed one byte at a time 7.5%
+         more cycles). Decided, to do: `BitBuf` compaction on unbounded buffers (take it).
          Static-text rejections that allocate go to 0.11 decision 1.
    - [x] **Research, in scratch copies, before any of it was scheduled.** Nine prototypes,
          a number and a verdict each in `DESIGN.md` §22. No-go: keeping the `Result`

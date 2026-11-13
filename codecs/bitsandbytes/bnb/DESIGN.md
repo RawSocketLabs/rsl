@@ -3002,5 +3002,14 @@ to the old out-of-line body unchanged, was worse (+2.0% instructions on
 
 Under the happy-path rule this trade reads as worth taking: the mode that pays is the
 most fragmented feed there is, and five-byte chunks are level. It is still a repeatable
-cost in a gated tier, which the gate reserves for the owner. The diff is kept on the
-measuring machine.
+cost in a gated tier, which the gate reserves for the owner.
+
+**Owner decision, 2026-11-12: take it.** Merged as measured above (the final build reads
+the same instruction counts). `unit::the_incremental_reader_fills_a_buffer_as_the_per_byte_loop_does`
+reads 0 to 7 bytes at every cursor of a six-byte input in both bit orders, against the
+per-byte loop run through the incremental reader itself: the result or the wait and its
+position, the cursor, and the bytes written before a wait. Four hand mutants killed (the
+copied run not written, a miss reported as success, a short read left as end of input,
+the lend one byte short). 897 tests with all features across both crates, 797 with
+default; clippy; MSRV 1.85 and the 32-bit `no_std` build. No separate review: twenty
+lines whose equivalence the differential states directly.
