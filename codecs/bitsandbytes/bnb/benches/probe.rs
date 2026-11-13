@@ -462,6 +462,29 @@ fn pull_short(n: u64) {
     }
 }
 
+/// `n` steps of one message pulled and one pushed over a buffer that holds `backlog`
+/// 44-byte messages it has not got to yet: a consumer that is behind. An unbounded
+/// buffer is filled in one push, so its allocation fits the backlog exactly; a bounded
+/// one is made that size.
+#[inline(never)]
+fn backlog(n: u64, backlog: usize, bounded: bool) {
+    let one = fixed44();
+    let corpus = one.repeat(backlog);
+    let mut buffer = if bounded {
+        BitBuf::bounded(corpus.len())
+    } else {
+        BitBuf::new()
+    };
+    buffer.push(&corpus).unwrap();
+    for _ in 0..n {
+        let message = buffer.pull::<Fixed44>().unwrap();
+        if black_box(&message).is_none() {
+            wrong_outcome();
+        }
+        buffer.push(black_box(&one)).unwrap();
+    }
+}
+
 /// `n` passes of sixteen `read_message` calls over a reader that returns `chunk` bytes at
 /// a time (`message_bench`'s `stream_envelope/16x40`).
 #[cfg(feature = "net")]
@@ -663,6 +686,10 @@ const MODES: &[Mode] = &[
     per_16(mode("buffered_fixed44_5", "expected", M / 8, |n| buffered(n, 5))),
     per_16(mode("buffered_fixed44_1", "expected", M / 32, |n| buffered(n, 1))),
     mode("pull_short", "expected", 8 * M, pull_short),
+    // A consumer that is behind: a backlog of 100 and of 1,489 messages (4.4 and 64 KiB).
+    mode("backlog_100", "happy", 2 * M, |n| backlog(n, 100, false)),
+    mode("backlog_1489", "happy", M / 2, |n| backlog(n, 1489, false)),
+    mode("backlog_bounded_100", "happy", 2 * M, |n| backlog(n, 100, true)),
     mode("prefix_short_envelope", "expected", 8 * M, |n| {
         let wire = envelope();
         repeat(n, false, || Envelope::decode_prefix(black_box(&wire[..67])));
