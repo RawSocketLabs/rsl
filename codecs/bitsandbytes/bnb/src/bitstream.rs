@@ -896,8 +896,9 @@ impl Appendable for Vec<u8> {
 
 /// Appends the low `n` (`<= 128`) bits of `value` to `out` at absolute bit offset
 /// `bit_pos`, in `order` — the write dual of [`extract_bits`], used by [`BitWriter`] and
-/// by the in-place frame writer. The cursor must not be past the end of `out`
-/// (`bit_pos / 8 <= out.len()`).
+/// by the in-place frame writer; only a typed write of whole bytes at a byte-aligned
+/// cursor goes around it (`append_whole_bytes`). The cursor must not be past the end of
+/// `out` (`bit_pos / 8 <= out.len()`).
 ///
 /// Work is per touched byte, never per bit. Appending byte-aligned at the end
 /// (`bit_pos % 8 == 0`, `n % 8 == 0`, cursor at `out.len()`) pushes the bytes whole; any
@@ -1271,8 +1272,7 @@ impl BitWriter {
     /// As [`write_bits`](Self::write_bits).
     #[inline]
     pub fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
-        let raw = value_byte_order::<T>(value.into_bits(), self.order, self.byte);
-        self.write_bits(raw, T::BITS)
+        Sink::write(self, value)
     }
 
     /// Consumes the writer, returning the packed bytes.
@@ -1450,6 +1450,45 @@ fn read_into_per_byte<S: Source + ?Sized>(s: &mut S, buf: &mut [u8]) -> Result<(
         *slot = s.read::<u8>()?;
     }
     Ok(())
+}
+
+/// [`Sink::write`] for any sink and width: the byte order, then the bits.
+#[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+#[inline(always)]
+fn write_by_bits<K: Sink + ?Sized, T: Bits>(k: &mut K, value: T) -> Result<(), BitError> {
+    let raw = value_byte_order::<T>(value.into_bits(), k.bit_order(), k.byte_order());
+    k.write_bits(raw, T::BITS)
+}
+
+/// Whether a `T` written at `bit_pos` is whole bytes from a byte-aligned cursor, the case
+/// [`append_whole_bytes`] serves.
+#[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+#[inline(always)]
+const fn writes_whole_bytes<T: Bits>(bit_pos: usize) -> bool {
+    T::BITS % 8 == 0 && T::BITS <= 128 && bit_pos % 8 == 0
+}
+
+/// Hands `append` the bytes a whole-byte `value` puts on the wire. Aligned whole bytes
+/// are the value big-endian or little-endian by the effective byte order alone, whatever
+/// the bit order (the mirror of `BitReader::take_whole_bytes`), so an appending writer
+/// stores them in one step.
+#[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+#[inline(always)]
+fn append_whole_bytes<T: Bits>(value: T, byte: ByteOrder, append: impl FnOnce(&[u8])) {
+    debug_assert!(T::BITS % 8 == 0 && T::BITS <= 128);
+    let n = (T::BITS / 8) as usize;
+    let raw = value.into_bits();
+    match T::__BNB_BYTE_ORDER.unwrap_or(byte) {
+        ByteOrder::Big => append(&raw.to_be_bytes()[16 - n..]),
+        ByteOrder::Little => append(&raw.to_le_bytes()[..n]),
+    }
+}
+
+/// The error for a write that would move a writer at `bit_pos` past what `usize` counts.
+#[cold]
+#[inline(never)]
+fn position_overflow(bit_pos: usize) -> BitError {
+    BitError::new(ErrorKind::PositionOverflow, bit_pos)
 }
 
 fn write_bytes_per_byte<K: Sink + ?Sized>(k: &mut K, bytes: &[u8]) -> Result<(), BitError> {
@@ -1944,8 +1983,7 @@ pub trait Sink: sealed::Sealed {
     /// As [`write_bits`](Sink::write_bits).
     #[inline]
     fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
-        let raw = value_byte_order::<T>(value.into_bits(), self.bit_order(), self.byte_order());
-        self.write_bits(raw, T::BITS)
+        write_by_bits(self, value)
     }
 
     /// Appends a run of bytes — the bulk dual of [`Source::read_bytes`], replacing the
@@ -2129,6 +2167,25 @@ impl Sink for BitWriter {
     #[inline]
     fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
         BitWriter::write_bits(self, value, n)
+    }
+    // Forced inline: this is the call a generated encoder makes for each scalar field. A
+    // whole-byte value at a byte-aligned cursor, which is always the end of the buffer, is
+    // appended in one step; any other write inlines the bit path (DESIGN §22).
+    #[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+    #[inline(always)]
+    fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
+        if !writes_whole_bytes::<T>(self.bit_pos) {
+            return write_by_bits(self, value);
+        }
+        let Some(end) = self.bit_pos.checked_add(T::BITS as usize) else {
+            return Err(position_overflow(self.bit_pos));
+        };
+        // An aligned cursor is the end of the buffer: no write leaves it anywhere else.
+        debug_assert_eq!(self.bit_pos / 8, self.bytes.len());
+        let out = &mut self.bytes;
+        append_whole_bytes(value, self.byte, |bytes| out.extend_from_slice(bytes));
+        self.bit_pos = end;
+        Ok(())
     }
     #[inline]
     fn bit_pos(&self) -> usize {
@@ -4208,7 +4265,10 @@ mod bytes_io {
     use alloc::vec::Vec;
 
     #[cfg(feature = "tokio")]
-    use super::{Appendable, ErrorKind, emit_bits, write_bytes_per_byte};
+    use super::{
+        Appendable, ErrorKind, append_whole_bytes, emit_bits, position_overflow, write_by_bits,
+        write_bytes_per_byte, writes_whole_bytes,
+    };
     use super::{
         BitError, BitOrder, BitReader, BitWriter, Bits, ByteOrder, Layout, SeekSource, Sink,
         Source, aligned_run_at, read_via_slice,
@@ -4347,6 +4407,11 @@ mod bytes_io {
         fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
             self.inner.write_bits(value, n)
         }
+        // The wrapped writer's typed write, so a whole-byte value is one append here too.
+        #[inline]
+        fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
+            Sink::write(&mut self.inner, value)
+        }
         fn bit_pos(&self) -> usize {
             Sink::bit_pos(&self.inner)
         }
@@ -4449,6 +4514,23 @@ mod bytes_io {
                 .checked_add(n)
                 .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
             emit_bits(&mut self.out, self.bit_pos, value, n, self.layout.bit);
+            self.bit_pos = end;
+            Ok(())
+        }
+        // As `BitWriter::write`: an aligned cursor is the end of what the message wrote.
+        #[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+        #[inline(always)]
+        fn write<T: Bits>(&mut self, value: T) -> Result<(), BitError> {
+            if !writes_whole_bytes::<T>(self.bit_pos) {
+                return write_by_bits(self, value);
+            }
+            let Some(end) = self.bit_pos.checked_add(T::BITS as usize) else {
+                return Err(position_overflow(self.bit_pos));
+            };
+            debug_assert_eq!(self.bit_pos / 8, self.out.len());
+            let dst = &mut *self.out.dst;
+            let byte = self.layout.byte;
+            append_whole_bytes(value, byte, |bytes| dst.extend_from_slice(bytes));
             self.bit_pos = end;
             Ok(())
         }
@@ -4589,6 +4671,11 @@ mod bytes_io {
                 (ErrorKind::PositionOverflow, usize::MAX - 7)
             );
             assert!(frame.aligned_tail(2).is_none());
+            let error = frame.write(0x0102u16).unwrap_err();
+            assert_eq!(
+                (error.kind, error.at),
+                (ErrorKind::PositionOverflow, usize::MAX - 7)
+            );
             assert_eq!(frame.bit_pos, usize::MAX - 7);
             frame.keep();
             assert_eq!(&dst[..], b"kept");
@@ -5194,6 +5281,159 @@ mod unit {
         // The closure's error is the result.
         let error = encode_hinted_to_vec(Layout::default(), 16, |w| w.write_bits(0, 129));
         assert_eq!(error.unwrap_err().kind, ErrorKind::TooWide { width: 129 });
+    }
+
+    /// A 16-bit value whose `into_bits` leaves bits set above its width, which no write
+    /// may put on the wire.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Dirty(u16);
+
+    impl Bits for Dirty {
+        const BITS: u32 = 16;
+
+        fn into_bits(self) -> u128 {
+            u128::from(self.0) | (0xA5A5 << 16) | (0xFF << 120)
+        }
+
+        fn from_bits(raw: u128) -> Self {
+            Self(u16::try_from(raw).expect("a 16-bit value"))
+        }
+    }
+
+    /// What a writer holds before the write under test: `lead` bits, then by `kind`
+    /// nothing more, a byte run, a typed write, or (from a byte boundary) a lent tail
+    /// filled in. Each leaves the cursor and the buffer in step in its own way.
+    fn write_prefix<K: Sink>(sink: &mut K, lead: u32, kind: u8) {
+        sink.write_bits(0x1_5555, lead).unwrap();
+        match kind {
+            1 => sink.write_bytes(&[0x11, 0x22, 0x33]).unwrap(),
+            2 => sink.write(0xBEEFu16).unwrap(),
+            3 => {
+                if let Some(tail) = sink.aligned_tail(2) {
+                    tail.copy_from_slice(&[0x44, 0x55]);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// One `T` written after `lead` bits, by each appending writer's `write`, against the
+    /// same write taken bit by bit ([`write_by_bits`], the path every other sink uses):
+    /// the result, the cursor and the bytes.
+    fn assert_write_matches_the_bit_path<T: Bits>(
+        layout: Layout,
+        (lead, kind): (u32, u8),
+        raw: u128,
+    ) {
+        type Outcome = (Result<(), (ErrorKind, usize)>, usize, Vec<u8>);
+        fn flat(result: Result<(), BitError>) -> Result<(), (ErrorKind, usize)> {
+            result.map_err(|e| (e.kind, e.at))
+        }
+        let mask = match T::BITS {
+            0 => 0,
+            bits if bits >= 128 => u128::MAX,
+            bits => (1 << bits) - 1,
+        };
+        let value = || T::from_bits(raw & mask);
+        let context = format!("{layout:?} lead {lead} prefix {kind} width {}", T::BITS);
+        let start = || {
+            let mut writer = BitWriter::with_layout(layout);
+            write_prefix(&mut writer, lead, kind);
+            // A clone starts a session of its own and must write as the original does.
+            writer.clone()
+        };
+        let done = |result, writer: BitWriter| -> Outcome {
+            (flat(result), writer.bit_pos, writer.into_bytes())
+        };
+
+        let mut slow = start();
+        let result = write_by_bits(&mut slow, value());
+        let expected = done(result, slow);
+        let mut fast = start();
+        let result = Sink::write(&mut fast, value());
+        assert_eq!(done(result, fast), expected, "{context}");
+        let mut inherent = start();
+        let result = BitWriter::write(&mut inherent, value());
+        assert_eq!(done(result, inherent), expected, "{context}, inherent");
+
+        #[cfg(feature = "bytes")]
+        {
+            let mut writer = BytesWriter::with_layout(layout);
+            write_prefix(&mut writer, lead, kind);
+            let result = flat(writer.write(value()));
+            let got = (result, writer.bit_pos(), writer.freeze().to_vec());
+            assert_eq!(got, expected, "{context}, bytes");
+        }
+        #[cfg(feature = "tokio")]
+        {
+            let mut dst = bytes::BytesMut::from(&b"kept"[..]);
+            let mut frame = FrameWriter::new(&mut dst, layout);
+            write_prefix(&mut frame, lead, kind);
+            let result = flat(frame.write(value()));
+            let end = frame.bit_pos();
+            frame.keep();
+            assert_eq!(&dst[..4], b"kept", "{context}, frame");
+            assert_eq!(
+                (result, end, dst[4..].to_vec()),
+                expected,
+                "{context}, frame"
+            );
+        }
+    }
+
+    #[test]
+    fn write_appends_whole_bytes_exactly_as_the_bit_path_does() {
+        use crate::{u24, u40, u48, u56, u72, u80, u88, u96, u104, u112, u120};
+        let mut state = 0xD6E8_FEB8_6659_FD93;
+        for bit in [BitOrder::Msb, BitOrder::Lsb] {
+            for byte in [ByteOrder::Big, ByteOrder::Little] {
+                let layout = Layout { bit, byte };
+                // From a byte boundary and from every offset inside a byte, after zero,
+                // one and two whole bytes, behind each kind of earlier write.
+                for lead in 0..=17 {
+                    for kind in 0..4 {
+                        let raw =
+                            u128::from(noise(&mut state)) << 64 | u128::from(noise(&mut state));
+                        let before = (lead, kind);
+                        macro_rules! each {
+                            ($($value:ty),*) => {$(
+                                assert_write_matches_the_bit_path::<$value>(layout, before, raw);
+                            )*};
+                        }
+                        each!(bool, u4, u12, u8, u16, u24, u32, u40, u48, u56, u64, u72);
+                        each!(u80, u88, u96, u104, u112, u120, u128);
+                        each!(Own<true>, Own<false>, Dirty, Blank<0>, Blank<136>);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_typed_write_refuses_a_position_it_cannot_count() {
+        let mut w = BitWriter::new();
+        // Byte-aligned, eight bits from the bound: a sixteen-bit value does not fit.
+        w.bit_pos = usize::MAX - 7;
+        let error = w.write(0x0102u16).unwrap_err();
+        assert_eq!(
+            (error.kind, error.at),
+            (ErrorKind::PositionOverflow, usize::MAX - 7)
+        );
+        // A width no write accepts is refused for that first, as by the bit path.
+        let error = w.write(Blank::<136>).unwrap_err();
+        assert_eq!(
+            (error.kind, error.at),
+            (ErrorKind::TooWide { width: 136 }, usize::MAX - 7)
+        );
+        // From inside a byte the bit path reports the same bound.
+        w.bit_pos = usize::MAX - 3;
+        let error = w.write(0u8).unwrap_err();
+        assert_eq!(
+            (error.kind, error.at),
+            (ErrorKind::PositionOverflow, usize::MAX - 3)
+        );
+        assert_eq!(w.bit_pos, usize::MAX - 3);
+        assert_eq!(w.bytes, []);
     }
 
     #[test]
