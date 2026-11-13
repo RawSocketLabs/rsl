@@ -61,14 +61,17 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          `net::read_limit` and `shortfall`. No probe mode costs more in any tier;
          `dmr_frame/decode` 0.52 and `stream_envelope` 0.69–0.91 against 0.10.0
          (`DESIGN.md` §22, phase 1).
-   - [ ] **Phase 2, inline typed reads.** Done for `BitReader` and the incremental
-         reader: a whole-byte value at a byte-aligned cursor is one load, any other read
-         the inlined bit path, and the incremental reader's `read_bytes` is inline down to
-         the copy. `fixed_44/decode` 0.46 and `ipv4ish_message/decode` 0.60 against 0.10.0;
-         the buffered probe reads 246.22 / 1227.22 / 124.91, lower at every chunk size, so
-         no owner decision was needed (`DESIGN.md` §22, phase 2). Left: `BytesReader` and
-         `LimitedSource`, then re-measure and close or keep §E's enum `decode_exact`
-         specialization and constant-width items, which are this boundary under other names.
+   - [x] **Phase 2, inline typed reads.** `BitReader` and the incremental reader: a
+         whole-byte value at a byte-aligned cursor is one load, any other read the inlined
+         bit path, and the incremental reader's `read_bytes` is inline down to the copy
+         (`fixed_44/decode` 0.46, `ipv4ish_message/decode` 0.60 against 0.10.0; the
+         buffered probe 246.22 / 1227.22 / 124.91, lower at every chunk size, so no owner
+         decision was needed). `LimitedSource` forwards typed reads and lends runs inside
+         its window (a windowed 44-byte message 2,089 → 309 instructions, a windowed
+         64-byte run 6,599 → 285), and `BytesReader` takes the slice reader's typed read
+         (850 → 272). `DESIGN.md` §22, phase 2. Re-measured afterwards: §E's enum
+         `decode_exact` specialization (recommendation there: close) and its
+         constant-width item (still open for hand-written loops).
    - [ ] **Phase 3, encode.** A size hint for `to_bytes` on variable-length and
          bare-derive messages (researched: one allocation at any size, encode 0.30–0.62);
          `MessageStream` keeps a write buffer; `BinCodec` writes straight into `dst` and
@@ -84,8 +87,9 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          approves every behaviour that changes (`PositionOverflow` mid-run, third-party
          readers' `read_exact`, `DESIGN.md` §12.1).
    - [ ] **Phase 6, small items.** Researched and go: byte-string magic fallthrough
-         (`magic_eighth` 713 → 188 instructions), `LimitedSource` (a windowed message
-         2,096 → 602), and the inline fast path on `IncrementalReader::read_into`. Retried
+         (`magic_eighth` 713 → 188 instructions; do it first, its inlining still flips
+         between builds) and the inline fast path on `IncrementalReader::read_into`.
+         `LimitedSource` went in with phase 2. Retried
          on the phase 2 base: `#[cold]` on `BitError::in_field` (the fast path on
          `read_bytes` went in with phase 2). Owner decision: `BitBuf` compaction on unbounded buffers.
          Static-text rejections that allocate go to 0.11 decision 1.
@@ -528,8 +532,9 @@ blocks 1.0.
       `decode_attempt` first; the macro crate's split is done.
 - [ ] Direct calls to `read_bits`/`write_bits` with a constant width in a hand-written loop
       fold less than they did where the old read happened to inline (`DESIGN.md` §19). No
-      in-tree code does this; add a bench before tuning it. Generated decoders are in the
-      same position (`DESIGN.md` §22): 0.10.x item 4, phase 2.
+      in-tree code does this; add a bench before tuning it. Generated decoders were in the
+      same position and no longer are: 0.10.x item 4, phase 2 inlined `read`, the call they
+      make (`DESIGN.md` §22). Open only for hand-written `read_bits` loops.
 - [ ] Macro compile-time / codegen-bloat sanity check — still open (a `cargo build
       --timings` / expanded-output size pass on a representative multi-message crate).
 
@@ -639,8 +644,9 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       `Vec` fields, `[u8; N]` through `read_into`/`write_bytes`, and byte-aligned copy overrides
       on `BitWriter`/`BytesWriter`/`BitReader`/`BitBuf`/`BytesReader`. 2×255-byte encode
       1.50 µs → 98 ns, decode 0.58 µs → 30 ns. See [`DESIGN.md` §16](DESIGN.md#16-bulk-byte-runs-080).
-- [ ] **[perf] Remaining per-byte runs.** `LimitedSource` (needs a no-allocation,
-      hint-preserving delegation), `StreamBitReader`/`BufSource`/`SeekReader`/`BufSeekReader`
+- [ ] **[perf] Remaining per-byte runs.** `LimitedSource` is done (it lends the wrapped
+      reader's run inside its window and otherwise keeps the per-byte loop, `DESIGN.md` §22,
+      phase 2). Left: `StreamBitReader`/`BufSource`/`SeekReader`/`BufSeekReader`
       (mid-run EOF/`BufferFull`/I/O semantics must stay per-byte-identical), and unaligned runs
       (shift-merge). Measure a consumer first; all are correct today. Measured in
       `DESIGN.md` §22: 0.10.x item 4, phases 5 and 6.
@@ -737,7 +743,12 @@ The examples suite exercises the public API on real formats (DNS, IPv4, AIS, CAN
       through `decode_exact_with` cut slice-path rejection ~28% and four-byte success ~23%
       (`DESIGN.md` §13) but duplicates every enum's decode body. Needs its own gate and an enum
       `TrailingBytes`/trait-path parity test first: a `decode_peek_with` mutant survived.
-      Re-measure after 0.10.x item 4, phase 2, which gets most of it without duplication.
+      Re-measured after 0.10.x item 4, phase 2: the success half arrived without the
+      duplication (`numeric_valid` 142 → 100 instructions, `bytes_valid` 141 → 102,
+      `enum_dispatch/integer_valid` 0.92 against 0.10.0). The rejection half did not move
+      (239 and 341), and a dispatch miss is in the `terminal` tier by the owner's decision
+      of 2026-11-12, with 0.10.x item 6 as its escape hatch. Recommendation: close this
+      item; awaiting the owner's word.
 - [x] **Encode-model parity for tagged-union enums** *(resolved by the carried-mode removal)* — the
       canonical/`validate` surface stays **struct-only**; a `#[bin]` enum encodes verbatim (the
       boundary is already documented as intentional in the guide/DESIGN: canonical form and validity

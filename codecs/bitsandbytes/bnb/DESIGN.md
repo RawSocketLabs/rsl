@@ -2309,8 +2309,8 @@ and `pull` is inlined into which, in parent and candidate.
 ### Phase 2: inline typed reads on the slice readers (2026-11-12)
 
 Row 1, for `BitReader` and the incremental reader behind `decode_prefix`, `BitBuf` and the
-transports. `BytesReader` and `LimitedSource` are the rest of the phase and are not in
-these commits. Two commits, each measured with the probe on its parent.
+transports. `BytesReader` and `LimitedSource` are the rest of the phase and follow in the
+next section. Two commits, each measured with the probe on its parent.
 
 1. **`Source::read` is overridden on both readers and forced inline.** A value that is a
    whole number of bytes, read from a byte-aligned cursor, is one bounds check, one load
@@ -2478,5 +2478,84 @@ only path; this record; a comment that claimed the stall on every blob; zero-wid
 Not done: nothing pins that the inherent `read` takes the fast path (its mutant is
 behaviour-equivalent).
 
-Not measured: `BytesReader`, `LimitedSource` and the stream readers, which keep the
-default `read` and whose benchmarks moved only within the noise above.
+Not measured at these two commits: `BytesReader`, `LimitedSource` and the stream readers,
+which kept the default `read` and whose benchmarks moved only within the noise above. The
+next section takes the first two.
+
+### Phase 2, continued: windows and `BytesReader` (2026-11-12)
+
+The two readers the phase had left. The probe first gained eleven modes (47 with `tokio`):
+`Fixed44` and `Envelope` behind `Source::limit_bytes`, whole, as a prefix, one byte short,
+and in a region too short or too long; and `Fixed44`, `SubByte` and `Envelope` from a
+`BytesReader`. Adding them moved the three magic modes in that executable with no library
+change (`magic_first` 169.99 → 281.99, `magic_eighth` 674.99 → 1,199.98, `magic_miss`
+786.97 → 1,258.96): `match_magic` stopped inlining `extract_bits`. They read their earlier
+figures again in every build below. That boundary is the one the magic fallthrough of
+phase 6 replaces, and it is still unpinned; a one-line pin (the magic's bytes through the
+typed read) was tried and gave 731.99 instructions but 195 cycles on `magic_eighth`
+against 118 in the build that inlines, so it was not taken.
+
+1. **`LimitedSource` forwards the typed read and lends runs.** `read` is the window check,
+   then the wrapped reader's own `read`, forced inline as that one is; left at `#[inline]`
+   it stayed a call per field (`limit_fixed44` 432.98 against 308.98). `aligned_run` lends
+   the wrapped reader's run when it lies inside the window, and `read_bytes` and
+   `read_into` copy such a run whole. Anything else runs the per-byte loop through the
+   window, so errors, positions and the retry hint are that loop's. The wrapped reader's
+   own `read_bytes` is not used: over the incremental reader it reports the whole
+   shortfall, where the loop reports the first missing byte. The boundary error is built
+   out of line. This is the research row's change plus the `read` override.
+2. **`BytesReader` overrides `read`**, forced inline: the slice reader built over the bytes
+   in hand, the cursor checked as before (it may be past the end), then that reader's
+   typed read. `read_bits` is `#[inline]`.
+
+Instructions per decode, the 47-mode base, then after each commit. The other 36 modes are
+instruction-identical at both, the magic modes at their earlier figures.
+
+| Mode | Tier | Base | 1 | 2 | Cycles |
+|---|---|---:|---:|---:|---|
+| `limit_fixed44` | happy | 2,088.98 | 308.98 | 308.98 | 392.4 → 74.1 |
+| `limit_prefix_fixed44` | happy | 2,133.98 | 341.98 | 341.98 | 412.4 → 92.2 |
+| `limit_envelope` | happy | 6,598.96 | 284.96 | 284.96 | 1,219.7 → 93.9 |
+| `limit_prefix_envelope` | happy | 6,625.96 | 311.96 | 311.96 | 1,195.0 → 71.0 |
+| `limit_prefix_short_fixed44` | expected | 2,119.96 | 836.96 | 836.96 | 456.1 → 191.3 |
+| `limit_prefix_short_envelope` | expected | 6,605.96 | 3,114.96 | 3,114.96 | 1,209.7 → 658.2 |
+| `limit_fixed44_short` | terminal | 2,058.96 | 786.96 | 786.96 | 458.4 → 211.1 |
+| `limit_fixed44_long` | terminal | 2,095.96 | 314.96 | 314.96 | 397.1 → 71.8 |
+| `bytes_reader_fixed44` | happy | 849.98 | 849.98 | 271.98 | 178.6 → 55.1 |
+| `bytes_reader_sub_byte` | happy | 1,867.98 | 1,867.98 | 772.98 | 365.8 → 123.1 |
+| `bytes_reader_envelope` | happy | 369.98 | 369.98 | 268.98 | 103.2 → 97.3 |
+
+For scale, the same messages from a slice read 225.99 (`fixed44`), 691.99 (`sub_byte`) and
+252.99 (`prefix_envelope`). The probe's `.text` grows 377,987 → 388,147 bytes. A wait
+through a window is still 3,115 instructions for a 64-byte run: the run is not all there,
+so the per-byte loop runs until the first missing byte, which is what keeps its hint.
+
+Criterion was not run: no benchmark or crate outside this one uses either reader, and the
+36 earlier modes do not move.
+
+**Tests.** `a_window_reads_as_its_per_bit_form_does_over_both_slice_readers` runs eleven
+typed reads (4 to 128 bits, own byte orders, zero-width, 136-bit), `read_bytes` to
+`usize::MAX`, `read_into` and `aligned_run` at every cursor of windows of 0 to 18 bytes
+over buffers of 1 to 20, in all four layouts, over both slice readers, against
+`PlainWindow`, the window as it was (only `read_bits` its own).
+`a_window_reports_its_boundary_at_the_cursor_and_lends_up_to_it` pins what that model
+shares with the window: the boundary error's fields and position, and that an exact-fit
+run is lent. `component::bytes_adapters::a_typed_read_is_the_read_taken_bit_by_bit_at_any_cursor`
+does the same for `BytesReader`, to nine bits past its end. Fourteen hand mutants killed
+(the window check off by one each way, absent, capped at 128 and in bytes; the boundary
+error's fields and position; a run lent across the window's end or declined on an exact
+fit; both fallbacks sent to the wrapped reader; `BytesReader` without its seek check,
+without advancing, without its layout). 862 tests with all features, 785 with default;
+clippy in both; MSRV 1.85 and the 32-bit `no_std` build.
+
+**Independent review.** No blocking finding. The reviewer built one harness against the
+parent and against the change and compared transcripts: identical over about 0.9 billion
+records, with windows over every reader in the crate (and a window in a window), four
+layouts, windows to `usize::MAX / 8` bytes, `decode_vec` of seven element types and
+overflowing counts. It confirmed the window's boundary error wins over the input's before
+and after, and that using the wrapped reader's `read_bytes` would differ only over the
+incremental reader. Applied: an 18-byte window and both byte orders in the test (a
+mutant capping the checked width at 128 had survived); this record and the roadmap
+corrections; the two changes as two commits; `Source::read_bytes`'s list of bulk copiers;
+the test seeking through the window; `past_end` in the type's own `impl`; the
+`BytesReader` test moved to `component`.
