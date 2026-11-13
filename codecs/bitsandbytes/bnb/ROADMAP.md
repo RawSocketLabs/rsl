@@ -93,7 +93,7 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          envelope in 8 socket reads instead of 258) and retried on the phase 2 base. Owner
          approves every behaviour that changes (`PositionOverflow` mid-run, third-party
          readers' `read_exact`, `DESIGN.md` §12.1).
-   - [ ] **Phase 6, small items.** Done: byte-string magic fallthrough (one look at the
+   - [x] **Phase 6, small items.** Done: byte-string magic fallthrough (one look at the
          longest magic when it is in memory, else the chain, each magic compared where it
          lies: `magic_eighth` 675 → 150 instructions, `mixed_magic/slice_eighth` 25.4 →
          8.8 ns, a buffered message 554 → 185; `DESIGN.md` §22). `LimitedSource` and the
