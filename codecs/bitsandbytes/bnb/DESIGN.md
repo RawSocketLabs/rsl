@@ -527,7 +527,9 @@ at most eight bits is taken from the one or two bytes it touches. On the slice r
 two paths and the bounds check are forced inline into generated decoders, where a field's
 constant width folds them down, and a typed read of whole bytes from a byte-aligned cursor
 is one load and at most a byte swap (§22, phase 2, which is also where `read` itself, the
-call a generated decoder makes, became inline). A wider read that starts or ends inside a byte gathers the
+call a generated decoder makes, became inline). Writing mirrors it: `write` is inline on
+the writers that append, and a whole-byte value at a byte-aligned cursor is one append
+(§22, phase 3). A wider read that starts or ends inside a byte gathers the
 bytes it touches into one `u128` window and shifts the field out; an unaligned write ORs
 into each touched byte the bits that fall there. Both live in functions kept out of line so
 the inlined paths stay small (§19 has the measurements behind these choices). Byte runs
@@ -2810,3 +2812,89 @@ paths, and no generated encoder takes a concrete `BitWriter`. Applied: the rollb
 into `Drop`, with the panic test; this record and the capacity note; the failing-encode
 test compares the whole error; an LSB message and a failure at a non-zero position through
 the codec; `emit_bits`'s doc.
+
+### Phase 3: inline typed writes (2026-11-12)
+
+The mirror of phase 2 on the encode side. `Sink::write`, the call a generated encoder
+makes for each scalar field, was out of line on `BitWriter`: a call per field, the byte
+order applied at run time, then one push per byte.
+
+- **`BitWriter` and the in-place frame writer override `write`**, forced inline. A value
+  that is a whole number of bytes, written at a byte-aligned cursor, is one
+  `extend_from_slice` of its big-endian or little-endian bytes: by the effective byte
+  order alone, whatever the bit order, for the reason given for reads. An aligned cursor
+  is always the end of the buffer on these writers (every write keeps the buffer's length
+  at the cursor rounded up; a debug assertion states it). Any other write inlines the old
+  body, `write_by_bits`, which the trait's default also calls. The position bound is
+  checked first and reported as `write_bits` reports it.
+- `BytesWriter` forwards `write` to the `BitWriter` it wraps, and the public inherent
+  `BitWriter::write` forwards to the override.
+
+Instructions per encode, base and candidate; every decode mode is instruction-identical
+bar `records_1024`, which reads 24 lower in 108,734.
+
+| Mode | Base | Candidate | Cycles |
+|---|---:|---:|---|
+| `fixed44_encode` | 758.98 | 364.98 | 164.8 → 94.0 |
+| `packet_encode` | 547.96 | 327.96 | 125.1 → 87.8 |
+| `ipv4ish_encode` | 819.96 | 485.96 | 182.6 → 110.9 |
+| `envelope_encode` | 351.98 | 297.98 | 92.4 → 86.7 |
+| `records_encode` | 273,933.38 | 82,384.85 | 65,756.4 → 17,447.8 |
+| `codec_encode` | 1,069.98 | 236.98 | 180.9 → 61.0 |
+| `dmr_encode` | 1,998.92 | 1,998.92 | 427.9 → 429.2 |
+
+`codec_encode` is now below `fixed44_encode`, the same message through `to_bytes`: the
+codec appends to a buffer it already has, and `to_bytes` allocates one. `dmr_encode` does
+not move: its fields are not whole bytes.
+
+Criterion, three alternating pinned rounds against the parent, lowest median (ns); the
+machine carried unrelated load during the run.
+
+| Benchmark | Parent | Candidate | Ratio |
+|---|---:|---:|---:|
+| `fixed_44/encode` | 34.51 | 19.82 | 0.57 |
+| `ipv4ish_message/encode` | 37.09 | 23.10 | 0.62 |
+| `byte_aligned/encode` | 27.08 | 19.51 | 0.72 |
+| `sub_byte/lsb_encode` | 79.52 | 67.49 | 0.85 |
+| `sub_byte/msb_encode` | 81.44 | 71.08 | 0.87 |
+| `counted_u16_1024/encode` | 81.47 | 71.64 | 0.88 |
+| `counted_u32_256/encode` | 55.50 | 53.63 | 0.97 |
+| `dmr_frame/encode` | 87.77 | 85.92 | 0.98 |
+| `byte_runs_2x255/encode` | 22.28 | 22.56 | 1.01 |
+
+The two hand-written baselines read 0.98 and 1.00. Chained with the size hint's step
+(91 → 38 ns), `ipv4ish_message/encode` is at about a quarter of where phase 3 began; that
+is the product of two parent-relative runs, not a measurement against the 0.10.0 tag.
+
+What pays: code size. The probe's `.text` grows 409,267 → 415,811 bytes. Nothing pays in
+instructions or cycles in any tier. Not measured: `BytesWriter`, which no probe mode or
+benchmark encodes through; its `write` is a plain `#[inline]` forward, where
+`BytesReader::read` was measured and forced.
+
+**Tests.** `write_appends_whole_bytes_exactly_as_the_bit_path_does` writes 24 types (1 to
+128 bits including every whole-byte width, a 24-bit type declaring each byte order, a
+type whose `into_bits` sets bits above its width, zero-width and 136-bit) in all four
+layouts, after 0 to 17 leading bits followed by nothing, a byte run, a typed write or a
+lent tail, on a cloned writer, through the trait and the inherent method on `BitWriter`,
+through `BytesWriter` and through the frame writer behind existing content, against
+`write_by_bits`: result, cursor and bytes. `a_typed_write_refuses_a_position_it_cannot_count`
+pins the bound from a byte boundary and from inside a byte, and that a too-wide value is
+refused for its width first; the frame writer's bound test gained the typed write.
+Fourteen hand mutants killed (each byte order's slice taken from the wrong end, the
+orders swapped, the type's own order ignored, the fast path taken unaligned, too wide or
+for a sub-byte width, the overflow's position, each writer's position wrapping or not
+advancing, the frame writer's byte order, the byte order dropped from the general path).
+890 tests with all features across both crates, 796 with default; clippy in three
+feature sets; MSRV 1.85 and the 32-bit `no_std` build.
+
+**Independent review.** No blocking finding; the equivalence was not refuted. The
+reviewer derived the byte identity from `apply_byte_order` and `emit_bits` for all four
+layouts, read every mutator of both writers to confirm an aligned cursor is the buffer's
+end, and ran old, new and an independent bit-by-bit model over 20,000 scripts (230,717
+typed writes, 59,292 on the fast path) interleaving clones, scratch, byte runs, lent
+tails, alignment and padding: identical. Applied: the debug assertions tying the cursor
+to the buffer (a position poked past the buffer used to panic in `emit_bits` and would
+have appended quietly) and on the helper's precondition; this record and the §10 and
+roadmap text; the test's prefixes, clone and widths; the error precedence; `emit_bits`'s
+doc. Noted: on an aligned overflow the new path does not call `into_bits`, which only an
+implementation with side effects could observe.

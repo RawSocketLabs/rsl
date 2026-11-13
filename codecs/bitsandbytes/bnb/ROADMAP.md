@@ -77,9 +77,10 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          field's width is visible (`byte_runs_2x255/encode` 0.30, `ipv4ish_message/encode`
          0.40; `DESIGN.md` §22, phase 3). Done: `BinCodec` encodes straight into `dst` and
          takes a message back out if its encode fails or panics (`codec_encode` 1,554 →
-         1,070 instructions, cycles halved). Left: `MessageStream` keeps a write buffer;
-         `Sink::write` inlined as the mirror of phase 2, which is also what the in-place
-         encoder still lacks against `to_bytes`. Still unhinted: `to_canonical_bytes` of
+         1,070 instructions, cycles halved). Done: `write` is inline on the appending
+         writers, a whole-byte value at a byte-aligned cursor one append (`fixed_44/encode`
+         0.57, `ipv4ish_message/encode` 0.62 against its parent; `codec_encode` → 237
+         instructions). Left: `MessageStream` keeps a write buffer. Still unhinted: `to_canonical_bytes` of
          a variable-length message, `to_bytes_with`, `#[bin]` enums, and the generic
          `encode_to_vec` behind the socket transports.
    - [ ] **Phase 4, fixed-length messages.** Design review first. One availability check
