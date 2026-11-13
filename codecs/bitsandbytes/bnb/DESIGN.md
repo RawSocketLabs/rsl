@@ -2291,7 +2291,7 @@ measuring machine.
 | Keep the `Result` whole in `decode_exact` (row 7) | The copy does not go: it widens from 48 bytes to the whole 80, because rustc 1.99.1 does not build the decoder's `Result` in the return slot. `numeric_valid` 33 → 41–45 cycles, `fixed44` +8% | No-go. Row 7 is closed as not fixable from this function |
 | Per-field error decoration through a cold out-of-line helper | Decoders grow (`Packet` 1,010 → 1,349 bytes, `SubByte` 4,932 → 10,655): each block gains a copy in and out, and the inliner spends the freed budget elsewhere. `records_1024` +68% cycles, `prefix_short_envelope` +74–85% | No-go |
 | `#[cold]` alone on `BitError::in_field` | Fifteen gated modes lose 1 to 458 instructions (`ipv4ish` 769.99 → 722.99, `fixed44` → 491.99); seven gain 1 to 3; `records_1024` +2.2% cycles | Retry after phase 2: the gains are row 1's inlining arriving by accident |
-| A size hint for `to_bytes` on variable-length and bare-derive messages | One allocation at any size (was 2 to 12). `packet_encode` 1,089.97 → 545.97, `ipv4ish_encode` 1,556.97 → 817.97, `dmr_encode` 2,733.94 → 1,996.94; Criterion `byte_runs_2x255/encode` 0.30, `ipv4ish_message/encode` 0.43, `byte_aligned/encode` 0.46; every non-encode mode identical. The returned `Vec` has exact capacity. Does not reach `#[bin]` enums, `to_bytes_with` or the generic `encode_to_vec` behind the transports | Go, in phase 3. A flat 64-byte start capacity was rejected (9 allocations left on 1,024 records, 64 bytes held for a 5-byte message) |
+| A size hint for `to_bytes` on variable-length and bare-derive messages | One allocation at any size (was 2 to 12) when every field's width is visible to the macro. `packet_encode` 1,089.97 → 545.97, `ipv4ish_encode` 1,556.97 → 817.97, `dmr_encode` 2,733.94 → 1,996.94; Criterion `byte_runs_2x255/encode` 0.30, `ipv4ish_message/encode` 0.43, `byte_aligned/encode` 0.46; every non-encode mode identical. The returned `Vec` has exact capacity. Does not reach `#[bin]` enums, `to_bytes_with` or the generic `encode_to_vec` behind the transports | Go, in phase 3. A flat 64-byte start capacity was rejected (9 allocations left on 1,024 records, 64 bytes held for a 5-byte message) |
 | `BitBuf` compaction | Reproduced on a bounded buffer kept full: 78 / 610 / 10,400 ns per 44-byte message at 4.4 KiB / 64 KiB / 1 MiB, against 33–37 drained first. An unbounded buffer whose capacity fits the backlog exactly has the same cost. Compacting an unbounded buffer only when the dead prefix is at least the live bytes makes it 36–39 ns at every size, with no gated mode worse, for one reallocation and twice the peak capacity under backlog. A bounded buffer has no fix short of a ring or twice the storage | Owner decision (it rewrites two documented promises and doubles peak memory under backlog). The bounded case gets a documentation sentence either way |
 | Transport reads past the 4 KiB scratch | `take(hint).read_to_end` into the buffer's own `Vec` when the hint is at least the scratch: a 1 MiB envelope takes 8 socket reads instead of 258 (357–370 → 146 µs), 64 KiB 17 → 3 (24 → 12.5 µs); it reads less past the message than today (exactly the hint). In memory the gain is 13–15%, none for a reader without `read_buf`. Two `happy` modes read worse in cycles through an unrelated inlining flip (`stream_16x40_whole` 116–121 → 134–138, `codec_decode` 111–115 → 133–136) | Retry after phase 2, with the sync and async paths together; §12.1 changes |
 | `LimitedSource` | Forwarding `aligned_run`, byte runs built on it, and `#[inline]` on its `read_bits` with a cold boundary error: a windowed 44-byte message 2,095.98 → 601.98, a windowed 64-byte run 6,603.96 → 329.96, `Incomplete` through the window 2,128.96 → 1,450.96; nothing worse in any tier. 94,110-case differential identical, three mutants detected. Without the `#[inline]`, two failing modes pay 9 and 22 instructions | Go |
@@ -2636,3 +2636,103 @@ generator's control flow and so cannot see a generator bug; two stale comments. 
 not fixed here, as it predates this change: a `ctx` enum on this path does not compile
 (the generated `decode_with` bounds `SeekSource` and is called from a `Source`), so the
 hybrid embedding of this block is unreachable today. ROADMAP §E already has it.
+
+### Phase 3: a size hint for variable-length `to_bytes` (2026-11-12)
+
+The first item of the encode phase, as researched. `to_bytes` of a fixed-length message
+already allocates once (§19); a variable-length `#[bin]` struct or a lone
+`#[derive(BitEncode)]` grew its buffer by doubling: 8, 16, 32, 64 bytes for a 44-byte
+message.
+
+- **The generator** sums an estimate, in bits, from the fields it can see, and `to_bytes`
+  reserves it before writing. A `Vec` contributes its length times its element's width, a
+  byte array its length, any other field its type's width, the struct's magic its own.
+  A field contributes nothing when it writes nothing or a size the macro cannot see:
+  ignored, `br(calc)`, a `temp` `Vec`, or anything `br_indeterminate` (context, `if`,
+  `map`, `parse_with`, padding, alignment, seeks). Sums saturate.
+- **A type's width** comes from `__private::BitLenHint::<T>`, whose inherent
+  `__bnb_bits` reads `T`'s `FixedBitLen::BIT_LEN` when `T` has one, and falls back to a
+  trait method returning zero when it does not. The hint therefore asks nothing of a
+  field type that encoding did not already ask, and an element with no fixed width (a
+  nested variable-length message) counts as nothing.
+- **`encode_hinted_to_vec`** reserves the estimate rounded up to whole bytes, never less
+  than eight (what a growing `Vec<u8>` starts with), nothing for a zero estimate, and
+  skips a reservation the allocator refuses.
+
+The probe gained `envelope_encode` and `records_encode` (53 modes with `tokio`); adding
+them moved one existing mode by two instructions (`prefix_eof_envelope` 242.99 → 240.99).
+Instructions per encode, base and candidate; every other mode is instruction-identical.
+
+| Mode | Base | Candidate | Cycles |
+|---|---:|---:|---|
+| `packet_encode` | 1,089.96 | 547.96 | 256.4 → 127.6 |
+| `ipv4ish_encode` | 1,556.96 | 819.96 | 343.4 → 183.4 |
+| `dmr_encode` | 2,733.92 | 1,998.92 | 589.3 → 427.9 |
+| `envelope_encode` | 767.98 | 351.98 | 177.4 → 86.3 |
+| `records_encode` | 276,057.20 | 273,932.85 | 65,926.5 → 65,610.0 |
+
+Criterion, three alternating pinned rounds against the parent, lowest median (ns). The
+machine carried unrelated load during the second of two runs; both are given.
+
+| Benchmark | Parent | Candidate | Ratio, both runs |
+|---|---:|---:|---|
+| `byte_runs_2x255/encode` | 84.30 | 23.06 | 0.27, 0.30 |
+| `ipv4ish_message/encode` | 91.44 | 38.44 | 0.42, 0.40 |
+| `counted_u32_256/encode` | 84.78 | 57.76 | 0.68, 0.63 |
+| `counted_u16_1024/encode` | 98.69 | 82.86 | 0.84, 0.81 |
+| `fixed_44/encode` (not on this path) | 36.02 | 35.66 | 0.99, 1.03 |
+
+The two hand-written `encode_hand` baselines read 0.98–1.02. The probe's `.text` grows
+406,291 → 406,947 bytes.
+
+**What it does not do, and what pays.**
+
+- The estimate is exact only when every field's width is visible. When part of the
+  message is invisible to it (a `Vec` of variable-length messages, an `if` field) the
+  buffer still grows, from the estimate instead of from eight bytes. As first built it
+  reserved the bare estimate, and a small partial one then cost one allocation *more*
+  than before (five became six for a 103-byte message with a two-byte estimate, measured
+  by the reviewer with a counting allocator). The floor of eight removes that: growth from
+  an estimate of at least eight bytes never takes more steps than growth from eight.
+- The estimate never exceeds what a successful encode writes, but it is reserved before
+  encoding can fail. A `Vec` of zero-sized elements with a non-zero wire width (a unit
+  struct with a magic) and a length its count prefix cannot hold now asks for the size
+  that encode would have written before it reports the prefix error; a request the
+  allocator cannot meet is skipped.
+- Not hinted: `to_canonical_bytes` of a variable-length message, `to_bytes_with`,
+  `#[bin]` enums, and the generic `encode_to_vec` behind the transports.
+
+**Review findings, all fixed before the commit.** The independent review compared old and
+new on 22 message shapes (bytes and errors identical) and found three blocking defects
+in the prototype as researched:
+
+1. The width probe was a method named `bits`, found by name in the user's scope. A
+   blanket `trait BitSize: Sized { fn bits(self) -> usize }` beside a message hijacked the
+   hint (a five-byte message requested 4 GiB), and a `&self` one made a `Vec` of
+   variable-length elements ambiguous (E0034) where the parent compiled. The method is
+   `__bnb_bits`, and `tests/bin_hygiene.rs` holds both traits in scope.
+2. The generated block carried `#[allow(unused_imports)]` on the fallback trait's import,
+   which is a hard error (E0453) in a crate that `forbid`s the lint. The attribute is
+   gone (an unused import in a proc-macro's output is not reported), and
+   `tests/bin_presize.rs` forbids the lint over a message that never uses the trait.
+3. Two branches of the field filter were unpinned (`br(calc)` and the indeterminate
+   kinds): mutants that counted those fields survived. Both now have a test.
+
+Also from review: a byte array's term is `usize::saturating_mul(N, 8)` (the first form
+typed an unsuffixed length as `i32` and overflowed at compile time for `[u8; 1 << 61]`,
+which the parent accepted), and the floor of eight above.
+
+**Tests.** `tests/bin_presize.rs`: exact capacity for a message with a magic, two counted
+runs (bytes and fixed-width records), a byte array and an ignored field at four sizes; for
+a lone derive ending in a partial byte; for messages with a `br(calc)` or a peeked field;
+and a message with an unsizable field, which only grows. Three of these fail on the
+parent. `unit::a_hinted_encode_reserves_its_bytes_once_and_shrugs_off_a_hint_it_cannot_meet`
+pins the rounding, the floor, the zero case and an unmeetable hint. Fourteen hand mutants
+killed, six in the runtime (rounding down, no reservation, bits taken as bytes, a fatal
+reservation, no floor, a floor for zero) and eight in the generator (a `Vec` counted by
+length only or not at all, a byte array in bytes, a plain field or the magic dropped, an
+ignored, `br(calc)` or indeterminate field counted). 882 tests with all features across
+both crates, 794 with default; clippy in both; MSRV 1.85 and the 32-bit `no_std` build.
+The reviewer also built a `#![no_std]` consumer under `deny(warnings)` and about thirty
+allow-by-default lints, and clippy pedantic, nursery and restriction on generated code:
+identical diagnostics old and new.

@@ -72,10 +72,14 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          (850 → 272). `DESIGN.md` §22, phase 2. Re-measured afterwards: §E's enum
          `decode_exact` specialization (closed) and its constant-width item (still open
          for hand-written loops).
-   - [ ] **Phase 3, encode.** A size hint for `to_bytes` on variable-length and
-         bare-derive messages (researched: one allocation at any size, encode 0.30–0.62);
-         `MessageStream` keeps a write buffer; `BinCodec` writes straight into `dst` and
-         truncates on error; `Sink::write` inlined as the mirror of phase 2.
+   - [ ] **Phase 3, encode.** Done: `to_bytes` of a variable-length or bare-derive
+         message reserves a size summed from its fields, one exact allocation when every
+         field's width is visible (`byte_runs_2x255/encode` 0.30, `ipv4ish_message/encode`
+         0.40; `DESIGN.md` §22, phase 3). Left: `MessageStream` keeps a write buffer;
+         `BinCodec` writes straight into `dst` and truncates on error; `Sink::write`
+         inlined as the mirror of phase 2. Still unhinted: `to_canonical_bytes` of a
+         variable-length message, `to_bytes_with`, `#[bin]` enums, and the generic
+         `encode_to_vec` behind the transports.
    - [ ] **Phase 4, fixed-length messages.** Design review first. One availability check
          per message instead of one per field, keyed on a macro-only marker so
          `FixedBitLen` stays a sizing hint; go or no-go on what phase 2 leaves (mainly
