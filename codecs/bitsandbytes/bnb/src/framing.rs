@@ -42,7 +42,7 @@
 //! one codec covers async streams (`Framed`, TCP) and async datagrams (`UdpFramed`, UDP) — the
 //! async mirror of the sync `MessageStream` / `MessageDatagram` split. See `examples/tokio_udp`.
 
-use crate::bitstream::encode_to_vec;
+use crate::bitstream::FrameWriter;
 use crate::{BitDecode, BitEncode, BitError, ErrorKind};
 use bytes::{Buf, BytesMut};
 use core::fmt;
@@ -188,10 +188,14 @@ fn ran_out(e: &BitError, eof: bool) -> bool {
 impl<T: BitEncode> Encoder<T> for BinCodec<T> {
     type Error = io::Error;
 
+    // Straight into `dst`, not through a `Vec` copied over afterwards. The writer takes a
+    // message back out unless it is kept, so one that fails or panics part-way leaves `dst`
+    // holding whole messages only.
     fn encode(&mut self, item: T, dst: &mut BytesMut) -> Result<(), io::Error> {
-        let bytes = encode_to_vec(&item, T::LAYOUT)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        dst.extend_from_slice(&bytes);
+        let mut frame = FrameWriter::new(dst, T::LAYOUT);
+        item.bit_encode(&mut frame)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        frame.keep();
         Ok(())
     }
 }
@@ -328,6 +332,122 @@ mod component {
             )
             .unwrap();
         assert_eq!(&buf[..], &[0x01, 0x02, 0x03, 0x04]);
+    }
+
+    /// Sub-byte fields, a counted run of two-byte integers and a counted byte run: every
+    /// kind of write the in-place encoder makes.
+    #[bin(big)]
+    #[derive(Clone)]
+    struct Varied {
+        kind: bnb::u4,
+        flags: bnb::u12,
+        #[brw(count_prefix = u8)]
+        words: Vec<u16>,
+        #[brw(count_prefix = u8)]
+        body: Vec<u8>,
+    }
+
+    #[test]
+    fn encoder_appends_the_messages_own_bytes_after_what_the_buffer_holds() {
+        let message = Varied {
+            kind: bnb::u4::new(0xA),
+            flags: bnb::u12::new(0xBCD),
+            words: vec![0x0102, 0x0304, 0x0506],
+            body: vec![0x77; 40],
+        };
+        let expected = message.to_bytes().unwrap();
+        let mut codec = BinCodec::<Varied>::new();
+        let mut buf = BytesMut::from(&b"earlier"[..]);
+        codec.encode(message.clone(), &mut buf).unwrap();
+        codec.encode(message, &mut buf).unwrap();
+        assert_eq!(&buf[..7], b"earlier");
+        assert_eq!(&buf[7..7 + expected.len()], &expected[..]);
+        assert_eq!(&buf[7 + expected.len()..], &expected[..]);
+    }
+
+    #[test]
+    fn a_message_that_fails_to_encode_leaves_the_buffer_as_it_was() {
+        // The run is too long for its one-byte count: the error comes after the first
+        // sixteen bits and the first run are written.
+        let message = Varied {
+            kind: bnb::u4::new(1),
+            flags: bnb::u12::new(2),
+            words: vec![9; 3],
+            body: vec![0; 300],
+        };
+        let direct = message.to_bytes().unwrap_err();
+        let mut codec = BinCodec::<Varied>::new();
+        let mut buf = BytesMut::from(&b"earlier"[..]);
+        let error = codec.encode(message, &mut buf).unwrap_err();
+        assert_eq!(&buf[..], b"earlier");
+        // The same error as encoding it alone.
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(bit_error(&error), &direct);
+    }
+
+    /// The `BitError` a codec's `io::Error` carries.
+    fn bit_error(error: &std::io::Error) -> &bnb::BitError {
+        error.get_ref().unwrap().downcast_ref().unwrap()
+    }
+
+    /// Writes its byte, then fails or panics as the byte says: an encoder that gives up
+    /// after it has written.
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "the signature `write_with` calls"
+    )]
+    fn write_then_give_up<K: bnb::Sink>(value: &u8, w: &mut K) -> Result<(), bnb::BitError> {
+        w.write(*value)?;
+        match value {
+            0xEE => Err(bnb::BitError::new(
+                bnb::ErrorKind::NotByteAligned,
+                w.bit_pos(),
+            )),
+            0xFF => panic!("an encoder that panics part-way"),
+            _ => Ok(()),
+        }
+    }
+
+    // Bit-packed LSB-first and little-endian, ending inside a byte.
+    #[bin(little, bits = lsb)]
+    #[derive(Clone)]
+    struct Fragile {
+        head: u32,
+        flag: bnb::u4,
+        #[bw(write_with = write_then_give_up)]
+        last: u8,
+        tail: bnb::u4,
+    }
+
+    #[test]
+    fn an_encoder_that_errors_or_panics_after_writing_leaves_no_part_of_its_message() {
+        let fragile = |last| Fragile {
+            head: 0xDEAD_BEEF,
+            flag: bnb::u4::new(0x9),
+            last,
+            tail: bnb::u4::new(0x6),
+        };
+        let mut codec = BinCodec::<Fragile>::new();
+        let mut buf = BytesMut::from(&b"earlier"[..]);
+
+        // An error raised five bytes in: the buffer is as it was, the error as it is alone.
+        let direct = fragile(0xEE).to_bytes().unwrap_err();
+        assert_eq!(direct.at, 44);
+        let error = codec.encode(fragile(0xEE), &mut buf).unwrap_err();
+        assert_eq!(bit_error(&error), &direct);
+        assert_eq!(&buf[..], b"earlier");
+
+        // A panic at the same point, caught by whoever owns the buffer.
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            codec.encode(fragile(0xFF), &mut buf)
+        }));
+        assert!(unwound.is_err());
+        assert_eq!(&buf[..], b"earlier");
+
+        // And the buffer still takes a whole message, in this layout, after both.
+        let expected = fragile(7).to_bytes().unwrap();
+        codec.encode(fragile(7), &mut buf).unwrap();
+        assert_eq!(&buf[7..], &expected[..]);
     }
 
     #[test]

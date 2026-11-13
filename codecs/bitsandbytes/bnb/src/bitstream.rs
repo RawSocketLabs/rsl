@@ -867,16 +867,44 @@ fn extract_unaligned_bits(buf: &[u8], pos: usize, n: usize, order: BitOrder) -> 
     }
 }
 
+/// The byte buffer [`emit_bits`] appends to: a writer's own `Vec`, or the tail of a
+/// buffer a message is encoded into in place. Positions count from the first byte the
+/// message wrote.
+trait Appendable {
+    /// Bytes written so far.
+    fn len(&self) -> usize;
+    /// Appends one byte.
+    fn push(&mut self, byte: u8);
+    /// ORs `bits` into the byte at `index`, which is already there.
+    fn or_into(&mut self, index: usize, bits: u8);
+}
+
+impl Appendable for Vec<u8> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
+    }
+    #[inline]
+    fn push(&mut self, byte: u8) {
+        self.push(byte);
+    }
+    #[inline]
+    fn or_into(&mut self, index: usize, bits: u8) {
+        self[index] |= bits;
+    }
+}
+
 /// Appends the low `n` (`<= 128`) bits of `value` to `out` at absolute bit offset
-/// `bit_pos`, in `order` — the write dual of [`extract_bits`], used by [`BitWriter`]. The
-/// cursor must not be past the end of `out` (`bit_pos / 8 <= out.len()`).
+/// `bit_pos`, in `order` — the write dual of [`extract_bits`], used by [`BitWriter`] and
+/// by the in-place frame writer. The cursor must not be past the end of `out`
+/// (`bit_pos / 8 <= out.len()`).
 ///
 /// Work is per touched byte, never per bit. Appending byte-aligned at the end
 /// (`bit_pos % 8 == 0`, `n % 8 == 0`, cursor at `out.len()`) pushes the bytes whole; any
 /// other write goes through [`emit_unaligned_bits`].
 #[inline]
 #[allow(clippy::cast_possible_truncation)] // Extract one low byte of the shifted carrier at a time.
-fn emit_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize, order: BitOrder) {
+fn emit_bits<B: Appendable>(out: &mut B, bit_pos: usize, value: u128, n: usize, order: BitOrder) {
     if n % 8 == 0 && bit_pos % 8 == 0 && bit_pos / 8 == out.len() {
         let nbytes = n / 8;
         match order {
@@ -901,7 +929,13 @@ fn emit_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize, order: Bi
 /// there. Out of line for the same reason as [`extract_unaligned_bits`].
 #[inline(never)]
 #[allow(clippy::cast_possible_truncation)] // Each chunk is masked to at most eight bits.
-fn emit_unaligned_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize, order: BitOrder) {
+fn emit_unaligned_bits<B: Appendable>(
+    out: &mut B,
+    bit_pos: usize,
+    value: u128,
+    n: usize,
+    order: BitOrder,
+) {
     // `take` bits go into each touched byte, starting `lead` bits in.
     let mut pos = bit_pos;
     let mut remaining = n;
@@ -913,7 +947,7 @@ fn emit_unaligned_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize,
             out.push(0);
         }
         let low_bits = (1u128 << take) - 1;
-        out[byte_idx] |= match order {
+        let bits = match order {
             // MSB-first emits the field's high bits first, into the byte's high end.
             BitOrder::Msb => {
                 (((value >> (remaining - take)) & low_bits) as u8) << (8 - lead - take)
@@ -921,6 +955,7 @@ fn emit_unaligned_bits(out: &mut Vec<u8>, bit_pos: usize, value: u128, n: usize,
             // LSB-first emits the field's low bits first, into the byte's low end.
             BitOrder::Lsb => (((value >> (n - remaining)) & low_bits) as u8) << lead,
         };
+        out.or_into(byte_idx, bits);
         pos += take;
         remaining -= take;
     }
@@ -4172,6 +4207,8 @@ impl<R: std::io::Read + std::io::Seek> SeekSource for BufSeekReader<R> {}
 mod bytes_io {
     use alloc::vec::Vec;
 
+    #[cfg(feature = "tokio")]
+    use super::{Appendable, ErrorKind, emit_bits, write_bytes_per_byte};
     use super::{
         BitError, BitOrder, BitReader, BitWriter, Bits, ByteOrder, Layout, SeekSource, Sink,
         Source, aligned_run_at, read_via_slice,
@@ -4326,8 +4363,251 @@ mod bytes_io {
             self.inner.aligned_tail(n)
         }
     }
+
+    /// The bytes one message appends to a `BytesMut`: [`Appendable`] over the buffer's tail
+    /// from `start`, where the message begins.
+    #[cfg(feature = "tokio")]
+    struct Appended<'a> {
+        dst: &'a mut bytes::BytesMut,
+        start: usize,
+    }
+
+    #[cfg(feature = "tokio")]
+    impl Appendable for Appended<'_> {
+        #[inline]
+        fn len(&self) -> usize {
+            self.dst.len() - self.start
+        }
+        #[inline]
+        fn push(&mut self, byte: u8) {
+            self.dst.extend_from_slice(&[byte]);
+        }
+        #[inline]
+        fn or_into(&mut self, index: usize, bits: u8) {
+            self.dst[self.start + index] |= bits;
+        }
+    }
+
+    /// A [`Sink`] that appends one message to a `BytesMut` in place, for an encoder that
+    /// would otherwise build the message in a `Vec` and copy it over. Positions count
+    /// from the message's first bit, as a [`BitWriter`]'s do, so alignment, padding and
+    /// error positions do not depend on what the buffer already holds.
+    ///
+    /// The message stays only if [`keep`](Self::keep) is called. Dropped without it (an
+    /// encode error, or a panic in the encoder unwinding through), the writer takes back
+    /// whatever it appended, so the buffer never holds part of a message.
+    #[cfg(feature = "tokio")]
+    pub(crate) struct FrameWriter<'a> {
+        out: Appended<'a>,
+        bit_pos: usize,
+        layout: Layout,
+        kept: bool,
+    }
+
+    #[cfg(feature = "tokio")]
+    impl<'a> FrameWriter<'a> {
+        /// A writer that appends to `dst` in `layout`, starting at its current end.
+        pub(crate) fn new(dst: &'a mut bytes::BytesMut, layout: Layout) -> Self {
+            let start = dst.len();
+            Self {
+                out: Appended { dst, start },
+                bit_pos: 0,
+                layout,
+                kept: false,
+            }
+        }
+
+        /// Ends the writer leaving the message in the buffer: the encode succeeded.
+        pub(crate) fn keep(mut self) {
+            self.kept = true;
+        }
+    }
+
+    #[cfg(feature = "tokio")]
+    impl Drop for FrameWriter<'_> {
+        fn drop(&mut self) {
+            if !self.kept {
+                self.out.dst.truncate(self.out.start);
+            }
+        }
+    }
+
+    #[cfg(feature = "tokio")]
+    impl super::sealed::Sealed for FrameWriter<'_> {}
+
+    #[cfg(feature = "tokio")]
+    impl Sink for FrameWriter<'_> {
+        // As `BitWriter::write_bits`, into the buffer's tail.
+        #[inline]
+        fn write_bits(&mut self, value: u128, n: u32) -> Result<(), BitError> {
+            let n = n as usize;
+            if n > 128 {
+                return Err(BitError::new(ErrorKind::TooWide { width: n }, self.bit_pos));
+            }
+            let end = self
+                .bit_pos
+                .checked_add(n)
+                .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
+            emit_bits(&mut self.out, self.bit_pos, value, n, self.layout.bit);
+            self.bit_pos = end;
+            Ok(())
+        }
+        #[inline]
+        fn bit_pos(&self) -> usize {
+            self.bit_pos
+        }
+        #[inline]
+        fn byte_order(&self) -> ByteOrder {
+            self.layout.byte
+        }
+        #[inline]
+        fn bit_order(&self) -> BitOrder {
+            self.layout.bit
+        }
+        // As `BitWriter`: an aligned cursor sits at the end of what the message has
+        // written, so the run is appended as it is.
+        #[inline]
+        fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), BitError> {
+            if self.bit_pos % 8 != 0 {
+                return write_bytes_per_byte(self, bytes);
+            }
+            let end = bytes
+                .len()
+                .checked_mul(8)
+                .and_then(|bits| self.bit_pos.checked_add(bits))
+                .ok_or_else(|| BitError::new(ErrorKind::PositionOverflow, self.bit_pos))?;
+            self.out.dst.extend_from_slice(bytes);
+            self.bit_pos = end;
+            Ok(())
+        }
+        #[inline]
+        fn aligned_tail(&mut self, n: usize) -> Option<&mut [u8]> {
+            if self.bit_pos % 8 != 0 {
+                return None;
+            }
+            let end = n
+                .checked_mul(8)
+                .and_then(|bits| self.bit_pos.checked_add(bits))?;
+            let tail = self.out.dst.len();
+            self.out.dst.resize(tail + n, 0);
+            self.bit_pos = end;
+            Some(&mut self.out.dst[tail..])
+        }
+    }
+
+    #[cfg(all(test, feature = "tokio"))]
+    mod component {
+        //! `FrameWriter` against `BitWriter`: the same writes leave the same bytes after
+        //! whatever the buffer already held, the same cursor and the same errors.
+        use super::FrameWriter;
+        use crate::{BitError, BitOrder, BitWriter, ByteOrder, ErrorKind, Layout, Sink};
+        use bytes::BytesMut;
+
+        /// A fixed xorshift stream.
+        fn noise(state: &mut u64) -> u64 {
+            *state ^= *state << 13;
+            *state ^= *state >> 7;
+            *state ^= *state << 17;
+            *state
+        }
+
+        /// One write, chosen by `pick`, applied to any sink: bits of a noisy width, a byte
+        /// run, a lent tail filled in, or a width no sink accepts.
+        fn write<K: Sink>(sink: &mut K, pick: u64, value: u128) -> Result<(), BitError> {
+            let bytes = value.to_le_bytes();
+            let small = usize::try_from(pick >> 8).unwrap() % 6;
+            match pick % 8 {
+                0..=3 => sink.write_bits(value, u32::try_from((pick >> 8) % 129).unwrap()),
+                4 => sink.write_bits(value, 8 * u32::try_from((pick >> 8) % 17).unwrap()),
+                5 => sink.write_bytes(&bytes[..small]),
+                6 => {
+                    if let Some(tail) = sink.aligned_tail(small) {
+                        tail.copy_from_slice(&bytes[..small]);
+                    }
+                    Ok(())
+                }
+                _ => sink.write_bits(value, 129 + u32::try_from(pick >> 60).unwrap()),
+            }
+        }
+
+        #[test]
+        fn a_frame_written_in_place_is_the_frame_a_bit_writer_builds() {
+            let mut state = 0x94D0_49BB_1331_11EB;
+            for round in 0..400 {
+                let layout = Layout {
+                    bit: [BitOrder::Msb, BitOrder::Lsb][round % 2],
+                    byte: [ByteOrder::Big, ByteOrder::Little][round / 2 % 2],
+                };
+                // What the buffer held before the frame: it must come through untouched.
+                let before: Vec<u8> = (0..round % 4)
+                    .map(|_| noise(&mut state).to_le_bytes()[0])
+                    .collect();
+                let mut dst = BytesMut::from(&before[..]);
+                let mut frame = FrameWriter::new(&mut dst, layout);
+                let mut reference = BitWriter::with_layout(layout);
+                for step in 0..12 {
+                    let pick = noise(&mut state);
+                    let value = u128::from(noise(&mut state)) << 64 | u128::from(noise(&mut state));
+                    let got = write(&mut frame, pick, value).map_err(|e| (e.kind, e.at));
+                    let expected = write(&mut reference, pick, value).map_err(|e| (e.kind, e.at));
+                    assert_eq!(got, expected, "round {round} step {step}");
+                    assert_eq!(
+                        frame.bit_pos(),
+                        reference.bit_pos(),
+                        "round {round} step {step}"
+                    );
+                    assert_eq!(
+                        (frame.bit_order(), frame.byte_order()),
+                        (layout.bit, layout.byte)
+                    );
+                }
+                frame.keep();
+                let written = reference.into_bytes();
+                assert_eq!(
+                    dst[..before.len()],
+                    before[..],
+                    "round {round}: what was there"
+                );
+                assert_eq!(dst[before.len()..], written[..], "round {round}: the frame");
+            }
+        }
+
+        #[test]
+        fn a_frame_writer_refuses_a_position_it_cannot_count() {
+            let mut dst = BytesMut::from(&b"kept"[..]);
+            let mut frame = FrameWriter::new(&mut dst, Layout::default());
+            frame.bit_pos = usize::MAX - 3;
+            let error = frame.write_bits(0, 8).unwrap_err();
+            assert_eq!(
+                (error.kind, error.at),
+                (ErrorKind::PositionOverflow, usize::MAX - 3)
+            );
+            frame.bit_pos = usize::MAX - 7;
+            let error = frame.write_bytes(&[0, 0]).unwrap_err();
+            assert_eq!(
+                (error.kind, error.at),
+                (ErrorKind::PositionOverflow, usize::MAX - 7)
+            );
+            assert!(frame.aligned_tail(2).is_none());
+            assert_eq!(frame.bit_pos, usize::MAX - 7);
+            frame.keep();
+            assert_eq!(&dst[..], b"kept");
+        }
+
+        #[test]
+        fn a_frame_writer_dropped_without_keep_takes_its_bytes_back() {
+            let mut dst = BytesMut::from(&b"kept"[..]);
+            let mut frame = FrameWriter::new(&mut dst, Layout::default());
+            frame.write_bits(0xABCDE, 20).unwrap();
+            frame.write_bytes(&[1, 2, 3]).unwrap();
+            drop(frame);
+            assert_eq!(&dst[..], b"kept");
+        }
+    }
 }
 
+#[cfg(feature = "tokio")]
+pub(crate) use bytes_io::FrameWriter;
 #[cfg(feature = "bytes")]
 pub use bytes_io::{BytesReader, BytesWriter};
 
