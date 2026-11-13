@@ -689,6 +689,17 @@ const fn bits_in(len: usize) -> usize {
     }
 }
 
+/// `bits_in(len) / 8`: how many of a buffer's `len` bytes a reader may read, spelled as a
+/// clamp so a bounds check against it folds into one compare.
+#[inline]
+const fn bytes_in(len: usize) -> usize {
+    if len < usize::MAX / 8 {
+        len
+    } else {
+        usize::MAX / 8
+    }
+}
+
 /// Reverses the low `bits / 8` bytes of `raw` when the declared byte order differs from the
 /// bit order's **natural** layout, and the width is a whole number of bytes (byte order
 /// applies only to byte-multiple values); a no-op otherwise. It is its own inverse, so read
@@ -722,8 +733,10 @@ fn apply_byte_order(raw: u128, bits: u32, bit: BitOrder, byte: ByteOrder) -> u12
 
 /// Extracts `n` (`<= 128`) bits starting at absolute bit offset `pos` from `buf`, in
 /// `order`, returned right-aligned in a `u128` (byte order is applied separately by
-/// `read`). The single bit-extraction routine behind every slice-backed [`Source`]
-/// ([`BitReader`], [`BufSource`], [`SeekReader`], [`BufSeekReader`]). The caller must have bounds-checked
+/// `read`). The bit-extraction routine behind every slice-backed [`Source`]
+/// ([`BitReader`], [`BufSource`], [`SeekReader`], [`BufSeekReader`]); only a typed read of
+/// whole bytes from a byte-aligned [`BitReader`] goes around it
+/// (`BitReader::take_whole_bytes`). The caller must have bounds-checked
 /// `pos + n <= buf.len() * 8` and `n <= 128`.
 ///
 /// Work is per touched byte, never per bit. A byte-aligned read (`pos % 8 == 0` and
@@ -1056,10 +1069,7 @@ impl<'a> BitReader<'a> {
     /// As [`read_bits`](Self::read_bits).
     #[inline]
     pub fn read<T: Bits>(&mut self) -> Result<T, BitError> {
-        let raw = self.read_bits(T::BITS)?;
-        Ok(T::from_bits(value_byte_order::<T>(
-            raw, self.order, self.byte,
-        )))
+        Source::read(self)
     }
 
     /// Moves the cursor to absolute bit `pos`. This needs no `Seek` trait — the whole
@@ -1300,12 +1310,7 @@ pub trait Source: sealed::Sealed {
     /// As [`read_bits`](Source::read_bits).
     #[inline]
     fn read<T: Bits>(&mut self) -> Result<T, BitError> {
-        let raw = self.read_bits(T::BITS)?;
-        Ok(T::from_bits(value_byte_order::<T>(
-            raw,
-            self.bit_order(),
-            self.byte_order(),
-        )))
+        read_by_bits(self)
     }
 
     /// Reads `n` bytes into a fresh `Vec` (at any bit offset — the bytes need not be
@@ -1375,6 +1380,18 @@ pub trait Source: sealed::Sealed {
     {
         SourceReader(self)
     }
+}
+
+/// [`Source::read`] for any source and width: the bits, then the byte order.
+#[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+#[inline(always)]
+fn read_by_bits<S: Source + ?Sized, T: Bits>(s: &mut S) -> Result<T, BitError> {
+    let raw = s.read_bits(T::BITS)?;
+    Ok(T::from_bits(value_byte_order::<T>(
+        raw,
+        s.bit_order(),
+        s.byte_order(),
+    )))
 }
 
 // The per-byte loops behind the defaulted bulk methods. A bulk override takes its fast path
@@ -1635,13 +1652,27 @@ impl Source for IncrementalReader<'_> {
     // Inline, so a generated decoder's constant width reaches the reader's fast paths. The
     // shortfall is built directly rather than converted from the reader's end-of-input
     // error: one out-of-line construction instead of a build, a move and a rewrite.
-    #[inline]
+    #[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+    #[inline(always)]
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         let remaining = self.0.remaining_bits();
         if n <= 128 && n as usize > remaining {
             return Err(self.incomplete(n as usize - remaining));
         }
         self.0.read_bits(n)
+    }
+
+    // As `BitReader::read`, with a short read reported as `read_bits` reports it.
+    #[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+    #[inline(always)]
+    fn read<T: Bits>(&mut self) -> Result<T, BitError> {
+        if !self.0.at_whole_bytes::<T>() {
+            return read_by_bits(self);
+        }
+        let Some(value) = self.0.take_whole_bytes() else {
+            return Err(self.incomplete(T::BITS as usize - self.0.remaining_bits()));
+        };
+        Ok(value)
     }
 
     fn bit_pos(&self) -> usize {
@@ -1886,6 +1917,19 @@ impl Source for BitReader<'_> {
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
         BitReader::read_bits(self, n)
     }
+    // Forced inline: this is the call a generated decoder makes for each scalar field, and
+    // out of line it costs a call and an 80-byte `Result` through memory (DESIGN §22).
+    #[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+    #[inline(always)]
+    fn read<T: Bits>(&mut self) -> Result<T, BitError> {
+        if !self.at_whole_bytes::<T>() {
+            return read_by_bits(self);
+        }
+        let Some(value) = self.take_whole_bytes() else {
+            return Err(self.read_error(T::BITS as usize));
+        };
+        Ok(value)
+    }
     #[inline]
     fn bit_pos(&self) -> usize {
         self.bit_pos
@@ -1926,6 +1970,41 @@ impl Source for BitReader<'_> {
 }
 
 impl<'a> BitReader<'a> {
+    /// Whether a `T` read here is whole bytes from a byte-aligned cursor, the case
+    /// [`take_whole_bytes`](Self::take_whole_bytes) serves.
+    #[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+    #[inline(always)]
+    fn at_whole_bytes<T: Bits>(&self) -> bool {
+        T::BITS % 8 == 0 && T::BITS <= 128 && self.bit_pos % 8 == 0
+    }
+
+    /// Reads a `T` as [`at_whole_bytes`](Self::at_whole_bytes) allows; `None`, consuming
+    /// nothing, when fewer bytes remain. Aligned whole bytes are the value big-endian or
+    /// little-endian whatever the bit order (each order's natural layout, swapped or not:
+    /// `apply_byte_order`), so this is one load and at most a swap.
+    #[expect(clippy::inline_always, reason = "measured: DESIGN §22")]
+    #[inline(always)]
+    fn take_whole_bytes<T: Bits>(&mut self) -> Option<T> {
+        debug_assert!(self.at_whole_bytes::<T>());
+        let n = (T::BITS / 8) as usize;
+        let start = self.bit_pos / 8;
+        let end = bytes_in(self.bytes.len());
+        let run = self.bytes[..end].get(start..start + n)?;
+        let mut wide = [0; 16];
+        let raw = match T::__BNB_BYTE_ORDER.unwrap_or(self.byte) {
+            ByteOrder::Big => {
+                wide[16 - n..].copy_from_slice(run);
+                u128::from_be_bytes(wide)
+            }
+            ByteOrder::Little => {
+                wide[..n].copy_from_slice(run);
+                u128::from_le_bytes(wide)
+            }
+        };
+        self.bit_pos += T::BITS as usize;
+        Some(T::from_bits(raw))
+    }
+
     // Consumes the next `n` bytes when the cursor is byte-aligned and all of them remain.
     // Whole aligned bytes read identically in both bit orders, so this is a plain copy.
     #[inline]
@@ -4227,6 +4306,115 @@ mod unit {
         assert_eq!(bits_in(usize::MAX / 8), usize::MAX / 8 * 8);
         assert_eq!(bits_in(usize::MAX / 8 + 1), usize::MAX & !7);
         assert_eq!(bits_in(usize::MAX), usize::MAX & !7);
+    }
+
+    #[test]
+    fn bytes_in_is_bits_in_counted_in_bytes() {
+        let edge = usize::MAX / 8;
+        for len in [0, 1, 3, edge - 1, edge, edge + 1, usize::MAX] {
+            assert_eq!(bytes_in(len), bits_in(len) / 8, "{len}");
+        }
+    }
+
+    /// A 24-bit value that declares its own byte order, as a `#[bitfield(bytes = …)]` does.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Own<const LITTLE: bool>(u32);
+
+    impl<const LITTLE: bool> Bits for Own<LITTLE> {
+        const BITS: u32 = 24;
+        const __BNB_BYTE_ORDER: Option<ByteOrder> = Some(if LITTLE {
+            ByteOrder::Little
+        } else {
+            ByteOrder::Big
+        });
+
+        fn into_bits(self) -> u128 {
+            u128::from(self.0)
+        }
+
+        fn from_bits(raw: u128) -> Self {
+            Self(u32::try_from(raw).expect("a 24-bit value"))
+        }
+    }
+
+    /// A value of any width that keeps no bits: zero-width, or wider than a read returns.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Blank<const WIDTH: u32>;
+
+    impl<const WIDTH: u32> Bits for Blank<WIDTH> {
+        const BITS: u32 = WIDTH;
+
+        fn into_bits(self) -> u128 {
+            0
+        }
+
+        fn from_bits(_: u128) -> Self {
+            Self
+        }
+    }
+
+    /// One `T` read at `pos` by each slice reader's `read`, against the same read taken
+    /// bit by bit ([`read_by_bits`], the path every other source uses): the value or the
+    /// error and its position, and where the cursor is left.
+    fn assert_read_matches_the_bit_path<T: Bits + PartialEq + fmt::Debug>(
+        buf: &[u8],
+        layout: Layout,
+        pos: usize,
+    ) {
+        type Outcome<T> = (Result<T, (ErrorKind, usize)>, usize);
+        fn outcome<S: Source, T>(
+            reader: &mut S,
+            read: impl FnOnce(&mut S) -> Result<T, BitError>,
+        ) -> Outcome<T> {
+            let result = read(reader).map_err(|e| (e.kind, e.at));
+            (result, reader.bit_pos())
+        }
+        let at = || {
+            let mut reader = BitReader::with_layout(buf, layout);
+            reader.bit_pos = pos;
+            reader
+        };
+        let context = format!("{layout:?} len {} pos {pos} width {}", buf.len(), T::BITS);
+
+        let expected: Outcome<T> = outcome(&mut at(), read_by_bits);
+        assert_eq!(outcome(&mut at(), Source::read), expected, "{context}");
+        assert_eq!(
+            outcome(&mut at(), BitReader::read),
+            expected,
+            "{context}, inherent"
+        );
+
+        let expected: Outcome<T> = outcome(&mut IncrementalReader(at()), read_by_bits);
+        let got = outcome(&mut IncrementalReader(at()), Source::read);
+        assert_eq!(got, expected, "{context}, incremental");
+    }
+
+    #[test]
+    fn read_takes_whole_bytes_exactly_as_the_bit_path_does() {
+        use crate::{u24, u40, u72, u104};
+        let mut state = 0xA076_1D64_78BD_642F;
+        let noisy: Vec<u8> = (0..20)
+            .map(|_| noise(&mut state).to_le_bytes()[0])
+            .collect();
+        for bit in [BitOrder::Msb, BitOrder::Lsb] {
+            for byte in [ByteOrder::Big, ByteOrder::Little] {
+                let layout = Layout { bit, byte };
+                // Every length and every cursor in it, so each width meets its bytes all
+                // there, one short and absent, from a byte boundary and from inside a byte.
+                for len in 0..=noisy.len() {
+                    let buf = &noisy[..len];
+                    for pos in 0..=len * 8 {
+                        macro_rules! each {
+                            ($($value:ty),*) => {
+                                $(assert_read_matches_the_bit_path::<$value>(buf, layout, pos);)*
+                            };
+                        }
+                        each!(bool, u4, u12, u8, u16, u24, u32, u40, u64, u128);
+                        each!(u72, u104, Own<true>, Own<false>, Blank<0>, Blank<136>);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
