@@ -1,10 +1,27 @@
 //! `to_bytes`/`to_canonical_bytes` of a **fixed-length** `#[bin]` message allocate their
 //! output once, at its final size (the macro passes `FixedBitLen::BIT_LEN`), and write the
-//! same bytes as an un-sized `BitWriter`. Variable-length and write-only messages, which
-//! have no `FixedBitLen`, keep the growing buffer.
+//! same bytes as an un-sized `BitWriter`. A variable-length message, or a lone
+//! `#[derive(BitEncode)]`, has no `FixedBitLen`: its `to_bytes` reserves a size summed
+//! from its fields (a `Vec`'s length times its element's width), which is exact whenever
+//! every field's width is visible, and only a starting point otherwise.
+
+// A consumer may forbid a lint outright. The size hint brings a trait into scope that a
+// message whose fields all have a fixed width never uses (`Variable` below): generated code
+// must neither trip this lint nor try to `allow` it, which `forbid` makes a hard error.
+#![forbid(unused_imports)]
 
 mod macro_ {
     use bnb::{BitEncode, BitError, BitWriter, FixedBitLen, Sink, bin, u4, u12};
+
+    /// `value.to_bytes()`, checked against the un-sized reference; returns the bytes.
+    macro_rules! sized {
+        ($value:expr) => {{
+            let value = $value;
+            let bytes = value.to_bytes().unwrap();
+            assert_eq!(bytes, unsized_bytes(&value, false));
+            bytes
+        }};
+    }
 
     /// The reference encoding: the same fields through a writer that starts empty.
     fn unsized_bytes<T: BitEncode>(value: &T, canonical: bool) -> Vec<u8> {
@@ -106,6 +123,136 @@ mod macro_ {
         let bytes = msg.to_bytes().unwrap();
         assert_eq!(bytes, unsized_bytes(&msg, false));
         assert_eq!(bytes.len(), 85);
+        // The count prefix, forty two-byte elements and the tail, reserved before writing;
+        // a buffer that grew would hold 128.
+        assert_eq!(bytes.capacity(), 85, "allocated once, exactly");
+    }
+
+    #[bin(big)]
+    #[derive(Clone)]
+    struct Record {
+        kind: u16,
+        seq: u32,
+    }
+
+    #[bin(big, magic = 0x4844u16)]
+    struct Mixed {
+        #[brw(count_prefix = u32)]
+        blob: Vec<u8>,
+        digest: [u8; 5],
+        #[brw(count_prefix = u16)]
+        records: Vec<Record>,
+        // Not on the wire, so not in the size.
+        #[brw(ignore)]
+        #[expect(dead_code, reason = "present on the struct, never encoded")]
+        scratch: u64,
+    }
+
+    #[test]
+    fn a_variable_message_reserves_every_field_it_can_see() {
+        for (blob, records) in [(0, 0), (1, 1), (1000, 3), (7, 300)] {
+            let bytes = sized!(Mixed {
+                blob: vec![0x5A; blob],
+                digest: [1, 2, 3, 4, 5],
+                records: vec![Record { kind: 7, seq: 9 }; records],
+                scratch: 0,
+            });
+            // Magic, both prefixes, the digest, then the runs.
+            assert_eq!(bytes.len(), 2 + 4 + 5 + 2 + blob + 6 * records);
+            assert_eq!(
+                bytes.capacity(),
+                bytes.len(),
+                "{blob} bytes, {records} records"
+            );
+        }
+    }
+
+    // Twenty bits and a byte run: no `FixedBitLen`, and a partial byte before the run.
+    #[derive(BitEncode)]
+    struct Bare {
+        a: u4,
+        b: u16,
+        run: Vec<u8>,
+    }
+
+    #[test]
+    fn a_lone_derive_reserves_too_and_counts_a_partial_byte() {
+        let bytes = sized!(Bare {
+            a: u4::new(0xA),
+            b: 0xBCDE,
+            run: vec![0x11; 9],
+        });
+        // 4 + 16 + 72 bits: twelve bytes, the last one half used.
+        assert_eq!(bytes.len(), 12);
+        assert_eq!(bytes.capacity(), 12);
+    }
+
+    /// Fields that are on the struct and not on the wire: the hint leaves them out.
+    mod unwritten {
+        use bnb::bin;
+        use bnb::prelude::*;
+
+        #[bin(big)]
+        struct Derived {
+            kind: u8,
+            // Resolved on decode from `kind`; writes nothing.
+            #[br(calc = u32::from(kind) * 2)]
+            #[expect(dead_code, reason = "decode-side only")]
+            doubled: u32,
+            #[brw(count_prefix = u8)]
+            body: Vec<u8>,
+        }
+
+        #[bin(big)]
+        struct Peeked {
+            kind: u8,
+            // Read from the start again and the cursor restored; writes nothing.
+            #[br(seek = 0usize.bytes(), restore_position)]
+            again: u32,
+            #[brw(count_prefix = u8)]
+            body: Vec<u8>,
+        }
+
+        #[test]
+        fn a_field_that_writes_nothing_is_not_in_the_size() {
+            let derived = Derived {
+                kind: 7,
+                doubled: 14,
+                body: vec![0x33; 20],
+            };
+            let bytes = derived.to_bytes().unwrap();
+            assert_eq!(bytes.len(), 22);
+            assert_eq!(bytes.capacity(), 22, "`br(calc)`");
+
+            let peeked = Peeked {
+                kind: 7,
+                again: 0,
+                body: vec![0x33; 20],
+            };
+            let bytes = peeked.to_bytes().unwrap();
+            assert_eq!(bytes.len(), 22);
+            assert_eq!(bytes.capacity(), 22, "`restore_position`");
+        }
+    }
+
+    #[bin(big, write_only)]
+    struct Outer {
+        head: u16,
+        // A variable-length message has no width for the hint: it counts as nothing.
+        inner: Variable,
+    }
+
+    #[test]
+    fn a_field_the_hint_cannot_size_only_makes_the_buffer_grow() {
+        let bytes = sized!(Outer {
+            head: 0x0102,
+            inner: Variable {
+                body: (0..40).collect(),
+                tail: 0xDEAD_BEEF,
+            },
+        });
+        assert_eq!(bytes.len(), 87);
+        assert!(bytes.capacity() >= 87);
     }
 
     /// Encodes, but has no `FixedBitLen`: a write-only parent must not start asking for one.

@@ -222,4 +222,56 @@ mod macro_ {
         let named = OldVariantLocals::decode_exact(&[2, 2, b'o', b'k']).unwrap();
         assert_eq!(format!("{named:?}"), r#"Named { __f: 2, name: "ok" }"#);
     }
+
+    /// The size hint of a variable-length message finds a width probe by method name. A
+    /// trait of the user's that gives every type a plainly named method must neither
+    /// answer for the probe nor make it ambiguous.
+    mod blanket_methods {
+        use bnb::bin;
+
+        trait BitsByValue: Sized {
+            fn bits(self) -> usize {
+                1 << 33
+            }
+        }
+        impl<T> BitsByValue for T {}
+
+        trait BitsByRef {
+            fn bits(&self) -> usize {
+                1 << 33
+            }
+        }
+        impl<T> BitsByRef for T {}
+
+        #[bin(big)]
+        struct Inner {
+            #[brw(count_prefix = u8)]
+            run: Vec<u8>,
+        }
+
+        #[bin(big)]
+        struct Outer {
+            head: u16,
+            #[brw(count_prefix = u8)]
+            body: Vec<u8>,
+            // An element with no fixed width: the probe's fallback tier.
+            #[brw(count_prefix = u8)]
+            inners: Vec<Inner>,
+        }
+
+        #[test]
+        fn a_users_blanket_bits_method_does_not_size_the_output() {
+            let message = Outer {
+                head: 0x0102,
+                body: vec![0x44; 20],
+                inners: Vec::new(),
+            };
+            let bytes = message.to_bytes().unwrap();
+            assert_eq!(bytes.len(), 24);
+            assert_eq!(bytes.capacity(), 24);
+            // Both traits are in scope and do answer for an ordinary value.
+            assert_eq!(BitsByValue::bits(0u8), 1 << 33);
+            assert_eq!(BitsByRef::bits(&0u8), 1 << 33);
+        }
+    }
 }

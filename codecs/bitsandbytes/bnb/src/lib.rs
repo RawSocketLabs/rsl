@@ -248,9 +248,9 @@ pub mod __private {
         Layout, SeekSource, Sink, Source, align_read, align_write, bits_of, decode_all,
         decode_exact, decode_exact_with, decode_iter, decode_mapped_msg, decode_peek,
         decode_peek_with, decode_prefix, decode_try_mapped_msg, decode_vec_each,
-        encode_fixed_to_vec, encode_mapped_msg, encode_to_vec, encode_to_vec_with, match_magic,
-        nested_vec, peek_magic, read_byte_array, read_mapped, read_try_mapped, skip_read,
-        skip_write, verify_magic, write_byte_array, write_mapped,
+        encode_fixed_to_vec, encode_hinted_to_vec, encode_mapped_msg, encode_to_vec,
+        encode_to_vec_with, match_magic, nested_vec, peek_magic, read_byte_array, read_mapped,
+        read_try_mapped, skip_read, skip_write, verify_magic, write_byte_array, write_mapped,
     };
     pub use crate::builder::normalization::{NormalizeDispatch, NormalizeProbe};
     pub use crate::error::UnknownDiscriminant;
@@ -264,6 +264,33 @@ pub mod __private {
     /// `std`-only debugging aid (see the `tracing` dependency note in `Cargo.toml`).
     #[cfg(feature = "std")]
     pub use ::tracing;
+
+    /// Concrete-site probe for the encoded width of a field's type, for the size hint a
+    /// generated `to_bytes` reserves. `BitLenHint::<T>(PhantomData).__bnb_bits()` resolves
+    /// to the inherent method (`T`'s [`FixedBitLen::BIT_LEN`]) when `T` has one, and
+    /// otherwise to [`NoBitLenHint::__bnb_bits`] (zero: a width the macro cannot see), so
+    /// the hint asks nothing of a field type that an encoder did not already need. The
+    /// method carries the generated-code prefix because it is found by name: a trait of
+    /// the user's with a plainer one must not be able to answer for it.
+    pub struct BitLenHint<T: ?Sized>(pub ::core::marker::PhantomData<T>);
+
+    impl<T: ?Sized + FixedBitLen> BitLenHint<T> {
+        /// `T`'s fixed encoded width in bits.
+        #[must_use]
+        pub const fn __bnb_bits(&self) -> usize {
+            T::BIT_LEN as usize
+        }
+    }
+
+    /// The fallback tier of [`BitLenHint`]: no fixed width is known.
+    pub trait NoBitLenHint {
+        /// Zero: the type contributes nothing to the hint.
+        fn __bnb_bits(&self) -> usize {
+            0
+        }
+    }
+
+    impl<T: ?Sized> NoBitLenHint for BitLenHint<T> {}
 
     /// The layout of a decode-only (`#[bin(read_only)]`) type, which has no `BitEncode` to
     /// carry `LAYOUT`. Emitted by `#[bin]` for generated code; not a stable API. Its

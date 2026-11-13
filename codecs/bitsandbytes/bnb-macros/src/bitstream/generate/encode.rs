@@ -418,6 +418,29 @@ fn field_write_stmt_auto(
     })
 }
 
+/// One field's term, in bits, of the size a variable-length (or encode-only) message's
+/// `to_bytes` reserves before it writes: a `Vec`'s length times its element width, a byte
+/// array's length, otherwise the type's width. Widths come from `BitLenHint`, which reads
+/// zero for a type with no `FixedBitLen`, so the hint requires nothing new of a field.
+/// `None` for a field whose size the macro cannot see or that writes nothing.
+fn field_bits_hint(f: &syn::Field, br: &FieldBr) -> Option<TokenStream2> {
+    if br.ignore || br.br_calc.is_some() || br_indeterminate(br) {
+        return None;
+    }
+    let bnb = crate::bnb_path();
+    let width = |ty: &syn::Type| quote!(#bnb::__private::BitLenHint::<#ty>(::core::marker::PhantomData).__bnb_bits());
+    if let Some(elem) = vec_elem(f) {
+        // A `temp` `Vec` is not on `self`; its length is not known here.
+        let id = f.ident.as_ref().filter(|_| !br.temp)?;
+        let elem = width(elem);
+        Some(quote!(self.#id.len().saturating_mul(#elem)))
+    } else if let Some(len) = byte_array_len(f) {
+        Some(quote!(usize::saturating_mul(#len, 8)))
+    } else {
+        Some(width(&f.ty))
+    }
+}
+
 #[allow(clippy::too_many_lines)] // Verbatim/canonical methods share the same field generation.
 pub(in crate::bitstream) fn gen_encode(
     name: &Ident,
@@ -688,7 +711,28 @@ pub(in crate::bitstream) fn gen_encode(
             |__bnb_w| <Self as #bnb::BitEncode>::bit_encode(self, __bnb_w),
         ))
     } else {
-        quote!(#bnb::__private::encode_to_vec(self, #layout))
+        // No `FixedBitLen` to size from (a variable-length message, or a lone
+        // `#[derive(BitEncode)]`): reserve an estimate summed from the fields.
+        let hints = fields
+            .named
+            .iter()
+            .zip(&brs)
+            .filter_map(|(f, br)| field_bits_hint(f, br));
+        let magic_hint = attrs
+            .magic
+            .as_ref()
+            .map(|m| quote!(.saturating_add(#bnb::__private::bits_of(&#m) as usize)));
+        // No lint attribute on the import: a consumer may `forbid` the lint, which an
+        // `allow` here would turn into a hard error, and an unused import in a
+        // proc-macro's output is not reported.
+        quote!({
+            use #bnb::__private::NoBitLenHint as _;
+            #bnb::__private::encode_hinted_to_vec(
+                #layout,
+                0usize #(.saturating_add(#hints))* #magic_hint,
+                |__bnb_w| <Self as #bnb::BitEncode>::bit_encode(self, __bnb_w),
+            )
+        })
     };
 
     Ok(quote! {

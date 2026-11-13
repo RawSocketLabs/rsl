@@ -2841,6 +2841,31 @@ where
     Ok(w.into_bytes())
 }
 
+/// [`encode_to_vec_with`] into a buffer reserved for `bits` bits: the macro's estimate for
+/// a message with no [`FixedBitLen`] to size from (the widths of its fixed fields plus
+/// the element widths of its `Vec`s; zero for anything it cannot see). Only a hint. A
+/// low estimate grows the buffer from at least the eight bytes an unhinted one starts
+/// with, a zero estimate reserves nothing, and a reservation that fails is skipped. The
+/// estimate never exceeds what a successful encode of the message writes.
+///
+/// # Errors
+/// Propagates the closure's [`BitError`].
+#[doc(hidden)]
+pub fn encode_hinted_to_vec<F>(layout: Layout, bits: usize, f: F) -> Result<Vec<u8>, BitError>
+where
+    F: FnOnce(&mut BitWriter) -> Result<(), BitError>,
+{
+    let mut w = BitWriter::with_layout(layout);
+    let bytes = bits.div_ceil(8);
+    if bytes != 0 {
+        // Never less than a growing `Vec<u8>` starts with, so an estimate that saw only
+        // part of the message costs no allocation the unhinted buffer would not make.
+        w.bytes.try_reserve_exact(bytes.max(8)).ok();
+    }
+    f(&mut w)?;
+    Ok(w.into_bytes())
+}
+
 /// Decodes and requires every **whole byte** consumed; a sub-byte tail in the
 /// final byte is treated as padding. Backs `Type::decode_exact`.
 ///
@@ -4861,6 +4886,34 @@ mod unit {
         let mut reader = BitReader::new(b"NOPE!!");
         assert_eq!(peek_magic(&mut reader, magics).unwrap(), Some(2));
         assert_eq!(reader.bit_pos(), 0);
+    }
+
+    #[test]
+    fn a_hinted_encode_reserves_its_bytes_once_and_shrugs_off_a_hint_it_cannot_meet() {
+        let write = |n: usize| {
+            move |w: &mut BitWriter| {
+                (0..n).try_for_each(|_| w.write(0xA5u8))?;
+                w.write(u4::new(0xF))
+            }
+        };
+        // 84 bits: the partial eleventh byte is reserved with the first ten.
+        let bytes = encode_hinted_to_vec(Layout::default(), 84, write(10)).unwrap();
+        assert_eq!(bytes[8..], [0xA5, 0xA5, 0xF0]);
+        assert_eq!(bytes.capacity(), 11);
+        // A small estimate starts where an unhinted buffer does, and no estimate reserves
+        // nothing at all.
+        let bytes = encode_hinted_to_vec(Layout::default(), 20, write(2)).unwrap();
+        assert_eq!(bytes.capacity(), 8);
+        let empty = encode_hinted_to_vec(Layout::default(), 0, |_| Ok(())).unwrap();
+        assert_eq!(empty.capacity(), 0);
+        // A low hint grows; one no allocator can meet is skipped, not fatal.
+        for hint in [0, 8, usize::MAX] {
+            let bytes = encode_hinted_to_vec(Layout::default(), hint, write(40)).unwrap();
+            assert_eq!(bytes.len(), 41, "hint {hint}");
+        }
+        // The closure's error is the result.
+        let error = encode_hinted_to_vec(Layout::default(), 16, |w| w.write_bits(0, 129));
+        assert_eq!(error.unwrap_err().kind, ErrorKind::TooWide { width: 129 });
     }
 
     #[test]
