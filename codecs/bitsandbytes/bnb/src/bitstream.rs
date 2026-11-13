@@ -1774,6 +1774,14 @@ impl IncrementalReader<'_> {
         )
     }
 
+    /// [`Source::read_into`] for a run that is not lent whole: from between bytes, or
+    /// short. The inner reader's per-byte loop fails exactly where this reader's would,
+    /// so mapping that one error afterwards equals mapping each byte's.
+    #[inline(never)]
+    fn read_into_per_byte(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
+        read_into_per_byte(&mut self.0, buf).map_err(Self::shortfall)
+    }
+
     /// [`Source::read_bytes`] from between bytes, for a run known to be all here.
     #[inline(never)]
     fn read_bytes_unaligned(&mut self, n: usize) -> Result<Vec<u8>, BitError> {
@@ -1860,10 +1868,17 @@ impl Source for IncrementalReader<'_> {
         }
     }
 
-    // The inner reader's per-byte fallback fails exactly where this reader's would; mapping
-    // that one error afterwards equals mapping each byte's.
+    // Inline, like `BitReader`'s: an aligned run that is all here is a plain copy, and for
+    // a `[u8; N]` field one of constant size. Anything else goes out of line.
+    #[inline]
     fn read_into(&mut self, buf: &mut [u8]) -> Result<(), BitError> {
-        self.0.read_into(buf).map_err(Self::shortfall)
+        match self.0.aligned_run(buf.len()) {
+            Some(run) => {
+                buf.copy_from_slice(run);
+                Ok(())
+            }
+            None => self.read_into_per_byte(buf),
+        }
     }
 
     // A run that is all here needs no retry signal; a short one is `None`, read per element.
@@ -4992,6 +5007,33 @@ mod unit {
                         assert_eq!(got, expected, "{order:?} pos {pos} n {n}");
                         assert_eq!(fast.bit_pos(), slow.bit_pos());
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_incremental_reader_fills_a_buffer_as_the_per_byte_loop_does() {
+        let wire = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC];
+        for order in [BitOrder::Msb, BitOrder::Lsb] {
+            for pos in 0..=wire.len() * 8 {
+                let at = || {
+                    let mut reader = BitReader::with_order(&wire, order);
+                    reader.bit_pos = pos;
+                    IncrementalReader(reader)
+                };
+                // Runs that are all there, from a byte boundary and from inside a byte, and
+                // runs that end past the input: the wait, where it is raised, and the bytes
+                // already written when it is.
+                for n in 0..=7 {
+                    let (mut fast, mut slow) = (at(), at());
+                    let (mut got, mut expected) = ([0xEE; 7], [0xEE; 7]);
+                    let result = fast.read_into(&mut got[..n]).map_err(|e| (e.kind, e.at));
+                    let reference = read_into_per_byte(&mut slow, &mut expected[..n])
+                        .map_err(|e| (e.kind, e.at));
+                    let context = format!("{order:?} pos {pos} n {n}");
+                    assert_eq!((result, got), (reference, expected), "{context}");
+                    assert_eq!(fast.bit_pos(), slow.bit_pos(), "{context}");
                 }
             }
         }
