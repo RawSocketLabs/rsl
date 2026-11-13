@@ -28,8 +28,8 @@
 //! meets them routinely; the cheaper path for it is ROADMAP 0.10.x item 6, not a gate here.
 
 use bnb::{
-    BitBuf, BitDecode, BitEncode, BitEnum, BitError, Source, bin, bitfield, u1, u2, u3, u4, u5, u6,
-    u7, u12, u13, u20, u28, u48, u108,
+    BitBuf, BitDecode, BitEncode, BitEnum, BitError, BufSource, Source, StreamBitReader, bin,
+    bitfield, u1, u2, u3, u4, u5, u6, u7, u12, u13, u20, u28, u48, u108,
 };
 use std::hint::black_box;
 
@@ -499,6 +499,49 @@ fn backlog(n: u64, backlog: usize, bounded: bool) {
     }
 }
 
+/// A reader that serves `wire` over and over, never more than the rest of one copy per
+/// call: a peer sending the same message without end.
+struct Repeating<'a> {
+    wire: &'a [u8],
+    at: usize,
+}
+
+impl std::io::Read for Repeating<'_> {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        let count = out.len().min(self.wire.len() - self.at);
+        out[..count].copy_from_slice(&self.wire[self.at..self.at + count]);
+        self.at = (self.at + count) % self.wire.len();
+        Ok(count)
+    }
+}
+
+/// `n` messages decoded one after another from a forward-only reader over `wire`.
+#[inline(never)]
+fn stream_reader<T: BitDecode>(n: u64, wire: &[u8]) {
+    let mut reader = StreamBitReader::new(Repeating { wire, at: 0 });
+    repeat(n, true, || T::bit_decode(black_box(&mut reader)));
+}
+
+/// The same through the reader that retains what it read, released after each message.
+#[inline(never)]
+fn buf_source<T: BitDecode>(n: u64, wire: &[u8]) {
+    let mut reader = BufSource::new(Repeating { wire, at: 0 });
+    repeat(n, true, || {
+        let message = T::bit_decode(black_box(&mut reader));
+        reader.compact();
+        message
+    });
+}
+
+/// An envelope whose body is `len` bytes.
+fn payload(len: usize) -> Vec<u8> {
+    Envelope {
+        body: vec![0x5A; len],
+    }
+    .to_bytes()
+    .unwrap()
+}
+
 /// `n` passes of sixteen `read_message` calls over a reader that returns `chunk` bytes at
 /// a time (`message_bench`'s `stream_envelope/16x40`).
 #[cfg(feature = "net")]
@@ -816,6 +859,29 @@ const MODES: &[Mode] = &[
     per_16(mode("stream_16x40_1", "expected", M / 32, |n| stream(n, 1))),
     #[cfg(feature = "net")]
     per_16(mode("stream_write_16x40", "encode", M / 4, stream_write)),
+    // The readers over `std::io::Read`, which hold nothing in memory to lend.
+    mode("stream_reader_fixed44", "happy", 2 * M, |n| stream_reader::<Fixed44>(n, &fixed44())),
+    mode("stream_reader_envelope", "happy", 2 * M, |n| stream_reader::<Envelope>(n, &envelope())),
+    mode("stream_reader_payload_4k", "happy", M / 32, |n| {
+        stream_reader::<Envelope>(n, &payload(4096));
+    }),
+    mode("stream_reader_short_envelope", "terminal", M, |n| {
+        let wire = envelope();
+        repeat(n, false, || {
+            Envelope::decode(&mut StreamBitReader::new(black_box(&wire[..67])))
+        });
+    }),
+    mode("buf_source_fixed44", "happy", 2 * M, |n| buf_source::<Fixed44>(n, &fixed44())),
+    mode("buf_source_envelope", "happy", 2 * M, |n| buf_source::<Envelope>(n, &envelope())),
+    mode("buf_source_payload_4k", "happy", M / 32, |n| {
+        buf_source::<Envelope>(n, &payload(4096));
+    }),
+    mode("buf_source_short_envelope", "terminal", M, |n| {
+        let wire = envelope();
+        repeat(n, false, || {
+            Envelope::decode(&mut BufSource::new(black_box(&wire[..67])))
+        });
+    }),
     #[cfg(feature = "bytes")]
     mode("bytes_reader_fixed44", "happy", 4 * M, |n| {
         let wire = bytes::Bytes::from(fixed44());
