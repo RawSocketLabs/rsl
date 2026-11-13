@@ -72,17 +72,17 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          (850 → 272). `DESIGN.md` §22, phase 2. Re-measured afterwards: §E's enum
          `decode_exact` specialization (closed) and its constant-width item (still open
          for hand-written loops).
-   - [ ] **Phase 3, encode.** Done: `to_bytes` of a variable-length or bare-derive
-         message reserves a size summed from its fields, one exact allocation when every
-         field's width is visible (`byte_runs_2x255/encode` 0.30, `ipv4ish_message/encode`
-         0.40; `DESIGN.md` §22, phase 3). Done: `BinCodec` encodes straight into `dst` and
-         takes a message back out if its encode fails or panics (`codec_encode` 1,554 →
-         1,070 instructions, cycles halved). Done: `write` is inline on the appending
-         writers, a whole-byte value at a byte-aligned cursor one append (`fixed_44/encode`
-         0.57, `ipv4ish_message/encode` 0.62 against its parent; `codec_encode` → 237
-         instructions). Left: `MessageStream` keeps a write buffer. Still unhinted: `to_canonical_bytes` of
-         a variable-length message, `to_bytes_with`, `#[bin]` enums, and the generic
-         `encode_to_vec` behind the socket transports.
+   - [x] **Phase 3, encode.** `to_bytes` of a variable-length or bare-derive message
+         reserves a size summed from its fields, one exact allocation when every field's
+         width is visible (`byte_runs_2x255/encode` 0.30). `BinCodec` encodes straight
+         into `dst` and takes a message back out if its encode fails or panics. `write`
+         is inline on the appending writers, a whole-byte value at a byte-aligned cursor
+         one append (`fixed_44/encode` 0.57, `ipv4ish_message/encode` 0.62 against its
+         parent; `codec_encode` 1,554 → 237 instructions). `MessageStream` keeps the
+         buffer it encodes into, up to 4 KiB (a stream write 740 → 179 instructions).
+         `DESIGN.md` §22, phase 3. Still unhinted, and unscheduled: `to_canonical_bytes`
+         of a variable-length message, `to_bytes_with`, `#[bin]` enums, and
+         `MessageDatagram::send_message`, which takes `&self` and allocates per datagram.
    - [ ] **Phase 4, fixed-length messages.** Design review first. One availability check
          per message instead of one per field, keyed on a macro-only marker so
          `FixedBitLen` stays a sizing hint; go or no-go on what phase 2 leaves (mainly

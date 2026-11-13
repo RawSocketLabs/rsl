@@ -2898,3 +2898,66 @@ have appended quietly) and on the helper's precondition; this record and the §1
 roadmap text; the test's prefixes, clone and widths; the error precedence; `emit_bits`'s
 doc. Noted: on an aligned overflow the new path does not call `into_bits`, which only an
 implementation with side effects could observe.
+
+### Phase 3: `MessageStream` keeps its write buffer (2026-11-12)
+
+The last encode item. `MessageStream::write_message` encoded each message into a fresh
+`Vec` that grew by doubling (the generic encode has no size to reserve) and handed it to
+the stream: four allocations for a 44-byte message, every message.
+
+- `encode_into` (crate-private, with `net`) encodes into a `Vec` the caller keeps: it
+  takes the allocation, empties it, and hands it back holding the message.
+- `MessageStream` has a private `out` buffer, empty until the first write. A message is
+  encoded into it and written from it only if the encode succeeded, so an encoder that
+  fails after writing sends nothing, as before.
+- **Retention is by message length, capped at the read scratch's 4 KiB.** After a message
+  of at most 4 KiB the buffer is kept, cut back to 4 KiB if encoding grew it past that;
+  after a longer one it is released. A connection therefore holds at most 4 KiB for
+  writing, once it has written, on top of the 4 KiB read scratch it always held; one that
+  only reads holds nothing new.
+
+`stream_write_16x40` (sixteen 44-byte envelopes to a writer that keeps nothing) reads
+740.17 → 179.11 instructions per message and 193 → 76–91 cycles; every other mode is
+instruction-identical. No Criterion benchmark writes through a `MessageStream`.
+
+**The bound was 64 KiB and keyed on capacity as first built, and review changed both.**
+Keyed on capacity it released the buffer of every message from 32,773 bytes up, because
+an unhinted encode doubles past 64 KiB on the way: such a message allocated exactly as
+before, against a doc sentence that said otherwise. And at 64 KiB an idle connection that
+had once written kept up to 65,536 bytes where it kept none (655 MB across 10,000
+connections, in the reviewer's arithmetic). The length rule fixes the first; the 4 KiB
+cap answers the second conservatively, by holding no more for writing than the type
+already held for reading. The cost of that choice: a message over 4 KiB allocates as it
+always did. Raising the cap is a one-line change and an owner call about memory per
+connection, not a measured optimum.
+
+The reviewer's counting allocator, old against new at the first bound, found no size at
+which the new code makes more allocator calls: one call per four messages where there
+were four, and equal counts past the bound.
+
+Not done: `MessageDatagram::send_message` takes `&self` and still allocates per datagram;
+a buffer there needs interior mutability or a signature change.
+
+**Tests.** `net::component`: five sizes written in turn (longer, shorter, empty, longer)
+arrive whole and in order from one buffer, which is not allocated before the first write
+and does not move after it; a message in an LSB-first little-endian layout equals
+`to_bytes`; an encode that fails before writing and one that fails four bytes in both
+send nothing, return the error `to_bytes` returns, and leave the stream usable; a message
+of exactly the bound keeps a buffer no larger than the bound and one byte more releases
+it; a buffer doubled past the bound by a message under it is cut back and then reused;
+and after a failed write the next message arrives alone. Ten hand mutants killed: the
+buffer not emptied, not handed back, the default layout; a failed encode sent, the write's
+error dropped; the bound off by one, removed, applied to every write, keyed on capacity,
+and the cut-back removed. 896 tests with all features across both crates, 796 with
+default; clippy in four feature sets; rustdoc; MSRV 1.85 and the 32-bit `no_std` build.
+
+**Independent review.** No blocking finding. A differential against the old path on one
+long-lived stream agreed over 200,000 rounds on bytes and the whole `BitError`, through
+12,915 encode errors, 491 I/O errors and 1,002 panics in the encoder or the writer (after
+an encoder panic the buffer is empty; after a writer panic it still holds the message
+just sent, until the next call). `MessageStream` is not `Clone`, its auto traits are
+unchanged, and `into_parts`, `try_into_inner` and `Debug` ignore the field. Applied: the
+retention rule and bound above; a write after a failed write; the `Debug` comment; the
+upgrade guide's sentence on what a stream holds.
+
+With this, phase 3 is complete.
