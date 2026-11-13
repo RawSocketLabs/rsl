@@ -213,6 +213,11 @@
 //! [`Convert`](crate::bitstream::ErrorKind::Convert) error naming the field. An optional
 //! message takes format args: `assert(<expr>, "fmt {}", args…)`. Multiple asserts run in
 //! order.
+//! Keep the expression free of side effects: a fixed-length message is first decoded from
+//! a window of its whole length, and if a guard fails there it is decoded again field by
+//! field to report the failure, so the guards before it run twice. The same goes for a
+//! `calc` or `magic` expression in such a message, and for a field whose type has its own
+//! `Drop`: the fields read before the failure are built and dropped twice.
 //!
 //! **Doctrine note.** The parser is permissive by default — it never rejects representable
 //! input. `assert` is the *explicit opt-in* for values that are unrepresentable in your

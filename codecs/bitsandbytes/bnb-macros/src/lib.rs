@@ -88,6 +88,7 @@ pub(crate) fn bits_leaf_codec_impl(
         }
         impl #bnb::__private::FixedBitLen for #name {
             const BIT_LEN: u32 = <Self as #bnb::__private::Bits>::BITS;
+            const __BNB_WINDOW: u8 = #bnb::__private::WINDOW_LEAF;
         }
     }
 }

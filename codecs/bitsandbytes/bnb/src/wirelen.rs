@@ -119,6 +119,7 @@ impl<T: Bits> BitEncode for WireLen<T> {
 /// header with `WireLen<u16>` counts is still 12 bytes).
 impl<T: Bits> FixedBitLen for WireLen<T> {
     const BIT_LEN: u32 = <T as Bits>::BITS;
+    const __BNB_WINDOW: u8 = crate::bitstream::WINDOW_LEAF;
 }
 
 #[cfg(test)]

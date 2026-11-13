@@ -245,12 +245,13 @@ pub trait BitEnum: Bits {}
 pub mod __private {
     pub use crate::bitstream::{
         BitDecode, BitEncode, BitError, BitReader, BitWriter, CountPrefix, ErrorKind, FixedBitLen,
-        Layout, SeekSource, Sink, Source, align_read, align_write, bits_of, decode_all,
-        decode_exact, decode_exact_with, decode_iter, decode_mapped_msg, decode_peek,
-        decode_peek_with, decode_prefix, decode_try_mapped_msg, decode_vec_each,
+        Layout, SeekSource, Sink, Source, WINDOW_LEAF, WINDOW_WHOLE, align_read, align_write,
+        bits_of, decode_all, decode_exact, decode_exact_with, decode_iter, decode_mapped_msg,
+        decode_peek, decode_peek_with, decode_prefix, decode_try_mapped_msg, decode_vec_each,
         encode_fixed_to_vec, encode_hinted_to_vec, encode_mapped_msg, encode_to_vec,
-        encode_to_vec_with, match_magic, nested_vec, peek_magic, read_byte_array, read_mapped,
-        read_try_mapped, skip_read, skip_write, verify_magic, write_byte_array, write_mapped,
+        encode_to_vec_with, fixed_window, match_magic, nested_vec, peek_magic, read_byte_array,
+        read_mapped, read_try_mapped, skip_read, skip_write, verify_magic, window_kind,
+        write_byte_array, write_mapped,
     };
     pub use crate::builder::normalization::{NormalizeDispatch, NormalizeProbe};
     pub use crate::error::UnknownDiscriminant;

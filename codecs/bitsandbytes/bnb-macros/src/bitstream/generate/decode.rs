@@ -334,13 +334,90 @@ pub(in crate::bitstream) fn gen_decode(
         });
     }
 
+    // A fixed-length message first tries to decode from a window of its whole length,
+    // with one availability check: the same field reads, against a slice reader of
+    // constant length, so their bounds checks fold. Anything that goes wrong there is
+    // discarded and the field-by-field body below runs, so errors are unchanged and
+    // `FixedBitLen` only sizes the window. A `dbg` field would be traced twice, and at
+    // an offset inside the window: such a message reports itself unknown below, which
+    // keeps it out of its own window (the attempt is guarded by that constant) and out
+    // of any parent's.
+    let traced = brs.iter().any(|br| br.dbg);
+    let whole = if fixed_len(fields, &brs, attrs) {
+        let bytes =
+            quote!({ (<#name as #bnb::__private::FixedBitLen>::BIT_LEN as usize).div_ceil(8) });
+        // The fields' reads against the window, and the cursor settled afterwards. The
+        // window hands back the fields as a tuple and `Self` is built once, from them: a
+        // message may have its own `Drop`, which forbids taking it apart, and a value
+        // built in the window and then moved rests in a `Result` it is reloaded from.
+        let attempt = quote! {
+            let __bnb_whole = (|__bnb_r: &mut #bnb::__private::BitReader<'_>| {
+                #magic_read
+                #(#read_stmts)*
+                ::core::result::Result::<_, #bnb::__private::BitError>::Ok((#(#ids,)*))
+            })(&mut __bnb_window);
+            // By path: a trait of the user's may give every type a `bit_pos` of its own.
+            let __bnb_used = #bnb::__private::Source::bit_pos(&__bnb_window);
+            if let ::core::result::Result::Ok((#(#ids,)*)) = __bnb_whole {
+                if __bnb_used != #bytes * 8 {
+                    #bnb::__private::Source::seek_to_bit(__bnb_r, __bnb_start + __bnb_used)?;
+                }
+                return ::core::result::Result::Ok(Self { #(#ids),* });
+            }
+            #bnb::__private::Source::seek_to_bit(__bnb_r, __bnb_start)?;
+        };
+        // The rule is a constant, so a message it leaves out compiles to the field-by-
+        // field body alone. Nested `if`s: generated code must build on the MSRV.
+        quote! {
+            if <#name as #bnb::__private::FixedBitLen>::__BNB_WINDOW
+                == #bnb::__private::WINDOW_WHOLE
+            {
+                let __bnb_start = #bnb::__private::Source::bit_pos(__bnb_r);
+                if let ::core::option::Option::Some(mut __bnb_window) =
+                    #bnb::__private::fixed_window::<_, #bytes>(__bnb_r)
+                {
+                    #attempt
+                }
+            }
+        }
+    } else {
+        quote!()
+    };
+
     // A message with a `count`-driven `Vec` (or a `ctx`/`if` field) is variable-
-    // length; only a fixed one also implements `FixedBitLen` (sizes embedded regions).
+    // length; only a fixed one also implements `FixedBitLen`, which sizes it as a field
+    // of another message and says whether it suits a window.
     let fixed_bit_len = if fixed_len(fields, &brs, attrs) {
         let widths = fields.named.iter().map(field_width);
+        // Each field's width and how it reads, in order, for the rule that says whether
+        // this message suits a window. A field that takes no input is left out.
+        let magic_kind = attrs
+            .magic
+            .as_ref()
+            .map(|m| quote!((#bnb::__private::bits_of(&#m), #bnb::__private::WINDOW_LEAF),));
+        let kinds = fields
+            .named
+            .iter()
+            .zip(&brs)
+            .filter(|(_, br)| !br.ignore && br.br_calc.is_none())
+            .map(|(f, _)| {
+                let width = field_width(f);
+                if byte_array_len(f).is_some() {
+                    return quote!((#width, #bnb::__private::WINDOW_LEAF));
+                }
+                let ty = &f.ty;
+                quote!((#width, <#ty as #bnb::__private::FixedBitLen>::__BNB_WINDOW))
+            });
+        let window = (!traced).then(|| {
+            quote! {
+                const __BNB_WINDOW: u8 =
+                    #bnb::__private::window_kind(&[#magic_kind #(#kinds),*]);
+            }
+        });
         quote! {
             impl #bnb::__private::FixedBitLen for #name {
                 const BIT_LEN: u32 = #magic_bits 0 #(+ #widths)*;
+                #window
             }
         }
     } else {
@@ -395,6 +472,7 @@ pub(in crate::bitstream) fn gen_decode(
             fn bit_decode<__BnbS: #bnb::__private::Source>(
                 __bnb_r: &mut __BnbS,
             ) -> ::core::result::Result<Self, #bnb::__private::BitError> {
+                #whole
                 #magic_read
                 #(#read_stmts)*
                 ::core::result::Result::Ok(Self { #(#ids),* })

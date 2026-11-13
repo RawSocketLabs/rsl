@@ -259,6 +259,37 @@ mod macro_ {
             inners: Vec<Inner>,
         }
 
+        // A fixed-length message reads the cursor of the window it decodes from. A method
+        // of the user's that takes any value would answer before the reader's own.
+        trait BitPosByValue: Sized {
+            fn bit_pos(self) -> usize {
+                0
+            }
+        }
+        impl<T> BitPosByValue for T {}
+
+        #[bin(big)]
+        #[derive(Debug, PartialEq)]
+        struct Fixed {
+            a: u16,
+            b: u16,
+        }
+
+        #[test]
+        fn a_users_blanket_bit_pos_method_does_not_place_the_cursor() {
+            assert_eq!(
+                Fixed::decode_exact(&[1, 2, 3, 4]),
+                Ok(Fixed {
+                    a: 0x0102,
+                    b: 0x0304
+                })
+            );
+            let (value, used) = Fixed::decode_prefix(&[1, 2, 3, 4, 5]).unwrap();
+            assert_eq!((value.b, used), (0x0304, 4));
+            // The trait is in scope and does answer for an ordinary value.
+            assert_eq!(BitPosByValue::bit_pos(7u8), 0);
+        }
+
         #[test]
         fn a_users_blanket_bits_method_does_not_size_the_output() {
             let message = Outer {
