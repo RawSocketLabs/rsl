@@ -18,7 +18,7 @@
 //! Already own your transport and [`BitBuf`]? Use [`read_message`](crate::net::read_message) or, with `tokio-io`,
 //! `read_message_async` with caller-owned reusable scratch space.
 
-use crate::bitstream::encode_to_vec;
+use crate::bitstream::{encode_into, encode_to_vec};
 use crate::{BitBuf, BitDecode, BitEncode, BitError, ErrorKind};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -206,7 +206,10 @@ pub async fn read_message_async<
 ///
 /// Each `MessageStream` holds a 4 KiB read scratch for its whole life, allocated when it
 /// is built (also by `from_parts`), so reading allocates nothing per message. A
-/// connection that only ever writes pays for it too.
+/// connection that only ever writes pays for it too. Writing keeps the buffer it encodes
+/// into from the first message on, up to 4 KiB of it: a message that fits in what is kept
+/// is written without allocating, a longer one allocates as it is encoded and its buffer
+/// is released afterwards. A connection that only reads never has one.
 ///
 /// [`read_message`]: MessageStream::read_message
 /// [`write_message`]: MessageStream::write_message
@@ -218,15 +221,26 @@ pub struct MessageStream<S> {
     /// allocates it. Nothing unread ever stays in it, so the parts are still `inner` and
     /// `buf` alone.
     scratch: Vec<u8>,
+    /// Where [`write_message`](Self::write_message) encodes before it hands the bytes to
+    /// the stream, kept between messages so writing does not allocate per message. Empty
+    /// until the first write, and holding nothing unsent after one, so it is no part of
+    /// the stream's state either.
+    out: Vec<u8>,
 }
 
 /// How many bytes [`MessageStream::read_message`] asks the stream for at a time.
 const SCRATCH_LEN: usize = 4096;
 
-// Hand-written so the scratch, which holds no state, stays out of the output.
+/// The most [`MessageStream::write_message`] keeps between messages: as much as the read
+/// scratch, so a connection holds no more for writing than it does for reading. A longer
+/// message does not pin its size to the connection; its buffer is released once it is
+/// sent, and it allocates as every message did before the buffer was kept.
+const OUT_KEEP: usize = SCRATCH_LEN;
+
+// Hand-written so the two scratch buffers, which hold no state, stay out of the output.
 #[expect(
     clippy::missing_fields_in_debug,
-    reason = "the scratch is 4 KiB of no state"
+    reason = "the read scratch and the write buffer are no state"
 )]
 impl<S: fmt::Debug> fmt::Debug for MessageStream<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -291,6 +305,7 @@ impl<S> MessageStream<S> {
             inner,
             buf,
             scratch: vec![0; SCRATCH_LEN],
+            out: Vec::new(),
         }
     }
 }
@@ -350,8 +365,20 @@ impl<S: Write> MessageStream<S> {
     /// A codec [`BitError`] or an I/O write error. A failed write may have sent a prefix;
     /// retrying the whole message can duplicate it. This method does not flush.
     pub fn write_message<T: BitEncode>(&mut self, msg: &T) -> Result<(), BitError> {
-        self.inner.write_all(&encode_to_vec(msg, T::LAYOUT)?)?;
-        Ok(())
+        let encoded = encode_into(msg, T::LAYOUT, &mut self.out);
+        let written = match encoded {
+            Ok(()) => self.inner.write_all(&self.out).map_err(BitError::from),
+            Err(error) => Err(error),
+        };
+        // By the message's length, not the capacity its encoding happened to reach: a
+        // message under the bound keeps a buffer cut back to the bound, so the next one
+        // that fits is written without allocating.
+        if self.out.len() > OUT_KEEP {
+            self.out = Vec::new();
+        } else {
+            self.out.shrink_to(OUT_KEEP);
+        }
+        written
     }
 }
 
@@ -1397,6 +1424,162 @@ mod component {
             conn.get_mut().written(),
             &Msg { seq: 7 }.to_bytes().unwrap()[..]
         );
+    }
+
+    /// A length byte and that many bytes: any size, and too long for its count past 255.
+    #[bin(big)]
+    struct Run {
+        #[brw(count_prefix = u8)]
+        body: Vec<u8>,
+    }
+
+    fn run(len: usize) -> Run {
+        Run {
+            body: (0..len).map(|i| i.to_le_bytes()[0]).collect(),
+        }
+    }
+
+    #[test]
+    fn successive_writes_reuse_one_buffer_and_send_each_message_whole() {
+        let mut conn = MessageStream::new(MockStream::new());
+        assert_eq!(
+            conn.out.capacity(),
+            0,
+            "nothing is allocated before a write"
+        );
+        let mut expected = Vec::new();
+        // Longer, shorter, longer again: a shorter message must not carry the tail of the
+        // one before it.
+        for len in [200, 3, 0, 120, 200] {
+            conn.write_message(&run(len)).unwrap();
+            expected.extend(run(len).to_bytes().unwrap());
+            assert_eq!(conn.get_mut().written(), &expected[..], "after {len} bytes");
+        }
+        // The first message sized the buffer and the rest fitted in it.
+        let kept = conn.out.capacity();
+        assert!(kept >= 201);
+        conn.write_message(&run(200)).unwrap();
+        assert_eq!(conn.out.capacity(), kept);
+    }
+
+    /// Bit-packed LSB-first and little-endian, with a run that can outgrow its count
+    /// after the first four bytes are written.
+    #[bin(little, bits = lsb)]
+    struct Late {
+        kind: crate::u4,
+        flags: crate::u12,
+        seq: u16,
+        #[brw(count_prefix = u8)]
+        body: Vec<u8>,
+    }
+
+    fn late(len: usize) -> Late {
+        Late {
+            kind: crate::u4::new(0xA),
+            flags: crate::u12::new(0xBCD),
+            seq: 0x1234,
+            body: vec![0x66; len],
+        }
+    }
+
+    #[test]
+    fn a_message_is_written_in_its_own_layout() {
+        let mut conn = MessageStream::new(MockStream::new());
+        conn.write_message(&late(3)).unwrap();
+        assert_eq!(conn.get_mut().written(), &late(3).to_bytes().unwrap()[..]);
+    }
+
+    #[test]
+    fn a_message_that_fails_to_encode_sends_nothing_and_leaves_the_stream_usable() {
+        let mut conn = MessageStream::new(MockStream::new());
+        conn.write_message(&run(5)).unwrap();
+        let sent = conn.get_mut().written().to_vec();
+        // 300 bytes do not fit a one-byte count: an error before anything is encoded, and
+        // one after four bytes are.
+        let direct = run(300).to_bytes().unwrap_err();
+        assert_eq!(conn.write_message(&run(300)).unwrap_err(), direct);
+        let direct = late(300).to_bytes().unwrap_err();
+        assert_eq!(conn.write_message(&late(300)).unwrap_err(), direct);
+        assert_eq!(conn.get_mut().written(), &sent[..]);
+        conn.write_message(&run(2)).unwrap();
+        assert_eq!(
+            conn.get_mut().written()[sent.len()..],
+            run(2).to_bytes().unwrap()[..]
+        );
+    }
+
+    /// A message of a size the test chooses, with no count to overflow.
+    struct Blob(usize);
+
+    impl crate::BitEncode for Blob {
+        fn bit_encode<K: crate::Sink>(&self, w: &mut K) -> Result<(), BitError> {
+            w.write_bytes(&vec![0xA5; self.0])
+        }
+    }
+
+    #[test]
+    fn a_message_past_the_bound_does_not_pin_its_size_to_the_connection() {
+        use super::OUT_KEEP;
+        let mut conn = MessageStream::new(MockStream::new());
+        // A message of exactly the bound keeps its buffer, cut back to the bound whatever
+        // capacity encoding it reached; one byte more and it is released once sent.
+        conn.write_message(&Blob(OUT_KEEP)).unwrap();
+        let kept = conn.out.capacity();
+        assert!((1..=OUT_KEEP).contains(&kept), "kept {kept}");
+        conn.write_message(&Blob(OUT_KEEP + 1)).unwrap();
+        assert_eq!(conn.out.capacity(), 0);
+        assert_eq!(conn.get_mut().written().len(), 2 * OUT_KEEP + 1);
+        // And the next message is still whole.
+        conn.write_message(&run(4)).unwrap();
+        assert_eq!(
+            conn.get_mut().written()[2 * OUT_KEEP + 1..],
+            run(4).to_bytes().unwrap()[..]
+        );
+    }
+
+    #[test]
+    fn a_buffer_grown_past_the_bound_by_a_message_under_it_is_cut_back_and_kept() {
+        use super::OUT_KEEP;
+        let mut conn = MessageStream::new(MockStream::new());
+        // The second message is under the bound, but growing the first one's buffer to
+        // hold it doubles that buffer past the bound.
+        conn.write_message(&Blob(OUT_KEEP * 3 / 4)).unwrap();
+        conn.write_message(&Blob(OUT_KEEP - 96)).unwrap();
+        let kept = conn.out.capacity();
+        assert!((OUT_KEEP - 96..=OUT_KEEP).contains(&kept), "kept {kept}");
+        conn.write_message(&Blob(OUT_KEEP - 96)).unwrap();
+        assert_eq!(conn.out.capacity(), kept);
+    }
+
+    /// A writer that fails its first write and takes the rest.
+    #[derive(Default)]
+    struct Flaky {
+        failed: bool,
+        sent: Vec<u8>,
+    }
+
+    impl Write for Flaky {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if !self.failed {
+                self.failed = true;
+                return Err(io::Error::from(io::ErrorKind::BrokenPipe));
+            }
+            self.sent.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_failed_write_reports_the_streams_error_and_the_next_message_is_whole() {
+        let mut conn = MessageStream::new(Flaky::default());
+        let error = conn.write_message(&run(9)).unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Io(io::ErrorKind::BrokenPipe));
+        // Nothing of the message that failed rides along with the next.
+        conn.write_message(&run(2)).unwrap();
+        assert_eq!(conn.get_mut().sent, run(2).to_bytes().unwrap());
     }
 
     #[test]

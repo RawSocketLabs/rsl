@@ -32,6 +32,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::any::{Any, TypeId};
 use core::fmt;
+#[cfg(feature = "net")]
+use core::mem;
 
 use crate::field::{BitOrder, Bits, ByteOrder};
 
@@ -2913,6 +2915,30 @@ where
     let mut w = BitWriter::with_layout(layout);
     f(&mut w)?;
     Ok(w.into_bytes())
+}
+
+/// [`encode_to_vec`] into a buffer the caller keeps: `out` is emptied, the message is
+/// encoded into its allocation, and it is handed back holding the message (or, after an
+/// error, whatever was written before it). A caller that reuses `out` allocates only when
+/// a message outgrows it.
+///
+/// # Errors
+/// Propagates the encoder's [`BitError`].
+#[cfg(feature = "net")]
+pub(crate) fn encode_into<T: BitEncode>(
+    value: &T,
+    layout: Layout,
+    out: &mut Vec<u8>,
+) -> Result<(), BitError> {
+    let mut bytes = mem::take(out);
+    bytes.clear();
+    let mut w = BitWriter {
+        bytes,
+        ..BitWriter::with_layout(layout)
+    };
+    let result = value.bit_encode(&mut w);
+    *out = w.into_bytes();
+    result
 }
 
 /// [`encode_to_vec_with`] into a buffer allocated once, for a message of `bit_len` bits —

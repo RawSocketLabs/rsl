@@ -142,4 +142,5 @@
 //! No action needed. Unaligned and sub-byte fields decode two to seven times faster,
 //! byte-aligned decode about a quarter faster, a fixed-length message encodes with one
 //! allocation, and byte-aligned `Vec<u16>`/`u32`/`u64`/`u128` runs convert in one pass. A
-//! `MessageStream` now holds a 4 KiB read scratch for its whole life.
+//! `MessageStream` now holds a 4 KiB read scratch for its whole life and, from 0.10.1, up
+//! to 4 KiB more once it has written a message (the buffer it encodes into).
