@@ -46,6 +46,20 @@ struct Fixed44 {
     digest: [u8; 16],
 }
 
+/// `Fixed44` with a guard on a late field: a message rejected after most of it was read.
+#[bin(big)]
+#[derive(Clone)]
+struct Guarded44 {
+    kind: u16,
+    flags: u16,
+    seq: u32,
+    ack: u32,
+    src: u64,
+    #[br(assert(dst != 0))]
+    dst: u64,
+    digest: [u8; 16],
+}
+
 /// The same fields through the bare derive, which sizes `to_bytes` differently.
 #[derive(BitDecode, BitEncode, Clone)]
 #[bit_stream(allow_byte_aligned)]
@@ -716,6 +730,11 @@ const MODES: &[Mode] = &[
         let mut wire = fixed44();
         wire.push(0);
         repeat(n, false, || Fixed44::decode_exact(black_box(&wire)));
+    }),
+    mode("fixed44_rejected", "terminal", 4 * M, |n| {
+        let mut wire = fixed44();
+        wire[20..28].fill(0);
+        repeat(n, false, || Guarded44::decode_exact(black_box(&wire)));
     }),
     // Mixed-width magic dispatch through `BitBuf`, and where the input is shorter than
     // the longest magic.
