@@ -75,11 +75,13 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    - [ ] **Phase 3, encode.** Done: `to_bytes` of a variable-length or bare-derive
          message reserves a size summed from its fields, one exact allocation when every
          field's width is visible (`byte_runs_2x255/encode` 0.30, `ipv4ish_message/encode`
-         0.40; `DESIGN.md` §22, phase 3). Left: `MessageStream` keeps a write buffer;
-         `BinCodec` writes straight into `dst` and truncates on error; `Sink::write`
-         inlined as the mirror of phase 2. Still unhinted: `to_canonical_bytes` of a
-         variable-length message, `to_bytes_with`, `#[bin]` enums, and the generic
-         `encode_to_vec` behind the transports.
+         0.40; `DESIGN.md` §22, phase 3). Done: `BinCodec` encodes straight into `dst` and
+         takes a message back out if its encode fails or panics (`codec_encode` 1,554 →
+         1,070 instructions, cycles halved). Left: `MessageStream` keeps a write buffer;
+         `Sink::write` inlined as the mirror of phase 2, which is also what the in-place
+         encoder still lacks against `to_bytes`. Still unhinted: `to_canonical_bytes` of
+         a variable-length message, `to_bytes_with`, `#[bin]` enums, and the generic
+         `encode_to_vec` behind the socket transports.
    - [ ] **Phase 4, fixed-length messages.** Design review first. One availability check
          per message instead of one per field, keyed on a macro-only marker so
          `FixedBitLen` stays a sizing hint; go or no-go on what phase 2 leaves (mainly

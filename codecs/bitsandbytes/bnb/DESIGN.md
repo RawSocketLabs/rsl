@@ -2036,7 +2036,7 @@ statement that these paths are forced inline into generated decoders is not true
 | 3 | `extract_unaligned_bits` folds 16 bytes singly | 162 ins per wide read | `dmr_frame/decode` 31.0 → 16.2 ns; 66,304 cases equal | nothing |
 | 4 | Fixed-length messages check per field | ~55 ins per scalar field | `fixed_44/decode` 20.0 → 7.4 ns, `sub_byte/msb_decode` 33 → 11.6 | a lone `Incomplete` attempt up to +10% cycles; see below |
 | 5 | `net::read_limit`, `shortfall` out of line | 11.6% of `stream_envelope/16384/1` | `1024/1` 6.42 → ~5.4 µs, `16384/1` 100.8 → 85 µs; `incremental_envelope` flat | nothing |
-| 6 | Transport encode allocates, then copies | `BinCodec::encode` 70.4 ns against `to_bytes` 34.8 ns (44 bytes); 467 against 210 ns (16 KiB) | not built | nothing |
+| 6 | Transport encode allocates, then copies | `BinCodec::encode` 70.4 ns against `to_bytes` 34.8 ns (44 bytes); 467 against 210 ns (16 KiB) | not built here; `BinCodec` done in phase 3, below | nothing |
 | 7 | `decode_exact` copies the message on success | 11–15 cycles per call, in three placements | not built | nothing |
 | 8 | Stream readers read one byte per `read_exact` | 16 KiB payload 58–130 µs against 0.155 µs from a slice | not built | error behaviour, see below |
 | 9 | The probe covers one enum through `BitBuf` with `decode_attempt` inlined | read identically across row 2's 20% gain and a 1.37× regression | — | — |
@@ -2700,7 +2700,8 @@ The two hand-written `encode_hand` baselines read 0.98–1.02. The probe's `.tex
   that encode would have written before it reports the prefix error; a request the
   allocator cannot meet is skipped.
 - Not hinted: `to_canonical_bytes` of a variable-length message, `to_bytes_with`,
-  `#[bin]` enums, and the generic `encode_to_vec` behind the transports.
+  `#[bin]` enums, and the generic `encode_to_vec` behind the socket transports
+  (`BinCodec` no longer goes through it; next section).
 
 **Review findings, all fixed before the commit.** The independent review compared old and
 new on 22 message shapes (bytes and errors identical) and found three blocking defects
@@ -2736,3 +2737,76 @@ both crates, 794 with default; clippy in both; MSRV 1.85 and the 32-bit `no_std`
 The reviewer also built a `#![no_std]` consumer under `deny(warnings)` and about thirty
 allow-by-default lints, and clippy pedantic, nursery and restriction on generated code:
 identical diagnostics old and new.
+
+### Phase 3: `BinCodec` encodes in place (2026-11-12)
+
+Row 6 for the `tokio_util` codec. `BinCodec::encode` built each message in a `Vec` that
+grew by doubling (the generic `encode_to_vec` has no size to reserve) and then copied it
+into `dst`. It now writes into `dst` directly.
+
+- **`FrameWriter`** (private, with the `tokio` feature) is a `Sink` over the tail of a
+  `BytesMut`. Its positions count from the message's first bit, as a `BitWriter`'s do, so
+  alignment, padding and error positions do not depend on what the buffer already holds.
+  It appends aligned byte runs whole and lends a tail for bulk integer runs, as
+  `BitWriter` does.
+- **The write primitive is shared.** `emit_bits` and `emit_unaligned_bits` are generic over
+  a three-method private trait (`len`, `push`, `or_into`) implemented for `Vec<u8>` and
+  for that tail. `BitWriter::write_bits` keeps its own body: routed through a helper
+  shared with the frame writer, `dmr_encode` gained one instruction, and with its own
+  body every mode but the codec's is instruction-identical.
+- **A message stays only if the encode finished.** The writer takes back what it appended
+  unless `keep` is called, in its `Drop`, so an encode error and a panic unwinding out of
+  an encoder both leave `dst` holding whole messages only. The first version truncated
+  in `encode`'s error branch; review showed a panic inside `bit_encode` (a `write_with`
+  closure) then left the partial message behind, and a `Framed` that outlives the unwind
+  sent it ahead of the next message. The old path never touched `dst` before success.
+
+`codec_encode` (a 44-byte fixed message into a `BytesMut` with room) reads 1,553.98 →
+1,069.98 instructions and 353 → 181 cycles; the other 52 modes are instruction-identical.
+There is no Criterion benchmark of the codec's encoder, and none was added: the reviewer
+counted allocations per encode, old against new, for 44 bytes, 64 KiB and 4 MiB over five
+buffer states, and the new path never allocates more (0 to 20 against 4 to 21).
+
+What is left on the table: the same message through `to_bytes` is 758.98 instructions.
+The difference is one `extend_from_slice` per pushed byte, where a `Vec` push is an
+inlined store; phase 3's inline `Sink::write` (a whole-byte value appended in one call)
+is where that goes, for both writers.
+
+**What pays.**
+
+- Capacity. `dst` used to receive each message in one `extend_from_slice`, which reserves
+  exactly; it now grows as the message is written, by doubling. A 64 KiB message into an
+  8 KiB buffer leaves a capacity of 131,072 where it left 65,537 (measured by the
+  reviewer): up to twice the message, once, on a buffer `Framed` reuses.
+- A generated encoder is compiled once more per message type that goes through the codec
+  (for the new sink). The probe's `.text` grows 406,947 → 409,267 bytes.
+- `dst` holds part of a message during the call. Nothing in `tokio_util`'s `Framed`,
+  `FramedWrite` or `UdpFramed` looks at it before `encode` returns (read by the reviewer).
+
+**Tests.** `bytes_io::component::a_frame_written_in_place_is_the_frame_a_bit_writer_builds`
+runs 400 rounds of twelve noisy writes (bits of every width, whole-byte widths, byte runs,
+lent tails, too-wide widths) through both writers in all four layouts, behind zero to
+three bytes the buffer already held: same results, cursor, bytes, and the earlier bytes
+untouched. Two more pin the position bound and that an unkept writer takes its bytes
+back. `framing::component`: a message appended twice after earlier content equals
+`to_bytes`; a failing message leaves the buffer as it was and returns the same `BitError`;
+and an LSB-first, little-endian message that ends inside a byte, whose `write_with` field
+errors or panics five bytes in, leaves the buffer untouched and usable. Nineteen hand
+mutants detected, fourteen on the writer (the tail's offset in `len` and `or_into`, the
+width check and its position, both position overflows, each cursor not advanced, bit
+and byte order, an unaligned run or tail, the wrong tail lent), three on keep and drop,
+and two on the codec (the default layout, a message never kept). Three of them hang a test
+rather than fail it; the runner's time cap catches those. 888 tests with all features across
+both crates, 794 with default; clippy in four feature sets; MSRV 1.85 and the 32-bit
+`no_std` build.
+
+**Independent review.** No blocking finding. A differential harness with `encode_to_vec`
+as the oracle agreed on bytes, the whole `BitError`, the `io::Error` kind and rollback
+over 160,000 random `Sink` scripts in four layouts and 60,000 generated `#[bin]` messages
+(LSB and little-endian, nested, padding, alignment, `write_with`, count prefixes, endings
+inside a byte, consecutive frames), on seven buffer states (empty, exact, spare capacity,
+after `advance`, `split_to`, `split` and `split_off`). `scratch()` is `None` on both
+paths, and no generated encoder takes a concrete `BitWriter`. Applied: the rollback moved
+into `Drop`, with the panic test; this record and the capacity note; the failing-encode
+test compares the whole error; an LSB message and a failure at a non-zero position through
+the codec; `emit_bits`'s doc.
