@@ -194,8 +194,9 @@ fn message_at_eof_with<T: DecodeWith<A>, A>(
 /// an ordinary read and the size from which a message bypasses it.
 ///
 /// Messages must be self-delimiting. The message's own layout is used; its final unused bits
-/// are accepted and consumed, matching independent encoding. Use [`BitBuf::try_pull`] directly
-/// for tightly bit-packed messages, custom context, or your own read scheduling. Decode
+/// are accepted and consumed, matching independent encoding. Use [`read_message_with`] for
+/// a message that decodes with context, and [`BitBuf::try_pull`] directly for tightly
+/// bit-packed messages or your own read scheduling. Decode
 /// callbacks may repeat; they must be retry-safe and honor [`ErrorKind::Incomplete`]'s contract.
 /// This is not parser continuation or rollback of callback side effects.
 ///

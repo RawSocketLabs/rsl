@@ -36,6 +36,8 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `ctx_length` | **`ctx`** sizing a field: a column count threaded into a `count`-loop of rows (`decode_with`/`…Ctx`) | `--example ctx_length` |
 | `versioned_cells` | **`ctx`** + **`try_map`**: a `try_map`-validated version threaded into each cell to set its data width | `--example versioned_cells` |
 | `tlv` | A Type-Length-Value codec: enum `magic` dispatch over `count`-driven heterogeneous records | `--example tlv` |
+| `regions` | **Length-delimited records**, each decoded inside `Source::limit_bytes`: a body cannot read past its length, `finish()` rejects one that stops short, and an unknown kind is stepped over | `--example regions` |
+| `derived_lengths` | **`WireLen` + `auto_len`**: a count the encoder fills in, in the same struct or in a header that sizes its siblings (the DNS shape), and `WireLen::set` to forge one | `--example derived_lengths` |
 | `checked` | **`try_map`** — reject an unrepresentable wire value at decode (`ErrorKind::Convert`, with field + bit offset) | `--example checked` |
 | `wire_map` | **Struct-level wire mapping** (`#[bin(wire = W)]`): a logical type serialized via a separate wire type through `From`/`From<&Self>` impls — reusable in-program, nests via a one-line `FixedBitLen` | `--example wire_map` |
 | `wire_map_dynamic` | The other wire-mapping forms: a **variable-length** wire (`String` over a length prefix), the inline **closure** form (`map`/`bw_map`), and the fallible **`try_wire`** (`TryFrom`) | `--example wire_map_dynamic` |
@@ -72,6 +74,8 @@ helpers are built on the cursors, so dropping a level is always possible.
 | `unix_stream` | The `net` feature: `MessageStream` over a Unix-domain **stream** socket — generic beyond `TcpStream` | `--example unix_stream --features net` |
 | `mock_datagram` | The `mock` feature: unit-test `MessageDatagram` code with `MockDatagramSocket` (no real socket); the sealed-trait + generic-handler pattern | `--example mock_datagram --features mock` |
 | `mock_stream` | The `mock` feature: unit-test `MessageStream` code with `MockStream` (a `Read + Write`; **1 byte/read** drives the buffer-more-and-retry framing path `Cursor` can't) | `--example mock_stream --features mock` |
+| `decode_only` | **A program that only parses**: `#[bin(read_only)]` types read off a stream and a datagram socket with `read_message_with` / `recv_message_with` (the caller states the byte order), and a `ctx(...)` message read with its context | `--example decode_only --features mock` |
+| `handoff` | **Protocol handoff**: a typed handshake, then the raw connection to another layer without losing the bytes read ahead (`Read` through the wrapper, `into_parts`/`from_parts`, `try_into_inner`) | `--example handoff --features mock` |
 | `tokio_framed` | The `tokio` feature: `BinCodec` over an async `Framed` TCP stream | `--example tokio_framed --features tokio` |
 | `tokio_udp` | The `tokio` feature: the *same* `BinCodec` over `UdpFramed` (async UDP datagrams) | `--example tokio_udp --features tokio` |
 
@@ -94,8 +98,8 @@ helpers are built on the cursors, so dropping a level is always possible.
 | `try_map` | checked, versioned, versioned_cells |
 | struct-level wire mapping (`wire`/`try_wire`, struct `map`) | wire_map, wire_map_dynamic |
 | `if` (conditional) | conditional, versioned, heartbeat |
-| `ctx` + `tag` dispatch | ctx, ctx_length, versioned_cells |
-| `parse_with` / `write_with` | varint, cstring, dns |
+| `ctx` + `tag` dispatch | ctx, ctx_length, versioned_cells, decode_only (over a transport) |
+| `parse_with` / `write_with` | varint, cstring, dns, regions |
 | seeking (`restore_position`) | archive, peek, bufsource, dns |
 | `pad` / `align` | alignment, padding, register |
 | `#[reserved]` / `#[reserved_with]` | reserved, register, telemetry |
@@ -107,4 +111,8 @@ helpers are built on the cursors, so dropping a level is always possible.
 | `bytes` feature (zero-copy) | framed, bytes_frame |
 | `tokio` feature | tokio_framed, tokio_udp |
 | `net` feature | sockets, unix_stream |
-| `mock` feature (test net code) | mock_datagram, mock_stream |
+| `mock` feature (test net code) | mock_datagram, mock_stream, decode_only, handoff |
+| decode-only types (`read_only`) on a transport; `ctx` over a transport | decode_only |
+| a region of a declared length (`limit_bytes`) | regions |
+| derived lengths (`WireLen`, `auto_len`) | derived_lengths |
+| protocol handoff (`into_parts` / `from_parts` / `try_into_inner`) | handoff |

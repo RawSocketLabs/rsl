@@ -225,6 +225,48 @@
 //! `try_pull_with(layout, args)` / `pull_eof_with(layout, args)` support `DecodeWith<A>`
 //! and read-only codecs; arguments are resupplied each attempt with no `Clone` bound.
 //!
+//! ## A region of a declared length
+//!
+//! A length on the wire that covers a nested value (a TLV body, an option, an extension
+//! block) is a promise the nested decoder may not keep: its own counts can send it past
+//! the length, and a newer sender's longer body leaves bytes behind. `limit_bytes(n)`
+//! lends any source, at a byte boundary, through a window of exactly `n` bytes. A read
+//! past the window's end fails there, and `finish()` fails if the value stopped short.
+//! To step over a body you do not parse, read the window through (`read_bytes`) and drop
+//! it: that works on a forward-only source, where a seek does not.
+//! `examples/regions.rs` is the whole container.
+//!
+//! ```
+//! use bnb::{BitDecode, BitError, ErrorKind, Source, bin};
+//!
+//! #[bin(big, read_only)]
+//! #[derive(Debug, PartialEq)]
+//! struct Hops { #[brw(count_prefix = u8)] hops: Vec<u16> }
+//!
+//! /// A one-byte length, then `Hops` in exactly that many bytes.
+//! fn in_region<S: Source>(r: &mut S) -> Result<Hops, BitError> {
+//!     let len = usize::from(r.read::<u8>()?);
+//!     let mut region = r.limit_bytes(len)?;
+//!     let hops = Hops::bit_decode(&mut region)?;
+//!     region.finish()?; // every byte of the region belongs to this value
+//!     Ok(hops)
+//! }
+//!
+//! #[bin(big, read_only)]
+//! #[derive(Debug, PartialEq)]
+//! struct Option_ { #[br(parse_with = in_region)] value: Hops, next: u8 }
+//!
+//! let ok = Option_::decode_exact(&[3, 1, 0, 9, 0xFF]).unwrap();
+//! assert_eq!((ok.value.hops, ok.next), (vec![9], 0xFF));
+//! // The inner count claims two hops in a region that holds one. The bytes for a second
+//! // hop are there, after the region, and it cannot have them.
+//! let overrun = Option_::decode_exact(&[3, 2, 0, 9, 0xAA, 0xBB, 0xFF]).unwrap_err();
+//! assert_eq!(overrun.kind, ErrorKind::UnexpectedEof { needed: 16, remaining: 0 });
+//! // The value ends a byte before its region does.
+//! let slack = Option_::decode_exact(&[4, 1, 0, 9, 0xEE, 0xFF]).unwrap_err();
+//! assert_eq!(slack.kind, ErrorKind::TrailingBits { remaining: 8 });
+//! ```
+//!
 //! ## Stateless prefix decoding
 //!
 //! When the caller already owns the bytes (its own receive buffer, a `&[u8]` from a callback),
@@ -287,8 +329,11 @@
 //! cannot discard newly read bytes. Write failures may have sent a prefix; do not retry a
 //! whole message blindly. Sync helpers do not flush implicitly.
 //!
-//! Both transport conveniences still obtain `T::LAYOUT` from `BitEncode`; contextual or
-//! read-only transport convenience is not added here. `BinCodec::decode_eof` makes a finite
+//! `read_message` and `recv_message` obtain `T::LAYOUT` from `BitEncode`. A
+//! `#[bin(read_only)]` type has none, and a `ctx(...)` type needs its context: read those
+//! with `read_message_with(layout, args)` / `recv_message_with(layout, args)`, where the
+//! caller states the order (`examples/decode_only.rs`). The whole handoff, three ways, is
+//! `examples/handoff.rs`. `BinCodec::decode_eof` makes a finite
 //! attempt, retaining truncated input on error. Never drop a `Framed` read/write buffer
 //! during a phase change: `Framed::into_inner` alone is lossy.
 //!
@@ -331,6 +376,25 @@
 //! (`UdpSocket` or `UnixDatagram`) with `send_message`/`recv_message`; both are unit-testable
 //! without a real socket via the **`mock`** feature. With **`tokio`**, `BinCodec` does the same
 //! for an async `Framed` stream.
+//!
+//! `MessageStream` asks its stream for 4 KiB at a time, through a scratch it keeps. When
+//! a message's decoder says it still needs at least that much (a counted byte run does),
+//! those bytes are read straight into the buffer instead. `with_read_scratch(len)` sets
+//! the size of an ordinary read, and from 4 KiB up also the size from which a message
+//! bypasses the scratch: a longer one takes many small messages in one read and holds
+//! that many bytes for the wrapper's life. It is a tuning knob; the default suits
+//! request/response traffic.
+//!
+//! ```
+//! # #[cfg(feature = "net")] {
+//! use bnb::MessageStream;
+//!
+//! let wire: &[u8] = &[0x00, 0x2A, 0x00, 0x2B];
+//! let mut stream = MessageStream::new(wire).with_read_scratch(64 * 1024);
+//! assert_eq!(stream.read_message::<u16>().unwrap(), 42);
+//! assert_eq!(stream.read_message::<u16>().unwrap(), 43);
+//! # }
+//! ```
 //!
 //! ## Borrowed whole-message readers (`net` / `tokio-io`)
 //!

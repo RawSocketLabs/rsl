@@ -134,6 +134,15 @@ required-features = ["mock"]
 name = "mock_stream"
 required-features = ["mock"]
 
+# `decode_only` and `handoff` are whole tasks over a transport, scripted with the mocks.
+[[example]]
+name = "decode_only"
+required-features = ["mock"]
+
+[[example]]
+name = "handoff"
+required-features = ["mock"]
+
 [[bench]]
 name = "bitfield_bench"
 harness = false
