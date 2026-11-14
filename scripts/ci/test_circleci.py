@@ -479,6 +479,25 @@ class ReleasePathTests(unittest.TestCase):
                     kinds = {key for step in job["steps"] if isinstance(step, dict) for key in step}
                     self.assertFalse(kinds & {"restore_cache", "save_cache"})
 
+    def test_a_self_hosted_class_keeps_build_state_on_the_runner_not_in_circleci_caches(self):
+        plan = test_plan.planned(full=True)
+        for branch, side in (("main", "trunk"), ("feat/x", "branch")):
+            config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": branch, "CI_INPUT_CLASS": "ns/runner"})
+            checks = {name: job for name, job in config["jobs"].items() if name.startswith("checks-")}
+            self.assertTrue(checks)
+            for name, job in checks.items():
+                with self.subTest(branch=branch, job=name):
+                    kinds = {key for step in job["steps"] if isinstance(step, dict) for key in step}
+                    self.assertFalse(kinds & {"restore_cache", "save_cache"})  # Billed egress.
+                    self.assertEqual(job["resource_class"], "ns/runner")
+                    links = [c for c in run_commands(job) if "ln -sfn" in c]
+                    if links:
+                        self.assertIn(f"/ci-cache/target/{side}/{name}-", links[0])
+            self.assertTrue(any(any("ln -sfn" in c for c in run_commands(job)) for job in checks.values()))
+        # A cloud class is unchanged: CircleCI caches, no runner links.
+        cloud = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
+        self.assertFalse(any("ln -sfn" in c for job in cloud["jobs"].values() for c in run_commands(job)))
+
     def test_release_jobs_exist_only_for_a_trunk_push(self):
         plan = test_plan.planned(release=True)
         plan["release_candidate"] = True

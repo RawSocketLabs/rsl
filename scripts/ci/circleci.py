@@ -317,6 +317,23 @@ def cached(key, paths, steps, *, save, toolchain, week, lock="Cargo.lock", enabl
     return result
 
 
+# A self-hosted runner mounts its own disk here. CircleCI bills cache restores to a self-hosted
+# runner as network egress, so its build state stays local: trunk and branches keep separate
+# directories, so main never builds on a branch's output, and the host wipes them weekly.
+RUNNER_CACHE = "/ci-cache/target"
+
+
+def self_hosted(resource_class):
+    return "/" in resource_class
+
+
+def linked(name, roots, steps, *, toolchain, trunk):
+    base = f"{RUNNER_CACHE}/{'trunk' if trunk else 'branch'}/{name}-{toolchain}-{IMAGE.rsplit(':', 1)[1][:12]}"
+    links = " && ".join(f"mkdir -p {base}/{slug(root) or 'root'} && ln -sfn {base}/{slug(root) or 'root'} {root}/target"
+                        for root in roots)
+    return [run("Link the runner's persistent build directories", links), *steps]
+
+
 def slug(text):
     return re.sub(r"[^A-Za-z0-9_-]+", "-", text).strip("-")
 
@@ -330,21 +347,26 @@ def bucket_of(profile):
     return next((name for name, members in BUCKETS.items() if profile in members), profile)
 
 
-def check_job(name, profiles, *, save, caches, toolchain, week, part=None):
+def check_job(name, profiles, *, save, caches, toolchain, week, part=None, local=None):
     # The budget bounds the whole job's profiles, not only a silent stretch.
     selection = ' --part "$PART"' if part else ""
     steps = [run("Run the complete selected profiles",
                  f'timeout {BUDGET} python3 scripts/ci/run.py $PROFILES{selection}', no_output_timeout=BUDGET)]
     if part == "test":
         steps.append({"store_test_results": {"path": JUNIT}})
+    if local is not None and caches and not set(profiles) <= NO_RUST:
+        return linked(name, [".", *DETACHED_TARGETS], steps, toolchain=toolchain, trunk=local)
     return cached(f"v5-{name}", CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS], steps,
                   save=save, toolchain=toolchain, week=week,
                   enabled=caches and not set(profiles) <= NO_RUST)
 
 
-def fuzz_job(item, *, save, caches, toolchain, week):
+def fuzz_job(item, *, save, caches, toolchain, week, local=None):
     # Separate processes preserve each target's original budget. GNU is required for ASan.
     steps = [run("Fuzz", f"timeout {BUDGET} python3 scripts/ci/run.py fuzz", no_output_timeout=BUDGET)]
+    if local is not None and caches:
+        return linked(f"fuzz-{slug(item['root'])}-{item['target']}", [item["root"]], steps,
+                      toolchain=toolchain, trunk=local)
     return cached(f"v4-fuzz-{slug(item['root'])}-{item['target']}",
                   CACHE_PATHS[:-1] + [f"{item['root']}/target"], steps, save=save, toolchain=toolchain,
                   week=week, lock=f"{item['root']}/Cargo.lock", enabled=caches)
@@ -420,6 +442,7 @@ def continuation(plan, bnb, env, event):
     save = trunk and caches and plan["full"] and (env.get("CI_TRIGGER_SOURCE") == "scheduled_pipeline"
                                                   or cache_inputs_changed(plan))
     week = cache_week()
+    local = trunk if self_hosted(resource_class) else None  # Which runner-local directory set, if any.
     handed = json.dumps(handed_on(plan), separators=(",", ":"), sort_keys=True)
     if len(handed.encode()) > ENV_LIMIT:
         raise ValueError("the handed-on plan exceeds one environment variable's limit")
@@ -466,13 +489,13 @@ def continuation(plan, bnb, env, event):
         environment = {"PROFILES": " ".join(profiles), **({"RUSTUP_TOOLCHAIN": toolchain} if toolchains else {})}
         name = f"checks-{bucket}"
         jobs[name] = job(check_job(name, profiles, save=save, caches=caches, toolchain=toolchain,
-                                   week=week, part=part),
+                                   week=week, part=part, local=local),
                          **environment, **({"PROFILE": "workspace", "PART": part} if part else {}))
         selected.append(name)
     for item in plan["fuzz"]:
         name = f"fuzz-{slug(item['root'])}-{item['target']}"
         toolchain = toolchain_of("fuzz", bnb)
-        jobs[name] = job(fuzz_job(item, save=save, caches=caches, toolchain=toolchain, week=week),
+        jobs[name] = job(fuzz_job(item, save=save, caches=caches, toolchain=toolchain, week=week, local=local),
                          RUSTUP_TOOLCHAIN=toolchain,
                          FUZZ_ITEM=json.dumps(item, separators=(",", ":")))
         selected.append(name)
