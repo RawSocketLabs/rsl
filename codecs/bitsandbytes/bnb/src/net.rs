@@ -2094,7 +2094,8 @@ mod component {
             );
             assert_eq!(stream.scratch.len(), super::SCRATCH_LEN);
         }
-        assert!(!format!("{stream:?}").contains("scratch"));
+        let shown = format!("{stream:?}");
+        assert!(shown.contains("inner") && shown.contains("buf") && !shown.contains("scratch"));
         // One read brought all six bytes; the two not yet decoded travel in the buffer.
         let (inner, mut buffer) = stream.into_parts();
         assert_eq!(inner.reads, 1);
@@ -2296,6 +2297,9 @@ mod component {
             conn.write_message(&run(len)).unwrap();
             expected.extend(run(len).to_bytes().unwrap());
             assert_eq!(conn.get_mut().written(), &expected[..], "after {len} bytes");
+            // The buffer the first message sized is the one every later message is
+            // encoded into: a fresh one for a short message would be a short one.
+            assert!(conn.out.capacity() >= 201, "after {len} bytes");
         }
         // The first message sized the buffer and the rest fitted in it.
         let kept = conn.out.capacity();

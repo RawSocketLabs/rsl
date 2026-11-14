@@ -6415,6 +6415,18 @@ mod unit {
         assert_eq!(s.bit, 20);
     }
 
+    #[test]
+    fn sink_default_lends_no_tail_so_an_integer_run_is_written_each() {
+        let mut s = TinySink {
+            out: Vec::new(),
+            bit: 0,
+        };
+        assert!(s.aligned_tail(4).is_none());
+        u16::encode_slice(&[0x0102, 0x0304], &mut s).unwrap();
+        assert_eq!(s.out, [1, 2, 3, 4]);
+        assert_eq!(s.bit, 32);
+    }
+
     // --- BitEncode/DecodeWith defaults for a leaf type -----------------------------
 
     #[test]
@@ -7224,7 +7236,9 @@ mod component {
         impl io::Read for Boastful {
             fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
                 out.fill(7);
-                Ok(usize::MAX)
+                // One honest byte where there is room for more, so the claim that
+                // follows meets a buffer already part filled.
+                Ok(if out.len() > 2 { 1 } else { usize::MAX })
             }
         }
 
@@ -9679,6 +9693,35 @@ mod component {
         }
 
         #[test]
+        fn the_reader_behind_an_attempt_lends_as_the_slice_reader_does() {
+            use crate::Source as _;
+            use crate::bitstream::IncrementalReader;
+
+            let mut reader = IncrementalReader(crate::BitReader::new(&[1, 2, 3]));
+            assert_eq!(reader.aligned_run(2), Some(&[1, 2][..]));
+            assert_eq!(reader.bit_pos(), 16);
+            assert_eq!(reader.aligned_run(2), None);
+        }
+
+        #[test]
+        fn a_buffer_lends_the_whole_bytes_it_holds_and_moves_past_them() {
+            use crate::Source as _;
+
+            // The hook behind magic dispatch, integer runs and the window a fixed-length
+            // message decodes from: without it each falls back to a slower path that
+            // gives the same answer, so only this says the buffer lends at all.
+            let mut buffer = BitBuf::new();
+            buffer.push(&[1, 2, 3, 4, 5]).unwrap();
+            assert_eq!(buffer.aligned_run(2), Some(&[1, 2][..]));
+            assert_eq!(buffer.bit_pos(), 16);
+            // Not more than it holds, and not from inside a byte.
+            assert_eq!(buffer.aligned_run(4), None);
+            buffer.read_bits(4).unwrap();
+            assert_eq!(buffer.aligned_run(1), None);
+            assert_eq!(buffer.bit_pos(), 20);
+        }
+
+        #[test]
         fn a_bounded_buffer_reclaims_whenever_new_bytes_would_not_fit() {
             // Room for four messages, full; one is consumed, three are unread.
             let mut buffer = BitBuf::bounded(24);
@@ -9692,6 +9735,12 @@ mod component {
             }
             // With room to spare, and fewer bytes consumed than unread, nothing moves.
             let mut buffer = BitBuf::bounded(48);
+            buffer.push(&numbered(0, 4)).unwrap();
+            buffer.pull::<LeMsg>().unwrap().unwrap();
+            buffer.push(&numbered(4, 1)).unwrap();
+            assert_eq!((buffer.cursor, buffer.buf.len()), (48, 30));
+            // Nor when the new bytes fill exactly what is left.
+            let mut buffer = BitBuf::bounded(30);
             buffer.push(&numbered(0, 4)).unwrap();
             buffer.pull::<LeMsg>().unwrap().unwrap();
             buffer.push(&numbered(4, 1)).unwrap();
@@ -9868,6 +9917,17 @@ mod component {
             BitEncode, BitOrder, ByteOrder, BytesReader, BytesWriter, Layout, Source, bin, u4, u12,
             u24,
         };
+
+        #[test]
+        fn a_bytes_reader_lends_the_whole_bytes_it_holds_and_moves_past_them() {
+            let mut reader = BytesReader::new(bytes::Bytes::from_static(&[1, 2, 3, 4, 5]));
+            assert_eq!(reader.aligned_run(2), Some(&[1, 2][..]));
+            assert_eq!(reader.bit_pos(), 16);
+            assert_eq!(reader.aligned_run(4), None);
+            reader.read_bits(4).unwrap();
+            assert_eq!(reader.aligned_run(1), None);
+            assert_eq!(reader.bit_pos(), 20);
+        }
 
         #[test]
         fn a_typed_read_is_the_read_taken_bit_by_bit_at_any_cursor() {

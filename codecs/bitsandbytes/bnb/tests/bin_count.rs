@@ -8,6 +8,31 @@ mod macro_ {
 
     use bnb::{FixedBitLen, bin, u4, u12};
 
+    #[bin(big)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct Nibbles {
+        n: u8,
+        #[br(count = n)]
+        items: Vec<u4>,
+    }
+
+    #[test]
+    fn a_counted_vec_of_sub_byte_values_holds_each_of_them() {
+        let wire = [3, 0x12, 0x30];
+        let got = Nibbles::decode_exact(&wire).unwrap();
+        assert_eq!(got.items, [u4::new(1), u4::new(2), u4::new(3)]);
+        assert_eq!(got.to_bytes().unwrap(), wire);
+    }
+
+    #[test]
+    fn a_run_of_wire_lengths_decodes_each_as_set() {
+        use bnb::{BitDecode, BitReader, WireLen};
+
+        let run =
+            <WireLen<u16> as BitDecode>::decode_vec(&mut BitReader::new(&[0, 1, 0, 2]), 2).unwrap();
+        assert!(matches!(run[..], [WireLen::Set(1), WireLen::Set(2)]));
+    }
+
     // Leaf-element Vec: a sub-byte tag (so the right-tool guard passes), a count
     // field, then a byte payload that straddles byte boundaries (starts at bit 12).
     #[bin]

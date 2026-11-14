@@ -218,6 +218,10 @@ mod component {
         assert_eq!(format!("{codec:?} {copy:?}"), "BinCodec BinCodec");
         let capped = BinCodec::<Opaque>::with_max_frame(9);
         assert_eq!(format!("{capped:?}"), "BinCodec { max_frame: 9 }");
+        // A copy keeps the cap.
+        #[expect(clippy::clone_on_copy, reason = "the `Clone` impl is what is tested")]
+        let cloned = capped.clone();
+        assert_eq!(format!("{cloned:?}"), "BinCodec { max_frame: 9 }");
     }
 
     #[test]

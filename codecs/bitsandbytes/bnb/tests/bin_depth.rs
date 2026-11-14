@@ -101,6 +101,64 @@ mod macro_ {
         // Drop on the main stack: the decoded value is as deep as the input.
     }
 
+    /// Every reader counts the levels for itself: the limit decodes and one past it is
+    /// refused whichever of them the message comes through.
+    #[test]
+    fn the_budget_holds_on_every_reader() {
+        use bnb::{BitDecode, BitReader, BufSeekReader, BufSource, SeekReader};
+        use std::io::Cursor;
+
+        type Outcome = (&'static str, Result<usize, ErrorKind>);
+
+        fn through(wire: &[u8]) -> Vec<Outcome> {
+            let outcome = |decoded: Result<Node, BitError>| {
+                decoded.map(|node| depth(&node)).map_err(|error| error.kind)
+            };
+            let cursor = || Cursor::new(wire.to_vec());
+            let mut buffer = BitBuf::new();
+            buffer.push(wire).unwrap();
+            let mut whole = BitReader::new(wire);
+            let mut region = whole.limit_bytes(wire.len()).unwrap();
+            vec![
+                (
+                    "StreamBitReader",
+                    outcome(Node::decode(&mut StreamBitReader::new(wire))),
+                ),
+                (
+                    "BufSource",
+                    outcome(Node::decode(&mut BufSource::new(wire))),
+                ),
+                (
+                    "SeekReader",
+                    outcome(Node::decode(&mut SeekReader::new(cursor()))),
+                ),
+                (
+                    "BufSeekReader",
+                    outcome(Node::decode(&mut BufSeekReader::new(cursor()))),
+                ),
+                ("BitBuf", outcome(buffer.try_pull::<Node>())),
+                ("LimitedSource", outcome(Node::bit_decode(&mut region))),
+                #[cfg(feature = "bytes")]
+                (
+                    "BytesReader",
+                    outcome(Node::decode(&mut bnb::BytesReader::new(
+                        wire.to_vec().into(),
+                    ))),
+                ),
+            ]
+        }
+
+        let limit = MAX_DECODE_DEPTH as usize;
+        let (at, past) =
+            on_small_stack(move || (through(&chain(limit)), through(&chain(limit + 1))));
+        for (reader, outcome) in at {
+            assert_eq!(outcome, Ok(limit), "{reader}");
+        }
+        for (reader, outcome) in past {
+            assert_eq!(outcome, Err(ErrorKind::TooDeep), "{reader}");
+        }
+    }
+
     #[test]
     fn one_past_the_limit_is_too_deep() {
         let levels = MAX_DECODE_DEPTH as usize + 1;
