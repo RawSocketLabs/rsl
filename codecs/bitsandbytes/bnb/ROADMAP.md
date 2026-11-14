@@ -133,11 +133,14 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    Still open from §19 and not covered above: the runtime file split, which needs the
    phase 0 non-inlined consumer before `#[inline]` decisions on `try_pull_with` and
    `decode_attempt` can be measured.
-5. **Verification debt:** `cargo mutants --in-diff` over the 0.9.0..0.10.0 runtime diff; the
-   unit suite on a 32-bit target; fuzz shapes not yet covered (LSB and little-endian layouts,
-   `parse_with` codecs, `LimitedSource`, `decode_prefix`, `BinCodec`, a recursive type); run
-   the examples' assertions in CI; pin the CI image's toolchain to `rust-toolchain.toml` so
-   trybuild snapshots cannot drift.
+5. **Verification debt.** Done (`DESIGN.md` §24): `cargo mutants --in-diff` over the
+   runtime's changes from 0.9.0 to `main` (822 mutants; 28 real gaps closed, the depth
+   budget on every reader among them); the suites on a 32-bit target (two tests fixed);
+   fuzz shapes for LSB and little-endian layouts, a `parse_with` codec, `LimitedSource`,
+   `decode_prefix`, the window decode and the transports' direct read. Open: a `BinCodec`
+   fuzz model; and, for the owner because they change CI for the whole repository,
+   running the examples' assertions in CI and pinning the toolchain the trybuild
+   snapshots are recorded against.
 6. **A dispatch check that builds no error**, when a consumer needs it. A caller that tries
    one message type after another pays for a full `NoMatchingVariant`/`BadMagic` on every
    miss (118 to 188 cycles against 33 for a hit, with an allocation). A generated,

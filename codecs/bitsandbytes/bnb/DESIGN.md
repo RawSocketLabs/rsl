@@ -3582,3 +3582,74 @@ claimed every `#[bin]` type has `LAYOUT`, and the weak differential, which went 
 copies. Found sound: the datagram form runs the body `decode_exact` runs, one clone per
 attempt with the original spent at the end of the input, generated-code lints in a
 consumer that forbids them, and the six snapshot lines.
+
+## 24. Verification debt (0.10.1)
+
+ROADMAP 0.10.x item 5, on `main` at `7dc465b4` with the two fixes below. No library code
+changed.
+
+### A 32-bit target
+
+The unit and integration suites on `i686-unknown-linux-musl` (run natively; the machine's
+`stable`, 1.100.0, since that is the toolchain here with the target). Two tests were not
+portable, the library was: `tests/bin_hygiene.rs` did not compile (`1 << 33` as a
+`usize`), and the frame-writer differential turned 56 bits of noise into a `usize`
+before reducing them. Both fixed. 784 tests pass with all features; the one failure is
+the compile-error snapshot test, which is toolchain-sensitive on any target.
+
+### Fuzz shapes
+
+The `decode` target gained a little-endian header, an LSB-first frame, a message that
+decodes from one window, a LEB128 field codec (`parse_with`) and a message behind a
+`LimitedSource` region, and now holds every shape to one property: the message off the
+slice (`decode_prefix`, whose reported prefix must decode alone to it), through
+`StreamBitReader` and through `BufSource` is the same message or no message. 1,593,687
+runs in 181 s under ASan, clean. The `stream_decode` target gained a model with records
+of up to 12 KiB, so the transport readers take the direct read past the scratch (§22,
+phase 5), bounded and unbounded, sync and async with the future dropped on `Pending`:
+117,954 runs in 241 s, clean. Already there: a recursive type and `BinCodec`-free
+transport models. Not added: a `BinCodec` model, which needs `tokio-util` in the fuzz
+workspace's lockfile.
+
+### `cargo mutants` over the runtime's changes since 0.9.0
+
+`cargo mutants --in-diff` over `bitsandbytes-v0.9.0..HEAD` for `bnb/src`, all features,
+library and integration tests, 27.1.0: 822 mutants, 619 caught, 37 stopped by the
+timeout (a loop that no longer ends), 82 that do not compile, 84 missed. (A first run
+skipped the snapshot test by a substring that also matched 43 other tests; its counts
+are not these.) Of the 84:
+
+- 36 are mutations of test helpers inside `#[cfg(test)]` modules.
+- 28 were gaps in the tests, now closed and confirmed by a second run over those
+  functions (141 mutants, 116 caught, 8 timeouts, 13 that do not compile, 4 missed, of
+  which three are the equivalents named below and one a test helper):
+  - The decode depth budget (§20) was tested through a slice only. Fourteen mutants
+    that gave a reader a fresh depth counter on every call lived, on `StreamBitReader`,
+    `BufSource`, `SeekReader`, `BufSeekReader`, `IncrementalReader` (so `BitBuf`),
+    `LimitedSource` and `BytesReader`. One test now holds the limit and one past it on
+    each.
+  - `decode_vec` of `UInt<T, N>` and of `WireLen<T>` returning an empty `Vec`: no test
+    decoded a counted `Vec` of either.
+  - `aligned_run` returning `None` on `BitBuf`, `BytesReader` and `IncrementalReader`:
+    every caller falls back to a path with the same answer, so only a test of the lend
+    itself can see it.
+  - The default `Sink::aligned_tail` lending a tail that goes nowhere; `pull` holding a
+    reader's count to the wrong bound once the buffer is part filled; `encode_into`
+    encoding into a fresh buffer each time; a bounded buffer moving its backlog when
+    the new bytes fit exactly; `BinCodec::clone` dropping the frame cap;
+    `MessageStream`'s `Debug` printing nothing.
+- 20 are equivalent, or change speed and not an answer: `|` for `^` between disjoint
+  bit fields in `extract_bits` (6); the conditions that choose a fast path whose
+  fallback returns the same value (`extract_bits`, `at_whole_bytes`,
+  `writes_whole_bytes`, `StreamBitReader::read_bits` at 128 bits, `aligned_run_at`);
+  the trait defaults `Source::aligned_run` and `Sink::aligned_tail` replaced by what
+  they already return; `bytes_in` at a length no buffer has; `rejected_signed` at zero,
+  which it is never asked about; a size hint off by one bit; `BitBuf::with_capacity`
+  ignoring its hint; and a function that exists only to fail to compile. The
+  speed-only ones are what `benches/probe.rs` watches.
+
+### Not done here
+
+Running the examples' assertions in CI and pinning the toolchain that the compile-error
+snapshots are recorded against both change CI for the whole repository; they wait for
+the owner.
