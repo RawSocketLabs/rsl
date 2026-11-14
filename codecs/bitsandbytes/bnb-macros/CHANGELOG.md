@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.10.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.10.0...bitsandbytes-macros-v0.10.1) - 2026-11-14
+
+### Added
+
+- *(bitsandbytes)* bound decode recursion with a depth budget
+
+### Other
+
+- *(bitsandbytes)* decode a fixed-length message from one window
+- *(bitsandbytes)* size variable-length to_bytes before writing
+- *(bitsandbytes)* dispatch byte-string magics from one look
+
 ## [0.10.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.9.0...bitsandbytes-macros-v0.10.0) - 2026-11-11
 
 ### Fixed
