@@ -63,8 +63,8 @@ BUCKETS = {
     "oracles-a": ("usdr-oracle", "pe-sync-oracle"),
     "oracles-b": ("xsdr-oracle", "lsdr-oracle", "limesdr-oracle"),
     "portable": ("usdr-portable", "xsdr-portable", "lsdr-portable", "pe-sync-portable", "limesdr-portable"),
-    # Release-only; a release run's critical path is its fuzzing.
-    "release": ("socks", "semver", "package", "no-std"),
+    # Release-only profiles stay unbucketed: release runs restore no cache, so a shared job would
+    # be several cold builds under one 10-minute budget, and a timeout blocks a release.
 }
 # Caches are written by full-coverage trunk runs: the weekly schedule (Sundays), and a push that
 # changes a key's inputs. CircleCI never overwrites a live key, so each key names the week of its

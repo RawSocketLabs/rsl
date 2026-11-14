@@ -191,7 +191,8 @@ profiles share jobs (`circleci.BUCKETS`): each job pays about half a minute of s
 and cache restore, and most profiles take a minute or two, so short profiles of one toolchain run
 in sequence on one machine (`run.py PROFILE...`), each bucket's summed median near the critical
 path's. A full routine run is nine jobs (`policy`, five check buckets, the three workspace parts)
-plus the gate, not 23. A job keeps its bucket's name and cache key whatever subset a plan selects;
+plus the gate, not 23. Release-only profiles stay one job each: release runs restore no cache. A
+shared job runs all its profiles even after one fails, then fails naming each. A job keeps its bucket's name and cache key whatever subset a plan selects;
 a profile not in a bucket runs alone. Every job is bounded by a 10-minute budget.
 
 Fuzz targets run as separate jobs and processes: bnb retains 60 seconds/2,000,000 runs per

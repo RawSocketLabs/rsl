@@ -302,13 +302,28 @@ curl() {
                 mock.patch.object(sys, "argv", ["run.py", "deny", "blessed"]):
             run.main()
         self.assertEqual(ran, ["deny", "blessed"])
+        # A failing profile does not stop the rest of its job; the job still fails.
+        ran.clear()
+        def flaky(profile, part, plan):
+            ran.append(profile)
+            if profile == "deny":
+                raise subprocess.CalledProcessError(1, ["cargo", "deny"])
+        with mock.patch.object(run, "run_profile", side_effect=flaky), \
+                mock.patch.object(run, "validate_plan"), \
+                mock.patch.dict(run.os.environ, {"CI_PLAN": "{}"}), \
+                mock.patch.object(sys, "argv", ["run.py", "deny", "blessed"]), \
+                mock.patch.object(sys, "stderr"), self.assertRaises(ValueError):
+            run.main()
+        self.assertEqual(ran, ["deny", "blessed"])
         failed = subprocess.CalledProcessError(1, ["cargo", "deny"])
-        for outcomes, calls in (([failed, None], 2), ([failed] * 3, 3)):
+        # Fetch retried, then one offline check: (fetch outcomes..., check outcome).
+        for outcomes, calls in (([failed, None, None], 3), ([failed] * 3, 3), ([None, failed], 2)):
             with self.subTest(outcomes=len(outcomes)), \
                     mock.patch.object(run, "execute", side_effect=outcomes) as execute, \
                     mock.patch.object(run.time, "sleep"):
                 if outcomes[-1] is None:
                     run.run_profile("deny", None, plan)
+                    self.assertIn("--offline", execute.call_args.args[0])
                 else:
                     with self.assertRaises(subprocess.CalledProcessError):
                         run.run_profile("deny", None, plan)

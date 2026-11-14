@@ -223,16 +223,17 @@ def run_profile(profile, part, plan):
         if snapshot.read_bytes() != before:
             raise ValueError("blessed-versions.toml is stale; regenerate and commit it")
     elif profile == "deny":
-        # The advisory database and crate sources come from the network; a failed fetch is
-        # retried rather than read as a finding. A real finding fails every attempt.
+        # The advisory database and crate sources come from the network: only the fetch is
+        # retried, and the check then runs once, offline, so a finding is never re-run.
         for attempt in range(DENY_ATTEMPTS):
             try:
-                execute(["cargo", "deny", "--all-features", "check"])
-                return
+                execute(["cargo", "deny", "fetch"])
+                break
             except subprocess.CalledProcessError:
                 if attempt == DENY_ATTEMPTS - 1:
                     raise
                 time.sleep(DENY_RETRY_DELAY)
+        execute(["cargo", "deny", "--offline", "--all-features", "check"])
     else:
         bnb = tomllib.loads(Path(".github/ci/bnb.toml").read_text())
         sequence = (workspace_parts(plan)[part] if part else commands(profile, plan, bnb))
@@ -264,9 +265,17 @@ def main():
         execute(["cargo", "fuzz", "build", target, *flags])
         execute(["cargo", "fuzz", "run", target, *flags, "--", *item["args"]])
         return
+    # A shared job runs every profile even after one fails, so one round trip reports them all.
+    failed = []
     for profile in args.profiles:
         print(f"==> profile {profile}", flush=True)
-        run_profile(profile, args.part, plan)
+        try:
+            run_profile(profile, args.part, plan)
+        except (KeyError, ValueError, OSError, subprocess.CalledProcessError) as error:
+            print(f"==> profile {profile} failed: {error}", file=sys.stderr, flush=True)
+            failed.append(profile)
+    if failed:
+        raise ValueError(f"failed profiles: {' '.join(failed)}")
 
 if __name__ == "__main__":
     try:
