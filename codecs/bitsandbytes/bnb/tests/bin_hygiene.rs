@@ -231,14 +231,14 @@ mod macro_ {
 
         trait BitsByValue: Sized {
             fn bits(self) -> usize {
-                1 << 33
+                usize::MAX / 2
             }
         }
         impl<T> BitsByValue for T {}
 
         trait BitsByRef {
             fn bits(&self) -> usize {
-                1 << 33
+                usize::MAX / 2
             }
         }
         impl<T> BitsByRef for T {}
@@ -301,8 +301,8 @@ mod macro_ {
             assert_eq!(bytes.len(), 24);
             assert_eq!(bytes.capacity(), 24);
             // Both traits are in scope and do answer for an ordinary value.
-            assert_eq!(BitsByValue::bits(0u8), 1 << 33);
-            assert_eq!(BitsByRef::bits(&0u8), 1 << 33);
+            assert_eq!(BitsByValue::bits(0u8), usize::MAX / 2);
+            assert_eq!(BitsByRef::bits(&0u8), usize::MAX / 2);
         }
     }
 }
