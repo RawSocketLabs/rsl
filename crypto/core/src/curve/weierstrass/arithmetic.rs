@@ -111,6 +111,8 @@ impl<const N: usize> Modulus<N> {
             folded.low[index] = truncate(sum);
             carry = sum >> 64;
         }
+        // Kept in the shape of the loop above, which indexes two arrays.
+        #[allow(clippy::needless_range_loop)]
         for index in 0..N {
             let sum = u128::from(folded.high[index]) + carry;
             folded.high[index] = truncate(sum);
