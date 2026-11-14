@@ -64,7 +64,7 @@ Changes affecting bnb, its dependencies, or its gate policy trigger bnb's comple
 strict all-target/all-feature Clippy, warning-free rustdocs, feature tests, MSRV,
 bare-metal renamed-dependency compilation, public API, source compatibility,
 fuzzing, and cargo-deny. The compatibility
-baseline is explicitly published `0.10.0` in `.github/ci/bnb.toml`; advance it deliberately after releases.
+baseline is explicitly published `0.10.1` in `.github/ci/bnb.toml`; advance it deliberately after releases.
 Compatible additions enforce `--release-type patch` in all three feature modes.
 The breaking 0.4 → 0.5, 0.5 → 0.6 and 0.9 → 0.10 transitions used major mode plus exact reviewed API deltas,
 switching the file to `release_type = "major"` while the candidate was unreleased and back to

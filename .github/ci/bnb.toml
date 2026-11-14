@@ -2,5 +2,5 @@
 public_api_toolchain = "nightly-2026-06-17"
 public_api_version = "0.52.0"
 semver_version = "0.50.0"
-baseline = "0.10.0"
+baseline = "0.10.1"
 release_type = "patch"
