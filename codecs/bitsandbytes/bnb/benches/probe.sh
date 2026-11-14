@@ -35,7 +35,9 @@ inlined=()
 covered Envelope 'probe::repeat::<' 3 || inlined+=("prefix_*envelope")
 covered Fixed44 'probe::repeat::<' 2 || inlined+=("prefix_*fixed44")
 covered Pieces44 'probe::repeat::<' 1 || inlined+=("prefix_short_pieces44")
-covered Envelope 'pull' 1 || inlined+=("pull_short")
+# The mode's own function or the pull it calls: a caller that merely has "pull" in its name
+# (the transports' `try_pull`) says nothing about this mode.
+covered Envelope 'probe::pull_short\|BitBuf>::pull::<probe::Envelope' 1 || inlined+=("pull_short")
 if grep -q '^stream_' <<<"$modes"; then
     # The transport's read loop, which `read_message` and `read_message_with` share.
     covered Envelope 'net::read_loop::<' 1 || inlined+=("stream_*")
