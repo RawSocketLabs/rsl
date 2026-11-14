@@ -186,8 +186,13 @@ critical path, runs as three jobs (`run.py --part`): `lint` (fmt and Clippy), `t
 nextest run`, which runs every test binary at once, plus `cargo test --doc`), and `extra`
 (all-feature adapter tests, the codec's examples and selector integration tests). Together they are exactly the
 profile's commands over the same packages and features, so full runs still test workspace
-feature unification. Nextest's `ci` profile reports JUnit to CircleCI's test insights. Every job
-is bounded by a 10-minute budget.
+feature unification. Nextest's `ci` profile reports JUnit to CircleCI's test insights. The other
+profiles share jobs (`circleci.BUCKETS`): each job pays about half a minute of spin-up, checkout
+and cache restore, and most profiles take a minute or two, so short profiles of one toolchain run
+in sequence on one machine (`run.py PROFILE...`), each bucket's summed median near the critical
+path's. A full routine run is nine jobs (`policy`, five check buckets, the three workspace parts)
+plus the gate, not 23. A job keeps its bucket's name and cache key whatever subset a plan selects;
+a profile not in a bucket runs alone. Every job is bounded by a 10-minute budget.
 
 Fuzz targets run as separate jobs and processes: bnb retains 60 seconds/2,000,000 runs per
 target, crypto/PKI retain 45 seconds/500,000 runs, and SOCKS runs the documented 2,000,000 cases

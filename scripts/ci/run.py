@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 import shlex
 import subprocess
 import sys
+import time
 import tomllib
 
 from gate import validate_plan
@@ -24,6 +25,7 @@ from plan import (BARE_METAL_DEVICES, BLADERF, BNB, LIMESDR_ORACLE, LSDR_ORACLE,
 # An example that waits on a peer forever must fail its job by name, well inside the job's own
 # limit. Long enough to rebuild the examples should a run ever find them stale.
 EXAMPLE_TIMEOUT = 180
+DENY_ATTEMPTS, DENY_RETRY_DELAY = 3, 20
 
 
 def bnb_examples():
@@ -203,16 +205,56 @@ def execute(arguments):
                    stdout=subprocess.DEVNULL if arguments[:2] == ["cargo", "metadata"] else None)
 
 
+def run_profile(profile, part, plan):
+    if profile not in plan["profiles"]:
+        raise ValueError("validation profile was not selected")
+    if profile == "public-api":
+        snapshot = Path("codecs/bitsandbytes/bnb/public-api.txt")
+        generated = subprocess.run(["cargo", "public-api", "-p", "bitsandbytes", "--all-features"],
+                                   check=True, stdout=subprocess.PIPE).stdout
+        if generated != snapshot.read_bytes():
+            candidate = Path(os.environ["RUNNER_TEMP"]) / "public-api.txt"
+            candidate.write_bytes(generated)
+            execute(["diff", "-u", str(snapshot), str(candidate)])
+    elif profile == "blessed":
+        snapshot = Path("deps/blessed-versions.toml")
+        before = snapshot.read_bytes()
+        execute([sys.executable, "tools/gen-blessed.py"])
+        if snapshot.read_bytes() != before:
+            raise ValueError("blessed-versions.toml is stale; regenerate and commit it")
+    elif profile == "deny":
+        # The advisory database and crate sources come from the network; a failed fetch is
+        # retried rather than read as a finding. A real finding fails every attempt.
+        for attempt in range(DENY_ATTEMPTS):
+            try:
+                execute(["cargo", "deny", "--all-features", "check"])
+                return
+            except subprocess.CalledProcessError:
+                if attempt == DENY_ATTEMPTS - 1:
+                    raise
+                time.sleep(DENY_RETRY_DELAY)
+    else:
+        bnb = tomllib.loads(Path(".github/ci/bnb.toml").read_text())
+        sequence = (workspace_parts(plan)[part] if part else commands(profile, plan, bnb))
+        if not sequence:
+            raise ValueError("selected validation profile has no commands")
+        for arguments in sequence:
+            execute(arguments)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("profile", choices=sorted(PROFILES | {"fuzz"}))
+    parser.add_argument("profiles", nargs="+", choices=sorted(PROFILES | {"fuzz"}),
+                        help="profiles to run in order; a CI job runs several to share one machine")
     parser.add_argument("--part", choices=("lint", "test", "extra"), help="one part of the workspace profile")
     args = parser.parse_args()
-    if args.part and args.profile != "workspace":
-        parser.error("--part applies only to the workspace profile")
+    if args.part and args.profiles != ["workspace"]:
+        parser.error("--part applies only to the workspace profile alone")
+    if "fuzz" in args.profiles and args.profiles != ["fuzz"]:
+        parser.error("fuzz runs alone")
     plan = json.loads(os.environ["CI_PLAN"])
     validate_plan(plan)
-    if args.profile == "fuzz":
+    if args.profiles == ["fuzz"]:
         item = json.loads(os.environ["FUZZ_ITEM"])
         if item not in plan["fuzz"]:
             raise ValueError("fuzz target was not selected")
@@ -222,31 +264,9 @@ def main():
         execute(["cargo", "fuzz", "build", target, *flags])
         execute(["cargo", "fuzz", "run", target, *flags, "--", *item["args"]])
         return
-    if args.profile not in plan["profiles"]:
-        raise ValueError("validation profile was not selected")
-    if args.profile == "public-api":
-        snapshot = Path("codecs/bitsandbytes/bnb/public-api.txt")
-        generated = subprocess.run(["cargo", "public-api", "-p", "bitsandbytes", "--all-features"],
-                                   check=True, stdout=subprocess.PIPE).stdout
-        if generated != snapshot.read_bytes():
-            candidate = Path(os.environ["RUNNER_TEMP"]) / "public-api.txt"
-            candidate.write_bytes(generated)
-            execute(["diff", "-u", str(snapshot), str(candidate)])
-    elif args.profile == "blessed":
-        snapshot = Path("deps/blessed-versions.toml")
-        before = snapshot.read_bytes()
-        execute([sys.executable, "tools/gen-blessed.py"])
-        if snapshot.read_bytes() != before:
-            raise ValueError("blessed-versions.toml is stale; regenerate and commit it")
-    else:
-        bnb = tomllib.loads(Path(".github/ci/bnb.toml").read_text())
-        sequence = (workspace_parts(plan)[args.part] if args.part else
-                    commands(args.profile, plan, bnb))
-        if not sequence:
-            raise ValueError("selected validation profile has no commands")
-        for arguments in sequence:
-            execute(arguments)
-
+    for profile in args.profiles:
+        print(f"==> profile {profile}", flush=True)
+        run_profile(profile, args.part, plan)
 
 if __name__ == "__main__":
     try:

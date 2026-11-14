@@ -13,7 +13,7 @@ from unittest import mock
 import circleci
 from circleci import continuation, event_options
 from gate import coverage_report
-from plan import handed_on
+from plan import PROFILES, handed_on
 import test_plan
 
 BNB_GATE = {"public_api_toolchain": "nightly-2026-06-17", "public_api_version": "0.52.0",
@@ -320,7 +320,7 @@ class ContinuationTests(unittest.TestCase):
     def test_only_selected_profiles_and_fuzz_targets_are_scheduled_concurrently(self):
         plan = test_plan.planned(["protocols/session/socks/src/lib.rs"])
         config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
-        selected = {f"checks-{profile}" for profile in plan["profiles"] if profile != "workspace"}
+        selected = {f"checks-{circleci.bucket_of(profile)}" for profile in plan["profiles"] if profile != "workspace"}
         selected |= {f"checks-workspace-{part}" for part in ("lint", "test", "extra")} | {"commitlint"}
         self.assertEqual(set(config["jobs"]) - {"policy", "rsl"}, selected)
         workflow = {name: spec for entry in config["workflows"]["rsl"]["jobs"] for name, spec in entry.items()}
@@ -410,6 +410,17 @@ class ContinuationTests(unittest.TestCase):
         self.assertIn(circleci.IMAGE.rsplit(":", 1)[1][:12], key)
         self.assertTrue(key.endswith('{{ checksum "Cargo.lock" }}'))
         self.assertNotIn("epoch", key)
+
+    def test_short_profiles_share_jobs_of_one_toolchain(self):
+        jobs = cont(test_plan.planned(full=True), BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})["jobs"]
+        checks = {name for name in jobs if name.startswith("checks-")}
+        self.assertLessEqual(len(checks), 8)
+        self.assertEqual(jobs["checks-crates"]["environment"]["PROFILES"].split()[0], "deny")
+        listed = [profile for members in circleci.BUCKETS.values() for profile in members]
+        self.assertEqual(len(listed), len(set(listed)))
+        self.assertTrue(set(listed) <= PROFILES)
+        for members in circleci.BUCKETS.values():
+            self.assertEqual(len({circleci.toolchain_of(p, BNB_GATE) for p in members if p not in circleci.NO_RUST}), 1)
 
     def test_profiles_select_the_image_toolchains(self):
         jobs = cont(test_plan.planned(release=True), BNB_GATE, {"CIRCLE_BRANCH": "main"})["jobs"]

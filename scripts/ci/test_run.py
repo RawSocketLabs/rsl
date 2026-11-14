@@ -293,6 +293,30 @@ curl() {
         tests = [command for command in sequence if command[:2] == ["cargo", "test"]]
         self.assertEqual(tests, [["cargo", "test", *manifest, "-p", "bladerf", "--lib", "configure_module_"]])
 
+    def test_one_job_runs_several_profiles_in_order_and_deny_retries_a_failed_fetch(self):
+        plan = {"profiles": ["blessed", "deny"]}
+        ran = []
+        with mock.patch.object(run, "run_profile", side_effect=lambda profile, part, plan: ran.append(profile)), \
+                mock.patch.object(run, "validate_plan"), \
+                mock.patch.dict(run.os.environ, {"CI_PLAN": "{}"}), \
+                mock.patch.object(sys, "argv", ["run.py", "deny", "blessed"]):
+            run.main()
+        self.assertEqual(ran, ["deny", "blessed"])
+        failed = subprocess.CalledProcessError(1, ["cargo", "deny"])
+        for outcomes, calls in (([failed, None], 2), ([failed] * 3, 3)):
+            with self.subTest(outcomes=len(outcomes)), \
+                    mock.patch.object(run, "execute", side_effect=outcomes) as execute, \
+                    mock.patch.object(run.time, "sleep"):
+                if outcomes[-1] is None:
+                    run.run_profile("deny", None, plan)
+                else:
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        run.run_profile("deny", None, plan)
+                self.assertEqual(execute.call_count, calls)
+        with mock.patch.object(sys, "argv", ["run.py", "workspace", "deny", "--part", "lint"]), \
+                mock.patch.object(sys, "stderr"), self.assertRaises(SystemExit):
+            run.main()
+
 
 if __name__ == "__main__":
     unittest.main()

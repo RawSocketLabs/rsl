@@ -2,7 +2,8 @@
 """Plan a CircleCI pipeline and continue it with only the selected jobs.
 
 The static `.circleci/config.yml` is a setup workflow: its `plan` job selects coverage with
-`plan.py` and continues the pipeline with one job per selected check profile and fuzz target.
+`plan.py` and continues the pipeline with jobs for the selected check profiles (short ones share
+a job) and fuzz targets.
 Unselected work is never scheduled. Every generated job runs concurrently after `policy`; the
 final `CI` job recomputes the plan and requires the handed-on plan to match before it writes
 the coverage receipt. On the trunk, `release` publishes a qualified release-plz merge and
@@ -51,6 +52,19 @@ BUDGET = "10m"
 JUNIT = "target/nextest/ci/junit.xml"
 # The critical path; its parts run on separate machines (run.py workspace_parts).
 WORKSPACE_PARTS = ("lint", "test", "extra")
+# Short profiles share a job: each job pays ~30 s of spin-up, checkout and cache restore, and most
+# profiles take a minute or two (insights, 2026-10..11). A bucket's summed median stays near the
+# critical path's (`workspace` test, ~2.2 min) and within one toolchain; a profile not listed runs
+# alone. A job's name and cache key stay the bucket's whatever subset a plan selects.
+BUCKETS = {
+    "crates": ("deny", "blessed", "network", "facades"),
+    "bindings": ("bladerf", "usdr-ffi", "rust-dsdcc", "rust-skills"),
+    "oracles-a": ("usdr-oracle", "pe-sync-oracle"),
+    "oracles-b": ("xsdr-oracle", "lsdr-oracle", "limesdr-oracle"),
+    "portable": ("usdr-portable", "xsdr-portable", "lsdr-portable", "pe-sync-portable", "limesdr-portable"),
+    # Release-only; a release run's critical path is its fuzzing.
+    "release": ("socks", "semver", "package", "no-std"),
+}
 # Caches are written only by the weekly full schedule (Sundays). CircleCI never overwrites a live
 # key, so a retention past 7 days would skip the next Sunday's save and leave it missing for a week.
 CACHE_RETENTION = "6d"
@@ -293,19 +307,19 @@ def toolchain_of(profile, bnb):
             bnb["public_api_toolchain"] if profile in {"public-api", "fuzz"} else STABLE)
 
 
-def check_job(profile, *, save, caches, toolchain, part=None):
-    if profile == "deny":
-        steps = [run("cargo deny", "cargo deny --all-features check")]
-    else:
-        # The budget bounds the whole profile, not only a silent stretch.
-        selection = ' --part "$PART"' if part else ""
-        steps = [run("Run the complete selected profile",
-                     f'timeout {BUDGET} python3 scripts/ci/run.py "$PROFILE"{selection}', no_output_timeout=BUDGET)]
+def bucket_of(profile):
+    return next((name for name, members in BUCKETS.items() if profile in members), profile)
+
+
+def check_job(name, profiles, *, save, caches, toolchain, part=None):
+    # The budget bounds the whole job's profiles, not only a silent stretch.
+    selection = ' --part "$PART"' if part else ""
+    steps = [run("Run the complete selected profiles",
+                 f'timeout {BUDGET} python3 scripts/ci/run.py $PROFILES{selection}', no_output_timeout=BUDGET)]
     if part == "test":
         steps.append({"store_test_results": {"path": JUNIT}})
-    return cached(f"v4-checks-{profile}{'-' + part if part else ''}",
-                  CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS], steps,
-                  save=save, toolchain=toolchain, enabled=caches and profile not in NO_RUST)
+    return cached(f"v5-{name}", CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS], steps,
+                  save=save, toolchain=toolchain, enabled=caches and not set(profiles) <= NO_RUST)
 
 
 def fuzz_job(item, *, save, caches, toolchain):
@@ -414,16 +428,23 @@ def continuation(plan, bnb, env, event):
     if plan["base"] and plan["base"] != plan["head"]:  # A tested trunk commit has no new commits.
         jobs["commitlint"] = commitlint_job(plan["base"])
         selected.append("commitlint")
+    buckets = {}
     for profile in plan["profiles"]:
-        environment = {"PROFILE": profile}
-        if profile not in NO_RUST:
-            environment["RUSTUP_TOOLCHAIN"] = toolchain_of(profile, bnb)
-        for part in WORKSPACE_PARTS if profile == "workspace" else (None,):
-            name = f"checks-{profile}" + (f"-{part}" if part else "")
-            jobs[name] = job(check_job(profile, save=save, caches=caches,
-                                       toolchain=toolchain_of(profile, bnb), part=part),
-                             **environment, **({"PART": part} if part else {}))
-            selected.append(name)
+        if profile == "workspace":
+            buckets.update({f"workspace-{part}": ([profile], part) for part in WORKSPACE_PARTS})
+        else:
+            buckets.setdefault(bucket_of(profile), ([], None))[0].append(profile)
+    for bucket, (profiles, part) in buckets.items():
+        profiles = sorted(profiles, key=BUCKETS.get(bucket, profiles).index)  # The listed order: deny first.
+        toolchains = {toolchain_of(profile, bnb) for profile in profiles if profile not in NO_RUST}
+        if len(toolchains) > 1:
+            raise ValueError(f"bucket {bucket} mixes toolchains: {sorted(toolchains)}")
+        toolchain = next(iter(toolchains), STABLE)
+        environment = {"PROFILES": " ".join(profiles), **({"RUSTUP_TOOLCHAIN": toolchain} if toolchains else {})}
+        name = f"checks-{bucket}"
+        jobs[name] = job(check_job(name, profiles, save=save, caches=caches, toolchain=toolchain, part=part),
+                         **environment, **({"PROFILE": "workspace", "PART": part} if part else {}))
+        selected.append(name)
     for item in plan["fuzz"]:
         name = f"fuzz-{slug(item['root'])}-{item['target']}"
         toolchain = toolchain_of("fuzz", bnb)
