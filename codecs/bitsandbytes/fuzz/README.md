@@ -33,8 +33,14 @@ cargo +nightly fuzz run decode codecs/bitsandbytes/fuzz/artifacts/decode/crash-<
 
 - **`decode`** — feeds the input to `decode_exact`/`peek`/`decode` across a spread of
   `#[bin]` shapes (byte-aligned header, sub-byte frame, catch-all enum, count-driven
-  `Vec`, conditional `Option`, magic-prefixed), and asserts the fixed-length parsers
-  are wire bijections. Mirrors the shapes in `bnb/tests/fuzz_roundtrip.rs`.
+  `Vec`, conditional `Option`, magic-prefixed, a pointer follower, a recursive type), and
+  asserts the fixed-length parsers are wire bijections. Mirrors the shapes in
+  `bnb/tests/fuzz_roundtrip.rs`. It also holds one message to be the same message
+  whichever reader it comes through: off the slice (`decode_prefix`, whose prefix must
+  then decode alone), through `StreamBitReader` and through `BufSource`, for those shapes
+  and for a little-endian header, an LSB-first frame, a message that decodes from one
+  window, a LEB128 field codec (`parse_with`) and a message behind a `LimitedSource`
+  region.
 - **`stream_decode`** — sequences bounded push/rejection, pull/finite EOF, compaction,
   explicit growth, clear, and lossless handoff against an independent byte-accounting
   model; also fragments variable-width magic/fallback dispatch. It drives the actual borrowed
@@ -43,6 +49,9 @@ cargo +nightly fuzz run decode codecs/bitsandbytes/fuzz/artifacts/decode/crash-<
   `Pending` and recreated to prove completed reads remain in caller-owned storage. On error,
   raw handoff must recover every byte not consumed by a complete message. No runtime or socket
   is required. Buffer caps stay at most 128 bytes; reader-model input is capped at 512 bytes.
+  A second model reads up to four records of up to 12 KiB each (the input chooses
+  lengths; bodies are a pattern), so a message is read straight into the buffer past the
+  scratch, bounded and unbounded, sync and async with the same drop on `Pending`.
   Custom zero/unknown/huge hints, injected I/O errors, empty scratch and position-sensitive
   rebase are covered by deterministic component tests. Run
   `cargo +nightly fuzz run stream_decode --fuzz-dir codecs/bitsandbytes/fuzz

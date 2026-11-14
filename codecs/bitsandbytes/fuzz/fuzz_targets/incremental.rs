@@ -108,6 +108,93 @@ fn message_reads(data: &[u8]) {
 
 #[bin(big)]
 #[derive(Debug)]
+struct Large {
+    #[brw(count_prefix = u16)]
+    bytes: Vec<u8>,
+}
+
+// The same refill paths with records long enough to be read straight into the buffer,
+// past the scratch: the input chooses up to four lengths of up to 12 KiB, how the
+// transport hands them over, the scratch and the retained capacity. Bodies are a
+// pattern, so a short input still describes kilobytes.
+fn large_message_reads(data: &[u8]) {
+    let [config, shape, rest @ ..] = data else {
+        return;
+    };
+    let mut wire = Vec::new();
+    for record in rest.chunks_exact(3).take(4) {
+        let length = u16::from_be_bytes([record[0], record[1]]) % 12_289;
+        wire.extend(length.to_be_bytes());
+        wire.extend((0..length).map(|at| at.to_le_bytes()[0].wrapping_add(record[2])));
+    }
+    if shape & 0x80 != 0 {
+        wire.truncate(wire.len() * usize::from(shape & 0x7F) / 128);
+    }
+    let bytes = &wire[..];
+    let chunk = [7, 1_460, 5_000, usize::MAX, 1][usize::from(config % 5)];
+    let scratch_len = [1, 16, 4_096, 8_192][usize::from(config / 5 % 4)];
+    let cap = [None, Some(4_096), Some(12_291), Some(70_000)][usize::from(config / 20 % 4)];
+    for asynchronous in [false, true] {
+        let mut input = Input {
+            bytes,
+            chunk,
+            pending: false,
+        };
+        let mut buffer = cap.map_or_else(BitBuf::new, BitBuf::bounded);
+        let mut scratch = vec![0; scratch_len];
+        let mut consumed = 0;
+        loop {
+            let result = if asynchronous {
+                let mut polls = 0;
+                loop {
+                    polls += 1;
+                    assert!(
+                        polls <= bytes.len() * 2 + 16,
+                        "reader must make bounded progress"
+                    );
+                    let future = bnb::net::read_message_async::<Large, _>(
+                        &mut input,
+                        &mut buffer,
+                        &mut scratch,
+                    );
+                    let mut future = std::pin::pin!(future);
+                    // Drop on Pending: retained bytes, not the future, own progress.
+                    if let Poll::Ready(result) = future
+                        .as_mut()
+                        .poll(&mut Context::from_waker(Waker::noop()))
+                    {
+                        break result;
+                    }
+                }
+            } else {
+                bnb::net::read_message::<Large, _>(&mut input, &mut buffer, &mut scratch)
+            };
+            let complete = bytes
+                .get(consumed..consumed + 2)
+                .map(|prefix| usize::from(u16::from_be_bytes([prefix[0], prefix[1]])) + 2)
+                .filter(|&length| {
+                    cap.is_none_or(|cap| length <= cap) && length <= bytes.len() - consumed
+                });
+            if let Some(length) = complete {
+                assert_eq!(
+                    result.unwrap().bytes,
+                    bytes[consumed + 2..consumed + length]
+                );
+                consumed += length;
+            } else {
+                assert!(result.is_err());
+                let mut handoff = MessageStream::from_parts(input, buffer);
+                let mut tail = Vec::new();
+                handoff.read_to_end(&mut tail).unwrap();
+                assert_eq!(tail, bytes[consumed..]);
+                break;
+            }
+        }
+    }
+}
+
+#[bin(big)]
+#[derive(Debug)]
 struct Frame {
     #[brw(count_prefix = u8)]
     bytes: Vec<u8>,
@@ -125,6 +212,7 @@ enum Magic {
 
 fuzz_target!(|data: &[u8]| {
     message_reads(data);
+    large_message_reads(data);
     let mut buffer = BitBuf::bounded(64);
     let mut model = Vec::new();
     // Fixed-size operations keep the harness's own resource use bounded as well.

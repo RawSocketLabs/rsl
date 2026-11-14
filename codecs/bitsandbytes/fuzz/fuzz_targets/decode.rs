@@ -7,7 +7,10 @@
 //! Run: `cargo +nightly fuzz run decode`.
 #![no_main]
 
-use bnb::{BitEnum, NormalizeEnumAliases, bin, prelude::*, u4, u12};
+use bnb::{
+    BitEnum, BitError, BitOrder, BufSource, ByteOrder, Layout, NormalizeEnumAliases, Source,
+    StreamBitReader, bin, prelude::*, u4, u12,
+};
 use libfuzzer_sys::fuzz_target;
 
 // --- shapes (mirror tests/fuzz_roundtrip.rs) ----------------------------------
@@ -95,6 +98,100 @@ struct Node {
     kids: Vec<Node>,
 }
 
+/// The header again, least significant byte first.
+#[bin(little)]
+#[derive(Debug, Clone, PartialEq)]
+struct HeaderLe {
+    a: u16,
+    b: u16,
+    c: u32,
+}
+
+/// The sub-byte frame again, filled from the low bit of each byte.
+#[bin(bits = lsb, bytes = little)]
+#[derive(Debug, Clone, PartialEq)]
+struct FrameLsb {
+    tag: u4,
+    len: u12,
+}
+
+/// Every field at most a byte or whole bytes on a byte boundary: the shape a fixed-length
+/// message decodes from one window of its whole length.
+#[bin(big)]
+#[derive(Debug, Clone, PartialEq)]
+struct Windowed {
+    high: u4,
+    low: u4,
+    word: u16,
+    tail: [u8; 3],
+}
+
+/// A LEB128 length through the crate's own field codec, then a byte.
+#[bin(big)]
+#[derive(Debug, Clone, PartialEq)]
+struct Varint {
+    #[br(parse_with = bnb::codecs::leb128::parse)]
+    #[bw(write_with = bnb::codecs::leb128::write)]
+    n: u64,
+    tail: u8,
+}
+
+/// A one-byte region length, then a counted message that must fill the region exactly.
+fn in_region<S: Source>(r: &mut S) -> Result<Counted, BitError> {
+    let len = usize::from(r.read::<u8>()?);
+    let mut region = r.limit_bytes(len)?;
+    let value = <Counted as bnb::BitDecode>::bit_decode(&mut region)?;
+    region.finish()?;
+    Ok(value)
+}
+
+/// A message behind a window that its reads cannot cross.
+#[bin(big, read_only)]
+#[derive(Debug, PartialEq)]
+struct Region {
+    #[br(parse_with = in_region)]
+    inner: Counted,
+}
+
+const BIG: Layout = Layout {
+    bit: BitOrder::Msb,
+    byte: ByteOrder::Big,
+};
+const LITTLE: Layout = Layout {
+    bit: BitOrder::Msb,
+    byte: ByteOrder::Little,
+};
+const LSB_LITTLE: Layout = Layout {
+    bit: BitOrder::Lsb,
+    byte: ByteOrder::Little,
+};
+
+/// One message off the front of `data`, three ways: from the slice, from a forward reader
+/// that holds nothing, and from one that retains what it read. The same message or no
+/// message from all three; and the bytes the slice decode says it used decode alone to
+/// that message.
+macro_rules! one_message_whichever_reader {
+    ($data:expr, $($ty:ty => $layout:expr),* $(,)?) => {$(
+        let slice = <$ty>::decode_prefix($data);
+        let forward = <$ty>::decode(&mut StreamBitReader::with_layout($data, $layout));
+        let retained = <$ty>::decode(&mut BufSource::with_capacity_and_layout(
+            $data,
+            usize::MAX,
+            $layout,
+        ));
+        let value = slice.as_ref().ok().map(|(value, _)| value);
+        assert_eq!(value, forward.as_ref().ok(), concat!(stringify!($ty), ": forward reader"));
+        assert_eq!(value, retained.as_ref().ok(), concat!(stringify!($ty), ": retaining reader"));
+        if let Ok((value, used)) = &slice {
+            assert_eq!(
+                <$ty>::decode_exact(&$data[..*used]).as_ref().ok(),
+                Some(value),
+                concat!(stringify!($ty), ": its own prefix")
+            );
+        }
+    )*};
+}
+
 fuzz_target!(|data: &[u8]| {
     if let Some(&raw) = data.first() {
         let mut built = Tagged::builder()
@@ -135,6 +232,32 @@ fuzz_target!(|data: &[u8]| {
     let node = Node::decode_exact(data);
     if data.len() > deep && data[..=deep].iter().all(|&b| b != 0) {
         assert_eq!(node.unwrap_err().kind, bnb::ErrorKind::TooDeep);
+    }
+
+    // Property 4 — a message is the same message whichever reader it comes through, in
+    // every layout, behind a window, and through a field codec.
+    one_message_whichever_reader!(
+        data,
+        Header => BIG,
+        HeaderLe => LITTLE,
+        Frame => BIG,
+        FrameLsb => LSB_LITTLE,
+        Windowed => BIG,
+        Tagged => BIG,
+        Counted => BIG,
+        Optional => BIG,
+        Magic => BIG,
+        Varint => BIG,
+        Region => BIG,
+    );
+    for (bijection, bytes) in [
+        (HeaderLe::decode_exact(data).map(|v| v.to_bytes().unwrap()), "HeaderLe"),
+        (FrameLsb::decode_exact(data).map(|v| v.to_bytes().unwrap()), "FrameLsb"),
+        (Windowed::decode_exact(data).map(|v| v.to_bytes().unwrap()), "Windowed"),
+    ] {
+        if let Ok(again) = bijection {
+            assert_eq!(again, data, "{bytes} is not a bijection");
+        }
     }
 
     // Property 3 — decode ∘ encode = id for the fixed-length total parsers. Any
