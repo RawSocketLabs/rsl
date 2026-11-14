@@ -95,8 +95,9 @@ fn direct_room(buffer: &mut BitBuf, missing: usize) -> Option<usize> {
 }
 
 /// Reads the bytes a message is known to still need (`missing`, or what the buffer has
-/// room for) straight into `buffer`: no copy through the scratch, as few reads as the
-/// transport allows, and never a byte past them. Returns whether the transport is still
+/// room for) straight into `buffer`: no copy through the scratch, a number of reads that
+/// grows with the logarithm of the size when the transport fills each, and never a byte
+/// past them. Returns whether the transport is still
 /// open: `false` if it ended first. What arrived is appended either way, also before an
 /// error. If making room moved the cursor nothing is read. The caller decodes again
 /// after any `true`, for a hint that fits what the buffer now holds.
@@ -119,14 +120,24 @@ fn read_direct<R: Read + ?Sized>(
     Ok(storage.len() - before == want)
 }
 
-/// [`read_direct`] for an `AsyncRead`. Room is reserved a step ahead of each read and the
-/// read appends what arrives (`read_buf`, which is cancel safe), so the buffer holds
-/// exactly what the transport gave, also when this future is dropped while a read is
-/// pending.
+/// [`read_direct`] for an `AsyncRead`. Each read appends what arrives and only that
+/// (`read_buf` into room reserved a step ahead, or a copy out of the scratch once the read
+/// has returned; both are cancel safe), so the buffer holds exactly what the transport
+/// gave, also when this future is dropped while a read is pending.
+///
+/// The request follows the transport: twice what the last read gave, starting from a
+/// scratch, so a count off the wire sizes neither the allocation nor the request, and
+/// neither does what has already come. Some transports clear all they are lent before
+/// filling any of it; lent fresh room that grew with the total, a slow one would pay the
+/// square of the message. So a request smaller than the scratch is read through the
+/// scratch, which is cleared already and costs such a transport nothing to be lent, and
+/// the fresh room a transport is lent stays within twice what its last read gave. (A read
+/// that gives nothing, pending or interrupted, is lent the same again.)
 #[cfg(feature = "tokio-io")]
 async fn read_direct_async<R: tokio::io::AsyncRead + Unpin + ?Sized>(
     reader: &mut R,
     buffer: &mut BitBuf,
+    scratch: &mut [u8],
     missing: usize,
 ) -> io::Result<bool> {
     use tokio::io::AsyncReadExt;
@@ -136,15 +147,26 @@ async fn read_direct_async<R: tokio::io::AsyncRead + Unpin + ?Sized>(
     };
     let storage = buffer.storage();
     let start = storage.len();
+    let mut step = SCRATCH_LEN;
     while storage.len() - start < want {
-        // As much again as has come, and a scratch before anything has: a count off the
-        // wire sizes neither the allocation nor the request.
-        let have = storage.len() - start;
-        let step = (want - have).min(have.max(SCRATCH_LEN));
-        storage.reserve(step);
-        match (&mut *reader).take(step as u64).read_buf(storage).await {
+        let left = want - (storage.len() - start);
+        let read = if step < scratch.len() {
+            let ask = left.min(scratch.len());
+            let read = reader.read(&mut scratch[..ask]).await;
+            if let Ok(got) = read {
+                // Of what it was lent: a transport that reports more panics here, as it
+                // does on every other read, and puts nothing stale in the buffer.
+                storage.extend_from_slice(&scratch[..ask][..got]);
+            }
+            read
+        } else {
+            let ask = step.min(left);
+            storage.reserve(ask);
+            (&mut *reader).take(ask as u64).read_buf(storage).await
+        };
+        match read {
             Ok(0) => return Ok(false),
-            Ok(_) => {}
+            Ok(got) => step = got.saturating_mul(2),
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => return Err(error),
         }
@@ -181,16 +203,17 @@ fn message_at_eof_with<T: DecodeWith<A>, A>(
 /// Tries buffered decoding first, then reads until the blocked operation's additional-byte
 /// lower bound is met before retrying. Unknown/zero hints wait for at least one byte.
 /// If appending compacts/rebases the buffer cursor, the previous hint is invalidated and
-/// decoding retries immediately (absolute positions can now mean something different).
+/// decoding retries immediately (absolute positions can now mean something different, so
+/// whether a message that seeks to one decodes can depend on how far the scratch read ahead).
 /// Read-ahead is allowed: every accepted byte is immediately appended to `buffer`, including
 /// later messages or raw protocol data. No scratch allocation is made; decoded values may
 /// allocate. A bounded buffer limits retained wire bytes, not codec work or output allocations.
 ///
 /// A message known to need at least `scratch.len()` more bytes, and at least 4 KiB, does
 /// not go through the scratch: exactly the bytes its hint asks for, or as many as a
-/// bounded buffer has room for, are read straight into `buffer`, in as few reads as the
-/// transport allows and with no read-ahead. The buffer grows with what arrives, never
-/// with what the hint claims. A scratch of 4 KiB or more therefore sets both the size of
+/// bounded buffer has room for, are read straight into `buffer`, in requests that double
+/// while the transport fills them, and with no read-ahead. The buffer grows with what
+/// arrives, never with what the hint claims. A scratch of 4 KiB or more therefore sets both the size of
 /// an ordinary read and the size from which a message bypasses it.
 ///
 /// Messages must be self-delimiting. The message's own layout is used; its final unused bits
@@ -318,7 +341,9 @@ fn read_loop<T, R: Read + ?Sized>(
 
 /// Async counterpart of [`read_message`], using Tokio `AsyncRead` and caller-owned storage.
 ///
-/// Uses the same hints, read-ahead, capacity, EOF, layout, and error contracts. It does not
+/// Uses the same hints, read-ahead, capacity, EOF, layout, and error contracts, with one
+/// difference in a direct read: while the transport gives less than half a scratch a read,
+/// it is read through the scratch and copied on, still with no read-ahead. It does not
 /// require `tokio-util` or own a runtime. There is no await between a successful read and
 /// appending its bytes: dropping this future while a read is pending retains all previously
 /// accepted input in `buffer`. Resuming with the same reader and buffer starts a fresh decode
@@ -398,7 +423,7 @@ async fn read_loop_async<T, R: tokio::io::AsyncRead + Unpin + ?Sized>(
         while missing != 0 {
             let limit = read_limit(buffer, scratch)?;
             let count = if goes_direct(missing, scratch.len()) {
-                if read_direct_async(reader, buffer, missing).await? {
+                if read_direct_async(reader, buffer, scratch, missing).await? {
                     missing = 0;
                     continue;
                 }
@@ -1496,8 +1521,9 @@ mod component {
         //! A message that still needs at least a scratch more is read straight into the
         //! buffer. Against the same transport read through a scratch no message outgrows:
         //! the same messages and the same errors in the same order, whatever the transport
-        //! does on the way, with exactly the hinted bytes taken and nothing held that the
-        //! transport did not give.
+        //! does on the way (for messages that do not seek to a position in the buffer,
+        //! which read-ahead can move), with exactly the hinted bytes taken and nothing held
+        //! that the transport did not give.
         use super::*;
         use crate::net::SCRATCH_LEN;
 
@@ -1526,6 +1552,13 @@ mod component {
             pub events: Vec<(usize, io::ErrorKind)>,
             pub reads: usize,
             pub largest: usize,
+            /// The room it was lent that was not cleared already: what an async transport
+            /// that clears its buffer before filling it (as `Pausing` does) had to clear.
+            pub cleared: usize,
+            /// From this offset on it gives one byte a read, whatever `chunk` says.
+            pub trickles_from: usize,
+            /// What its last read gave.
+            pub gave: usize,
         }
 
         impl Wire {
@@ -1537,6 +1570,9 @@ mod component {
                     events: Vec::new(),
                     reads: 0,
                     largest: 0,
+                    cleared: 0,
+                    trickles_from: usize::MAX,
+                    gave: 0,
                 }
             }
         }
@@ -1555,9 +1591,15 @@ mod component {
                     .filter(|&offset| offset > self.at)
                     .min()
                     .unwrap_or(self.data.len());
-                let count = out.len().min(self.chunk).min(stop - self.at);
+                let chunk = if self.at < self.trickles_from {
+                    self.chunk.min(self.trickles_from - self.at)
+                } else {
+                    1
+                };
+                let count = out.len().min(chunk).min(stop - self.at);
                 out[..count].copy_from_slice(&self.data[self.at..self.at + count]);
                 self.at += count;
+                self.gave = count;
                 Ok(count)
             }
         }
@@ -1894,6 +1936,15 @@ mod component {
                     // Up to where it pauses and no further.
                     let at = self.wire.at;
                     let room = self.pause.filter(|&pause| pause > at);
+                    // The rule, on every read of every test here: fresh room is a
+                    // scratch at most, or twice what the last read gave.
+                    let fresh = out.capacity() - out.initialized().len();
+                    assert!(
+                        fresh <= SCRATCH_LEN.max(2 * self.wire.gave),
+                        "lent {fresh} fresh bytes after a read that gave {}",
+                        self.wire.gave
+                    );
+                    self.wire.cleared += fresh;
                     let out_now = out.initialize_unfilled();
                     let limit = room.map_or(out_now.len(), |pause| out_now.len().min(pause - at));
                     let count = self.wire.read(&mut out_now[..limit])?;
@@ -1931,6 +1982,96 @@ mod component {
                     ));
                     assert_eq!(got, expected, "case {case}: {wire:?}");
                 }
+            }
+
+            /// `Pausing` clears all the fresh room it is lent before it fills any of it,
+            /// as some real transports do, so that room is work whatever comes back.
+            #[tokio::test]
+            async fn an_async_direct_read_lends_fresh_room_by_what_the_last_read_gave() {
+                let data = framed(300_000, 3);
+                // One byte a read; a segment a read; everything asked for; and everything
+                // asked for up to a third of the way, then one byte a read.
+                for (chunk, trickles_from, most_reads) in [
+                    (1, usize::MAX, usize::MAX),
+                    (1_460, usize::MAX, data.len() / 1_460 + 4),
+                    (usize::MAX, usize::MAX, 9),
+                    (usize::MAX, 100_000, usize::MAX),
+                ] {
+                    let mut reader = Pausing {
+                        wire: Wire {
+                            chunk,
+                            trickles_from,
+                            ..Wire::of(data.clone())
+                        },
+                        pause: None,
+                    };
+                    let mut buffer = BitBuf::new();
+                    let mut scratch = vec![0; SCRATCH_LEN];
+                    let message =
+                        read_message_async::<Framed, _>(&mut reader, &mut buffer, &mut scratch)
+                            .await
+                            .unwrap();
+                    assert_eq!(message.body, data[4..]);
+                    let wire = reader.wire;
+                    let context = format!(
+                        "{chunk} a read, one from {trickles_from}: {} cleared in {} reads",
+                        wire.cleared, wire.reads
+                    );
+                    // Never more fresh room than twice what came, however it came.
+                    assert!(wire.cleared <= 2 * data.len(), "{context}");
+                    // A read that gives little is lent the scratch, which costs nothing
+                    // and takes all a transport has up to its length: a slow transport
+                    // is read once for each delivery, and one that fills every request
+                    // is asked for twice as much each time.
+                    assert!(wire.reads <= most_reads, "{context}");
+                    if chunk == usize::MAX {
+                        assert!(
+                            wire.cleared >= trickles_from.min(data.len()) / 2,
+                            "{context}"
+                        );
+                    } else {
+                        assert_eq!(wire.cleared, SCRATCH_LEN, "{context}");
+                    }
+                }
+            }
+
+            /// Breaks the buffer contract: lent the last few bytes of a message through
+            /// the scratch, it answers with a longer buffer of its own, filled.
+            struct Swaps(Pausing);
+
+            impl AsyncRead for Swaps {
+                fn poll_read(
+                    mut self: Pin<&mut Self>,
+                    context: &mut Context<'_>,
+                    out: &mut ReadBuf<'_>,
+                ) -> Poll<io::Result<()>> {
+                    if out.capacity() < 100 && out.initialized().len() == out.capacity() {
+                        let mut other = ReadBuf::new(vec![0xEE; SCRATCH_LEN].leak());
+                        other.set_filled(SCRATCH_LEN);
+                        *out = other;
+                        return Poll::Ready(Ok(()));
+                    }
+                    Pin::new(&mut self.0).poll_read(context, out)
+                }
+            }
+
+            #[tokio::test]
+            #[should_panic(expected = "out of range")]
+            async fn a_transport_that_reports_more_than_it_was_lent_panics_on_a_scratch_read() {
+                // A hundred bytes a read keeps the direct read on the scratch; the last
+                // read of the message is lent ten.
+                let data = framed(20_010 - 4, 5);
+                let mut reader = Swaps(Pausing {
+                    wire: Wire {
+                        chunk: 100,
+                        ..Wire::of(data.clone())
+                    },
+                    pause: None,
+                });
+                let mut buffer = BitBuf::bounded(data.len());
+                let mut scratch = vec![0; SCRATCH_LEN];
+                let _ =
+                    read_message_async::<Framed, _>(&mut reader, &mut buffer, &mut scratch).await;
             }
 
             #[tokio::test]
