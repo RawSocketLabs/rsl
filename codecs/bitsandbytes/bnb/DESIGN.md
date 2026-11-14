@@ -3816,13 +3816,13 @@ pin `tests/compile_fail.rs` passes in a checkout (60 snapshots, Rust 1.99.0).
 
 Left for the next image change:
 
-- The Dockerfile's comment still calls the file floating. Any change under
-  `.circleci/image/` publishes an image from the next main push, so it was not touched.
-- A bump has not been done since these pins existed. The file, `STABLE` and the
-  Dockerfile's `ARG` must change in one commit to pass the tests, and that commit still
-  runs on the old image, which lacks the new version; the digest follows in a second
-  change (`docs/CI.md`). Whether the first commit's jobs pass is untested.
 - `cargo llvm-cov` needs `llvm-tools` added to the pinned toolchain by hand.
+
+Since then (2026-11-14) a bump to 1.100.0 was rehearsed. With every pin moved in one
+commit, as the tests then required, 15 of 23 jobs fail on the pinned image: it lacks the
+new version, so each job installs a bare one at run time, without rustfmt. A bump is now
+two changes, the image's toolchain first and the rest once that image is adopted
+(`docs/CI.md`); the Dockerfile's comment was corrected with the first.
 
 
 ## 25. Skipping bytes (0.10.1)
