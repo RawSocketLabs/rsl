@@ -4,14 +4,14 @@ version = 4
 
 [[package]]
 name = "bitsandbytes"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "bitsandbytes-macros",
 ]
 
 [[package]]
 name = "bitsandbytes-macros"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
