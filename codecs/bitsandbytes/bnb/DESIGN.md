@@ -4071,3 +4071,32 @@ magic (integer) as `BadMagic` at the magic's bit, in the `magic` field; an asser
 message borrows the condition. Every site that matched a message was moved to its
 variant, here and in `dns`, `socks` and `rtltcp`; `dns` tags its five failures
 (`dns::name::error_tag`).
+
+### Qualification (2026-11-14)
+
+On `477786a2`, the commit that reached `main`:
+
+- Two independent reviews: of the whole change, then of what was changed in answer. The
+  second found wrong statements in the guide and this record and no defect in the code;
+  all were corrected, and the drop guard in `BitError::into_retry` now also stops
+  compiling if `at` or `field` becomes a type with drop code.
+- 25 hand mutants over the new error code and the generated sites. Two survived the first
+  run (a retry taken from the end-of-input kind; the bit offset of a count that does not
+  fit its prefix) and one more needed a test of its own (a magic byte below 0x10 printed
+  without its zero); each has a test now and all 25 are caught.
+- `scripts/ci-local.sh pre-push`: 10 jobs pass. Its first run failed where CI runs the
+  examples: `versioned` and `versioned_cells` still expected `Convert` for a failed
+  `assert`, which compiles and is the silent change the upgrade guide warns of. All 50
+  examples run.
+- `scripts/ci-local.sh release --product bitsandbytes`: 24 jobs pass on the 1.100.0 image
+  (MSRV, bare-metal `no_std`, packaging, the public API snapshot, semver-checks in major
+  mode against 0.10.1, the bnb and socks suites, the bnb, PKI and socks fuzz targets).
+- libsdr at `30b1aa9` with its requirement pointed at this tree: every target type-checks
+  and its default suites pass (666 + 92 + 173 + 14) with no source change. Its only use of
+  these types is `ErrorKind::NotSeekable`.
+- The probe on the final tree (Rust 1.99.1), against the build measured before the
+  review's corrections: three modes moved, each by one instruction
+  (`limit_prefix_fixed44`, `prefix_eof_envelope`, `prefix_fixed44`), and none is worse
+  than `main` by more than the table above says.
+- Not run: a 32-bit run of the unit suite, `cargo mutants`, libsdr's benchmarks, and fuzz
+  campaigns longer than the release tier's.

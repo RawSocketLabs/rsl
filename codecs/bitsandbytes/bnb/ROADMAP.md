@@ -166,8 +166,9 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
 Decisions 1 to 3 are made and built (`DESIGN.md` §27, 2026-11-14): typed variants for the
 crate's own failures, a caller-chosen tag on `Convert` with room for a source later, a
 `BadMagic` that never allocates, `BitError` 80 → 56 bytes. Decision 4 (a field path) is not
-taken: no consumer has asked. Left before the tag: release qualification in major mode
-against 0.10.1, and the libsdr check.
+taken: no consumer has asked. Qualified the same day (`DESIGN.md` §27, Qualification):
+the release tier in major mode against 0.10.1, and libsdr, which builds and passes its
+suites with no source change.
 
 The record of how the decisions were framed:
 
