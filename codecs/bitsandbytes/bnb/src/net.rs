@@ -1554,6 +1554,7 @@ mod component {
             pub largest: usize,
             /// The room it was lent that was not cleared already: what an async transport
             /// that clears its buffer before filling it (as `Pausing` does) had to clear.
+            #[cfg(feature = "tokio-io")]
             pub cleared: usize,
             /// From this offset on it gives one byte a read, whatever `chunk` says.
             pub trickles_from: usize,
@@ -1570,6 +1571,7 @@ mod component {
                     events: Vec::new(),
                     reads: 0,
                     largest: 0,
+                    #[cfg(feature = "tokio-io")]
                     cleared: 0,
                     trickles_from: usize::MAX,
                     gave: 0,
