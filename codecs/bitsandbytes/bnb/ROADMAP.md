@@ -163,6 +163,15 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
 
 ### 0.11.0 — error types (breaking, once)
 
+Decisions 1 to 3 are made and built (`DESIGN.md` §27, 2026-11-14): typed variants for the
+crate's own failures, a caller-chosen tag on `Convert` with room for a source later, a
+`BadMagic` that never allocates, `BitError` 80 → 56 bytes. Decision 4 (a field path) is not
+taken: no consumer has asked. Left before the tag: release qualification in major mode
+against 0.10.1, and the libsdr check.
+
+The record of how the decisions were framed:
+
+
 Why one release: both changes below break `ErrorKind`, and §C already wants the error types
 reviewed before the 1.0 freeze. Facts at 0.10.0: `BitError` is 80 bytes (align 16) because
 `BadMagic` holds two `u128`; it derives `Clone`, `PartialEq` and `Eq`; `Convert { message:

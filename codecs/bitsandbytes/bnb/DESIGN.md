@@ -3917,3 +3917,157 @@ as before, and the probe built before and after is the same file byte for byte (
 modules are not compiled into it, and they sat at the end of the file, so no line number
 in the code moved). The split of the code itself follows the release as its own change,
 with each `#[inline]` decision on the pull path measured.
+
+## 27. Error types (0.11.0, breaking)
+
+The one planned breaking release for the error types (ROADMAP, 0.11.0). Before it,
+`ErrorKind::Convert { message: String }` was the catch-all for every failure that was not a
+read error: the crate raised it at 14 sites of its own, users raised it from their codecs,
+and consumers told the cases apart by searching the message (`socks` for the crate's count
+overflow, `dns` for its own failures). `BitError` was 80 bytes, aligned to 16, because
+`BadMagic` held two `u128`.
+
+### Decisions (owner, 2026-11-14)
+
+1. **The crate's own failures are variants; a user's failure is `Convert` with an optional
+   tag.** The owner weighed carrying the user's error as a source (`Error::source`,
+   downcast). Its gain is narrow, branching on one's own failure without reading prose, and
+   a caller-chosen `&'static str` tag gives that without an `Arc` (absent on targets with no
+   atomics), without losing derived equality (errors are compared with `assert_eq!` in
+   about 49 places in this workspace), and without a second shape behind a feature. The
+   tag is compared by its text; the convention is a crate-prefixed constant
+   (`"dns.pointer_loop"`). `Conversion` is opaque and behind one pointer, so a source can
+   be added later without a break or a change of size; when it is, equality stays message
+   and tag.
+2. **`BadMagic` does not allocate.** A mismatch is what a caller pays when it tries one
+   message type after another. Boxing the pair was measured and set aside for that reason.
+3. **Names** as below. `TooDeep` keeps its name and the frame cap keeps reusing
+   `BufferFull`, so 0.11 renames nothing 0.10.1 added.
+
+An independent design review of the first draft found five places where it was wrong, all
+checked against the code and corrected before any was written: an assert message can be
+formatted at run time, so it cannot be a `&'static str`; count overflow reached the error
+through `From<WidthError>`, not through the one site the draft named; a byte-string magic
+mismatch (and any magic wider than 64 bits) would still have allocated; a `seek` offset
+and a `count` expression that no `usize` holds had no home; and three of the new texts
+lose detail the old message had (the value, which sign, the UTF-8 error's own words),
+which is accepted and said in the upgrade guide.
+
+### Shape
+
+```rust
+pub enum ErrorKind {
+    // unchanged: UnexpectedEof, Incomplete, IncompleteAtEof, NoProgress, TrailingBytes,
+    // TooWide, Io, NoMatchingVariant, NotSeekable, BufferFull, NotByteAligned,
+    // PositionOverflow, TrailingBits, TooDeep
+    BadMagic(MagicMismatch),                      // was { expected: u128, found: u128 }
+    Convert(Conversion),                          // was { message: String }
+    AssertFailed { message: Cow<'static, str> },  // #[br(assert(...))]
+    InvalidUtf8 { valid_up_to: usize },
+    ValueOutOfRange { bits: u32 },                // From<WidthError>
+    CountOutOfRange { count: usize, bits: u32 },  // count_prefix, WireLen, string prefix
+    VarintOverflow { bits: u32 },                 // LEB128 too wide or never ending
+    EmbeddedNul { index: usize },
+    UnresolvedWireLen,
+}
+```
+
+- `MagicMismatch` is three private payloads of two words and no `Box`: both sides of a
+  numeric magic when both values fit 64 bits; what was read when either does not (as two
+  halves: a `u128` field would align the whole error to 16); the constant of a byte-string magic. `expected()` and
+  `found()` return `Option<MagicValue>`, `None` for the side not kept. An enum's prefix and
+  a variant's own magic, which were a text `Convert`, are `BadMagic` too.
+- `Conversion` is `Box<{ message: Cow<'static, str>, tag: Option<&'static str> }>`, with
+  `Conversion::new(message).with_tag(tag)` so a test can build its expected value.
+  `BitError::convert` takes `impl Into<Cow<'static, str>>` (a literal is not copied) and
+  funnels into one cold, out-of-line body; `.with_tag(tag)` mirrors `.in_field(name)`, so
+  the tag and the message cannot be swapped by position.
+- A literal assert message is borrowed (`fmt::Arguments::as_str`), a formatted one is
+  formatted once; the no-message form is the condition in backticks.
+- A `seek` offset no `usize` holds is the existing `PositionOverflow`. A `count`
+  expression no `usize` holds is `CountOutOfRange { count: usize::MAX, bits: usize::BITS }`.
+
+The variants with named fields are frozen as they are: `ErrorKind` is `#[non_exhaustive]`
+but its variants are not, so a field added to one is a breaking change. What may still grow
+(`MagicMismatch`, `Conversion`) has private fields for that reason.
+
+Sizes, asserted at compile time on 64-bit targets: `MagicMismatch` 24, `Conversion` 8,
+`ErrorKind` 32, `BitError` 56 (was 48 and 80). `BitError` stays `Send + Sync + Unpin +
+UnwindSafe + RefUnwindSafe`, asserted likewise.
+
+Allocation: the crate's own failures went from one allocation to none, except a formatted
+assert message (one, as before) and a dispatch miss (unchanged). A user's conversion is one
+allocation for a literal message (the box) and two for a formatted one (was one).
+
+### Measurements
+
+Prototype layouts first (probe, instructions, typical change by tier against the 80-byte
+error; cycles were unusable, other jobs were running):
+
+| Layout | `BitError` | happy | expected | Allocates on a mismatch | Worst gated mode |
+|--------|-----------:|------:|---------:|-------------------------|-----------------:|
+| Boxed pair | 48 | −0.9% | −1.1% | yes | +6% |
+| Boxed pair, one-pointer field name | 40 | −1.1% | −2.8% | yes | +18% |
+| Two words by reference and bytes (stand-in) | 56 | −1.9% | −3.3% | no | +15% |
+| The same, one-pointer field name | 48 | +0.5% | −0.9% | no | +22% |
+
+So the shrink is worth 1% to 3%, size alone does not predict the result, and each layout
+moves single modes by inlining. The one-pointer field name was not taken (`field` is a
+public field, and ROADMAP decision 4, a field path, would change it again).
+
+The real change, against `main` with the decode attempt forced out of line on both sides
+(see below), Rust 1.99.1:
+
+| Tier | Modes | Instructions | Worse by more than 0.5% |
+|------|------:|-------------:|-------------------------|
+| happy | 40 | −4.3% | 6 |
+| expected | 13 | −4.4% | none |
+| encode | 8 | −1.0% | none |
+| terminal | 10 | −1.8% | 2 |
+
+Still worse: `dmr` 422 → 443 instructions (+5.0%), 92 → 114 cycles;
+`stream_reader_envelope` 494 → 513 (+3.8%, cycles level); `stream_reader_payload_4k`
+968 → 987 (+2.0%, cycles lower); `unaligned_wide_tail` 406 → 412 (+1.5%);
+`bytes_reader_sub_byte` 151 → 153 (+1.3%); `limit_prefix_fixed44` 186 → 187 (+0.5%); and,
+terminal, `limit_fixed44_long` 164 → 174 (+6.1%) and `stream_reader_short_envelope`
+530 → 534 (+0.8%).
+
+**`dmr`, accepted by the owner (2026-11-14).** It repeats across builds. The profile puts
+the cost in the caller, not the decoder: the decoded frame (two 108-bit fields) is copied
+once more on its way out of `decode_exact`. That is the result copy §22's research could
+not remove cleanly; the new error layout tips the compiler into one more for this shape.
+Open, to be looked at with the split of the runtime's code, where the inlining on that
+path is measured anyway.
+
+Three findings on the way:
+
+- **The error's drop code is a call, and it was on the retry path.** With three variants
+  that own something, `drop_glue::<ErrorKind>` grew from 43 to 61 instructions and its call
+  sites from 78 to 153; a short pull, which drops an `Incomplete` on every attempt, measured
+  24% more instructions on the first build. A retry signal owns nothing, so the three hot
+  sites (`BitBuf::pull`, the transports' `shortfall`, `BinCodec`'s attempt) now take it
+  apart with `BitError::into_retry`, which lets it go without the drop code, as does the
+  attempt's rewrite of `Incomplete` into `IncompleteAtEof`.
+- **An error kind built eagerly and dropped unused is the same call on the happy path.**
+  `StreamBitReader::fill` built its `PositionOverflow` with `.or(...)`, and two `read_into`
+  bodies ended in `map_or(Ok(()), Err)`; each is now lazy or a `match`. That was
+  `stream_reader_envelope` +9.7% and `stream_reader_payload_4k` +5.0% on the first build.
+- **`pull_short` on `main` was measuring the attempt inlined.** The probe's check that a
+  mode measures the attempt as a consumer compiles it, out of line, accepted any caller
+  with "pull" in its name, and the transports' `try_pull` satisfied it for this mode. The
+  first comparison therefore showed +9% instructions and +49% cycles for a change that,
+  like for like, is 188 → 168 and 80 → 71. The check now names the mode's own function,
+  and reports the 0.10.1 build as inlined there.
+
+### Tests
+
+Unit: a magic mismatch keeps both sides of a narrow magic, what was read of a wide one and
+the constant of a byte string, and prints each; a conversion carries its message and a tag
+only if one was attached, compares by both, and any other kind takes no tag; each of the
+crate's own failures says what it is; an assert message is borrowed unless it
+interpolates; a retry signal gives its hint and any other error comes back whole.
+Generated code: a magic wider than 64 bits; an enum's prefix (bytes) and a variant's own
+magic (integer) as `BadMagic` at the magic's bit, in the `magic` field; an assert with no
+message borrows the condition. Every site that matched a message was moved to its
+variant, here and in `dns`, `socks` and `rtltcp`; `dns` tags its five failures
+(`dns::name::error_tag`).
