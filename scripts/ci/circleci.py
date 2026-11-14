@@ -213,6 +213,12 @@ def event_options(root, env, prefix):
 
 def plan_for_event(root, env):
     event, base, full, release, products = event_options(root, env, release_policy(root))
+    if event == "push":
+        # Pinned for the gate, which recomputes from this and never from the plan's own fullness.
+        # A push that is full because of what it changed (a global file) still has its proven
+        # base, and the gate's fallback, the first parent, is another commit whenever the push
+        # carries more than one: the recomputed plan then differs and the gate fails.
+        env.setdefault("CI_TRUNK_BASE", "none" if full else base)
     # A trunk push qualifies only the products whose versions it changes; most change none.
     plan = build_plan(root, base=base, full=full, release=release, products=products,
                       release_optional=event == "push")
@@ -223,9 +229,9 @@ def plan_for_event(root, env):
             and head_tested(env)):
         # The branch pipeline already passed the required gate on this exact commit, and its merge
         # base is at or before the proven green trunk base, so main re-tests nothing. A full plan
-        # (no green predecessor) could hide a red trunk the branch never tested; a release or image
+        # (no green predecessor, or a global file changed) could hide a red trunk the branch never
+        # tested; a release or image
         # push needs this workflow's own run. The gate recomputes from the same pinned trunk base.
-        env.setdefault("CI_TRUNK_BASE", plan["base"])
         plan = build_plan(root, base=env["CIRCLE_SHA1"])
     if plan["head"] != env["CIRCLE_SHA1"]:
         raise ValueError("checkout does not match the pipeline's tested SHA")
@@ -370,8 +376,10 @@ def continuation(plan, bnb, env, event):
     common = {"CI_PLAN": handed, "CI_TEMP": "/tmp/ci", "RUNNER_TEMP": "/tmp/ci",
               "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
               "CI_MERGE_BASE": plan["base"] or "",
-              # A scoped trunk plan's base came from the previous pipeline; "none" pins full coverage.
-              "CI_TRUNK_BASE": env.get("CI_TRUNK_BASE") or (plan["base"] if trunk and not plan["full"] else "none"),
+              # The plan job's pin (`plan_for_event`): the previous pipeline's revision, or "none"
+              # when there was no proven one and coverage is full against the first parent. Only a
+              # trunk push reads it.
+              "CI_TRUNK_BASE": env.get("CI_TRUNK_BASE") or "none",
               "CI_HEAD_TESTED": env.get("CI_HEAD_TESTED", "false"),
               **{name: env.get(name, "") for name in INPUTS}}
     checkout = ["checkout", run("Prepare", 'mkdir -p "$CI_TEMP"')]

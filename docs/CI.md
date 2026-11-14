@@ -316,8 +316,9 @@ the removed `docs/CIRCLECI-PLAN.md`). What remains:
   re-enable it. The Actions workflows remain in history.
 - Not yet covered: SBOM and build-provenance attestation for published crates, and rulesets
   kept as code.
-- Before enabling a second release product: a full-coverage trunk push judges version changes
-  against its first parent only, and a scoped one against the previous green main commit (when
+- Before enabling a second release product: a trunk push with no proven predecessor judges version
+  changes against its first parent only, and one with a proven predecessor (scoped, or full by
+  what it changed) against that previous green main commit (when
   that is not `sha^`, `gate.py release` rejects the members mismatch and the job fails), so a bump below the tip of a multi-commit push is never qualified, and the
   next release-plz merge for another product could publish it. Make `release` refuse any
   release-enabled package whose version is neither on the registry nor in the qualified members.

@@ -82,12 +82,13 @@ class EventTests(unittest.TestCase):
                 mock.patch.object(circleci, "descends", return_value=False):
             self.assertEqual(event_options(None, {**env, "CI_TRUNK_BASE": "a" * 40}, PREFIX)[1:3], ("d" * 40, True))
 
-    def test_the_continuation_pins_a_scoped_trunk_base_for_the_gate(self):
+    def test_the_continuation_hands_the_plan_jobs_trunk_base_to_the_gate(self):
         scoped = test_plan.planned(["protocols/session/socks/src/lib.rs"])
-        for plan, branch, pinned in ((scoped, "main", scoped["base"]), (test_plan.planned(full=True), "main", "none"),
-                                     (scoped, "feat/x", "none")):
-            with self.subTest(branch=branch, full=plan["full"]):
-                config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": branch})
+        for plan, env, pinned in ((scoped, {"CIRCLE_BRANCH": "main", "CI_TRUNK_BASE": "a" * 40}, "a" * 40),
+                                  (test_plan.planned(full=True), {"CIRCLE_BRANCH": "main", "CI_TRUNK_BASE": "none"}, "none"),
+                                  (scoped, {"CIRCLE_BRANCH": "feat/x"}, "none")):
+            with self.subTest(env=env, full=plan["full"]):
+                config = cont(plan, BNB_GATE, env)
                 self.assertEqual(config["jobs"]["rsl"]["environment"]["CI_TRUNK_BASE"], pinned)
 
     def test_previous_trunk_revision_is_the_latest_earlier_green_pipeline_head_descends_from(self):
@@ -155,6 +156,36 @@ class EventTests(unittest.TestCase):
                     with mock.patch.object(circleci, "build_plan", side_effect=[dict(plan), dict(empty)]), \
                             mock.patch.object(circleci, "gate_passed", side_effect=OSError("offline")):
                         self.assertEqual(circleci.plan_for_event(None, env)[1], result)
+
+    def test_a_trunk_push_made_full_by_what_it_changed_keeps_its_base_for_the_gate(self):
+        # Two commits, the first touching a global file: the plan is full, but against the
+        # previous trunk revision, which is not this push's first parent. Then the same push with
+        # no proven predecessor, where both sides fall back to the first parent.
+        head, previous, parent = "e" * 40, "a" * 40, "d" * 40
+        template = {**test_plan.planned(full=True), "head": head}
+
+        def planned(_root, *, base, **_):
+            return {**template, "base": base}
+
+        for found, base, pin in ((previous, previous, previous), ("", parent, "none")):
+            env = {"CIRCLE_BRANCH": "main", "CI_BASE_REVISION": "<nil>", "CIRCLE_SHA1": head}
+            with self.subTest(previous=found), \
+                    mock.patch.object(circleci, "release_policy", return_value=PREFIX), \
+                    mock.patch.object(circleci, "validate_plan"), \
+                    mock.patch.object(circleci, "build_plan", side_effect=planned), \
+                    mock.patch.object(circleci, "first_parent", return_value=parent), \
+                    mock.patch.object(circleci, "descends", return_value=True), \
+                    mock.patch.object(circleci, "gate_passed", return_value=False):
+                with mock.patch.object(circleci, "previous_trunk_revision", return_value=found):
+                    _, handed = circleci.plan_for_event(None, env)
+                self.assertEqual(handed["base"], base)
+                # The gate has what the continuation handed its job and no network, and must
+                # reach the plan it was handed.
+                handed_on_env = cont(handed, BNB_GATE, env)["jobs"]["rsl"]["environment"]
+                self.assertEqual(handed_on_env["CI_TRUNK_BASE"], pin)
+                gate = {**handed_on_env, "CIRCLE_BRANCH": "main", "CIRCLE_SHA1": head}
+                with mock.patch.object(circleci, "previous_trunk_revision", side_effect=OSError("offline")):
+                    self.assertEqual(circleci.plan_for_event(None, gate)[1], handed)
 
     def test_gate_passed_requires_a_successful_required_gate_from_the_circleci_app(self):
         bot = {"login": "circleci-app[bot]"}
