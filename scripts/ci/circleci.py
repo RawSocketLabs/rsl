@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import tomllib
 import urllib.error
 import urllib.request
@@ -94,6 +95,21 @@ SKIP = 3
 ENV_LIMIT = 128 * 1024 - 256
 
 
+def fetch(request, attempts=3, delay=5):
+    """urlopen a read, retrying a lost connection or a server error. A refusal (rate limit,
+    not found) is an answer, and the caller's own failure handling decides it."""
+    for attempt in range(attempts):
+        try:
+            return urllib.request.urlopen(request, timeout=60)
+        except urllib.error.HTTPError as error:
+            if error.code < 500 or attempt == attempts - 1:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == attempts - 1:
+                raise
+        time.sleep(delay * (attempt + 1))
+
+
 def merge_base(root, revision):
     result = subprocess.run(["git", "merge-base", revision, "HEAD"], cwd=root,
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -135,8 +151,7 @@ def previous_trunk_revision(root, env):
         return ""
     host = env.get("CIRCLECI_HOST", "https://circleci.com")
     try:
-        with urllib.request.urlopen(f"{host}/api/v2/project/{project}/pipeline?branch={TRUNK}",
-                                    timeout=60) as response:
+        with fetch(f"{host}/api/v2/project/{project}/pipeline?branch={TRUNK}") as response:
             items = json.loads(response.read())["items"]
         # Newest first, one page: if 20 later trunk pipelines overtook this one, coverage is full.
         revision = next((item["trigger_parameters"]["git"]["checkout_sha"] for item in items
@@ -454,7 +469,7 @@ def github(path, token=None):
                **({"Authorization": f"Bearer {token}"} if token else {})}
     while url:
         request = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with fetch(request) as response:
             items.extend(json.loads(response.read()))
             links = re.findall(r'<([^>]+)>;\s*rel="next"', response.headers.get("Link", ""))
             url = links[0] if links else None

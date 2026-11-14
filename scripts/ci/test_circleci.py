@@ -187,6 +187,21 @@ class EventTests(unittest.TestCase):
                 with mock.patch.object(circleci, "previous_trunk_revision", side_effect=OSError("offline")):
                     self.assertEqual(circleci.plan_for_event(None, gate)[1], handed)
 
+    def test_reads_retry_lost_connections_and_server_errors_but_not_refusals(self):
+        def http(code):
+            return circleci.urllib.error.HTTPError("u", code, "", {}, None)
+        lost = circleci.urllib.error.URLError("reset")
+        for outcomes, calls, ok in (([lost, http(502), "ok"], 3, True), ([http(403)], 1, False),
+                                    ([lost] * 3, 3, False)):
+            with self.subTest(outcomes=outcomes), mock.patch.object(circleci.time, "sleep"), \
+                    mock.patch.object(circleci.urllib.request, "urlopen", side_effect=outcomes) as urlopen:
+                if ok:
+                    self.assertEqual(circleci.fetch("u"), "ok")
+                else:
+                    with self.assertRaises(OSError):
+                        circleci.fetch("u")
+                self.assertEqual(urlopen.call_count, calls)
+
     def test_gate_passed_requires_a_successful_required_gate_from_the_circleci_app(self):
         bot = {"login": "circleci-app[bot]"}
         cases = [

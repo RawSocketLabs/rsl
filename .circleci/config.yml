@@ -53,7 +53,13 @@ jobs:
       - checkout
       - run:
           name: Fetch the trunk
-          command: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          # Retried: a lost connection here would otherwise fail the whole pipeline.
+          command: |
+            for delay in 5 15 0; do
+              git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main && exit 0
+              sleep "$delay"
+            done
+            exit 1
       - run:
           name: Select packages, profiles, and fuzz targets, then continue
           command: python3 scripts/ci/circleci.py plan

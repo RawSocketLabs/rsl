@@ -223,7 +223,8 @@ Event mapping: main compares against `pipeline.git.base_revision`. GitHub App pi
 it (`<nil>`), so the plan reads the commit of the latest earlier main pipeline from CircleCI's
 public pipeline list (no credential; `CI_PIPELINE_NUMBER` and `CI_PROJECT_SLUG` identify it) and
 uses it when the pushed head descends from it and the CircleCI app posted a successful
-`ci/circleci: rsl` status on it, so a red or unfinished predecessor is never a base. The plan
+`ci/circleci: rsl` status on it, so a red or unfinished predecessor is never a base. These reads
+retry a lost connection or a server error; a refusal (rate limit) proves nothing. The plan
 pins the result as `CI_TRUNK_BASE` for the generated jobs, so the gate recomputes from it rather
 than asking the network again. Without one (unreadable history, a force-push, a red predecessor,
 or no earlier pipeline on the first page) main runs full coverage, because an admin push can bypass the
