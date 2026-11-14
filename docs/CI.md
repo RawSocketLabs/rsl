@@ -165,7 +165,8 @@ same pinned `rsl-ci` image. The plan job's generator writes the continuation Cir
 and each job's own `run` steps execute unchanged in a fresh clone of the tested commit: `policy`
 and `commitlint` first, then the selected checks and fuzz targets (`-j N`, default
 `CI_LOCAL_JOBS` or 2), then `rsl`, which recomputes the plan and rejects divergence. Release jobs
-never run locally; a changed job image is built, not published. A machine job (`commitlint`)
+never run locally, and neither does the `image` job, which exists only on a main push: build a
+changed image by hand (`podman build .circleci/image/`) before it lands. A machine job (`commitlint`)
 runs its script on the host with Podman standing in for Docker, so its own container does the work. It requires a clean committed
 tree and tests a self-contained clone, so linked worktrees and unstaged files never reach it.
 The default comparison is the merge base against the trunk recorded by repo-guard's local
@@ -202,7 +203,18 @@ build time, and nothing is installed at run time. A change under `.circleci/imag
 `image` job to a main push, after `rsl` passes, that builds and publishes
 `ghcr.io/rawsocketlabs/rsl-ci:<sha>` with the `images` context's GHCR token (a classic token holding only `write:packages`: GHCR
 rejects fine-grained tokens); adopting it is a
-reviewed digest change. To try a changed image first, build it locally and run
+reviewed digest change. A stable toolchain bump is therefore two changes: jobs run the pinned
+image, which lacks the new version, so a change that moved every pin at once would make each job
+install a bare toolchain at run time and fail. First the Dockerfile's `ARG STABLE` moves alone,
+with `NEXT_STABLE` in `scripts/ci/circleci.py` naming it, and the main push publishes that image.
+Then one change adopts its digest (the `image` job prints it on its `Pin:` line), moves `STABLE`
+and the root `rust-toolchain.toml`, clears `NEXT_STABLE`, and carries whatever the new compiler
+asks of the code; its jobs build cold, since cache keys hold the toolchain and the digest and only
+the weekly run saves. Before the first change lands, build its image by hand and run the second
+change's tree on it, routine and release tiers both (`scripts/ci-local.sh pre-push --full --image …`
+and `release --product bitsandbytes --image …`): the release tier is where a pinned tool that
+cannot read the new compiler's output would show, and fixing that is another image. Any other
+image change made while `NEXT_STABLE` is set is adopted with that second change. To try any other changed image first, build it locally and run
 `scripts/ci-local.sh pre-push --image localhost/rsl-ci:<tag>`. `test_circleci.py` keeps the
 Dockerfile pins, `bnb.toml`, the generator, the setup config and the root `rust-toolchain.toml` in step. `commitlint` lints every
 commit since the base with the pinned upstream commitlint image and `.config/commitlint.config.mjs`.

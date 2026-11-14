@@ -4,7 +4,7 @@
 # .circleci/config.yml reference it by digest, and test_circleci.py holds the pins in step.
 FROM docker.io/library/ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 
-ARG STABLE=1.99.0
+ARG STABLE=1.100.0
 ARG MSRV=1.85.0
 # One pinned nightly serves both the public-API gate (.github/ci/bnb.toml) and fuzzing.
 ARG NIGHTLY=nightly-2026-06-17
@@ -44,8 +44,9 @@ RUN git init -q /opt/dsdcc \
 RUN useradd --create-home --uid 1001 ci
 USER ci
 WORKDIR /home/ci
-# RUSTUP_TOOLCHAIN overrides rust-toolchain.toml's floating `stable`, so a job never installs
-# a toolchain at run time; jobs that need another toolchain set it themselves.
+# RUSTUP_TOOLCHAIN names the version rust-toolchain.toml pins once this image is adopted (until
+# then the file names the pinned image's; test_circleci.py holds each to its own), so a job never
+# installs a toolchain at run time; jobs that need another toolchain set it themselves.
 ENV PATH=/home/ci/.cargo/bin:${PATH} \
     RUSTUP_TOOLCHAIN=${STABLE} \
     DSDCC_INCLUDE=/opt/dsdcc \

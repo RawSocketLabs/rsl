@@ -41,7 +41,7 @@ One directory per domain group; each crate's own (or its group's) `AGENTS.md` ho
   unsafe policy is `unsafe_op_in_unsafe_fn = deny`; crates that guarantee zero unsafe pin
   `#![forbid(unsafe_code)]` at crate level (bnb); rawsock is `deny` with one `unsafe` block, in the `#[allow(unsafe_code)]` fn `link_addr`.
 - **Formatting / toolchain / MSRV** — root `rustfmt.toml`; `rust-toolchain.toml` pins the stable
-  version CI runs (a bump changes it with `STABLE` and the image's `ARG`; `docs/CI.md`); MSRV 1.85.
+  version CI runs (a bump moves the image's `ARG` one change before it and `STABLE`; `docs/CI.md`); MSRV 1.85.
 - **Parsing performance: optimize the happy path.** When a change trades speed, prefer
   decoding valid input faster over failing faster. A marginal regression on a failure path
   (invalid input, rejected magic, `TrailingBytes`) is acceptable when it buys a happy-path

@@ -5,7 +5,7 @@ The plan runs in the pinned `rsl-ci` image and writes the continuation CircleCI 
 Each generated job then runs its own `run` steps, unchanged, in a fresh clone of the tested
 commit inside that image; `policy` and `commitlint` first, the checks and fuzz targets
 concurrently, and `CI` last, which recomputes the plan and rejects any divergence. Release
-jobs never run locally, and a changed job image is built but not published.
+jobs never run locally. Neither does `image`: it is generated only for a main push.
 """
 
 import argparse

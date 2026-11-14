@@ -548,9 +548,12 @@ class ImageTests(unittest.TestCase):
         self.assertIn(f"- image: {circleci.IMAGE}\n", (ROOT / ".circleci/config.yml").read_text())
         self.assertRegex(circleci.IMAGE, r"^ghcr\.io/rawsocketlabs/rsl-ci@sha256:[0-9a-f]{64}$")
 
-    def test_image_provides_the_toolchains_jobs_select(self):
+    def test_the_dockerfile_holds_the_toolchains_jobs_select_or_the_pending_stable(self):
         bnb = tomllib.loads((ROOT / ".github/ci/bnb.toml").read_text())
-        self.assertEqual(self.arg("STABLE"), circleci.STABLE)
+        # The Dockerfile at HEAD is the pinned image's, or holds a pending stable mid-bump.
+        self.assertEqual(self.arg("STABLE"), circleci.NEXT_STABLE or circleci.STABLE)
+        self.assertNotEqual(circleci.NEXT_STABLE, circleci.STABLE,
+                            "clear NEXT_STABLE once STABLE reaches it")
         self.assertEqual(self.arg("MSRV"), circleci.MSRV)
         self.assertEqual(self.arg("NIGHTLY"), bnb["public_api_toolchain"])
         self.assertEqual(self.arg("PUBLIC_API"), bnb["public_api_version"])
