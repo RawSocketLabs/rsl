@@ -576,6 +576,33 @@ fn stream(n: u64, chunk: usize) {
     }
 }
 
+/// `n` envelopes with a body of `len` bytes, each read through a `MessageStream` from a
+/// reader that returns `chunk` bytes at a time: a message far larger than one read.
+#[cfg(feature = "net")]
+#[inline(never)]
+fn stream_payload(n: u64, len: usize, chunk: usize) {
+    use std::io::{self, Read};
+
+    struct Fragments<'a> {
+        bytes: &'a [u8],
+        chunk: usize,
+    }
+    impl Read for Fragments<'_> {
+        fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+            let count = out.len().min(self.chunk);
+            self.bytes.read(&mut out[..count])
+        }
+    }
+
+    let wire = payload(len);
+    let mut stream = bnb::MessageStream::new(Fragments { bytes: &[], chunk });
+    for _ in 0..n {
+        stream.get_mut().bytes = black_box(&wire);
+        let message = stream.read_message::<Envelope>().unwrap();
+        black_box(&message);
+    }
+}
+
 /// `n` rounds of sixteen 44-byte envelopes written through a `MessageStream` to a writer
 /// that keeps nothing: the encode and the hand-over, without a socket.
 #[cfg(feature = "net")]
@@ -859,6 +886,12 @@ const MODES: &[Mode] = &[
     per_16(mode("stream_16x40_1", "expected", M / 32, |n| stream(n, 1))),
     #[cfg(feature = "net")]
     per_16(mode("stream_write_16x40", "encode", M / 4, stream_write)),
+    #[cfg(feature = "net")]
+    mode("stream_payload_64k_whole", "happy", M / 64, |n| stream_payload(n, 65_536, usize::MAX)),
+    #[cfg(feature = "net")]
+    mode("stream_payload_64k_1460", "happy", M / 64, |n| stream_payload(n, 65_536, 1_460)),
+    #[cfg(feature = "net")]
+    mode("stream_payload_1m_1460", "happy", M / 1024, |n| stream_payload(n, 1 << 20, 1_460)),
     // The readers over `std::io::Read`, which hold nothing in memory to lend.
     mode("stream_reader_fixed44", "happy", 2 * M, |n| stream_reader::<Fixed44>(n, &fixed44())),
     mode("stream_reader_envelope", "happy", 2 * M, |n| stream_reader::<Envelope>(n, &envelope())),
