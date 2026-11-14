@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.11.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.10.1...bitsandbytes-v0.11.0) - 2026-11-14
+
+### Added
+
+- *(bitsandbytes)* [**breaking**] give the crate's own failures typed error kinds
+
+### Other
+
+- *(bitsandbytes)* record the 0.11 qualification
+- *(bitsandbytes)* record the 0.11 error types
+- *(bitsandbytes)* name the short-pull mode's own caller in the probe's inlining check
+- *(bitsandbytes)* record the adopted 1.100.0 toolchain and the serialised snapshot tests
+- adopt the 1.100.0 job image and move the toolchain pins to it
+- *(bitsandbytes)* record the rehearsed toolchain bump
+- *(bitsandbytes)* keep a test transport's async-only counter out of other builds
+- *(bitsandbytes)* add the 0.10.0 to 0.10.1 section to the upgrade guide
+
 ## [0.10.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.10.0...bitsandbytes-v0.10.1) - 2026-11-14
 
 ### Added
