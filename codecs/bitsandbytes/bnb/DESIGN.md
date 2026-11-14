@@ -3823,3 +3823,71 @@ Left for the next image change:
   runs on the old image, which lacks the new version; the digest follows in a second
   change (`docs/CI.md`). Whether the first commit's jobs pass is untested.
 - `cargo llvm-cov` needs `llvm-tools` added to the pinned toolchain by hand.
+
+
+## 25. Skipping bytes (0.10.1)
+
+**The gap.** There was no public way to pass over bytes. `#[br(pad_before/after)]` covers
+a constant gap in a message; a custom decoder that meets a body it does not parse (an
+unknown record kind, a newer version's field, padding a length covers) had two ways, both
+poor. `read_bytes(n)` and drop allocates and copies what it throws away. A seek fails on
+a source that cannot seek, and on `BufSource` and `SeekReader` a seek past the end of
+the data succeeds, so a body that never arrived decodes as skipped: the review of the
+`regions` example found both.
+
+**Contract (owner's decision, 2026-11-14: a method on every source, over one on a region
+only).** `Source::skip_bytes(n)` is `read_bytes(n)` with the bytes dropped:
+
+- From any bit offset, on every source, forward-only ones included.
+- It fails where a read of the same bytes fails, with that read's error and the cursor
+  where that read leaves it.
+- No `Vec` is made for the bytes, whatever `n` says. A run the source lends (byte-aligned
+  and in memory) is passed over in one step; any other is read through a 256-byte buffer
+  on the stack with the source's own bulk `read_into`.
+- Each source otherwise does what a read does. `BufSource` keeps what it skips, as it
+  keeps all it reads so that it can seek back: a skip of 50,000 bytes allocates 130,816
+  there (the reviewer's counting allocator), and past the cap it fails with `BufferFull`
+  though the bytes are present. `SeekReader` reads a byte at a time, a seek and a read
+  each (4 MiB off a file: 3.76 s, against 18 ms for `BufSeekReader`), as its `read_bytes`
+  does.
+- In a decode attempt on partial input the retry signal carries the whole shortfall, as
+  `read_bytes`'s does, so a transport reads what a skipped body lacks at once (and
+  straight into the buffer when it is large) instead of attempting again after every
+  read. That is an override on the attempt's reader.
+- Inside a `LimitedSource` it cannot leave the region, and a region skipped to its end
+  passes `finish()`. A skip the region has room for is handed to the wrapped source, so
+  it keeps that whole-shortfall signal. The first build ran it through the region's
+  per-byte loop, which asks for one byte: the review measured a 32 MiB body in a region,
+  arriving 1,460 bytes a read, at 22,983 attempts and 1,712 ms against 2 attempts and
+  16 ms outside a region. The region form was not timed again after the override; the
+  test pins the signal. `read_bytes` in a region still asks for a byte at a time, which
+  is older than this change and open.
+
+`Source` is sealed, so the defaulted method breaks no implementor. A downstream trait
+that gives every `Source` a method of its own named `skip_bytes` is now ambiguous at its
+call sites (E0034, confirmed by the reviewer): a permitted minor change, to be named in
+the release notes. It is in `public-api.txt` by hand for the trait and each implementor
+(34 lines), unverified until the pinned nightly runs at release qualification.
+
+**Tests.** `tests/skip_bytes.rs`: a skip returns what a read of the same bytes returns
+with the bytes dropped, error and all, and either way both stand at the same bit and read
+the same next byte, through `BitReader`, `BitBuf`, `StreamBitReader` and `BufSource` (1,
+7, 300 bytes a read and everything), `SeekReader`, `BufSeekReader` and `BytesReader`,
+from four bit offsets and for thirteen lengths around the step and the end of input; a
+skip cannot leave a region, over a slice and over a reader that cannot seek; `BufSource`
+keeps what it skips and refuses past its cap; a length no input backs is an error at
+once; a skip short of its bytes in a decode attempt reports exactly what a read reports
+at every cut, from a byte boundary and from inside a byte, 5,000 bytes missing in one
+signal, the same from inside a region, and completes from a buffer fed in pieces.
+
+Thirteen hand mutants, twelve killed: a step not clipped, a byte short, a lent run of
+the wrong length, a rewind on failure, the error's position lost; on the attempt's
+reader no override, a run that is exactly there taken as short, the whole run asked for
+instead of the shortfall, the shortfall rounded up from inside a byte; on a region no
+override, every skip handed to the source, and its room off by one. The thirteenth
+removes the pass over a lent run, which changes speed and no answer.
+
+**Not asserted.** That no `Vec` is made: a default of `read_bytes(n).map(drop)` passes
+every test. Asserting it needs a counting allocator, which is `unsafe`, and this crate
+keeps that out of its own tests and examples; the claim rests on the code. No probe mode
+skips.

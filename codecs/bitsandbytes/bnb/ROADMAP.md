@@ -149,6 +149,10 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    allocation-free "would this type's dispatch accept these bytes" check is the escape hatch
    the root `AGENTS.md` rule asks for; until then dispatch misses are gated as terminal
    failures (`DESIGN.md` §22, phase 0). New public API, additive: design review first.
+7. **Skipping bytes.** Done: `Source::skip_bytes(n)` (owner's decision, 2026-11-14), found
+   wanting when the `regions` example had to step over a record it does not parse. As
+   `read_bytes` with the bytes dropped: nothing allocated, any source, the whole shortfall
+   in the retry signal. `DESIGN.md` §25.
 
 ### 0.11.0 — error types (breaking, once)
 
