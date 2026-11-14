@@ -28,7 +28,9 @@ Shared PKI vectors select the certificate-stack consumers' routine checks.
 Scope and intensity are independent. Ordinary branches, main pushes, local pre-push, and weekly
 full runs perform selected package tests and lint plus relevant feature/FFI smoke checks.
 One all-feature lint/test configuration keeps optional codec I/O, SOCKS adapters and USDR
-transports covered even when default features are empty. They do not run fuzzing,
+transports covered even when default features are empty; for the codec it also runs every
+example, each of which checks its own results (three minutes at most per example, so one
+that waits on a peer forever fails by name). They do not run fuzzing,
 packaging, public-API/semver qualification, cross-target/no_std,
 MSRV, or exhaustive feature ladders. Shared files and missing history can widen routine
 scope, but cannot enable these release-only jobs.
@@ -181,7 +183,7 @@ profiles are never scheduled; a prose-only change runs `policy`, `commitlint` an
 Selected jobs all start once `policy` passes and run concurrently. The `workspace` profile, the
 critical path, runs as three jobs (`run.py --part`): `lint` (fmt and Clippy), `test` (`cargo
 nextest run`, which runs every test binary at once, plus `cargo test --doc`), and `extra`
-(all-feature adapter tests and selector integration tests). Together they are exactly the
+(all-feature adapter tests, the codec's examples and selector integration tests). Together they are exactly the
 profile's commands over the same packages and features, so full runs still test workspace
 feature unification. Nextest's `ci` profile reports JUnit to CircleCI's test insights. Every job
 is bounded by a 10-minute budget.

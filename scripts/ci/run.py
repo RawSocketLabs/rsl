@@ -21,6 +21,20 @@ from plan import (BARE_METAL_DEVICES, BLADERF, BNB, LIMESDR_ORACLE, LSDR_ORACLE,
                   bare_metal_devices, released_portable_drivers)
 
 
+# An example that waits on a peer forever must fail its job by name, well inside the job's own
+# limit. Long enough to rebuild the examples should a run ever find them stale.
+EXAMPLE_TIMEOUT = 180
+
+
+def bnb_examples():
+    """Every bitsandbytes example, run. Each checks its own results, and compiling one proves
+    none of them. Listed from the directory (flat `<name>.rs` files, which is all there are),
+    so a new example needs no entry here."""
+    examples = Path(__file__).resolve().parents[2] / BNB / "examples"
+    return [["cargo", "run", "-p", "bitsandbytes", "--all-features", "--example", path.stem]
+            for path in sorted(examples.glob("*.rs"))]
+
+
 def packages(names):
     return [argument for name in sorted(names) for argument in ("-p", name)]
 
@@ -43,6 +57,7 @@ def workspace_parts(plan):
         "test": [["cargo", "nextest", "run", "--profile", "ci", "--locked", "--no-tests=warn", *workspace],
                  ["cargo", "test", "--doc", *workspace]],
         "extra": [*(["cargo", "test", "-p", name, "--all-features"] for name in adapters),
+                  *(bnb_examples() if "bitsandbytes" in adapters else []),  # Built by the line above.
                   [sys.executable, "-m", "unittest", "discover", "-s", "scripts/ci", "-p", "integration_*.py", "-v"]],
     }
 
@@ -62,6 +77,7 @@ def commands(profile, plan, bnb):
                 *[["cargo", "test", "-p", "bitsandbytes", "--features", feature]
                   for feature in ("bytes", "mock", "tokio-io")],
                 ["cargo", "test", "-p", "bitsandbytes", "--all-features"],
+                *bnb_examples(),
                 ["cargo", "doc", "-p", "bitsandbytes", "-p", "bitsandbytes-macros", "--all-features", "--no-deps"],
                 ["cargo", "doc", "-p", "bitsandbytes", "--no-default-features", "--no-deps"]]
     if profile == "socks":
@@ -170,7 +186,7 @@ def locked_command(arguments):
     """Root compilation must not introduce resolutions outside the selected impact graph."""
     operation = 2 if len(arguments) > 1 and arguments[1].startswith("+") else 1
     if (arguments[0] == "cargo" and len(arguments) > operation
-            and arguments[operation] in {"build", "check", "clippy", "test", "doc"}
+            and arguments[operation] in {"build", "check", "clippy", "test", "doc", "run"}
             and "--manifest-path" not in arguments and "--locked" not in arguments):
         return [*arguments[:operation + 1], "--locked", *arguments[operation + 1:]]
     return arguments
@@ -183,6 +199,7 @@ def execute(arguments):
     if arguments[:2] == ["cargo", "doc"]:
         environment["RUSTDOCFLAGS"] = "-D warnings"
     subprocess.run(arguments, check=True, env=environment,
+                   timeout=EXAMPLE_TIMEOUT if "--example" in arguments else None,
                    stdout=subprocess.DEVNULL if arguments[:2] == ["cargo", "metadata"] else None)
 
 

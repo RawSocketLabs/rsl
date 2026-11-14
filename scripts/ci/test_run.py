@@ -7,8 +7,12 @@ import tempfile
 import textwrap
 import unittest
 
+import tomllib
+from unittest import mock
+
+import run
 from run import commands, locked_command, workspace_parts
-from plan import (FRONTEND, LIMESDR_PORTABLE, LMS7002M, HAL, LP8758, LSDR, LSDR_PORTABLE,
+from plan import (BNB, FRONTEND, LIMESDR_PORTABLE, LMS7002M, HAL, LP8758, LSDR, LSDR_PORTABLE,
                   PE_SYNC_PORTABLE, USDR,
                   USDR_PORTABLE, XSDR, XSDR_PORTABLE, handed_on)
 import test_plan
@@ -220,6 +224,36 @@ curl() {
         self.assertIn(["cargo", "test", "-p", "bitsandbytes", "--all-features"], sequence)
         self.assertTrue(any(command[:2] == ["cargo", "clippy"] and command[-2:] == ["-D", "warnings"]
                             for command in sequence))
+
+    def test_every_bnb_example_is_run_after_the_suite_that_builds_it(self):
+        examples = Path(__file__).resolve().parents[2] / BNB / "examples"
+        names = sorted(path.stem for path in examples.glob("*.rs"))
+        # The listing found the directory, and with it every example the manifest registers:
+        # the feature-gated ones, which are why the runs enable all features.
+        manifest = tomllib.loads((examples.parent / "Cargo.toml").read_text())
+        registered = {example["name"] for example in manifest["example"]}
+        self.assertIn("ipv4", names)
+        self.assertTrue(registered and registered <= set(names), registered - set(names))
+        suite = ["cargo", "test", "-p", "bitsandbytes", "--all-features"]
+        for profile, plan in (("workspace", planned(["codecs/bitsandbytes/bnb/src/io.rs"])),
+                              ("workspace", planned(full=True)), ("bnb", planned(release=True))):
+            with self.subTest(profile=profile, full=plan["full"]):
+                sequence = commands(profile, plan, BNB_CONFIG)
+                runs = [command for command in sequence if command[:2] == ["cargo", "run"]]
+                self.assertEqual(runs, [["cargo", "run", "-p", "bitsandbytes", "--all-features",
+                                         "--example", name] for name in names])
+                self.assertLess(sequence.index(suite), sequence.index(runs[0]))
+        elsewhere = commands("workspace", planned(["protocols/session/socks/src/lib.rs"]), BNB_CONFIG)
+        self.assertFalse([command for command in elsewhere if command[:2] == ["cargo", "run"]])
+
+    def test_an_example_that_never_returns_is_stopped_and_other_commands_are_not_timed(self):
+        with mock.patch.object(run.subprocess, "run") as spawned, mock.patch("builtins.print"):
+            run.execute(run.bnb_examples()[0])
+            run.execute(["cargo", "test", "-p", "bitsandbytes", "--all-features"])
+        example, suite = spawned.call_args_list
+        self.assertEqual(example.kwargs["timeout"], run.EXAMPLE_TIMEOUT)
+        self.assertIn("--locked", example.args[0])
+        self.assertIsNone(suite.kwargs["timeout"])
 
     def test_socks_independent_features_and_interoperability_are_retained(self):
         sequence = commands("socks", planned(release=True), BNB_CONFIG)
