@@ -4919,7 +4919,8 @@ mod bytes_io {
         /// run, a lent tail filled in, or a width no sink accepts.
         fn write<K: Sink>(sink: &mut K, pick: u64, value: u128) -> Result<(), BitError> {
             let bytes = value.to_le_bytes();
-            let small = usize::try_from(pick >> 8).unwrap() % 6;
+            // Reduced first: the noise does not fit a 32-bit `usize`.
+            let small = usize::try_from((pick >> 8) % 6).unwrap();
             match pick % 8 {
                 0..=3 => sink.write_bits(value, u32::try_from((pick >> 8) % 129).unwrap()),
                 4 => sink.write_bits(value, 8 * u32::try_from((pick >> 8) % 17).unwrap()),
