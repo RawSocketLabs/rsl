@@ -133,7 +133,11 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          whole in `decode_exact`, and an out-of-line helper for per-field error decoration.
    Still open from §19 and not covered above: the runtime file split, which needs the
    phase 0 non-inlined consumer before `#[inline]` decisions on `try_pull_with` and
-   `decode_attempt` can be measured.
+   `decode_attempt` can be measured. Done of it (owner's decision, 2026-11-14): the
+   component test suites moved out of `bitstream.rs` to one file each under
+   `src/bitstream/component/` (10,126 → 6,677 lines; unit tests stay inline; same test
+   paths, and the probe binary is byte-identical). The split of the code itself follows
+   the release, as its own measured change.
 5. **Verification debt.** Done (`DESIGN.md` §24): `cargo mutants --in-diff` over the
    runtime's changes from 0.9.0 to `main` (822 mutants; 28 real gaps closed, the depth
    budget on every reader among them); the suites on a 32-bit target (two tests fixed);
@@ -149,6 +153,9 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    allocation-free "would this type's dispatch accept these bytes" check is the escape hatch
    the root `AGENTS.md` rule asks for; until then dispatch misses are gated as terminal
    failures (`DESIGN.md` §22, phase 0). New public API, additive: design review first.
+   Left out of this release on the owner's decision (2026-11-14): no consumer in this
+   workspace tries types in turn, one enum with magic dispatch decodes once, and a
+   generated method name is hard to take back.
 7. **Skipping bytes.** Done: `Source::skip_bytes(n)` (owner's decision, 2026-11-14), found
    wanting when the `regions` example had to step over a record it does not parse. As
    `read_bytes` with the bytes dropped: nothing allocated, any source, the whole shortfall

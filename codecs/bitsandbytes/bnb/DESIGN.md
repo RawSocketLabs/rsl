@@ -3891,3 +3891,20 @@ removes the pass over a lent run, which changes speed and no answer.
 every test. Asserting it needs a counting allocator, which is `unsafe`, and this crate
 keeps that out of its own tests and examples; the claim rests on the code. No probe mode
 skips.
+
+## 26. The component suites leave `bitstream.rs` (0.10.1)
+
+`bnb/src/bitstream.rs` had grown to 10,126 lines, about half of them tests. A split of
+the code was built for 0.10.0 and not taken (§19: the pull path ran 12% to 23% slower in
+a consumer once rustc partitioned it by module). On the owner's decision (2026-11-14)
+only the component suites moved, one file each under `src/bitstream/component/`, declared
+from `src/bitstream/component.rs`; the code and the unit tests stay in `bitstream.rs`,
+now 6,677 lines. The owner kept the unit tests inline: they test private helpers and
+read best beside them.
+
+It is a move and nothing else. The test binary lists the same 326 tests by the same
+paths with all features and the same 233 by default, 955 and 841 pass across both crates
+as before, and the probe built before and after is the same file byte for byte (test
+modules are not compiled into it, and they sat at the end of the file, so no line number
+in the code moved). The split of the code itself follows the release as its own change,
+with each `#[inline]` decision on the pull path measured.
