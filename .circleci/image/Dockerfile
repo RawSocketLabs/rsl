@@ -4,6 +4,8 @@
 # .circleci/config.yml reference it by digest, and test_circleci.py holds the pins in step.
 FROM docker.io/library/ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 
+# May be one bump ahead of the image jobs run: `NEXT_STABLE` in scripts/ci/circleci.py names it
+# until that image is adopted.
 ARG STABLE=1.100.0
 ARG MSRV=1.85.0
 # One pinned nightly serves both the public-API gate (.github/ci/bnb.toml) and fuzzing.
