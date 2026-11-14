@@ -493,6 +493,7 @@ class ReleasePathTests(unittest.TestCase):
                     links = [c for c in run_commands(job) if "ln -sfn" in c]
                     if links:
                         self.assertIn(f"/ci-cache/target/{side}/{name}-", links[0])
+                        self.assertIn("ln -sfn /ci-cache/crates ~/.cargo/registry/cache", links[0])
             self.assertTrue(any(any("ln -sfn" in c for c in run_commands(job)) for job in checks.values()))
         # A cloud class is unchanged: CircleCI caches, no runner links.
         cloud = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})

@@ -321,6 +321,9 @@ def cached(key, paths, steps, *, save, toolchain, week, lock="Cargo.lock", enabl
 # runner as network egress, so its build state stays local: trunk and branches keep separate
 # directories, so main never builds on a branch's output, and the host wipes them weekly.
 RUNNER_CACHE = "/ci-cache/target"
+# Downloaded .crate files are shared across the runner's jobs (cargo checksums them on unpack); the
+# rest of the registry stays private, because cargo's lock for it lives in each job's CARGO_HOME.
+RUNNER_CRATES = "/ci-cache/crates"
 
 
 def self_hosted(resource_class):
@@ -329,8 +332,9 @@ def self_hosted(resource_class):
 
 def linked(name, roots, steps, *, toolchain, trunk):
     base = f"{RUNNER_CACHE}/{'trunk' if trunk else 'branch'}/{name}-{toolchain}-{IMAGE.rsplit(':', 1)[1][:12]}"
-    links = " && ".join(f"mkdir -p {base}/{slug(root) or 'root'} && ln -sfn {base}/{slug(root) or 'root'} {root}/target"
-                        for root in roots)
+    links = " && ".join([f"mkdir -p ~/.cargo/registry && ln -sfn {RUNNER_CRATES} ~/.cargo/registry/cache",
+                         *(f"mkdir -p {base}/{slug(root) or 'root'} && ln -sfn {base}/{slug(root) or 'root'} {root}/target"
+                           for root in roots)])
     return [run("Link the runner's persistent build directories", links), *steps]
 
 
