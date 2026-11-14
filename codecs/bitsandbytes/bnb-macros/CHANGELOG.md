@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.11.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.10.1...bitsandbytes-macros-v0.11.0) - 2026-11-14
+
+### Added
+
+- *(bitsandbytes)* [**breaking**] give the crate's own failures typed error kinds
+
 ## [0.10.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-macros-v0.10.0...bitsandbytes-macros-v0.10.1) - 2026-11-14
 
 ### Added
