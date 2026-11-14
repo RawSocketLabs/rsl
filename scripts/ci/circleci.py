@@ -32,16 +32,16 @@ TRUNK = "main"
 REPOSITORY = "RawSocketLabs/rsl"
 # The job image (.circleci/image/Dockerfile), by digest. Its toolchains and tools are the only
 # ones jobs use: nothing is installed at run time. test_circleci.py holds these pins in step.
-IMAGE = "ghcr.io/rawsocketlabs/rsl-ci@sha256:4f5ce2da2d7d96e6bea962ace907fbad8d290be54dee717c0542ac6be346bc26"
+IMAGE = "ghcr.io/rawsocketlabs/rsl-ci@sha256:7a7593791aa5b42cf1e180fb274834bb61f0f685b4fd37ddeed6e9c6b5582a31"
 # The upstream commitlint image (21.2.3), which carries @commitlint/config-conventional.
 COMMITLINT = ("docker.io/commitlint/commitlint@"
               "sha256:33f225c84111a38ebac0c81fa21c488a79709b8a8e04056dfaaf4f80ef20be25")
-STABLE = "1.99.0"
+STABLE = "1.100.0"
 # A stable bump takes two changes, because jobs run the image pinned above, not the Dockerfile at
 # HEAD. First the Dockerfile's `ARG STABLE` moves alone and this names its version: the main push
 # publishes that image while every job still runs STABLE on the pinned one. Then one change
 # adopts the new digest, moves STABLE and rust-toolchain.toml to it, and sets this back to None.
-NEXT_STABLE = "1.100.0"
+NEXT_STABLE = None
 MSRV = "1.85.0"
 # 2 vCPU, 4 GB at half large's credit rate: on large most jobs took 1-2 minutes (insights,
 # 2026-11) and the heaviest trial job peaked at 1.5 GiB. Pass resource_class=large to go faster.

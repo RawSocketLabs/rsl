@@ -18,8 +18,9 @@ help: the trait `bnb::__private::DecodeLayout` is implemented for `Mapped`
 note: required by a bound in `bnb::__private::WireLayoutMissing::layout`
   --> src/lib.rs
    |
+   |     pub trait WireLayoutMissing<W> {
+   |         /// Never callable from this tier: `W: DecodeLayout` is what the earlier tier took.
    |         fn layout(self) -> Layout
-   |            ------ required by a bound in this associated function
    |         where
    |             W: DecodeLayout;
    |                ^^^^^^^^^^^^ required by this bound in `WireLayoutMissing::layout`

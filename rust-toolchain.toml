@@ -4,6 +4,6 @@
 # checked separately in CI. `rust-src` is what the compile-error snapshots' const-panic
 # excerpts are rendered from; the target is the one the no_std proofs build for.
 [toolchain]
-channel = "1.99.0"
+channel = "1.100.0"
 components = ["rustfmt", "clippy", "rust-src"]
 targets = ["thumbv7em-none-eabi"]
