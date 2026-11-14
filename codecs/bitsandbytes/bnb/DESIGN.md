@@ -3682,6 +3682,29 @@ are not these.) Of the 84:
 
 ### Not done here
 
-Running the examples' assertions in CI and pinning the toolchain that the compile-error
-snapshots are recorded against both change CI for the whole repository; they wait for
-the owner.
+Running the examples' assertions in CI changes CI beyond this crate; it waits for the
+owner.
+
+### The toolchain the snapshots are recorded against (2026-11-14)
+
+The check jobs did not float: the job image is pinned by digest and sets
+`RUSTUP_TOOLCHAIN` to its stable (1.99.0). A checkout did, because the root
+`rust-toolchain.toml` said `stable`, so `tests/compile_fail.rs` compared its snapshots with
+whatever compiler the machine had. So did one step in CI, which the review of this change
+found: the planner reads the file's channel to run `cargo metadata` on the base tree
+(`scripts/ci/plan.py`, `toolchain_of`), and the image has no toolchain named `stable`.
+
+On the owner's decision the file now names the image's version, with the components and
+the bare-metal target the image installs for it, and `scripts/ci/test_circleci.py` fails
+when the channel differs from the generator's or the image lacks one of them. Under the
+pin `tests/compile_fail.rs` passes in a checkout (60 snapshots, Rust 1.99.0).
+
+Left for the next image change:
+
+- The Dockerfile's comment still calls the file floating. Any change under
+  `.circleci/image/` publishes an image from the next main push, so it was not touched.
+- A bump has not been done since these pins existed. The file, `STABLE` and the
+  Dockerfile's `ARG` must change in one commit to pass the tests, and that commit still
+  runs on the old image, which lacks the new version; the digest follows in a second
+  change (`docs/CI.md`). Whether the first commit's jobs pass is untested.
+- `cargo llvm-cov` needs `llvm-tools` added to the pinned toolchain by hand.

@@ -138,10 +138,10 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    runtime's changes from 0.9.0 to `main` (822 mutants; 28 real gaps closed, the depth
    budget on every reader among them); the suites on a 32-bit target (two tests fixed);
    fuzz shapes for LSB and little-endian layouts, a `parse_with` codec, `LimitedSource`,
-   `decode_prefix`, the window decode and the transports' direct read. Open: a `BinCodec`
-   fuzz model; and, for the owner because they change CI for the whole repository,
-   running the examples' assertions in CI and pinning the toolchain the trybuild
-   snapshots are recorded against.
+   `decode_prefix`, the window decode and the transports' direct read. The toolchain
+   the trybuild snapshots are recorded against is pinned in the root `rust-toolchain.toml`
+   (owner's decision, 2026-11-14). Open: a `BinCodec` fuzz model; and, for the owner
+   because it changes CI, running the examples' assertions there.
 6. **A dispatch check that builds no error**, when a consumer needs it. A caller that tries
    one message type after another pays for a full `NoMatchingVariant`/`BadMagic` on every
    miss (118 to 188 cycles against 33 for a hit, with an allocation). A generated,

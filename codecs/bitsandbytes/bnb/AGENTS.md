@@ -323,9 +323,9 @@ in the layer that matches its subject:
 - **`property`** — `tests/`, `mod property`. `proptest` invariants (`fuzz_roundtrip`).
 
 `tests/compile_fail.rs` (trybuild) is the separate negative/UI harness, outside the layers.
-Install the stable toolchain's `rust-src` component before running these tests
-(`rustup component add rust-src`). Core const-panic diagnostics include source excerpts
-when it is present; CI installs it so local and hosted snapshots render consistently.
+Its snapshots are recorded against the toolchain the root `rust-toolchain.toml` pins, with
+`rust-src`: core const-panic diagnostics include source excerpts when it is present. A run
+under another toolchain (`RUSTUP_TOOLCHAIN`, `cargo +…`) may not match them.
 
 The commands below are focused/manual checks. Before delivery, use the repository-root
 `scripts/ci-local.sh pre-push` for complete bnb and affected downstream suites, or `--full`
@@ -339,7 +339,7 @@ cargo test -p bitsandbytes -- macro_        #   unit · macro_ · component · i
 cargo test -p bitsandbytes --features bytes # + the bytes-crate I/O adapters
 cargo test -p bitsandbytes --features mock  # + net socket helpers, mocks, the sealed-trait UI test
 cargo test -p bitsandbytes --features tokio # + the async BinCodec (Framed/UdpFramed)
-# Coverage (cargo-llvm-cov): the runtime crate `bnb/src` is 90–100% per file. The macro crate
+# Coverage (cargo-llvm-cov; needs `rustup component add llvm-tools` on the pinned toolchain): the runtime crate `bnb/src` is 90–100% per file. The macro crate
 # reads lower because its diagnostic arms are exercised only by trybuild (separate rustc
 # processes llvm-cov can't instrument) — not a true gap; still test real generated paths.
 cargo llvm-cov -p bitsandbytes --all-features --ignore-filename-regex 'guide/|nostd-check/'
