@@ -7892,6 +7892,40 @@ mod component {
             assert_eq!(reader.bit_pos(), 32);
         }
 
+        /// Suits a window and declines its own: for a message that mostly arrives in pieces.
+        #[bin(big, no_window)]
+        #[derive(Debug, PartialEq)]
+        struct Piecewise {
+            kind: u16,
+            seq: u32,
+            last: u8,
+        }
+
+        #[bin(big)]
+        #[derive(Debug, PartialEq)]
+        struct HoldsPiecewise {
+            pre: u8,
+            inner: Piecewise,
+        }
+
+        #[test]
+        fn a_message_that_declines_a_window_still_suits_its_parents() {
+            let wire = [0xEE, 1, 2, 3, 4, 5, 6, 7];
+            // On its own: every field read where it lies, and no lend asked for.
+            assert_eq!(asks::<Piecewise>(&wire[1..]), (vec![], 3, 56));
+            let piecewise = Piecewise::decode_exact(&wire[1..]).unwrap();
+            assert_eq!(
+                (piecewise.kind, piecewise.seq, piecewise.last),
+                (0x0102, 0x0304_0506, 7)
+            );
+            // To a parent it is a message that suits a window, as it would be without the
+            // option: the parent asks for its whole length in one lend.
+            assert_eq!(<Piecewise as FixedBitLen>::__BNB_WINDOW, WINDOW_WHOLE);
+            assert_eq!(asks::<HoldsPiecewise>(&wire), (vec![8], 0, 64));
+            let holds = HoldsPiecewise::decode_exact(&wire).unwrap();
+            assert_eq!((holds.pre, holds.inner), (0xEE, piecewise));
+        }
+
         /// A message with its own `Drop` and a field that is not `Copy`: it cannot be
         /// taken apart, and must be built exactly once.
         #[bin(big)]

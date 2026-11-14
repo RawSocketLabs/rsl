@@ -110,6 +110,7 @@ pub(in crate::bitstream::bin) fn bin_struct(
         magic: args.magic.clone(),
         ctx: args.ctx.clone(),
         auto_len: args.auto_len.clone(),
+        no_window: args.no_window,
     };
     // `#[try_str]` is a Debug-rendering hint: a stored byte-buffer field renders as a string
     // when it is valid UTF-8, else as hex bytes. Collect the stored (non-`temp`) ones.

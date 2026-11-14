@@ -12,6 +12,10 @@ pub(super) struct BinArgs {
     pub(super) write_only: bool,
     pub(super) no_builder: bool,
     pub(super) forward_only: bool,
+    /// `no_window` — decode field by field only: skip the attempt from one window of a
+    /// fixed-length message's whole length. True of every item that has no such attempt,
+    /// so it is accepted on them all.
+    pub(super) no_window: bool,
     pub(super) lsb: bool,
     pub(super) little: bool,
     pub(super) magic: Option<syn::Expr>,

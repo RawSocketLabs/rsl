@@ -621,6 +621,7 @@ pub(in crate::bitstream::bin) fn bin_enum(
         magic: None,
         ctx: args.ctx.clone(),
         auto_len: Vec::new(), // struct-only (rejected above)
+        no_window: false,
     };
     let layout = layout_token(&attrs);
     let (want_decode, want_encode) = (dirs.decode, dirs.encode);

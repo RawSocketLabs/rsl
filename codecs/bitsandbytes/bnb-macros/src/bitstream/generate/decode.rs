@@ -341,9 +341,11 @@ pub(in crate::bitstream) fn gen_decode(
     // `FixedBitLen` only sizes the window. A `dbg` field would be traced twice, and at
     // an offset inside the window: such a message reports itself unknown below, which
     // keeps it out of its own window (the attempt is guarded by that constant) and out
-    // of any parent's.
+    // of any parent's. `no_window` drops only the attempt: a type that mostly arrives in
+    // pieces pays for it on every short read, and inside a parent's window it reads from
+    // the window like any other field.
     let traced = brs.iter().any(|br| br.dbg);
-    let whole = if fixed_len(fields, &brs, attrs) {
+    let whole = if !attrs.no_window && fixed_len(fields, &brs, attrs) {
         let bytes =
             quote!({ (<#name as #bnb::__private::FixedBitLen>::BIT_LEN as usize).div_ceil(8) });
         // The fields' reads against the window, and the cursor settled afterwards. The

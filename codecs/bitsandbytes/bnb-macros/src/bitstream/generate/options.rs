@@ -6,6 +6,7 @@ use crate::bitstream::field::AutoLenSpec;
 
 /// Parsed struct-level `#[bit_stream(...)]` options.
 #[derive(Default)]
+#[allow(clippy::struct_excessive_bools)] // Independent syntax options, not a runtime state machine.
 pub(in crate::bitstream) struct BitStreamAttrs {
     /// `allow_byte_aligned` — opt out of the right-tool guard.
     pub(in crate::bitstream) allow_byte_aligned: bool,
@@ -23,4 +24,7 @@ pub(in crate::bitstream) struct BitStreamAttrs {
     /// `auto_len(field.nested = kind(source), …)` — cross-struct `WireLen` derivation,
     /// applied at the targeted field's encode. Empty for the bare derives (`#[bin]` only).
     pub(in crate::bitstream) auto_len: Vec<AutoLenSpec>,
+    /// `#[bin(no_window)]` — this message's own decode makes no attempt from a window of
+    /// its whole length. What it reports to a parent is unchanged.
+    pub(in crate::bitstream) no_window: bool,
 }

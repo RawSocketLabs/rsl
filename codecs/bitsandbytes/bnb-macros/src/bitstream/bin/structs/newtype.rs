@@ -95,6 +95,7 @@ pub(super) fn bin_struct_codec(args: &BinArgs, s: &ItemStruct) -> syn::Result<To
         magic: None,
         ctx: Vec::new(),
         auto_len: Vec::new(),
+        no_window: false,
     });
 
     let decode_ts = if has_decode {

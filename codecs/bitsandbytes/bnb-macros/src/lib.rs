@@ -461,6 +461,8 @@ pub fn bit_encode(item: TokenStream) -> TokenStream {
 /// `big` / `little` or `bytes = big|little` (byte order), `bits = msb|lsb`, `magic = <expr>` (a leading
 /// constant verified on read / emitted on write), `read_only` / `write_only`
 /// (directional), `no_builder`, `forward_only` (bound decoding to a forward `Source`),
+/// `no_window` (a fixed-length message that mostly arrives in pieces: decode field by
+/// field, without first trying one window of its whole length),
 /// `ctx(name: Ty, …)` (context from the parent), `validate = <path>` (a soundness
 /// check run by `build()` — the parser stays permissive),
 /// `map`/`try_map`/`wire`/`try_wire` (map the whole struct to/from a wire type — see

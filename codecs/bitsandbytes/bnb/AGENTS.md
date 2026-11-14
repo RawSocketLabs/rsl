@@ -123,7 +123,9 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   stay usable directly for read/write without the `#[bin]` sugar.
 - **Struct-level options:** `read_only` / `write_only` (directional codecs),
   `no_builder`, `forward_only` (pins `decode` to a forward `Source`; a seeking directive
-  is then a compile error), `bits = msb|lsb`, `bytes = big|little` (or bare
+  is then a compile error), `no_window` (a fixed-length message's own decode skips the
+  attempt from one window of its whole length; a parent's window still covers it),
+  `bits = msb|lsb`, `bytes = big|little` (or bare
   `big`/`little`). `allow_byte_aligned` is **not** a `#[bin]` option (`#[bin]` sets it
   itself); it belongs to the bare derives' `#[bit_stream(...)]`.
 - **Struct-level wire mapping (`bin_struct_mapped`):** a *logical* struct serializes via a

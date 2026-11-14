@@ -68,6 +68,8 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
             args.no_builder = true;
         } else if meta.path.is_ident("forward_only") {
             args.forward_only = true;
+        } else if meta.path.is_ident("no_window") {
+            args.no_window = true;
         } else if meta.path.is_ident("bits") {
             let v: Ident = meta.value()?.parse()?;
             match v.to_string().as_str() {
@@ -160,7 +162,7 @@ fn bin_inner(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream2> 
         } else {
             return Err(meta.error(
                 "unknown `#[bin(...)]` option; expected one of: read_only, write_only, \
-                 no_builder, forward_only, big, little, bytes = big|little, bits = msb|lsb, magic = <expr>, \
+                 no_builder, forward_only, no_window, big, little, bytes = big|little, bits = msb|lsb, magic = <expr>, \
                  ctx(name: Ty, …), auto_len(<field>.<nested> = count|bytes(<source>), …), \
                  validate = <path>, tag = <ctx-param>, \
                  map/try_map = |w: Wire| …, bw_map = |s: &Self| Wire, wire/try_wire = WireType, \

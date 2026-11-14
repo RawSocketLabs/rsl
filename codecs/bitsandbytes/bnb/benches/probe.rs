@@ -46,6 +46,19 @@ struct Fixed44 {
     digest: [u8; 16],
 }
 
+/// `Fixed44` declared to arrive in pieces: no attempt from a window of its whole length.
+#[bin(big, no_window)]
+#[derive(Clone)]
+struct Pieces44 {
+    kind: u16,
+    flags: u16,
+    seq: u32,
+    ack: u32,
+    src: u64,
+    dst: u64,
+    digest: [u8; 16],
+}
+
 /// `Fixed44` with a guard on a late field: a message rejected after most of it was read.
 #[bin(big)]
 #[derive(Clone)]
@@ -763,6 +776,11 @@ const MODES: &[Mode] = &[
         repeat(n, true, || Fixed44::decode_prefix(black_box(&wire)));
     }),
     per_16(mode("buffered_fixed44_whole", "happy", M / 2, |n| buffered(n, 44))),
+    // What `no_window` gives up on a whole message; what it saves is `prefix_short_pieces44`.
+    mode("pieces44", "happy", 8 * M, |n| {
+        let wire = fixed44();
+        repeat(n, true, || Pieces44::decode_exact(black_box(&wire)));
+    }),
     // Failures a working consumer meets all the time.
     mode("magic_eighth", "expected", 4 * M, |n| {
         repeat(n, true, || MixedMagic::decode_exact(black_box(b"Z0\0\0\0\x07")));
@@ -781,6 +799,10 @@ const MODES: &[Mode] = &[
     mode("prefix_short_fixed44", "expected", 4 * M, |n| {
         let wire = fixed44();
         repeat(n, false, || Fixed44::decode_prefix(black_box(&wire[..43])));
+    }),
+    mode("prefix_short_pieces44", "expected", 4 * M, |n| {
+        let wire = fixed44();
+        repeat(n, false, || Pieces44::decode_prefix(black_box(&wire[..43])));
     }),
     // Rejections: recorded and bounded, not blockers.
     mode("numeric_invalid", "terminal", 8 * M, |n| {

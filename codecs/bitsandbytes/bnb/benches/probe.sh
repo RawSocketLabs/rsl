@@ -34,6 +34,7 @@ covered() { # covered <message type> <caller pattern> <call sites needed>
 inlined=()
 covered Envelope 'probe::repeat::<' 3 || inlined+=("prefix_*envelope")
 covered Fixed44 'probe::repeat::<' 2 || inlined+=("prefix_*fixed44")
+covered Pieces44 'probe::repeat::<' 1 || inlined+=("prefix_short_pieces44")
 covered Envelope 'pull' 1 || inlined+=("pull_short")
 if grep -q '^stream_' <<<"$modes"; then
     # The transport's read loop, which `read_message` and `read_message_with` share.

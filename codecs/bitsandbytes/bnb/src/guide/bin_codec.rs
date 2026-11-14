@@ -113,6 +113,8 @@
 //! - `no_builder` — skip the builder.
 //! - `forward_only` — bound decoding to a forward `Source` (a seek directive is then a
 //!   compile error).
+//! - `no_window` — for a fixed-length message that mostly arrives in pieces: decode field
+//!   by field, without first trying one window of its whole length.
 //! - `ctx(name: Ty, …)` — declare context the message needs from its parent.
 //! - `validate = <path>` — a soundness check run by `build()`.
 //!
@@ -221,6 +223,34 @@
 //! let mut s = StreamBitReader::new(data);
 //! assert_eq!(Hdr::decode(&mut s).unwrap(), Hdr { magic: 0xCAFE, len: 16 });
 //! ```
+//!
+//! `no_window` — a tuning option, never needed for correctness. A fixed-length message
+//! whose fields are each at most eight bits, or whole bytes on a byte boundary, first
+//! tries to decode from one window of its whole length: about half the work when the
+//! message is all there, and a few instructions wasted on each attempt when it is not.
+//! A type that is mostly offered before it has all arrived (pushed into a [`BitBuf`] a
+//! few bytes at a time, say) can decline the attempt. It decodes to the same values and
+//! errors either way, and as a field of another message it is still covered by that
+//! message's window:
+//!
+//! ```
+//! use bnb::{bin, BitBuf};
+//!
+//! #[bin(big, no_window)]
+//! #[derive(Debug, PartialEq)]
+//! struct Telemetry { kind: u8, seq: u16, flags: u8 }
+//!
+//! let mut buffer = BitBuf::new();
+//! let mut seen = Vec::new();
+//! for byte in [1, 0, 7, 0x80, 2, 0, 8, 0] {
+//!     buffer.push(&[byte]).unwrap();
+//!     seen.extend(buffer.pull::<Telemetry>().unwrap());
+//! }
+//! assert_eq!(seen.len(), 2);
+//! assert_eq!(seen[1], Telemetry { kind: 2, seq: 8, flags: 0 });
+//! ```
+//!
+//! [`BitBuf`]: crate::BitBuf
 //!
 //! `ctx(...)` — context a message needs from its parent **to decode**. The parent passes it
 //! with `#[br(ctx { … })]`; standalone, `decode_with`/`decode_with_exact` take a `…Ctx`
