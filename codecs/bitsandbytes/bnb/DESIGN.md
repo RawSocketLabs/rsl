@@ -3824,6 +3824,15 @@ new version, so each job installs a bare one at run time, without rustfmt. A bum
 two changes, the image's toolchain first and the rest once that image is adopted
 (`docs/CI.md`); the Dockerfile's comment was corrected with the first.
 
+The second change adopted that image the same day: Rust 1.100.0, on Ubuntu 26.04 where
+the image before it was 24.04 (the Dockerfile's base had moved on 2026-11-04 and no image
+built since had been pinned). Two of the 60 snapshots were recorded again as 1.100.0 words
+them, and one loop in `crypto` allows clippy's range-loop lint, which 1.100.0 newly raises
+there, on the owner's decision. The release tier then failed once in `ui_seek` and
+`ui_seal` and passed on a rerun of the same commit: trybuild's lock between processes is
+best-effort, nextest runs each test in its own process, and the machine was loaded. A
+nextest group now runs the compile-fail tests one at a time (`.config/nextest.toml`).
+
 
 ## 25. Skipping bytes (0.10.1)
 
