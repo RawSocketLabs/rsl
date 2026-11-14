@@ -2129,6 +2129,7 @@ pub fn bnb::net::MessageStream<S>::get_ref(&self) -> &S
 pub fn bnb::net::MessageStream<S>::into_parts(self) -> (S, bnb::bitstream::BitBuf)
 pub fn bnb::net::MessageStream<S>::new(S) -> Self
 pub fn bnb::net::MessageStream<S>::try_into_inner(self) -> core::result::Result<S, Self>
+pub fn bnb::net::MessageStream<S>::with_read_scratch(self, usize) -> Self
 impl<S: core::fmt::Debug> core::fmt::Debug for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<S: std::io::Read> std::io::Read for bnb::net::MessageStream<S>
@@ -3446,6 +3447,7 @@ pub fn bnb::net::MessageStream<S>::get_ref(&self) -> &S
 pub fn bnb::net::MessageStream<S>::into_parts(self) -> (S, bnb::bitstream::BitBuf)
 pub fn bnb::net::MessageStream<S>::new(S) -> Self
 pub fn bnb::net::MessageStream<S>::try_into_inner(self) -> core::result::Result<S, Self>
+pub fn bnb::net::MessageStream<S>::with_read_scratch(self, usize) -> Self
 impl<S: core::fmt::Debug> core::fmt::Debug for bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<S: std::io::Read> std::io::Read for bnb::net::MessageStream<S>

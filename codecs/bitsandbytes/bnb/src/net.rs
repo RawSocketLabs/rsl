@@ -74,6 +74,84 @@ fn read_limit(buffer: &BitBuf, scratch: &[u8]) -> Result<usize, MessageReadError
     }
 }
 
+/// The least a message must still need before it is read straight into the buffer, however
+/// short the scratch: under this a direct read costs more than the copy it saves.
+const DIRECT_FLOOR: usize = SCRATCH_LEN;
+
+/// Whether a message that still needs `missing` bytes bypasses a scratch of `scratch` bytes.
+#[inline]
+fn goes_direct(missing: usize, scratch: usize) -> bool {
+    missing >= scratch.max(DIRECT_FLOOR)
+}
+
+/// How many of the `missing` bytes a message is known to still need can be read straight
+/// into `buffer`, with the room made for them. `None` if making room moved the buffer's
+/// cursor: the hint is then void and the caller decodes again for one that holds.
+fn direct_room(buffer: &mut BitBuf, missing: usize) -> Option<usize> {
+    let want = buffer
+        .read_capacity()
+        .map_or(missing, |free| free.min(missing));
+    buffer.make_room_in_place(want).then_some(want)
+}
+
+/// Reads the bytes a message is known to still need (`missing`, or what the buffer has
+/// room for) straight into `buffer`: no copy through the scratch, as few reads as the
+/// transport allows, and never a byte past them. Returns whether the transport is still
+/// open: `false` if it ended first. What arrived is appended either way, also before an
+/// error. If making room moved the cursor nothing is read. The caller decodes again
+/// after any `true`, for a hint that fits what the buffer now holds.
+///
+/// Out of line: only a message that needs at least a scratch more comes here, and the
+/// scratch loop stays as small as it was.
+#[inline(never)]
+fn read_direct<R: Read + ?Sized>(
+    reader: &mut R,
+    buffer: &mut BitBuf,
+    missing: usize,
+) -> io::Result<bool> {
+    let Some(want) = direct_room(buffer, missing) else {
+        return Ok(true);
+    };
+    let storage = buffer.storage();
+    let before = storage.len();
+    // Grows with what arrives, not with `want`, which a count off the wire may have set.
+    Read::take(reader, want as u64).read_to_end(storage)?;
+    Ok(storage.len() - before == want)
+}
+
+/// [`read_direct`] for an `AsyncRead`. Room is reserved a step ahead of each read and the
+/// read appends what arrives (`read_buf`, which is cancel safe), so the buffer holds
+/// exactly what the transport gave, also when this future is dropped while a read is
+/// pending.
+#[cfg(feature = "tokio-io")]
+async fn read_direct_async<R: tokio::io::AsyncRead + Unpin + ?Sized>(
+    reader: &mut R,
+    buffer: &mut BitBuf,
+    missing: usize,
+) -> io::Result<bool> {
+    use tokio::io::AsyncReadExt;
+
+    let Some(want) = direct_room(buffer, missing) else {
+        return Ok(true);
+    };
+    let storage = buffer.storage();
+    let start = storage.len();
+    while storage.len() - start < want {
+        // As much again as has come, and a scratch before anything has: a count off the
+        // wire sizes neither the allocation nor the request.
+        let have = storage.len() - start;
+        let step = (want - have).min(have.max(SCRATCH_LEN));
+        storage.reserve(step);
+        match (&mut *reader).take(step as u64).read_buf(storage).await {
+            Ok(0) => return Ok(false),
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(true)
+}
+
 fn message_at_eof<T: BitDecode + BitEncode>(buffer: &mut BitBuf) -> Result<T, MessageReadError> {
     buffer.pull_eof()?.ok_or_else(|| {
         io::Error::new(
@@ -93,6 +171,13 @@ fn message_at_eof<T: BitDecode + BitEncode>(buffer: &mut BitBuf) -> Result<T, Me
 /// Read-ahead is allowed: every accepted byte is immediately appended to `buffer`, including
 /// later messages or raw protocol data. No scratch allocation is made; decoded values may
 /// allocate. A bounded buffer limits retained wire bytes, not codec work or output allocations.
+///
+/// A message known to need at least `scratch.len()` more bytes, and at least 4 KiB, does
+/// not go through the scratch: exactly the bytes its hint asks for, or as many as a
+/// bounded buffer has room for, are read straight into `buffer`, in as few reads as the
+/// transport allows and with no read-ahead. The buffer grows with what arrives, never
+/// with what the hint claims. A scratch of 4 KiB or more therefore sets both the size of
+/// an ordinary read and the size from which a message bypasses it.
 ///
 /// Messages must be self-delimiting. The message's own layout is used; its final unused bits
 /// are accepted and consumed, matching independent encoding. Use [`BitBuf::try_pull`] directly
@@ -123,9 +208,17 @@ pub fn read_message<T: BitDecode + BitEncode, R: Read + ?Sized>(
         };
         while missing != 0 {
             let limit = read_limit(buffer, scratch)?;
-            let count = match reader.read(&mut scratch[..limit]) {
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                result => result?,
+            let count = if goes_direct(missing, scratch.len()) {
+                if read_direct(reader, buffer, missing)? {
+                    missing = 0;
+                    continue;
+                }
+                0
+            } else {
+                match reader.read(&mut scratch[..limit]) {
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    result => result?,
+                }
             };
             if count == 0 {
                 break 'message message_at_eof(buffer)?;
@@ -177,9 +270,17 @@ pub async fn read_message_async<
         };
         while missing != 0 {
             let limit = read_limit(buffer, scratch)?;
-            let count = match reader.read(&mut scratch[..limit]).await {
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                result => result?,
+            let count = if goes_direct(missing, scratch.len()) {
+                if read_direct_async(reader, buffer, missing).await? {
+                    missing = 0;
+                    continue;
+                }
+                0
+            } else {
+                match reader.read(&mut scratch[..limit]).await {
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    result => result?,
+                }
             };
             if count == 0 {
                 break 'message message_at_eof(buffer)?;
@@ -204,9 +305,12 @@ pub async fn read_message_async<
 /// [`write_message`] exchange `#[bin]` values — and one `MessageStream` serves *both*
 /// directions on a single connection, no `try_clone` needed.
 ///
-/// Each `MessageStream` holds a 4 KiB read scratch for its whole life, allocated when it
-/// is built (also by `from_parts`), so reading allocates nothing per message. A
-/// connection that only ever writes pays for it too. Writing keeps the buffer it encodes
+/// Each `MessageStream` holds a read scratch for its whole life, 4 KiB unless
+/// [`with_read_scratch`](Self::with_read_scratch) sets it, allocated when it is built
+/// (also by `from_parts`), so reading allocates nothing per message. A connection that
+/// only ever writes pays for it too. A message that still needs at least a scratch more
+/// is read straight into the read buffer instead, exactly what it needs and no further;
+/// see [`net::read_message`](crate::net::read_message). Writing keeps the buffer it encodes
 /// into from the first message on, up to 4 KiB of it: a message that fits in what is kept
 /// is written without allocating, a longer one allocates as it is encoded and its buffer
 /// is released afterwards. A connection that only reads never has one.
@@ -217,9 +321,9 @@ pub struct MessageStream<S> {
     inner: S,
     buf: BitBuf,
     /// Where [`read_message`](Self::read_message) has the stream put bytes before they are
-    /// appended to `buf`: [`SCRATCH_LEN`] bytes allocated with the wrapper, so a read never
-    /// allocates it. Nothing unread ever stays in it, so the parts are still `inner` and
-    /// `buf` alone.
+    /// appended to `buf`: [`SCRATCH_LEN`] bytes unless set, allocated with the wrapper, so
+    /// a read never allocates it. Nothing unread ever stays in it, so the parts are still
+    /// `inner` and `buf` alone.
     scratch: Vec<u8>,
     /// Where [`write_message`](Self::write_message) encodes before it hands the bytes to
     /// the stream, kept between messages so writing does not allocate per message. Empty
@@ -228,7 +332,8 @@ pub struct MessageStream<S> {
     out: Vec<u8>,
 }
 
-/// How many bytes [`MessageStream::read_message`] asks the stream for at a time.
+/// How many bytes [`MessageStream::read_message`] asks the stream for at a time, unless
+/// [`MessageStream::with_read_scratch`] says otherwise.
 const SCRATCH_LEN: usize = 4096;
 
 /// The most [`MessageStream::write_message`] keeps between messages: as much as the read
@@ -307,6 +412,27 @@ impl<S> MessageStream<S> {
             scratch: vec![0; SCRATCH_LEN],
             out: Vec::new(),
         }
+    }
+
+    /// Sets the length of the read scratch, 4 KiB otherwise: how much
+    /// [`read_message`](Self::read_message) asks the stream for at a time, and, from
+    /// 4 KiB up, the size from which a message is read straight into the buffer instead.
+    /// A longer scratch takes more of the stream per read, so several small messages cost
+    /// one read and a message under its length arrives with whatever follows it; the
+    /// wrapper holds that many bytes for its whole life. A length of zero is taken as one.
+    ///
+    /// ```
+    /// use bnb::MessageStream;
+    ///
+    /// let wire: &[u8] = &[0x00, 0x2A, 0x00, 0x2B];
+    /// let mut stream = MessageStream::new(wire).with_read_scratch(64 * 1024);
+    /// assert_eq!(stream.read_message::<u16>().unwrap(), 42);
+    /// assert_eq!(stream.read_message::<u16>().unwrap(), 43);
+    /// ```
+    #[must_use]
+    pub fn with_read_scratch(mut self, len: usize) -> Self {
+        self.scratch = vec![0; len.max(1)];
+        self
     }
 }
 
@@ -1196,6 +1322,556 @@ mod component {
                 return Err(kind.into());
             }
             self.bytes.read(out)
+        }
+    }
+
+    mod direct {
+        //! A message that still needs at least a scratch more is read straight into the
+        //! buffer. Against the same transport read through a scratch no message outgrows:
+        //! the same messages and the same errors in the same order, whatever the transport
+        //! does on the way, with exactly the hinted bytes taken and nothing held that the
+        //! transport did not give.
+        use super::*;
+        use crate::net::SCRATCH_LEN;
+
+        #[bin(big)]
+        #[derive(Debug, PartialEq)]
+        pub(super) struct Framed {
+            #[brw(count_prefix = u32)]
+            body: Vec<u8>,
+        }
+
+        /// A framed message of `len` body bytes, none of them zero.
+        fn framed(len: usize, seed: usize) -> Vec<u8> {
+            let body = (0..len)
+                .map(|at| u8::try_from((at + seed) % 251 + 1).unwrap())
+                .collect();
+            Framed { body }.to_bytes().unwrap()
+        }
+
+        /// A transport with a script: its bytes, the most it gives per call, and what it
+        /// answers, once, when asked for the byte at an offset. It counts what it is asked.
+        #[derive(Clone, Debug)]
+        pub(super) struct Wire {
+            pub data: Vec<u8>,
+            pub at: usize,
+            pub chunk: usize,
+            pub events: Vec<(usize, io::ErrorKind)>,
+            pub reads: usize,
+            pub largest: usize,
+        }
+
+        impl Wire {
+            pub(super) fn of(data: Vec<u8>) -> Self {
+                Self {
+                    data,
+                    at: 0,
+                    chunk: usize::MAX,
+                    events: Vec::new(),
+                    reads: 0,
+                    largest: 0,
+                }
+            }
+        }
+
+        impl Read for Wire {
+            fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+                self.reads += 1;
+                self.largest = self.largest.max(out.len());
+                if let Some(index) = self.events.iter().position(|event| event.0 == self.at) {
+                    return Err(self.events.remove(index).1.into());
+                }
+                let stop = self
+                    .events
+                    .iter()
+                    .map(|event| event.0)
+                    .filter(|&offset| offset > self.at)
+                    .min()
+                    .unwrap_or(self.data.len());
+                let count = out.len().min(self.chunk).min(stop - self.at);
+                out[..count].copy_from_slice(&self.data[self.at..self.at + count]);
+                self.at += count;
+                Ok(count)
+            }
+        }
+
+        fn noise(state: &mut u64) -> u64 {
+            *state ^= *state << 13;
+            *state ^= *state >> 7;
+            *state ^= *state << 17;
+            *state
+        }
+
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a test index, reduced first"
+        )]
+        fn below(state: &mut u64, bound: usize) -> usize {
+            (noise(state) % bound as u64) as usize
+        }
+
+        fn pick<T: Copy>(state: &mut u64, from: &[T]) -> T {
+            from[below(state, from.len())]
+        }
+
+        /// Up to six messages of sizes around the scratch, sometimes cut short, with up
+        /// to two things going wrong on the way.
+        pub(super) fn script(state: &mut u64) -> Wire {
+            let sizes = [0, 1, 100, 4_000, 4_092, 4_096, 5_000, 20_000];
+            let mut data = Vec::new();
+            for seed in 0..=below(state, 5) {
+                data.extend(framed(pick(state, &sizes), seed));
+            }
+            if below(state, 4) == 0 {
+                data.truncate(below(state, data.len() + 1));
+            }
+            let kinds = [
+                io::ErrorKind::Interrupted,
+                io::ErrorKind::WouldBlock,
+                io::ErrorKind::ConnectionReset,
+            ];
+            let events = (0..below(state, 3))
+                .map(|_| (below(state, data.len() + 1), pick(state, &kinds)))
+                .collect();
+            Wire {
+                chunk: pick(state, &[1, 7, 1_460, usize::MAX]),
+                events,
+                ..Wire::of(data)
+            }
+        }
+
+        pub(super) fn buffer(state: &mut u64) -> impl Fn() -> BitBuf + use<> {
+            let cap = pick(state, &[None, None, Some(8_192), Some(30_000)]);
+            move || cap.map_or_else(BitBuf::new, BitBuf::bounded)
+        }
+
+        /// One read as a line of the transcript, and whether reading goes on after it.
+        pub(super) fn line(read: Result<Framed, MessageReadError>) -> (String, bool) {
+            match read {
+                Ok(message) => (
+                    format!("message {} {:?}", message.body.len(), message.body),
+                    true,
+                ),
+                Err(MessageReadError::Io(error)) => {
+                    // What the script throws once; the end of the input is for good.
+                    let again = matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::ConnectionReset
+                    );
+                    (format!("io {:?}", error.kind()), again)
+                }
+                Err(MessageReadError::Codec(error)) => (
+                    format!("codec {:?} in {:?}", error.kind, error.field),
+                    false,
+                ),
+            }
+        }
+
+        /// Everything reading `wire` gives until it ends for good, and what that consumed.
+        pub(super) fn transcript(
+            mut wire: Wire,
+            mut buffer: BitBuf,
+            scratch: usize,
+        ) -> Vec<String> {
+            let mut scratch = vec![0; scratch];
+            let mut lines = Vec::new();
+            loop {
+                let (line, again) = line(read_message(&mut wire, &mut buffer, &mut scratch));
+                lines.push(line);
+                if !again {
+                    break;
+                }
+            }
+            // Read-ahead differs between the two ways by design; what the messages
+            // consumed, the bytes taken less the bytes still held, does not.
+            lines.push(format!("consumed {}", wire.at - buffer.bit_len() / 8));
+            lines
+        }
+
+        /// A scratch no message of the script outgrows: every read goes through it.
+        pub(super) const NEVER_DIRECT: usize = 64 * 1024;
+
+        #[test]
+        fn a_direct_read_gives_the_messages_and_errors_the_scratch_gives() {
+            let mut state = 0x9E37_79B9_7F4A_7C15;
+            let (mut messages, mut direct) = (0, 0);
+            for case in 0..600 {
+                let wire = script(&mut state);
+                let buffer = buffer(&mut state);
+                let scratch = pick(&mut state, &[1, 16, SCRATCH_LEN]);
+                let expected = transcript(wire.clone(), buffer(), NEVER_DIRECT);
+                let got = transcript(wire.clone(), buffer(), scratch);
+                assert_eq!(got, expected, "case {case}: scratch {scratch}, {wire:?}");
+                messages += got
+                    .iter()
+                    .filter(|line| line.starts_with("message"))
+                    .count();
+                direct += got
+                    .iter()
+                    .filter(|line| line.starts_with("message 20000 "))
+                    .count();
+            }
+            // The script is worth something only if it reads messages, and ones that no
+            // scratch here holds.
+            assert!(messages > 1_000 && direct > 100, "{messages} {direct}");
+        }
+
+        #[test]
+        fn a_message_past_the_scratch_is_read_whole_in_few_reads_and_nothing_after_it() {
+            for extra in [0, 1, 6_000, 1 << 20] {
+                // The first read brings a scratch; the body then still needs `extra` more
+                // than a scratch: at the threshold exactly, and well past it.
+                let body = 2 * SCRATCH_LEN - 4 + extra;
+                let mut data = framed(body, 3);
+                let message = data.len();
+                data.extend([0xAB; 300]);
+                let first = data[..SCRATCH_LEN].to_vec();
+                let mut stream = MessageStream::new(Wire::of(data));
+                assert_eq!(stream.read_message::<Framed>().unwrap().body.len(), body);
+                let wire = stream.get_ref();
+                assert_eq!(wire.at, message, "nothing past the message was taken");
+                assert!(stream.buf.is_empty());
+                // Only the first read went through the scratch, which still holds it.
+                assert_eq!(stream.scratch, first);
+                // One read through the scratch, then the rest in far fewer than a scratch
+                // at a time would take.
+                let wire = stream.get_ref();
+                assert!(wire.reads <= 4 + body / (4 * SCRATCH_LEN), "{}", wire.reads);
+            }
+            // One byte under the threshold stays with the scratch, read-ahead and all: the
+            // second read is a scratch long and takes a byte of what follows.
+            let mut data = framed(2 * SCRATCH_LEN - 5, 3);
+            data.extend([0xAB; 300]);
+            let mut stream = MessageStream::new(Wire::of(data));
+            stream.read_message::<Framed>().unwrap();
+            let wire = stream.get_ref();
+            assert_eq!(
+                (wire.at, wire.reads, wire.largest),
+                (2 * SCRATCH_LEN, 2, SCRATCH_LEN)
+            );
+        }
+
+        #[test]
+        fn a_length_no_input_backs_sizes_neither_the_buffer_nor_a_read() {
+            // A prefix claiming 4 GiB, then ten bytes and the end.
+            let mut data = vec![0xFF; 4];
+            data.extend([7; 10]);
+            let mut wire = Wire::of(data);
+            let mut buffer = BitBuf::new();
+            let error = read_message::<Framed, _>(&mut wire, &mut buffer, &mut [0; 8]).unwrap_err();
+            assert!(matches!(error, MessageReadError::Codec(_)), "{error:?}");
+            assert_eq!((wire.at, buffer.bit_len()), (14, 14 * 8));
+            assert!(wire.largest <= 16 * 1024, "{}", wire.largest);
+            assert!(buffer.storage().capacity() <= 16 * 1024);
+        }
+
+        #[test]
+        fn a_bounded_buffer_takes_what_it_has_room_for_and_does_not_grow() {
+            let data = framed(10_000, 1);
+            let mut wire = Wire::of(data.clone());
+            let mut buffer = BitBuf::bounded(data.len());
+            let room = buffer.storage().capacity();
+            let message = read_message::<Framed, _>(&mut wire, &mut buffer, &mut [0; 64]).unwrap();
+            assert_eq!(message.body.len(), 10_000);
+            assert_eq!(buffer.storage().capacity(), room);
+            // And again: the room is what the first message left behind, reclaimed.
+            wire.at = 0;
+            let message = read_message::<Framed, _>(&mut wire, &mut buffer, &mut [0; 64]).unwrap();
+            assert_eq!(message.body.len(), 10_000);
+            assert_eq!(buffer.storage().capacity(), room);
+            assert!(buffer.storage().len() <= data.len());
+
+            // One byte short of the message: filled to the brim, then refused, unread.
+            let mut wire = Wire::of(data.clone());
+            let mut buffer = BitBuf::bounded(data.len() - 1);
+            let room = buffer.storage().capacity();
+            let error =
+                read_message::<Framed, _>(&mut wire, &mut buffer, &mut [0; 64]).unwrap_err();
+            assert!(matches!(
+                error,
+                MessageReadError::Codec(BitError {
+                    kind: ErrorKind::BufferFull { .. },
+                    ..
+                })
+            ));
+            assert_eq!(
+                (wire.at, buffer.bit_len() / 8),
+                (data.len() - 1, data.len() - 1)
+            );
+            assert_eq!(buffer.storage().capacity(), room);
+        }
+
+        #[bin(big)]
+        #[derive(Debug)]
+        struct FarTag {
+            #[br(seek = 8, assert(tag == b'A'))]
+            tag: u8,
+            #[brw(count_prefix = u32)]
+            body: Vec<u8>,
+        }
+
+        #[test]
+        fn room_made_by_moving_the_cursor_voids_the_hint_before_anything_is_read() {
+            // The tag is at an absolute offset. Making room for the 5,000-byte body
+            // reclaims the consumed byte, the offset then names another byte, and the
+            // message is refused. Reading the bytes the old attempt asked for first
+            // would take them from whatever follows.
+            let mut buffer = BitBuf::bounded(5_005);
+            buffer.push(&[0, b'A', 0, 0, 0x13, 0x88]).unwrap();
+            buffer.try_pull::<u8>().unwrap();
+            let mut wire = Wire::of(vec![b'X'; 6_000]);
+            let error =
+                read_message::<FarTag, _>(&mut wire, &mut buffer, &mut [0; 64]).unwrap_err();
+            assert!(
+                matches!(
+                    &error,
+                    MessageReadError::Codec(BitError {
+                        kind: ErrorKind::Convert { .. },
+                        field: Some("tag"),
+                        ..
+                    })
+                ),
+                "{error:?}"
+            );
+            assert_eq!(
+                wire.at, 0,
+                "nothing was read for a hint that no longer held"
+            );
+        }
+
+        #[test]
+        fn a_direct_read_serves_a_message_that_starts_inside_a_byte() {
+            use crate::{BitEncode, BitWriter, u4};
+
+            let message = Framed {
+                body: (0..10_000)
+                    .map(|at| u8::try_from(at % 251).unwrap())
+                    .collect(),
+            };
+            let mut writer = BitWriter::new();
+            writer.write(u4::new(0xA)).unwrap();
+            message.bit_encode(&mut writer).unwrap();
+            let bytes = writer.into_bytes();
+
+            let mut buffer = BitBuf::new();
+            buffer.push(&bytes[..1]).unwrap();
+            assert_eq!(buffer.try_pull::<u4>().unwrap(), u4::new(0xA));
+            let mut wire = Wire::of(bytes[1..].to_vec());
+            let read = read_message::<Framed, _>(&mut wire, &mut buffer, &mut [0; 64]).unwrap();
+            assert_eq!(read, message);
+            // A scratch at a time would be 157.
+            assert!(wire.reads <= 16, "{}", wire.reads);
+        }
+
+        #[test]
+        fn the_read_scratch_can_be_set_and_reads_ahead_as_far_as_it_reaches() {
+            let mut data = framed(10_000, 5);
+            data.extend(framed(10, 6));
+            let total = data.len();
+            let mut stream = MessageStream::new(Wire::of(data)).with_read_scratch(64 * 1024);
+            assert_eq!(stream.scratch.len(), 64 * 1024);
+            assert_eq!(stream.read_message::<Framed>().unwrap().body.len(), 10_000);
+            // Under the scratch: one read, and the next message came with it.
+            assert_eq!((stream.get_ref().reads, stream.get_ref().at), (1, total));
+            assert_eq!(stream.read_message::<Framed>().unwrap().body.len(), 10);
+            assert_eq!(stream.get_ref().reads, 1);
+
+            // What the scratch could hold goes through it also when the transport gives
+            // it piecemeal: the reads go on past the message into what follows.
+            let mut data = framed(10_000, 5);
+            data.extend(framed(10, 6));
+            let total = data.len();
+            let wire = Wire {
+                chunk: 1_460,
+                ..Wire::of(data)
+            };
+            let mut stream = MessageStream::new(wire).with_read_scratch(64 * 1024);
+            assert_eq!(stream.read_message::<Framed>().unwrap().body.len(), 10_000);
+            assert_eq!(stream.get_ref().at, total);
+
+            // No scratch to speak of still reads, a byte at a time.
+            let mut stream = MessageStream::new(Wire::of(framed(100, 7))).with_read_scratch(0);
+            assert_eq!(stream.scratch.len(), 1);
+            assert_eq!(stream.read_message::<Framed>().unwrap().body.len(), 100);
+            // A message this small is not worth a direct read, however short the scratch.
+            assert_eq!(stream.get_ref().reads, 104);
+        }
+
+        #[cfg(feature = "tokio-io")]
+        mod asynchronous {
+            use super::*;
+            use crate::net::read_message_async;
+            use std::{
+                future::Future,
+                pin::Pin,
+                task::{Context, Poll, Waker},
+            };
+            use tokio::io::{AsyncRead, ReadBuf};
+
+            /// The scripted transport as an `AsyncRead`, pending for as long as it is
+            /// asked for the byte at `pause`.
+            struct Pausing {
+                wire: Wire,
+                pause: Option<usize>,
+            }
+
+            impl AsyncRead for Pausing {
+                fn poll_read(
+                    mut self: Pin<&mut Self>,
+                    _: &mut Context<'_>,
+                    out: &mut ReadBuf<'_>,
+                ) -> Poll<io::Result<()>> {
+                    if self.pause == Some(self.wire.at) {
+                        return Poll::Pending;
+                    }
+                    // Up to where it pauses and no further.
+                    let at = self.wire.at;
+                    let room = self.pause.filter(|&pause| pause > at);
+                    let out_now = out.initialize_unfilled();
+                    let limit = room.map_or(out_now.len(), |pause| out_now.len().min(pause - at));
+                    let count = self.wire.read(&mut out_now[..limit])?;
+                    out.advance(count);
+                    Poll::Ready(Ok(()))
+                }
+            }
+
+            #[tokio::test]
+            async fn an_async_direct_read_gives_what_the_scratch_gives() {
+                let mut state = 0xD1B5_4A32_D192_ED03;
+                for case in 0..400 {
+                    let wire = script(&mut state);
+                    let make = buffer(&mut state);
+                    let scratch = pick(&mut state, &[1, 16, SCRATCH_LEN]);
+                    let expected = transcript(wire.clone(), make(), NEVER_DIRECT);
+
+                    let mut reader = Pausing {
+                        wire: wire.clone(),
+                        pause: None,
+                    };
+                    let (mut buffer, mut scratch) = (make(), vec![0; scratch]);
+                    let mut got = Vec::new();
+                    loop {
+                        let read = read_message_async(&mut reader, &mut buffer, &mut scratch).await;
+                        let (line, again) = line(read);
+                        got.push(line);
+                        if !again {
+                            break;
+                        }
+                    }
+                    got.push(format!(
+                        "consumed {}",
+                        reader.wire.at - buffer.bit_len() / 8
+                    ));
+                    assert_eq!(got, expected, "case {case}: {wire:?}");
+                }
+            }
+
+            #[tokio::test]
+            async fn a_direct_read_dropped_while_pending_keeps_what_came_and_nothing_else() {
+                let data = framed(20_000, 9);
+                // Inside the first step of the direct read, at a step's end, and well on.
+                for pause in [SCRATCH_LEN + 10, 2 * SCRATCH_LEN, 13_000] {
+                    let mut reader = Pausing {
+                        wire: Wire {
+                            chunk: 1_460,
+                            ..Wire::of(data.clone())
+                        },
+                        pause: Some(pause),
+                    };
+                    let mut buffer = BitBuf::new();
+                    let mut scratch = vec![0; SCRATCH_LEN];
+                    {
+                        let future =
+                            read_message_async::<Framed, _>(&mut reader, &mut buffer, &mut scratch);
+                        let mut future = std::pin::pin!(future);
+                        let mut context = Context::from_waker(Waker::noop());
+                        assert!(future.as_mut().poll(&mut context).is_pending());
+                    }
+                    // Exactly what the transport gave: not the step made ready for more.
+                    assert_eq!((reader.wire.at, buffer.bit_len() / 8), (pause, pause));
+                    assert_eq!(buffer.storage()[..pause], data[..pause]);
+                    reader.pause = None;
+                    let message =
+                        read_message_async::<Framed, _>(&mut reader, &mut buffer, &mut scratch)
+                            .await
+                            .unwrap();
+                    assert_eq!(message.body, data[4..]);
+                    assert!(buffer.is_empty());
+                }
+            }
+
+            #[tokio::test]
+            async fn an_async_length_no_input_backs_sizes_neither_the_buffer_nor_a_read() {
+                let mut data = vec![0xFF; 4];
+                data.extend([7; 10]);
+                let mut reader = Pausing {
+                    wire: Wire::of(data),
+                    pause: None,
+                };
+                let mut buffer = BitBuf::new();
+                let error = read_message_async::<Framed, _>(&mut reader, &mut buffer, &mut [0; 8])
+                    .await
+                    .unwrap_err();
+                assert!(matches!(error, MessageReadError::Codec(_)), "{error:?}");
+                assert_eq!((reader.wire.at, buffer.bit_len()), (14, 14 * 8));
+                assert!(
+                    reader.wire.largest <= SCRATCH_LEN,
+                    "{}",
+                    reader.wire.largest
+                );
+                // Two steps: one made ready, and one more after the few bytes that came.
+                assert!(buffer.storage().capacity() <= 4 * SCRATCH_LEN);
+            }
+
+            #[tokio::test]
+            async fn an_async_direct_read_asks_in_growing_steps_and_takes_nothing_after() {
+                // At the threshold exactly, and a long way past it.
+                for extra in [0, 1 << 20] {
+                    let body = 2 * SCRATCH_LEN - 4 + extra;
+                    let mut data = framed(body, 3);
+                    let message = data.len();
+                    data.extend([0xAB; 300]);
+                    let first = data[..SCRATCH_LEN].to_vec();
+                    let mut reader = Pausing {
+                        wire: Wire::of(data),
+                        pause: None,
+                    };
+                    let (mut buffer, mut scratch) = (BitBuf::new(), vec![0; SCRATCH_LEN]);
+                    let read =
+                        read_message_async::<Framed, _>(&mut reader, &mut buffer, &mut scratch)
+                            .await
+                            .unwrap();
+                    assert_eq!(read.body.len(), body);
+                    assert_eq!(reader.wire.at, message);
+                    // Only the first read went through the scratch, which still holds it.
+                    assert_eq!(scratch, first);
+                    assert!(reader.wire.reads <= 12, "{}", reader.wire.reads);
+                    assert!(reader.wire.largest >= SCRATCH_LEN.max(extra / 4));
+                }
+            }
+
+            #[tokio::test]
+            async fn an_async_bounded_buffer_takes_what_it_has_room_for_and_does_not_grow() {
+                let data = framed(10_000, 1);
+                for short in [0, 1] {
+                    let mut reader = Pausing {
+                        wire: Wire::of(data.clone()),
+                        pause: None,
+                    };
+                    let mut buffer = BitBuf::bounded(data.len() - short);
+                    let room = buffer.storage().capacity();
+                    for _ in 0..2 {
+                        reader.wire.at = 0;
+                        let read =
+                            read_message_async::<Framed, _>(&mut reader, &mut buffer, &mut [0; 64])
+                                .await;
+                        // A byte short of the message: filled to the brim, then refused.
+                        assert_eq!(read.is_ok(), short == 0, "{read:?}");
+                        assert_eq!(buffer.storage().capacity(), room);
+                        assert!(buffer.storage().len() <= data.len() - short);
+                    }
+                }
+            }
         }
     }
 

@@ -4147,6 +4147,24 @@ impl BitBuf {
         self.cap.map(|cap| cap - (self.buf.len() - self.cursor / 8))
     }
 
+    /// Makes room for `additional` more bytes as [`push`](Self::push) would, and says
+    /// whether the cursor stayed where it was: reclaiming the consumed bytes rebases it.
+    #[cfg(feature = "net")]
+    pub(crate) fn make_room_in_place(&mut self, additional: usize) -> bool {
+        let cursor = self.cursor;
+        self.make_room(additional);
+        self.cursor == cursor
+    }
+
+    /// The storage, for a transport to append what it reads without a copy. The caller
+    /// only appends, never more than [`read_capacity`](Self::read_capacity) allows, and
+    /// only after [`make_room_in_place`](Self::make_room_in_place) for as much, so a
+    /// bounded buffer has the room and does not grow.
+    #[cfg(feature = "net")]
+    pub(crate) fn storage(&mut self) -> &mut Vec<u8> {
+        &mut self.buf
+    }
+
     #[cfg(feature = "net")]
     pub(crate) fn finish_byte(&mut self) {
         self.cursor = self.cursor.div_ceil(8) * 8;
