@@ -4,6 +4,63 @@
 //! what to write instead. Additions that need no action are at the end of the section.
 //! The reasons and measurements behind each change are in the crate's `DESIGN.md`.
 //!
+//! # 0.10.0 → 0.10.1
+//!
+//! A compatible release: code written for 0.10.0 as documented compiles and decodes the
+//! same values. Four things are worth knowing; the additions follow.
+//!
+//! ## Changes the compiler tells you about
+//!
+//! **A trait of yours that gives every source a `skip_bytes` method is now ambiguous.**
+//! [`Source`](crate::Source) gained [`skip_bytes`](crate::Source::skip_bytes). If you had
+//! an extension trait with a method of that name implemented for every `S: Source`, calls
+//! to it stop compiling (E0034). Use the crate's method, or call yours by path:
+//! `YourTrait::skip_bytes(&mut reader, n)`.
+//!
+//! ## Changes the compiler does not tell you about
+//!
+//! **A message nested deeper than [`MAX_DECODE_DEPTH`](crate::MAX_DECODE_DEPTH) levels
+//! fails to decode.** A type that contains itself (through a `Vec`, an `Option`, a
+//! variant) used to recurse until the stack ran out; it now returns
+//! [`ErrorKind::TooDeep`](crate::ErrorKind::TooDeep) at 128 levels. Input nested that deep
+//! on purpose needs its own, shallower representation.
+//!
+//! **`assert`, `calc` and `magic` expressions can run twice for one decode.** A
+//! fixed-length message whose fields are each at most eight bits, or whole bytes on a byte
+//! boundary, is first decoded from one window of its whole length; if that fails (an
+//! `assert` that rejects, a magic that does not match) the fields are decoded again one by
+//! one, so that the error is the one 0.10.0 reported. Keep those expressions free of side
+//! effects. A field with its own `Drop` may likewise be built and dropped once more.
+//!
+//! **An unbounded [`BitBuf`](crate::BitBuf) holds consumed bytes for longer.** A push no
+//! longer moves the unread backlog down on every call; consumed bytes are reclaimed once
+//! there are at least as many of them as unread ones, so the buffer reaches just under
+//! twice its backlog in length. A [`bounded`](crate::BitBuf::bounded) buffer still
+//! reclaims whenever new bytes would not fit.
+//!
+//! ## Additions
+//!
+//! - [`Source::skip_bytes`](crate::Source::skip_bytes): pass over bytes a decoder does not
+//!   parse, on any source, also one that cannot seek.
+//! - `MessageStream::read_message_with`, `MessageDatagram::recv_message_with`,
+//!   `net::read_message_with` and `net::read_message_async_with` (the `net` and `tokio-io`
+//!   features): read a `#[bin(read_only)]` message, or one that decodes with `ctx(...)`,
+//!   off a transport. The caller states the byte and bit order.
+//! - `MessageStream::with_read_scratch` (`net`): how much the stream is asked for at a
+//!   time, 4 KiB otherwise.
+//! - `#[bin(no_window)]`: for a fixed-length message that mostly arrives in pieces.
+//! - `BinCodec::with_max_frame` (`tokio`): refuse a frame longer than a cap.
+//!
+//! ## Performance
+//!
+//! Decoding valid input takes about a quarter of the instructions 0.10.0 took across the
+//! crate's probe (a 44-byte message from a slice: 507 → 122), and encoding about a third.
+//! `StreamBitReader` and `BufSource` ask their reader for whole bytes together instead of
+//! one at a time. A `MessageStream` reads a message of 4 KiB or more straight into its
+//! buffer, with no read-ahead past it. One case got slower: a large message from a reader
+//! that does not implement `read_buf` (most readers outside `std`) costs about 15% to 20%
+//! more time, because `std` clears the buffer it lends such a reader.
+//!
 //! # 0.9 → 0.10
 //!
 //! ## Changes the compiler tells you about
