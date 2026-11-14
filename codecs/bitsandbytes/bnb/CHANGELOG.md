@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.10.2](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.10.1...bitsandbytes-v0.10.2) - 2026-11-14
+
+### Other
+
+- *(bitsandbytes)* keep a test transport's async-only counter out of other builds
+- *(bitsandbytes)* add the 0.10.0 to 0.10.1 section to the upgrade guide
+
 ## [0.10.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.10.0...bitsandbytes-v0.10.1) - 2026-11-14
 
 ### Added
