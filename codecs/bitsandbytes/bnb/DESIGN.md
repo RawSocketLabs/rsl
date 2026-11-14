@@ -3492,3 +3492,93 @@ they pinned `std`'s growth heuristics. Found sound: a bounded buffer cannot be p
 past its capacity or reallocated, `read_to_end` keeps what arrived before an error, no
 overflow and no new unbounded loop, and `BinCodec`, the datagram types and the raw
 handoff are untouched.
+
+## 23. Transport readers for a type that does not encode (0.10.1)
+
+ROADMAP 0.10.x item 3. `net::read_message`, `net::read_message_async`,
+`MessageStream::read_message` and `MessageDatagram::recv_message` bound the message on
+`BitDecode + BitEncode` only to read `T::LAYOUT`, so a `#[bin(read_only)]` type, which
+has no `BitEncode`, and a `#[bin(ctx(...))]` type, which has no `BitDecode`, had no way
+through a transport. No crate in the workspace sends either through one.
+
+### Contract (owner decisions, 2026-11-13)
+
+- Each of the four gains a `_with` form taking `(layout: Layout, args: A)` with
+  `T: DecodeWith<A>`, as `BitBuf::try_pull_with` and `pull_eof_with` do. The stream forms
+  need `A: Clone`: the context is cloned for each decode attempt, one per refill, and once
+  more if the transport ends. The alternative offered, relaxing the existing bounds onto
+  the hidden `DecodeLayout` with a blanket impl for every `BitEncode` type, was declined:
+  a `read_only` type that also hand-writes `BitEncode` would stop compiling, and it does
+  nothing for context types.
+- The caller states the layout. The message is decoded in the layout given, whatever its
+  type declares.
+- `BinCodec` is left out. Its one `Decoder` impl reads `T::LAYOUT`, and `BinCodec::new()`
+  takes any `T`, so a read-only type needs either a second type parameter that says where
+  the layout comes from or a separate decode-only type. Both were offered and declined
+  until a consumer needs tokio's `Stream` adapters for such a type; either can be added
+  later without a break.
+
+### Withdrawn: a generated `LAYOUT` constant
+
+The first build had `#[bin]` emit an inherent `pub const LAYOUT` on every type without a
+`BitEncode`, so a caller could write `Type::LAYOUT` for any message. Review showed it is
+not additive, each case reproduced: a type whose author already wrote an inherent
+`LAYOUT` (the natural workaround for `try_pull_with`) stops compiling (E0592); a user
+trait's associated `LAYOUT` on such a type is shadowed; and a `read_only` type with a
+hand-written `BitEncode` in another order, which `tests/bin_direction.rs` has, silently
+answers `Type::LAYOUT` with the declared order where it answered with the encoder's, so
+`read_message` and `read_message_with(Type::LAYOUT, ())` would disagree. It also did not
+reach a context type whose encode reads context. The macro crate is unchanged by this
+item. A way to ask a decode-only type its layout that cannot collide (the hidden trait
+made public, say) is a candidate for 0.11.
+
+### One read loop, and what it costs
+
+`read_message` and `read_message_with` differ only in how they decode. Four shapes were
+measured against `main` (instructions per message, `stream_16x40_whole`, 312.41 there):
+
+| Shape | `stream_16x40_whole` | The decode attempt |
+|---|---:|---|
+| The loop written out twice | 312.41 | out of line, as on `main` |
+| One function taking `layout` and `args` | 316.41 | out of line |
+| That function forced inline | 297.16 | inlined into the loop |
+| One function taking the attempt as a closure | 313.41 | out of line |
+
+Passing the layout as a value carries it through every refill of a message whose layout
+is a constant. Forcing the loop inline moves where `decode_attempt` is inlined, which is
+the boundary the probe exists to hold still (§22, phase 0): its counts fall 3 to 19% but
+are no longer the shape the earlier phases were gated on. The closure form is compiled
+once per kind of attempt with the attempt built in, so the layout stays a constant; it
+costs one instruction a stream read on all six stream modes and nothing else moves. The
+copies cost nothing, but review found four of five mutants of the copied loop alive: the
+differential that was to hold the copies together compared too little. The closure form
+was taken, sync and async. The probe's check for where the attempt is called from
+(`benches/probe.sh`) now looks for the shared loop.
+
+### Tests
+
+`tests/net_with.rs`, eight: a stream reads a decode-only struct, enum and bit-packed
+struct, each in a layout that is not the default, a byte at a time, and ends cleanly; the
+layout given is the one decoded in (the default layout byte-swaps the value); a message
+with context is read with it on every attempt and leaves what follows it; a message cut
+short by the end of the stream is a codec error; a message only the end of the stream
+completes is decoded in the layout given, sync and async; a datagram is decoded whole in
+the layout given, with context, and refuses trailing bytes; the async reader takes the
+same layout and context. The plain forms run through the same loops, so the transport
+tests of §12 and of §22 phase 5 cover the loop itself. 935 tests with all features across
+both crates, 884 with `mock`, 824 with default, each beside the one known snapshot
+failure; clippy in the three; rustdoc with warnings denied; the `no_std` check; the
+library on Rust 1.85. `public-api.txt` gained the six new signatures by hand; the
+release job on its pinned nightly is their check.
+
+### Mutants and review
+
+Seven hand mutants, all killed: the layout ignored by the attempt and by the attempt at
+the end of the input, sync and async, by the stream wrapper and by the datagram; the
+shared loop never taking a direct read. One first got through because the test for the
+end of the input was settled before the input ended; its bytes are now a true prefix of
+a longer magic. Independent review: the constant above (blocking), a doc sentence that
+claimed every `#[bin]` type has `LAYOUT`, and the weak differential, which went with the
+copies. Found sound: the datagram form runs the body `decode_exact` runs, one clone per
+attempt with the original spent at the end of the input, generated-code lints in a
+consumer that forbids them, and the six snapshot lines.

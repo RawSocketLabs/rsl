@@ -44,10 +44,14 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
 2. ~~**A frame cap for `BinCodec`.**~~ Done (`DESIGN.md` §21):
    `BinCodec::with_max_frame(bytes)` fails with `ErrorKind::BufferFull` once a message spans
    more than `bytes`; `new()` stays unlimited and the codec stays stateless.
-3. **Transport readers for read-only types.** `net::read_message`, `MessageStream` and
-   `BinCodec` require `BitEncode` only to learn the layout. Give them `_with` forms (layout
-   and context supplied) or bound them on the hidden `DecodeLayout` that 0.10 introduced, so a
-   `#[bin(read_only)]` type works through every transport.
+3. ~~**Transport readers for read-only types.**~~ Done (`DESIGN.md` §23):
+   `net::read_message_with`, `net::read_message_async_with`,
+   `MessageStream::read_message_with` and `MessageDatagram::recv_message_with` take the
+   layout and the decode context, so a `#[bin(read_only)]` type and a context type go
+   through them. The caller states the layout. `BinCodec` is not covered (owner decision):
+   it needs a second type parameter or a decode-only sibling, when a consumer wants one.
+   For 0.11: a way to ask a decode-only type its layout that cannot collide with a user's
+   own items; a generated `LAYOUT` constant was tried and is not additive.
 4. **Happy-path performance** (the 2026-11-12 review, `DESIGN.md` §22, under the root
    `AGENTS.md` happy-path rule). None of it changes the API. In phases, each change its own
    commit, measured against `bitsandbytes-v0.10.0`:

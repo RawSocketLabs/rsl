@@ -182,7 +182,8 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   Decoder/Encoder over `Framed` (TCP) and `UdpFramed` (UDP). `net`: `MessageStream`
   (`read_message`/`write_message` over any `Read + Write`; buffers reads with a `BitBuf` rather than
   re-rolling the loop) and `MessageDatagram` (`send_message`/`recv_message` over a `DatagramSocket`)
-  — both decode in the message's own layout (bound `BitDecode + BitEncode`, to reach `T::LAYOUT`).
+  — both decode in the message's own layout (bound `BitDecode + BitEncode`, to reach `T::LAYOUT`);
+  their `_with` forms take the layout and a decode context, for a type that does not encode.
   **`DatagramSocket` is sealed** via a private `sealed::Sealed` supertrait: `bnb` impls it for
   `UdpSocket`/`UnixDatagram` (and `MockDatagramSocket` under `mock`) — a new impl needs
   `impl sealed::Sealed` too, so downstream can't (locked by `tests/ui_seal`). `mock` (implies `net`,
