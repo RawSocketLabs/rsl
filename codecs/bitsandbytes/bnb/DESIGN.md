@@ -3731,8 +3731,18 @@ runs in 181 s under ASan, clean. The `stream_decode` target gained a model with 
 of up to 12 KiB, so the transport readers take the direct read past the scratch (§22,
 phase 5), bounded and unbounded, sync and async with the future dropped on `Pending`:
 117,954 runs in 241 s, clean. Already there: a recursive type and `BinCodec`-free
-transport models. Not added: a `BinCodec` model, which needs `tokio-util` in the fuzz
-workspace's lockfile.
+transport models.
+
+Added 2026-11-14: a `BinCodec` model in `stream_decode`, driven as `Framed` drives it
+(`Decoder`/`Encoder` over a `BytesMut`, input in pieces, with and without a frame cap)
+against the same length-prefixed records: every whole frame within the cap once and in
+order, a longer one refused as soon as the cap is buffered or the frame is whole, a
+refusal that consumes nothing, a truncated frame an error at the end of input, and what
+was decoded encoding back to its bytes. The fuzz workspace now enables the crate's
+`tokio` feature, so `tokio-util` 0.7.20 (with `futures-core` and `futures-sink`) is in
+its lockfile. 53,937 runs in 61 s, clean; four mutants of the codec (a frame one byte
+over the cap accepted, the cap noticed a byte late, a frame consumed a byte short, a
+truncated frame at the end not an error) each crashed it within 45 s.
 
 ### `cargo mutants` over the runtime's changes since 0.9.0
 

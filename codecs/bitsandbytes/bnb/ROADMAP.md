@@ -141,7 +141,8 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    `decode_prefix`, the window decode and the transports' direct read. The toolchain
    the trybuild snapshots are recorded against is pinned in the root `rust-toolchain.toml`
    (owner's decision, 2026-11-14), and CI runs every example, not only compiles it
-   (owner's decision, same day). Open: a `BinCodec` fuzz model.
+   (owner's decision, same day). A `BinCodec` fuzz model is in `stream_decode`. Nothing
+   open.
 6. **A dispatch check that builds no error**, when a consumer needs it. A caller that tries
    one message type after another pays for a full `NoMatchingVariant`/`BadMagic` on every
    miss (118 to 188 cycles against 33 for a hit, with an allocation). A generated,
