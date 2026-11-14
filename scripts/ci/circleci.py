@@ -12,6 +12,7 @@ the coverage receipt. On the trunk, `release` publishes a qualified release-plz 
 
 import argparse
 import base64
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -65,9 +66,12 @@ BUCKETS = {
     # Release-only; a release run's critical path is its fuzzing.
     "release": ("socks", "semver", "package", "no-std"),
 }
-# Caches are written only by the weekly full schedule (Sundays). CircleCI never overwrites a live
-# key, so a retention past 7 days would skip the next Sunday's save and leave it missing for a week.
+# Caches are written by full-coverage trunk runs: the weekly schedule (Sundays), and a push that
+# changes a key's inputs. CircleCI never overwrites a live key, so each key names the week of its
+# save (cache_week) and lives one CACHE_RETENTION, under 7 days: the next Sunday writes a new one.
 CACHE_RETENTION = "6d"
+# What a cache key is made of: the lockfile, toolchain and job image (pinned in the setup config too).
+CACHE_INPUTS = {"Cargo.lock", "rust-toolchain.toml", ".circleci/config.yml"}
 CACHE_PATHS = ["~/.cargo/registry/index", "~/.cargo/registry/cache", "~/.cargo/git/db", "target"]
 DETACHED_TARGETS = [
     "codecs/bitsandbytes/bnb/nostd-check", "tools/rust-skills", "bindings/usdr",
@@ -190,6 +194,16 @@ def image_changed(plan):
     return any(path.startswith(IMAGE_SOURCE) for path in plan.get("paths", ()))
 
 
+def cache_inputs_changed(plan):
+    return bool(CACHE_INPUTS & set(plan.get("paths", ())))
+
+
+def cache_week(now=None):
+    """The date of the weekly full schedule (Sundays 09:17 UTC) a cache saved now belongs to."""
+    shifted = (now or datetime.now(timezone.utc)) - timedelta(hours=9, minutes=17)
+    return (shifted.date() - timedelta(days=(shifted.weekday() + 1) % 7)).isoformat()
+
+
 def event_options(root, env, prefix):
     """(event, base, full, release, products) in the vocabulary `gate.py` records.
 
@@ -248,19 +262,22 @@ def plan_for_event(root, env):
         # base, and the gate's fallback, the first parent, is another commit whenever the push
         # carries more than one: the recomputed plan then differs and the gate fails.
         env.setdefault("CI_TRUNK_BASE", "none" if full else base)
+    # `full` here is the event's: a push without a proven green trunk base. A plan made full by its
+    # content (central CI, toolchain) still compares from that base.
     # A trunk push qualifies only the products whose versions it changes; most change none.
     plan = build_plan(root, base=base, full=full, release=release, products=products,
                       release_optional=event == "push")
     # A trunk push that qualifies a release is a publication candidate; `release` confirms it
     # came from a merged release-plz PR before anything is published.
     plan["release_candidate"] = event == "push" and plan["release"]
-    if (event == "push" and not plan["full"] and not plan["release"] and not image_changed(plan)
-            and head_tested(env)):
+    if (event == "push" and not full and not plan["release"] and not image_changed(plan)
+            and not (plan["full"] and cache_inputs_changed(plan)) and head_tested(env)):
         # The branch pipeline already passed the required gate on this exact commit, and its merge
-        # base is at or before the proven green trunk base, so main re-tests nothing. A full plan
-        # (no green predecessor, or a global file changed) could hide a red trunk the branch never
-        # tested; a release or image
-        # push needs this workflow's own run. The gate recomputes from the same pinned trunk base.
+        # base is at or before the proven green trunk base, so its diff held every path this push
+        # changed and its coverage was at least this plan's: main re-tests nothing. Without a green
+        # predecessor the branch's scope could hide a red trunk; a release or image push needs this
+        # workflow's own run, and a full push changing a cache key runs to save the new key. The
+        # gate recomputes from the same pinned trunk base.
         plan = build_plan(root, base=env["CIRCLE_SHA1"])
     if plan["head"] != env["CIRCLE_SHA1"]:
         raise ValueError("checkout does not match the pipeline's tested SHA")
@@ -277,19 +294,21 @@ def run(name, command, **extra):
     return {"run": {"name": name, "command": command, **extra}}
 
 
-def cached(key, paths, steps, *, save, toolchain, lock="Cargo.lock", enabled=True):
+def cached(key, paths, steps, *, save, toolchain, week, lock="Cargo.lock", enabled=True):
     if not enabled:
         return steps
     # The cached value is the dependency build: the image (native libraries), toolchain and
-    # lockfile decide it. Each key is written once, not on every trunk push.
+    # lockfile decide it; the week names its save, so a mid-week key gives way to Sunday's.
     key += f"-{toolchain}-{IMAGE.rsplit(':', 1)[1][:12]}"
-    exact = key + f'-{{{{ checksum "{lock}" }}}}'
+    locked = key + f'-{{{{ checksum "{lock}" }}}}'
+    exact = f"{locked}-{week}"
     # A saving job restores only its exact key, so a new key holds a clean build rather than
-    # accumulating every earlier lockfile's dependencies.
-    result = [{"restore_cache": {"keys": [exact] if save else [exact, key + "-"]}}, *steps]
-    # Only the weekly full trunk schedule writes caches, so a scoped push cannot fix a partial
-    # build under a key it never rewrites. CircleCI does not scope caches by branch, so a
-    # collaborator's branch could still write one: release candidates restore none.
+    # accumulating every earlier lockfile's dependencies. Others take the newest for their
+    # lockfile, else the newest of any.
+    result = [{"restore_cache": {"keys": [exact] if save else [exact, locked + "-", key + "-"]}}, *steps]
+    # Only full-coverage trunk runs write caches, so a scoped push cannot store a partial build.
+    # CircleCI does not scope caches by branch, so a collaborator's branch could still write one:
+    # release candidates restore none.
     if save:
         # CircleCI bills size times retention: only third-party artifacts are worth keeping.
         targets = " ".join(path for path in paths if path.endswith("target"))
@@ -311,7 +330,7 @@ def bucket_of(profile):
     return next((name for name, members in BUCKETS.items() if profile in members), profile)
 
 
-def check_job(name, profiles, *, save, caches, toolchain, part=None):
+def check_job(name, profiles, *, save, caches, toolchain, week, part=None):
     # The budget bounds the whole job's profiles, not only a silent stretch.
     selection = ' --part "$PART"' if part else ""
     steps = [run("Run the complete selected profiles",
@@ -319,15 +338,16 @@ def check_job(name, profiles, *, save, caches, toolchain, part=None):
     if part == "test":
         steps.append({"store_test_results": {"path": JUNIT}})
     return cached(f"v5-{name}", CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS], steps,
-                  save=save, toolchain=toolchain, enabled=caches and not set(profiles) <= NO_RUST)
+                  save=save, toolchain=toolchain, week=week,
+                  enabled=caches and not set(profiles) <= NO_RUST)
 
 
-def fuzz_job(item, *, save, caches, toolchain):
+def fuzz_job(item, *, save, caches, toolchain, week):
     # Separate processes preserve each target's original budget. GNU is required for ASan.
     steps = [run("Fuzz", f"timeout {BUDGET} python3 scripts/ci/run.py fuzz", no_output_timeout=BUDGET)]
     return cached(f"v4-fuzz-{slug(item['root'])}-{item['target']}",
                   CACHE_PATHS[:-1] + [f"{item['root']}/target"], steps, save=save, toolchain=toolchain,
-                  lock=f"{item['root']}/Cargo.lock", enabled=caches)
+                  week=week, lock=f"{item['root']}/Cargo.lock", enabled=caches)
 
 
 def commitlint_job(base):
@@ -395,8 +415,11 @@ def continuation(plan, bnb, env, event):
     resource_class = env.get("CI_INPUT_CLASS") or DEFAULT_CLASS
     trunk = env.get("CIRCLE_BRANCH") == TRUNK
     caches = not plan["release"]  # Evidence that can authorise publication restores no cache.
-    # Only the weekly full schedule saves, so every key lives exactly one CACHE_RETENTION cycle.
-    save = trunk and caches and plan["full"] and env.get("CI_TRIGGER_SOURCE") == "scheduled_pipeline"
+    # Only full-coverage trunk runs save: the weekly schedule, and a push that changed a key's
+    # inputs, so a mid-week lockfile, toolchain or image change is warm before Sunday.
+    save = trunk and caches and plan["full"] and (env.get("CI_TRIGGER_SOURCE") == "scheduled_pipeline"
+                                                  or cache_inputs_changed(plan))
+    week = cache_week()
     handed = json.dumps(handed_on(plan), separators=(",", ":"), sort_keys=True)
     if len(handed.encode()) > ENV_LIMIT:
         raise ValueError("the handed-on plan exceeds one environment variable's limit")
@@ -442,13 +465,15 @@ def continuation(plan, bnb, env, event):
         toolchain = next(iter(toolchains), STABLE)
         environment = {"PROFILES": " ".join(profiles), **({"RUSTUP_TOOLCHAIN": toolchain} if toolchains else {})}
         name = f"checks-{bucket}"
-        jobs[name] = job(check_job(name, profiles, save=save, caches=caches, toolchain=toolchain, part=part),
+        jobs[name] = job(check_job(name, profiles, save=save, caches=caches, toolchain=toolchain,
+                                   week=week, part=part),
                          **environment, **({"PROFILE": "workspace", "PART": part} if part else {}))
         selected.append(name)
     for item in plan["fuzz"]:
         name = f"fuzz-{slug(item['root'])}-{item['target']}"
         toolchain = toolchain_of("fuzz", bnb)
-        jobs[name] = job(fuzz_job(item, save=save, caches=caches, toolchain=toolchain), RUSTUP_TOOLCHAIN=toolchain,
+        jobs[name] = job(fuzz_job(item, save=save, caches=caches, toolchain=toolchain, week=week),
+                         RUSTUP_TOOLCHAIN=toolchain,
                          FUZZ_ITEM=json.dumps(item, separators=(",", ":")))
         selected.append(name)
     needs = {"checks": "success" if plan["profiles"] else "skipped",

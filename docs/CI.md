@@ -237,8 +237,11 @@ branch run, and judges releases against the pushed head's first parent, as the r
 a version bump below the tip of a multi-commit push qualifies nothing. A scoped main push whose
 own commit's latest `ci/circleci: rsl` from the CircleCI app is green (the branch run, since main
 moves by fast-forward, and its merge base is at or before the green trunk base) re-tests nothing: it plans an empty run and schedules only `policy`, the
-gate and `release-pr`. A push that qualifies a release or changes `.circleci/image/` keeps its
-plan, since the receipt and the image job need this workflow. The plan pins the answer as
+gate and `release-pr`. This holds when its content (central CI, shared build policy) makes the
+plan full: the branch compared from at or before the same green base, so its diff held the same
+paths and its plan was full too. A push that qualifies a release or changes `.circleci/image/` keeps its
+plan, since the receipt and the image job need this workflow, and so does a full push that changes
+a cache key's inputs (below), so the new key is saved. The plan pins the answer as
 `CI_HEAD_TESTED` for the gate, whose own status is pending by then. Main qualifies any release whose versions it
 changes; any other branch compares from its merge base with `origin/main`, and a same-repository
 `release-plz-` branch qualifies its products. Any explicit parameter (`full`, `base`, `release`,
@@ -252,16 +255,20 @@ memory. A
 namespaced `resource_class` parameter selects a self-hosted container runner with the same image.
 
 Caches are keyed by job, toolchain, job image and the job's lockfile (the root `Cargo.lock`, or a
-fuzz workspace's own). Each key is written from a clean build, and only by the weekly full-coverage
-schedule on main, so a scoped push cannot store a partial build. Detached
+fuzz workspace's own), then the week of the save (the Sunday of the weekly schedule). Each key is
+written from a clean build, and only by full-coverage runs on main, so a scoped push cannot store a
+partial build: the weekly schedule, and a full push that changes the root `Cargo.lock`,
+`rust-toolchain.toml` or the image pin in `.circleci/config.yml`, so a mid-week key change is warm
+before Sunday rather than cold until then. Other jobs restore the newest key for their lockfile, else
+the newest of any. A scoped lockfile change still waits for Sunday. Detached
 workspaces' own lockfiles are not in the key. Jobs build with `CARGO_INCREMENTAL=0` and
 line-tables-only debuginfo to keep cached targets small, and `scripts/ci/prune.py` removes every
 owned (path) package's units, test and example executables, and nextest/doc output before a save,
 so a cache holds only third-party artifacts (measured on the local workspace test and all-feature
 targets: about a tenth of the target). A pruning failure never fails the job; that target is left
 out of the cache. CircleCI bills a saved cache by size times retention, and saving jobs set
-`retention: caches: 6d`: only the weekly full schedule saves, and a key that outlived the next
-Sunday would make that run skip its save and leave the key missing for a week. CircleCI caches are
+`retention: caches: 6d`: CircleCI never overwrites a live key, and the week in the key makes the
+next Sunday write a new one, so a key saved mid-week never stops that save. CircleCI caches are
 project-wide, not branch-scoped, so a pipeline whose evidence can authorise publication (any
 release qualification) restores and saves no cache at all. Forked pull requests are not built.
 

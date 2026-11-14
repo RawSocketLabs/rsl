@@ -127,18 +127,24 @@ class EventTests(unittest.TestCase):
         head = "e" * 40
         scoped = {**test_plan.planned(["codecs/bitsandbytes/bnb/src/lib.rs"]), "head": head}
         empty = {**test_plan.planned(), "base": head, "head": head}
-        cases = {  # name: (event, plan, tested, skipped)
-            "tested push": ("push", scoped, True, True),
-            "untested push": ("push", scoped, False, False),
-            "full push without a green predecessor": ("push", {**scoped, "full": True}, True, False),
-            "release push": ("push", {**scoped, "release": True}, True, False),
-            "image push": ("push", {**scoped, "paths": [".circleci/image/Dockerfile"]}, True, False),
-            "branch": ("pull_request", scoped, True, False),
+        proven = ("a" * 40, False)  # (base, event-level full): a green trunk predecessor
+        cases = {  # name: (event, (base, full), plan, tested, skipped)
+            "tested push": ("push", proven, scoped, True, True),
+            "untested push": ("push", proven, scoped, False, False),
+            # Central CI makes the plan full; the branch's diff from the same base held it too.
+            "full-by-content push": ("push", proven, {**scoped, "full": True, "paths": ["scripts/ci/plan.py"]},
+                                     True, True),
+            "push without a green predecessor": ("push", ("b" * 40, True), {**scoped, "full": True}, True, False),
+            "full push changing a cache key": ("push", proven, {**scoped, "full": True, "paths": ["Cargo.lock"]},
+                                               True, False),
+            "release push": ("push", proven, {**scoped, "release": True}, True, False),
+            "image push": ("push", proven, {**scoped, "paths": [".circleci/image/Dockerfile"]}, True, False),
+            "branch": ("pull_request", proven, scoped, True, False),
         }
-        for name, (event, plan, tested, skipped) in cases.items():
+        for name, (event, (base, full), plan, tested, skipped) in cases.items():
             env = {"CIRCLE_SHA1": head}
             with self.subTest(name), \
-                    mock.patch.object(circleci, "event_options", return_value=(event, "a" * 40, False, True, None)), \
+                    mock.patch.object(circleci, "event_options", return_value=(event, base, full, True, None)), \
                     mock.patch.object(circleci, "release_policy", return_value=PREFIX), \
                     mock.patch.object(circleci, "validate_plan"), \
                     mock.patch.object(circleci, "build_plan", side_effect=[dict(plan), dict(empty)]) as build, \
@@ -376,6 +382,9 @@ class ContinuationTests(unittest.TestCase):
         full = test_plan.planned(full=True)
         for plan, branch, trigger, saves in ((full, "main", "scheduled_pipeline", True),
                                              (full, "main", "webhook", False),  # full-reason push
+                                             # A full push that changes a key saves it mid-week.
+                                             ({**full, "paths": ["Cargo.lock"]}, "main", "webhook", True),
+                                             ({**scoped, "paths": ["Cargo.lock"]}, "main", "webhook", False),
                                              (scoped, "main", "scheduled_pipeline", False),
                                              (full, "feat/x", "scheduled_pipeline", False)):
             config = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": branch, "CI_TRIGGER_SOURCE": trigger})
@@ -383,7 +392,7 @@ class ContinuationTests(unittest.TestCase):
             self.assertEqual(any("save_cache" in step for step in steps), saves)
             # A saving job starts from its exact key only, so the saved key holds a clean build.
             keys = next(step["restore_cache"]["keys"] for step in steps if "restore_cache" in step)
-            self.assertEqual(len(keys), 1 if saves else 2)
+            self.assertEqual(len(keys), 1 if saves else 3)
 
     def test_saved_caches_are_pruned_and_expire_before_the_next_weekly_save(self):
         weekly = {"CIRCLE_BRANCH": "main", "CI_TRIGGER_SOURCE": "scheduled_pipeline"}
@@ -408,8 +417,16 @@ class ContinuationTests(unittest.TestCase):
         key = next(step["save_cache"]["key"] for step in steps if "save_cache" in step)
         self.assertIn(circleci.STABLE, key)
         self.assertIn(circleci.IMAGE.rsplit(":", 1)[1][:12], key)
-        self.assertTrue(key.endswith('{{ checksum "Cargo.lock" }}'))
+        self.assertTrue(key.endswith(f'{{{{ checksum "Cargo.lock" }}}}-{circleci.cache_week()}'))
         self.assertNotIn("epoch", key)
+
+    def test_a_cache_week_starts_at_the_weekly_full_schedule(self):
+        from datetime import datetime, timezone
+        for when, week in (("2026-11-15T09:16", "2026-11-08"), ("2026-11-15T09:17", "2026-11-15"),
+                           ("2026-11-18T12:00", "2026-11-15"), ("2026-11-21T23:59", "2026-11-15")):
+            with self.subTest(when):
+                now = datetime.fromisoformat(when).replace(tzinfo=timezone.utc)
+                self.assertEqual(circleci.cache_week(now), week)
 
     def test_short_profiles_share_jobs_of_one_toolchain(self):
         jobs = cont(test_plan.planned(full=True), BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})["jobs"]
