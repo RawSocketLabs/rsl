@@ -1,5 +1,9 @@
-# Track the stable channel; the MSRV floor (workspace.package.rust-version) is
-# checked separately in CI. Components ensure `cargo fmt`/`cargo clippy` are present.
+# The stable toolchain CI runs (`STABLE` in scripts/ci/circleci.py and the job image), with what
+# the image installs for it, so a local check uses the same compiler, lints and diagnostics;
+# test_circleci.py holds them in step. The MSRV floor (workspace.package.rust-version) is
+# checked separately in CI. `rust-src` is what the compile-error snapshots' const-panic
+# excerpts are rendered from; the target is the one the no_std proofs build for.
 [toolchain]
-channel = "stable"
-components = ["rustfmt", "clippy"]
+channel = "1.99.0"
+components = ["rustfmt", "clippy", "rust-src"]
+targets = ["thumbv7em-none-eabi"]

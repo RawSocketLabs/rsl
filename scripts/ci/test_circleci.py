@@ -556,6 +556,12 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(self.arg("PUBLIC_API"), bnb["public_api_version"])
         self.assertEqual(self.arg("SEMVER"), bnb["semver_version"])
 
+    def test_a_checkout_pins_the_stable_toolchain_jobs_run(self):
+        pin = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]
+        self.assertEqual(pin["channel"], circleci.STABLE)
+        for installed in (*pin["components"], *pin["targets"]):  # No job installs at run time.
+            self.assertIn(installed, self.dockerfile)
+
     def test_msrv_matches_the_workspace_floor(self):
         manifest = tomllib.loads((ROOT / "Cargo.toml").read_text())
         self.assertEqual(manifest["workspace"]["package"]["rust-version"] + ".0", circleci.MSRV)

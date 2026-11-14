@@ -202,7 +202,7 @@ build time, and nothing is installed at run time. A change under `.circleci/imag
 rejects fine-grained tokens); adopting it is a
 reviewed digest change. To try a changed image first, build it locally and run
 `scripts/ci-local.sh pre-push --image localhost/rsl-ci:<tag>`. `test_circleci.py` keeps the
-Dockerfile pins, `bnb.toml`, the generator and the setup config in step. `commitlint` lints every
+Dockerfile pins, `bnb.toml`, the generator, the setup config and the root `rust-toolchain.toml` in step. `commitlint` lints every
 commit since the base with the pinned upstream commitlint image and `.config/commitlint.config.mjs`.
 
 Event mapping: main compares against `pipeline.git.base_revision`. GitHub App pipelines never set
