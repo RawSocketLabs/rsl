@@ -158,7 +158,7 @@ mod macro_ {
             },
         )
         .unwrap_err();
-        assert!(matches!(signature.kind, ErrorKind::Convert { .. }));
+        assert!(matches!(signature.kind, ErrorKind::BadMagic(_)));
         assert!(signature.dispatch_error_for::<Hybrid>().is_none());
     }
 
@@ -259,7 +259,8 @@ mod macro_ {
             Outer::peek_variant(b"X").unwrap_err(),
             Closed::decode_as_known(&[255]).unwrap_err(),
         ] {
-            assert!(matches!(error.kind, ErrorKind::Convert { .. }));
+            assert!(matches!(error.kind, ErrorKind::BadMagic(_)), "{error:?}");
+            assert_eq!(error.field, Some("magic"));
             assert!(error.dispatch_error_for::<Closed>().is_none());
             assert!(error.dispatch_error_for::<Outer>().is_none());
         }

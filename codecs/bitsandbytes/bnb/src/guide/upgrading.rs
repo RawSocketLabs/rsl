@@ -4,6 +4,108 @@
 //! what to write instead. Additions that need no action are at the end of the section.
 //! The reasons and measurements behind each change are in the crate's `DESIGN.md`.
 //!
+//! # 0.10 → 0.11
+//!
+//! One thing changes: the error types. A failure the crate raises itself now has a variant
+//! of its own, where before nearly all of them arrived as `Convert` with a message to read.
+//!
+//! ## Changes the compiler tells you about
+//!
+//! **`BadMagic` and `Convert` hold a value, not named fields.**
+//!
+//! | Before | After |
+//! |---|---|
+//! | `ErrorKind::BadMagic { expected, found }` | `ErrorKind::BadMagic(m)`, then `m.expected()` and `m.found()` |
+//! | `ErrorKind::BadMagic { expected: 0xCAFE, found: 0 }` | `ErrorKind::BadMagic(MagicMismatch::new(0xCAFE, 0))` |
+//! | `ErrorKind::BadMagic { .. }` | `ErrorKind::BadMagic(_)` |
+//! | `ErrorKind::Convert { message }` | `ErrorKind::Convert(c)`, then `c.message()` |
+//! | `ErrorKind::Convert { .. }` | `ErrorKind::Convert(_)` |
+//!
+//! [`MagicMismatch::expected`](crate::MagicMismatch::expected) and
+//! [`found`](crate::MagicMismatch::found) return an `Option<`[`MagicValue`](crate::MagicValue)`>`:
+//! a number, or the bytes of a byte-string magic. A side that was not kept is `None`: what
+//! a byte-string magic read, and what a numeric magic expected when either value needs
+//! more than 64 bits.
+//!
+//! **`BitError::convert("…".into(), at)` is ambiguous.** [`BitError::convert`](crate::BitError::convert)
+//! takes a `&'static str` as it is (the text is not copied) or a `String`, so the `.into()` no longer
+//! says which. Drop it. `format!(…)`, `e.to_string()` and `String::from(…)` compile as before.
+//!
+//! ## Changes the compiler does not tell you about
+//!
+//! **A match on `Convert` no longer catches the crate's own failures.** If your code treats
+//! `ErrorKind::Convert(_)` as "the value was rejected", these now arrive as their own kinds:
+//!
+//! | The failure | 0.10 | 0.11 |
+//! |---|---|---|
+//! | a `#[br(assert(...))]` that does not hold | `Convert` | [`AssertFailed { message }`](crate::ErrorKind::AssertFailed) |
+//! | a collection too long for its `count_prefix`, `WireLen` or string length prefix | `Convert` | [`CountOutOfRange { count, bits }`](crate::ErrorKind::CountOutOfRange) |
+//! | a `count` expression that no `usize` holds | `Convert` | `CountOutOfRange` with `count: usize::MAX`, `bits: usize::BITS` |
+//! | a `WidthError` (`UInt::try_new`, `try_from`) propagated with `?` | `Convert` | [`ValueOutOfRange { bits }`](crate::ErrorKind::ValueOutOfRange) |
+//! | invalid UTF-8 in a string codec | `Convert` | [`InvalidUtf8 { valid_up_to }`](crate::ErrorKind::InvalidUtf8) |
+//! | a LEB128 value that overflows its type or never ends | `Convert` | [`VarintOverflow { bits }`](crate::ErrorKind::VarintOverflow) |
+//! | a NUL inside a NUL-terminated string at encode | `Convert` | [`EmbeddedNul { index }`](crate::ErrorKind::EmbeddedNul) |
+//! | a `WireLen::Auto` with nothing to derive it | `Convert` | [`UnresolvedWireLen`](crate::ErrorKind::UnresolvedWireLen) |
+//! | an enum's prefix or a variant's own magic that does not match | `Convert` | [`BadMagic`](crate::ErrorKind::BadMagic) |
+//! | a `seek` offset that no `usize` holds | `Convert` | [`PositionOverflow`](crate::ErrorKind::PositionOverflow) |
+//!
+//! `Convert` is now only what your own code raised: a `try_map` or `try_wire` that returned
+//! an error, or a `parse_with`/`write_with` function or codec that called `BitError::convert`.
+//!
+//! **An enum's magic mismatch is reported where the magic starts.** `at` is the bit the
+//! prefix or the variant's magic begins at; 0.10 gave the bit after it. For a two-byte
+//! prefix at the start of the input that is `at: 0`, where 0.10 said 16.
+//!
+//! **Error text changed** for every row above (it no longer begins `conversion failed:`),
+//! and an assert without a message reports the condition in backticks. Some say less
+//! than they did: a propagated `WidthError` no longer prints the value or says that it
+//! was negative, and invalid UTF-8 gives how many bytes were valid in place of the
+//! standard library's sentence. Code that searched a message for a word should match the
+//! kind, or a tag (below).
+//!
+//! **A `BitError` is 56 bytes, down from 80**, on a 64-bit target, and is aligned to 8
+//! bytes, not 16.
+//!
+//! ## Additions
+//!
+//! **A tag on your own conversion errors.** To tell one of your codec's failures from
+//! another without reading its message, attach a constant where you raise it and compare
+//! that. Prefix it with your crate's name so that it cannot collide with another codec's:
+//!
+//! ```
+//! use bnb::BitError;
+//!
+//! pub const POINTER_LOOP: &str = "dns.pointer_loop";
+//!
+//! fn follow(hops: u32, at: usize) -> Result<(), BitError> {
+//!     if hops > 128 {
+//!         return Err(BitError::convert("compression pointer loop", at).with_tag(POINTER_LOOP));
+//!     }
+//!     Ok(())
+//! }
+//!
+//! let error = follow(129, 96).unwrap_err();
+//! assert_eq!(error.tag(), Some(POINTER_LOOP));
+//! ```
+//!
+//! Also new: [`MagicMismatch`](crate::MagicMismatch), [`MagicValue`](crate::MagicValue) and
+//! [`Conversion`](crate::Conversion), each of which can be built for a test's expected value.
+//!
+//! ## Performance
+//!
+//! Across the crate's probe, decoding valid input and the retry path of an incomplete
+//! message each take about 4% fewer instructions than 0.10.1; a literal `assert` message
+//! and an enum's prefix or variant magic that does not match no longer allocate. A conversion
+//! error of your own costs one allocation with a literal message and two with a formatted
+//! one, where 0.10 made one for either.
+//!
+//! Eight of the probe's 71 shapes take more instructions than before. The largest: a
+//! message of two fields wider than 64 bits decoded with `decode_exact` (the probe's DMR
+//! frame), 5% more, because the compiler copies the decoded value once more on the way
+//! out; a small message read through a `StreamBitReader`, 4% more; and a fixed-layout
+//! message that leaves a byte of its region unread (an error path), 6% more. The rest are
+//! within 2%.
+//!
 //! # 0.10.0 → 0.10.1
 //!
 //! A compatible release: code written for 0.10.0 as documented compiles and decodes the

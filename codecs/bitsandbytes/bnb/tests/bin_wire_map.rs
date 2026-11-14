@@ -82,7 +82,7 @@ mod macro_ {
     #[test]
     fn try_map_failure_is_a_convert_error() {
         let err = Pct::decode_exact(&[200]).unwrap_err();
-        assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+        assert!(matches!(err.kind, ErrorKind::Convert(_)));
     }
 
     // Read-only mapped: only `map` (no bw_map) generates the decode side alone.
@@ -244,6 +244,6 @@ mod macro_ {
         assert_eq!(Ratio::decode_exact(&[42]).unwrap(), Ratio(42));
         assert_eq!(Ratio(99).to_bytes().unwrap(), [99]);
         let err = Ratio::decode_exact(&[200]).unwrap_err();
-        assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+        assert!(matches!(err.kind, ErrorKind::Convert(_)));
     }
 }

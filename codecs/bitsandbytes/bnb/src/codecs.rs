@@ -65,9 +65,8 @@
 ///
 /// [`BitError`]: crate::BitError
 pub mod leb128 {
-    use crate::bitstream::{BitError, Sink, Source, sealed};
+    use crate::bitstream::{BitError, ErrorKind, Sink, Source, sealed};
     use crate::field::Bits;
-    use alloc::format;
 
     /// The integer widths readable/writable as LEB128 — `u8`, `u16`, `u32`, `u64`,
     /// `u128`. Sealed: LEB128 is byte-granular, so the primitive widths are the whole
@@ -88,7 +87,7 @@ pub mod leb128 {
     /// Reads one LEB128 value; the target width comes from the field's declared type.
     ///
     /// # Errors
-    /// [`Convert`](crate::bitstream::ErrorKind::Convert) when the value overflows the
+    /// [`VarintOverflow`](crate::bitstream::ErrorKind::VarintOverflow) when the value overflows the
     /// width or the continuation run exceeds the width's maximum byte count;
     /// [`UnexpectedEof`](crate::bitstream::ErrorKind::UnexpectedEof) when the input ends
     /// mid-varint.
@@ -106,8 +105,8 @@ pub mod leb128 {
             // reject instead of wrapping (the hand-rolled version this replaces shifted
             // unbounded — a debug panic on hostile input).
             if shift + 7 > T::BITS && (group >> (T::BITS - shift)) != 0 {
-                return Err(BitError::convert(
-                    format!("LEB128 value overflows u{}", T::BITS),
+                return Err(BitError::new(
+                    ErrorKind::VarintOverflow { bits: T::BITS },
                     start,
                 ));
             }
@@ -117,11 +116,9 @@ pub mod leb128 {
             }
             shift += 7;
         }
-        Err(BitError::convert(
-            format!(
-                "unterminated LEB128: no final byte within {max_bytes} bytes (u{})",
-                T::BITS
-            ),
+        // No final byte within the bytes this width can take: an overflow just the same.
+        Err(BitError::new(
+            ErrorKind::VarintOverflow { bits: T::BITS },
             start,
         ))
     }
@@ -174,8 +171,7 @@ pub mod leb128 {
 /// assert_eq!(Entry::decode_exact(&bytes).unwrap(), e);
 /// ```
 pub mod cstring {
-    use crate::bitstream::{BitError, Sink, Source};
-    use alloc::format;
+    use crate::bitstream::{BitError, ErrorKind, Sink, Source};
     use alloc::string::String;
     use alloc::vec::Vec;
 
@@ -199,12 +195,12 @@ pub mod cstring {
     /// Writes the bytes followed by the `0x00` terminator.
     ///
     /// # Errors
-    /// [`Convert`](crate::bitstream::ErrorKind::Convert) on an embedded NUL — the
+    /// [`EmbeddedNul`](crate::bitstream::ErrorKind::EmbeddedNul) on an embedded NUL — the
     /// decoded value would stop there, so the wire image could not round-trip.
     pub fn write<K: Sink>(v: &[u8], w: &mut K) -> Result<(), BitError> {
         if let Some(i) = v.iter().position(|&b| b == 0) {
-            return Err(BitError::convert(
-                format!("embedded NUL at byte {i}: a NUL-terminated string cannot represent it"),
+            return Err(BitError::new(
+                ErrorKind::EmbeddedNul { index: i },
                 w.bit_pos(),
             ));
         }
@@ -215,14 +211,13 @@ pub mod cstring {
     /// [`parse`], then UTF-8-validates into a `String`.
     ///
     /// # Errors
-    /// As [`parse`], plus [`Convert`](crate::bitstream::ErrorKind::Convert) on invalid
+    /// As [`parse`], plus [`InvalidUtf8`](crate::bitstream::ErrorKind::InvalidUtf8) on invalid
     /// UTF-8 (a `String` cannot represent it; keep a `Vec<u8>` field + [`parse`] to
     /// preserve arbitrary bytes).
     pub fn parse_utf8<S: Source>(r: &mut S) -> Result<String, BitError> {
         let start = r.bit_pos();
         let bytes = parse(r)?;
-        String::from_utf8(bytes)
-            .map_err(|e| BitError::convert(format!("invalid UTF-8 in string field: {e}"), start))
+        String::from_utf8(bytes).map_err(|e| crate::bitstream::invalid_utf8(&e, start))
     }
 
     /// Writes the string's UTF-8 bytes followed by the terminator (via [`write()`], so an
@@ -268,8 +263,7 @@ pub mod cstring {
 /// [`CountPrefix::to_count`](crate::bitstream::CountPrefix::to_count).)
 pub mod prefixed {
     use crate::bitstream::{BitError, CountPrefix, Sink, Source};
-    use alloc::format;
-    use alloc::string::{String, ToString};
+    use alloc::string::String;
 
     /// Reads a `P` byte-length prefix, then that many bytes, UTF-8-validated.
     ///
@@ -279,24 +273,22 @@ pub mod prefixed {
     ///
     /// # Errors
     /// `UnexpectedEof` when the input is shorter than the prefix promises;
-    /// [`Convert`](crate::bitstream::ErrorKind::Convert) on invalid UTF-8.
+    /// [`InvalidUtf8`](crate::bitstream::ErrorKind::InvalidUtf8) on invalid UTF-8.
     pub fn parse_string<S: Source, P: CountPrefix>(r: &mut S) -> Result<String, BitError> {
         let start = r.bit_pos();
         let n = r.read::<P>()?.to_count();
         // `read_bytes` pushes as it reads — nothing pre-allocated from the untrusted `n`.
         let bytes = r.read_bytes(n)?;
-        String::from_utf8(bytes)
-            .map_err(|e| BitError::convert(format!("invalid UTF-8 in string field: {e}"), start))
+        String::from_utf8(bytes).map_err(|e| crate::bitstream::invalid_utf8(&e, start))
     }
 
     /// Writes the `P` byte-length prefix, then the string's UTF-8 bytes.
     ///
     /// # Errors
-    /// [`Convert`](crate::bitstream::ErrorKind::Convert) when the byte length exceeds
+    /// [`CountOutOfRange`](crate::bitstream::ErrorKind::CountOutOfRange) when the byte length exceeds
     /// the prefix's range (checked — never a silently wrapped length).
     pub fn write_string<K: Sink, P: CountPrefix>(s: &str, w: &mut K) -> Result<(), BitError> {
-        let prefix = P::try_from_count(s.len())
-            .map_err(|e| BitError::convert(e.to_string(), w.bit_pos()))?;
+        let prefix = crate::bitstream::prefix_for_count::<P>(s.len(), w.bit_pos())?;
         w.write(prefix)?;
         w.write_bytes(s.as_bytes())
     }
@@ -369,18 +361,13 @@ mod unit {
         assert_eq!(leb128::parse::<_, u8>(&mut r).unwrap(), 255);
         let mut r = BitReader::new(&[0xFF, 0x02]);
         let err = leb128::parse::<_, u8>(&mut r).unwrap_err();
-        assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message.contains("overflows u8")),
-            "got {err:?}"
-        );
+        assert_eq!(err.kind, ErrorKind::VarintOverflow { bits: 8 });
         assert_eq!(err.at, 0, "error points at the varint's start");
 
         // u32: the 5th byte may carry 4 bits; 0x1F sets bit 33 → overflow.
         let mut r = BitReader::new(&[0xFF, 0xFF, 0xFF, 0xFF, 0x1F]);
         let err = leb128::parse::<_, u32>(&mut r).unwrap_err();
-        assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message.contains("overflows u32"))
-        );
+        assert_eq!(err.kind, ErrorKind::VarintOverflow { bits: 32 });
 
         // u128: 19th byte may carry 2 bits (18·7 = 126); 0x03 fits, 0x04 overflows.
         let mut ok = vec![0xFF; 18];
@@ -400,10 +387,7 @@ mod unit {
         let bytes = [0x80u8; 11];
         let mut r = BitReader::new(&bytes);
         let err = leb128::parse::<_, u64>(&mut r).unwrap_err();
-        assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message.contains("unterminated")),
-            "got {err:?}"
-        );
+        assert_eq!(err.kind, ErrorKind::VarintOverflow { bits: 64 });
     }
 
     #[test]
@@ -436,10 +420,7 @@ mod unit {
     fn cstring_write_rejects_embedded_nul() {
         let mut w = BitWriter::new();
         let err = cstring::write(&[1, 0, 2], &mut w).unwrap_err();
-        assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message.contains("byte 1")),
-            "got {err:?}"
-        );
+        assert_eq!(err.kind, ErrorKind::EmbeddedNul { index: 1 });
         // The str form delegates, so it rejects the same way.
         let mut w = BitWriter::new();
         assert!(cstring::write_utf8("a\0b", &mut w).is_err());
@@ -453,7 +434,7 @@ mod unit {
 
         let mut r = BitReader::new(&[0xFF, 0x00]);
         let err = cstring::parse_utf8(&mut r).unwrap_err();
-        assert!(matches!(&err.kind, ErrorKind::Convert { message } if message.contains("UTF-8")));
+        assert_eq!(err.kind, ErrorKind::InvalidUtf8 { valid_up_to: 0 });
     }
 
     // ——— prefixed ———
@@ -491,13 +472,29 @@ mod unit {
         let long = "x".repeat(256);
         let mut w = BitWriter::new();
         let err = prefixed::write_string::<_, u8>(&long, &mut w).unwrap_err();
-        assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message.contains("256")),
-            "got {err:?}"
+        assert_eq!(
+            err.kind,
+            ErrorKind::CountOutOfRange {
+                count: 256,
+                bits: 8
+            }
         );
+        // Reported where the prefix would have been written, with nothing written.
         let long = "x".repeat(4096);
         let mut w = BitWriter::new();
-        assert!(prefixed::write_string::<_, u12>(&long, &mut w).is_err());
+        w.write(0xAB_u8).unwrap();
+        let err = prefixed::write_string::<_, u12>(&long, &mut w).unwrap_err();
+        assert_eq!(
+            (err.kind, err.at),
+            (
+                ErrorKind::CountOutOfRange {
+                    count: 4096,
+                    bits: 12
+                },
+                8
+            )
+        );
+        assert_eq!(crate::Sink::bit_pos(&w), 8);
     }
 
     #[test]
@@ -511,20 +508,22 @@ mod unit {
     }
 
     #[test]
-    fn prefixed_invalid_utf8_is_convert() {
+    fn prefixed_invalid_utf8_says_how_far_it_was_valid() {
         let wire = [0x02, 0xFF, 0xFE];
         let mut r = BitReader::new(&wire);
         let err = prefixed::parse_string::<_, u8>(&mut r).unwrap_err();
-        assert!(matches!(&err.kind, ErrorKind::Convert { message } if message.contains("UTF-8")));
+        assert_eq!(err.kind, ErrorKind::InvalidUtf8 { valid_up_to: 0 });
+        // Counted from the string's first byte, not from the length prefix before it.
+        let mut r = BitReader::new(&[0x03, b'a', b'b', 0xFF]);
+        let err = prefixed::parse_string::<_, u8>(&mut r).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::InvalidUtf8 { valid_up_to: 2 });
+        assert_eq!(err.at, 0, "the error points at the length prefix");
     }
 
     #[test]
     fn error_display_texts() {
         let mut w = BitWriter::new();
         let e = prefixed::write_string::<_, u8>(&"x".repeat(300), &mut w).unwrap_err();
-        assert_eq!(
-            e.to_string(),
-            "conversion failed: value 300 does not fit in 8 bits at bit 0"
-        );
+        assert_eq!(e.to_string(), "count 300 does not fit in 8 bits at bit 0");
     }
 }

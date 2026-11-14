@@ -135,10 +135,10 @@ impl Resolver {
         let query = self.build_query(name, qtype)?;
         let query_bytes = query.to_bytes()?;
         let len = u16::try_from(query_bytes.len()).map_err(|_| {
-            ResolveError::Codec(BitError::convert(
-                "DNS query exceeds the 65535-byte TCP frame limit".into(),
-                0,
-            ))
+            ResolveError::Codec(
+                BitError::convert("DNS query exceeds the 65535-byte TCP frame limit", 0)
+                    .with_tag(crate::name::error_tag::QUERY_TOO_LONG),
+            )
         })?;
 
         let mut stream = TcpStream::connect(self.server)?;

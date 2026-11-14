@@ -93,21 +93,31 @@ impl Magic {
         }
     }
 
-    /// Read and verify this magic, erroring on mismatch (`what` names the site).
-    pub(super) fn verify(&self, what: &str) -> TokenStream2 {
+    /// Read and verify this magic, erroring with `BadMagic` on a mismatch, at the bit
+    /// where the magic began.
+    pub(super) fn verify(&self) -> TokenStream2 {
         let bnb = crate::bnb_path();
         let binding = format_ident!("__bnb_vm");
         let read = self.read_into(&binding);
         let expected = self.const_expr();
-        let msg = format!("magic mismatch ({what})");
+        let mismatch = match self {
+            // The constant's bytes, promoted: the error holds them by reference.
+            Magic::Bytes(_) => quote!(#bnb::__private::BitError::bad_magic_bytes(
+                &#expected,
+                __bnb_magic_at,
+            )),
+            Magic::Int { .. } => quote!(#bnb::__private::BitError::bad_magic(
+                #bnb::__private::Bits::into_bits(#expected),
+                #bnb::__private::Bits::into_bits(#binding),
+                __bnb_magic_at,
+            )),
+        };
         quote! {
+            let __bnb_magic_at = #bnb::__private::Source::bit_pos(__bnb_r);
             #read
             if #binding != #expected {
                 return ::core::result::Result::Err(
-                    #bnb::__private::BitError::convert(
-                        #bnb::__private::String::from(#msg),
-                        #bnb::__private::Source::bit_pos(__bnb_r),
-                    ).in_field("magic"),
+                    #bnb::__private::BitError::in_field(#mismatch, "magic"),
                 );
             }
         }

@@ -64,7 +64,7 @@ mod macro_ {
     fn try_map_failure_is_a_convert_error() {
         // flag = 0x00, value wire byte = 200 (> 100) -> the converter errors.
         let err = Msg::decode_exact(&[0x00, 200]).unwrap_err();
-        assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+        assert!(matches!(err.kind, ErrorKind::Convert(_)));
         assert_eq!(err.field, Some("value"));
     }
 }

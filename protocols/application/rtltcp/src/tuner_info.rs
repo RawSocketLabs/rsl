@@ -46,6 +46,6 @@ mod component {
     #[test]
     fn other_magic_is_refused() {
         let err = TunerInfo::decode_exact(b"NOPE\0\0\0\x05\0\0\0\x1d").unwrap_err();
-        assert!(matches!(err.kind, bnb::ErrorKind::BadMagic { .. }), "{err}");
+        assert!(matches!(err.kind, bnb::ErrorKind::BadMagic(_)), "{err}");
     }
 }

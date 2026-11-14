@@ -98,7 +98,13 @@ fn main() {
         items: vec![0; 300],
     };
     let error = long.to_bytes().unwrap_err();
-    assert!(matches!(error.kind, ErrorKind::Convert { .. }));
+    assert_eq!(
+        error.kind,
+        ErrorKind::CountOutOfRange {
+            count: 300,
+            bits: 8
+        }
+    );
     println!("overflow    : 300 items do not fit a one-byte count");
 
     println!("all checks passed");

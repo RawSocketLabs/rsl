@@ -191,8 +191,9 @@ mod wirelen;
 
 pub use bitstream::{
     BitAmount, BitBuf, BitDecode, BitEncode, BitError, BitReader, BitWriter, CapacityError,
-    DecodeWith, DispatchKind, DispatchValue, EncodeWith, EnumDispatchError, ErrorKind, FixedBitLen,
-    Layout, LimitedSource, MAX_DECODE_DEPTH, SeekSource, Sink, Source,
+    Conversion, DecodeWith, DispatchKind, DispatchValue, EncodeWith, EnumDispatchError, ErrorKind,
+    FixedBitLen, Layout, LimitedSource, MAX_DECODE_DEPTH, MagicMismatch, MagicValue, SeekSource,
+    Sink, Source,
 };
 pub use wirelen::WireLen;
 
@@ -246,12 +247,12 @@ pub mod __private {
     pub use crate::bitstream::{
         BitDecode, BitEncode, BitError, BitReader, BitWriter, CountPrefix, ErrorKind, FixedBitLen,
         Layout, SeekSource, Sink, Source, WINDOW_LEAF, WINDOW_WHOLE, align_read, align_write,
-        bits_of, decode_all, decode_exact, decode_exact_with, decode_iter, decode_mapped_msg,
-        decode_peek, decode_peek_with, decode_prefix, decode_try_mapped_msg, decode_vec_each,
-        encode_fixed_to_vec, encode_hinted_to_vec, encode_mapped_msg, encode_to_vec,
-        encode_to_vec_with, fixed_window, match_magic, nested_vec, peek_magic, read_byte_array,
-        read_mapped, read_try_mapped, skip_read, skip_write, verify_magic, window_kind,
-        write_byte_array, write_mapped,
+        assert_message, bits_of, decode_all, decode_exact, decode_exact_with, decode_iter,
+        decode_mapped_msg, decode_peek, decode_peek_with, decode_prefix, decode_try_mapped_msg,
+        decode_vec_each, encode_fixed_to_vec, encode_hinted_to_vec, encode_mapped_msg,
+        encode_to_vec, encode_to_vec_with, fixed_window, match_magic, nested_vec, peek_magic,
+        prefix_for_count, read_byte_array, read_mapped, read_try_mapped, skip_read, skip_write,
+        verify_magic, window_kind, write_byte_array, write_mapped,
     };
     pub use crate::builder::normalization::{NormalizeDispatch, NormalizeProbe};
     pub use crate::error::UnknownDiscriminant;
@@ -259,7 +260,7 @@ pub mod __private {
     pub use crate::wirelen::WireLen;
     /// Owned-collection re-exports so macro-generated code names neither `std` nor
     /// `alloc` directly (the user crate need not declare `extern crate alloc`).
-    pub use ::alloc::{format, string::String, vec, vec::Vec};
+    pub use ::alloc::{borrow::Cow, format, string::String, vec, vec::Vec};
     /// Re-exported for the `#[br(dbg)]` directive's generated `trace!` call, so a user
     /// of the directive needs no direct `tracing` dependency. `#[br(dbg)]` is a
     /// `std`-only debugging aid (see the `tracing` dependency note in `Cargo.toml`).

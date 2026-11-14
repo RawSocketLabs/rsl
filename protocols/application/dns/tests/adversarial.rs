@@ -65,7 +65,7 @@ mod adversarial {
         wire.push(0x00);
         let err = Name::decode_exact(&wire).unwrap_err();
         assert!(
-            matches!(&err.kind, bnb::bitstream::ErrorKind::Convert { message } if message.contains("255")),
+            err.tag() == Some(dns::name::error_tag::NAME_TOO_LONG),
             "expected a 255-byte-limit error, got {err:?}"
         );
     }

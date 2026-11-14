@@ -54,7 +54,7 @@ fn main() {
     // Version 9 isn't supported — `try_map` rejects it at decode, before any cell is read.
     let err = Table::decode_exact(&[0x09, 0x00]).unwrap_err();
     println!("decoding version=9 -> {err}");
-    assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+    assert!(matches!(err.kind, ErrorKind::AssertFailed { .. }));
 
     println!("all checks passed");
 }

@@ -55,7 +55,7 @@ fn main() {
     let bad = [0x09, 0x00];
     let err = Header::decode_exact(&bad).unwrap_err();
     println!("decoding version=9 -> {err}");
-    assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+    assert!(matches!(err.kind, ErrorKind::Convert(_)));
     assert_eq!(err.field, Some("version"));
 
     println!("all checks passed");

@@ -37,13 +37,22 @@
 //!
 //! - `UnexpectedEof { needed, remaining }` — ran off the end of a finite slice.
 //! - `TrailingBytes { remaining }` — `decode_exact` left whole bytes unconsumed.
-//! - `BadMagic { expected, found }` — a `magic` constant didn't match.
+//! - `BadMagic(mismatch)` — a `magic` constant didn't match, numeric or byte string;
+//!   `mismatch.expected()` and `mismatch.found()` say what was wanted and what was read.
 //! - `NoMatchingVariant(details)` — a closed `#[bin]` enum exhausted its dispatch
 //!   alternatives. Details identify the enum and, when already read, the discriminator.
-//! - `Convert { message }` — a conversion or guard rejected the value: a `try_map` /
-//!   `try_wire` converter, a `#[br(assert(...))]` guard, a `WireLen` / `count_prefix`
-//!   length that overflowed its prefix type, invalid UTF-8 in a string field, or a
-//!   `WidthError` bridged in from checked construction (`try_new`, `try_from`).
+//! - `Convert(conversion)` — a conversion of your own failed: a `try_map` / `try_wire`
+//!   converter, or a `parse_with` / `write_with` function that raised an error with
+//!   `BitError::convert`. It carries a message and, if the code that raised it attached
+//!   one, a tag to tell it from your codec's other failures
+//!   ([`BitError::with_tag`](crate::BitError::with_tag)).
+//! - `AssertFailed { message }` — a `#[br(assert(...))]` guard rejected the value.
+//! - `CountOutOfRange { count, bits }` — a collection is too long for the `count_prefix`,
+//!   `WireLen` or string length prefix that describes it.
+//! - `ValueOutOfRange { bits }` — a `WidthError` from checked construction (`try_new`,
+//!   `try_from`) propagated with `?`.
+//! - `InvalidUtf8 { valid_up_to }`, `VarintOverflow { bits }`, `EmbeddedNul { index }`,
+//!   `UnresolvedWireLen` — the string, LEB128 and `WireLen` codecs' own failures.
 //! - `Incomplete { needed }` — a stream ran out mid-message. `BitBuf` and
 //!   `Type::decode_prefix` support retry; a direct forward-only read may already have
 //!   consumed input.
@@ -62,7 +71,7 @@
 //!   than a `BinCodec::with_max_frame` cap is `BufferFull` too.
 //!
 //! ```
-//! use bnb::{bin, ErrorKind};
+//! use bnb::{bin, ErrorKind, MagicMismatch};
 //!
 //! #[bin(big)]
 //! #[derive(Debug)]
@@ -78,7 +87,7 @@
 //!
 //! // A magic mismatch points at the magic.
 //! let err = Framed::decode_exact(&[0x00, 0x00, 0x00]).unwrap_err();
-//! assert!(matches!(err.kind, ErrorKind::BadMagic { expected: 0xCAFE, found: 0x0000 }));
+//! assert_eq!(err.kind, ErrorKind::BadMagic(MagicMismatch::new(0xCAFE, 0x0000)));
 //! assert_eq!(err.field, Some("magic"));
 //! ```
 //!
@@ -164,8 +173,8 @@
 //! boxed; numeric failures allocate one box, fixed-byte failures also own a byte vector.
 //!
 //! Migration: these terminal misses previously returned `Convert` with an unstructured
-//! string. Enum prefix/signature and `decode_as_*` verification failures still use
-//! `Convert`; struct/field magic checks retain `BadMagic`. The rendered message drops the
+//! string. Enum prefix/signature and `decode_as_*` verification failures are `BadMagic`,
+//! as struct/field magic checks are. The rendered message drops the
 //! `conversion failed:` prefix and appends a captured value as `: 0x…`; match the kind,
 //! never the text. Catch-all/fallback success,
 //! incremental hints and finite EOF behavior are unchanged. This does not make direct

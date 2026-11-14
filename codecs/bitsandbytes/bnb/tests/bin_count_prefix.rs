@@ -112,9 +112,12 @@ mod macro_ {
             items: vec![0u8; 300],
         };
         let err = m.to_bytes().unwrap_err();
-        assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message.contains("300")),
-            "expected a Convert error naming the length, got {err:?}"
+        assert_eq!(
+            err.kind,
+            ErrorKind::CountOutOfRange {
+                count: 300,
+                bits: 8
+            }
         );
         assert_eq!(err.field, Some("items"), "error names the user's field");
     }

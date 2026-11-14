@@ -159,9 +159,11 @@ impl<T: BitDecode + BitEncode> BinCodec<T> {
             // The cap is buffered and the message has not ended: it is longer than the cap.
             Err(e) if src.len() >= self.max_frame && ran_out(&e, eof) => Err(self.frame_too_long()),
             // Only a partial frame is buffered — ask `Framed` to read more (don't consume).
-            Err(e) if e.is_incomplete() => Ok(None),
-            // A genuine framing error.
-            Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e)),
+            // A genuine framing error otherwise.
+            Err(e) => match e.into_retry() {
+                Ok(_) => Ok(None),
+                Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e)),
+            },
         }
     }
 
@@ -625,7 +627,7 @@ mod component {
                 codec.decode(&mut wire)
             };
             let (kind, _) = buffer_full(err.unwrap_err());
-            assert!(matches!(kind, bnb::ErrorKind::BadMagic { .. }), "{kind:?}");
+            assert!(matches!(kind, bnb::ErrorKind::BadMagic(_)), "{kind:?}");
         }
     }
 

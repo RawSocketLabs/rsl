@@ -102,10 +102,7 @@ mod macro_ {
         wire.extend_from_slice(&[0x80; 11]);
         let err = Frame::decode_exact(&wire).unwrap_err();
         assert_eq!(err.field, Some("length"));
-        assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message.contains("unterminated")),
-            "got {err:?}"
-        );
+        assert_eq!(err.kind, ErrorKind::VarintOverflow { bits: 64 });
     }
 
     // ——— directional narrowing: the paren form may omit the unneeded fn ———

@@ -13,16 +13,27 @@ use super::width::{alignment_guard, br_indeterminate, field_width, fixed_len};
 use crate::bitstream::ctx::{ctx_literal, ctx_struct_ident, ctx_struct_ty};
 use crate::bitstream::field::{FieldBr, byte_array_len, option_elem, parse_field_br, vec_elem};
 
-/// Checked host-size operands shared by generated counts and absolute pointers.
-fn checked_usize(expr: &syn::Expr, field: &Ident, message: &str) -> TokenStream2 {
+/// The error for a `count` expression that no `usize` holds: the count is not known, so it
+/// reports the most a `usize` could be.
+fn count_not_a_usize() -> TokenStream2 {
+    let bnb = crate::bnb_path();
+    quote!(#bnb::__private::BitError::count_out_of_range(
+        usize::MAX,
+        usize::BITS,
+        __bnb_at,
+    ))
+}
+
+/// Checked host-size operands shared by generated counts and absolute pointers: `expr` as
+/// a `usize`, or the error `on_overflow` builds from the cursor's bit position (bound as
+/// `__bnb_at`).
+fn checked_usize(expr: &syn::Expr, field: &Ident, on_overflow: &TokenStream2) -> TokenStream2 {
     let bnb = crate::bnb_path();
     let field_str = crate::printed(field);
     quote! {
         ::core::convert::TryInto::<usize>::try_into(#expr).map_err(|_| {
-            #bnb::__private::BitError::convert(
-                #bnb::__private::String::from(#message),
-                #bnb::__private::Source::bit_pos(__bnb_r),
-            ).in_field(#field_str)
+            let __bnb_at = #bnb::__private::Source::bit_pos(__bnb_r);
+            #bnb::__private::BitError::in_field(#on_overflow, #field_str)
         })?
     }
 }
@@ -41,7 +52,15 @@ pub(in crate::bitstream) fn field_read_stmt(
     // offset is the *pre-seek* one (read at the offset, then return).
     let seek = br.seek.as_ref().map(|expr| {
         let id = f.ident.as_ref().expect("named field");
-        let offset = checked_usize(expr, id, "seek offset is outside the usize range");
+        // An offset no `usize` holds is a position no source has.
+        let offset = checked_usize(
+            expr,
+            id,
+            &quote!(#bnb::__private::BitError::new(
+                #bnb::__private::ErrorKind::PositionOverflow,
+                __bnb_at,
+            )),
+        );
         quote! {
             let __bnb_seek = #offset;
             #bnb::__private::Source::seek_to_bit(__bnb_r, __bnb_seek)?;
@@ -71,11 +90,12 @@ pub(in crate::bitstream) fn field_read_stmt(
         let id = f.ident.as_ref().expect("named field");
         let id_str = crate::printed(id);
         let checks = br.asserts.iter().map(|(cond, msg)| {
+            // A plain literal is borrowed; only a message that interpolates is formatted.
             let msg_ts = if let Some(args) = msg {
-                quote!(#bnb::__private::format!(#args))
+                quote!(#bnb::__private::assert_message(::core::format_args!(#args)))
             } else {
-                quote!(#bnb::__private::String::from(::core::concat!(
-                    "assertion failed: `",
+                quote!(#bnb::__private::Cow::Borrowed(::core::concat!(
+                    "`",
                     ::core::stringify!(#cond),
                     "`"
                 )))
@@ -83,7 +103,7 @@ pub(in crate::bitstream) fn field_read_stmt(
             quote! {
                 if !(#cond) {
                     return ::core::result::Result::Err(
-                        #bnb::__private::BitError::convert(
+                        #bnb::__private::BitError::assert_failed(
                             #msg_ts,
                             #bnb::__private::Source::bit_pos(__bnb_r),
                         )
@@ -167,7 +187,7 @@ fn field_read_core(f: &syn::Field, br: &FieldBr) -> syn::Result<TokenStream2> {
         })?;
         // Explicit expressions need the same host-width protection as CountPrefix.
         // Evaluate once; reject negative/oversized counts before touching the payload.
-        let checked_count = checked_usize(count, id, "count is outside the usize range");
+        let checked_count = checked_usize(count, id, &count_not_a_usize());
         let Some(names) = &br.ctx else {
             return Ok(quote! {
                 let #id = {

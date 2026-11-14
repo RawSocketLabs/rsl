@@ -107,7 +107,13 @@ mod macro_ {
             len: WireLen::auto(),
             items: vec![0u8; 300],
         };
-        assert!(c.to_bytes().is_err(), "300 doesn't fit a u8 count");
+        assert_eq!(
+            c.to_bytes().unwrap_err().kind,
+            bnb::ErrorKind::CountOutOfRange {
+                count: 300,
+                bits: 8
+            }
+        );
     }
 
     // Cross-struct `auto_len`: the DNS shape — a count nested in a `Header` sub-struct
@@ -388,7 +394,10 @@ mod macro_ {
             inner: WireLen::auto(),
             items: vec![9],
         };
-        assert!(unresolved.to_bytes().is_err());
+        assert_eq!(
+            unresolved.to_bytes().unwrap_err().kind,
+            bnb::ErrorKind::UnresolvedWireLen
+        );
 
         let resolved = Chained {
             outer: WireLen::auto(),

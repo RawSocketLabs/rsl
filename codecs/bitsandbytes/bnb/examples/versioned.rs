@@ -58,10 +58,10 @@ fn main() {
     println!("v1 event: {:>2} bytes  {bytes:02x?}", bytes.len());
     assert_eq!(Event::decode_exact(&bytes).unwrap(), v1);
 
-    // An unknown version is rejected at decode — `try_map` fails before any later field is read.
+    // An unknown version is rejected at decode: the assert fails before any later field is read.
     let err = Event::decode_exact(&[0x09, 0x00, 0x00, 0x03, 0xEA]).unwrap_err();
     println!("decoding version=9 -> {err}");
-    assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+    assert!(matches!(err.kind, ErrorKind::AssertFailed { .. }));
     assert_eq!(err.field, Some("version"));
 
     println!("all checks passed");

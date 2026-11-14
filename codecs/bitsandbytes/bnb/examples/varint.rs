@@ -66,9 +66,7 @@ fn main() {
     // 5 LEB128 bytes) is a clean, position-aware error — never a panic, never a wrap.
     let hostile = [0x01, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80]; // kind, then 6×"more follows"
     let err = Record::decode_exact(&hostile).unwrap_err();
-    assert!(
-        matches!(&err.kind, ErrorKind::Convert { message } if message.contains("unterminated"))
-    );
+    assert_eq!(err.kind, ErrorKind::VarintOverflow { bits: 32 });
     println!("hostile continuation run -> {err}");
 
     // Overflow is checked per width: 5 full bytes overflow a u32 field.

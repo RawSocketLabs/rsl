@@ -48,9 +48,9 @@ pub enum MessageReadError {
 // one-byte-fragment stream read (DESIGN.md §22, row 5).
 #[inline]
 fn shortfall(error: BitError) -> Result<usize, MessageReadError> {
-    match error.kind {
-        ErrorKind::Incomplete { needed } => Ok(needed.unwrap_or(1).max(1)),
-        _ => Err(error.into()),
+    match error.into_retry() {
+        Ok(needed) => Ok(needed.unwrap_or(1).max(1)),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -1096,7 +1096,7 @@ mod component {
         assert!(matches!(
             result,
             Err(MessageReadError::Codec(BitError {
-                kind: ErrorKind::Convert { .. },
+                kind: ErrorKind::AssertFailed { .. },
                 field: Some("tag"),
                 ..
             }))
@@ -1322,7 +1322,7 @@ mod component {
             assert!(matches!(
                 result,
                 Err(MessageReadError::Codec(BitError {
-                    kind: ErrorKind::Convert { .. },
+                    kind: ErrorKind::AssertFailed { .. },
                     field: Some("tag"),
                     ..
                 }))
@@ -1837,7 +1837,7 @@ mod component {
                 matches!(
                     &error,
                     MessageReadError::Codec(BitError {
-                        kind: ErrorKind::Convert { .. },
+                        kind: ErrorKind::AssertFailed { .. },
                         field: Some("tag"),
                         ..
                     })

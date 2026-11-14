@@ -133,7 +133,7 @@ mod integration {
         buffer.push(&[0, 0, 0]).unwrap();
         assert!(matches!(
             buffer.try_pull::<WideMagic>().unwrap_err().kind,
-            ErrorKind::BadMagic { .. }
+            ErrorKind::BadMagic(_)
         ));
 
         let mut buffer = BitBuf::new();
@@ -165,7 +165,7 @@ mod integration {
         buffer.push(&[0, 0, 0]).unwrap();
         assert!(matches!(
             buffer.try_pull::<Utf8Body>().unwrap_err().kind,
-            ErrorKind::Convert { .. }
+            ErrorKind::Convert(_)
         ));
     }
 
@@ -384,6 +384,12 @@ mod integration {
         bytes: Vec<u8>,
     }
 
+    /// What a `count` expression that no `usize` holds reports: the count is not known.
+    const COUNT_NOT_A_USIZE: ErrorKind = ErrorKind::CountOutOfRange {
+        count: usize::MAX,
+        bits: usize::BITS,
+    };
+
     #[test]
     fn explicit_counts_reject_host_width_overflow_and_negative_context() {
         let overflow = (usize::MAX as u128 + 1).to_be_bytes();
@@ -391,7 +397,7 @@ mod integration {
             WideCount::decode_exact(&overflow).unwrap_err(),
             WideContextCount::decode_exact(&overflow).unwrap_err(),
         ] {
-            assert!(matches!(error.kind, ErrorKind::Convert { .. }));
+            assert_eq!(error.kind, COUNT_NOT_A_USIZE);
             assert_eq!(error.at, 128);
             assert!(matches!(error.field, Some("bytes" | "values")));
         }
@@ -416,7 +422,7 @@ mod integration {
         let error = buffer
             .try_pull_with::<SignedCount, _>(bnb::Layout::default(), SignedCountCtx { count: -1 })
             .unwrap_err();
-        assert!(matches!(error.kind, ErrorKind::Convert { .. }));
+        assert_eq!(error.kind, COUNT_NOT_A_USIZE);
         assert_eq!((error.at, error.field), (0, Some("bytes")));
         assert_eq!(
             buffer
@@ -459,7 +465,7 @@ mod integration {
     fn pointer_offsets_never_wrap_to_another_wire_location() {
         let overflow = (usize::MAX as u128 + 1).to_be_bytes();
         let error = WidePointer::peek(&overflow).unwrap_err();
-        assert!(matches!(error.kind, ErrorKind::Convert { .. }));
+        assert_eq!(error.kind, ErrorKind::PositionOverflow);
         assert_eq!((error.at, error.field), (128, Some("target")));
         let mut wire = 128u128.to_be_bytes().to_vec();
         wire.push(42);
@@ -473,7 +479,7 @@ mod integration {
                 SignedPointerCtx { offset: -1 },
             )
             .unwrap_err();
-        assert!(matches!(error.kind, ErrorKind::Convert { .. }));
+        assert_eq!(error.kind, ErrorKind::PositionOverflow);
         assert_eq!((error.at, error.field), (0, Some("target")));
         assert_eq!(buffer.bit_len(), 8);
         assert_eq!(

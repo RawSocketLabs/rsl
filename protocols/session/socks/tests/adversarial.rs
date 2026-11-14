@@ -212,9 +212,12 @@ fn method_count_overflow_is_rejected() {
         methods: vec![AuthMethod::NoAuthentication; 256],
     };
     let error = request.to_bytes().unwrap_err();
-    assert!(
-        matches!(&error.kind, ErrorKind::Convert { message } if message.contains("256")),
-        "unexpected error: {error:?}"
+    assert_eq!(
+        error.kind,
+        ErrorKind::CountOutOfRange {
+            count: 256,
+            bits: 8
+        }
     );
 }
 
@@ -360,9 +363,12 @@ fn domain_length_overflow_is_rejected() {
         destination: Endpoint::domain_raw(vec![b'x'; 256], 443),
     };
     let error = request.to_bytes().unwrap_err();
-    assert!(
-        matches!(&error.kind, ErrorKind::Convert { message } if message.contains("256")),
-        "unexpected error: {error:?}"
+    assert_eq!(
+        error.kind,
+        ErrorKind::CountOutOfRange {
+            count: 256,
+            bits: 8
+        }
     );
 }
 
@@ -374,9 +380,12 @@ fn username_length_overflow_is_rejected() {
         password: vec![b'p'],
     };
     let error = request.to_bytes().unwrap_err();
-    assert!(
-        matches!(&error.kind, ErrorKind::Convert { message } if message.contains("256")),
-        "unexpected error: {error:?}"
+    assert_eq!(
+        error.kind,
+        ErrorKind::CountOutOfRange {
+            count: 256,
+            bits: 8
+        }
     );
 
     let result = UsernamePasswordRequest::builder()
@@ -394,9 +403,12 @@ fn password_length_overflow_is_rejected() {
         password: vec![b'p'; 256],
     };
     let error = request.to_bytes().unwrap_err();
-    assert!(
-        matches!(&error.kind, ErrorKind::Convert { message } if message.contains("256")),
-        "unexpected error: {error:?}"
+    assert_eq!(
+        error.kind,
+        ErrorKind::CountOutOfRange {
+            count: 256,
+            bits: 8
+        }
     );
 
     let result = UsernamePasswordRequest::builder()

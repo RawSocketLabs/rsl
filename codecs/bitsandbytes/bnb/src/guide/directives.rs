@@ -119,7 +119,7 @@
 //! Any [`Bits`](crate::Bits) type works as the prefix — a `uN` occupies its declared
 //! width, so a `count_prefix = u12` puts a true 12-bit count on the wire. Encode is
 //! **checked**: a collection too long for the prefix is a [`BitError`](crate::BitError)
-//! (`Convert`), never a silently wrapped count (which is what a hand-written
+//! (`CountOutOfRange`), never a silently wrapped count (which is what a hand-written
 //! `as u8` calc would do).
 //!
 //! ```
@@ -210,7 +210,7 @@
 //!
 //! `#[br(assert(<expr>))]` runs after the field is read (and mapped): if the expression —
 //! over this and any earlier field — is false, decode fails with a position-aware
-//! [`Convert`](crate::bitstream::ErrorKind::Convert) error naming the field. An optional
+//! [`AssertFailed`](crate::bitstream::ErrorKind::AssertFailed) error naming the field. An optional
 //! message takes format args: `assert(<expr>, "fmt {}", args…)`. Multiple asserts run in
 //! order.
 //! Keep the expression free of side effects: a fixed-length message is first decoded from
@@ -241,7 +241,7 @@
 //! assert!(Event::decode_exact(&[0x02, 0x00, 0x07]).is_ok());
 //! let err = Event::decode_exact(&[0x09, 0x00, 0x07]).unwrap_err();
 //! assert_eq!(err.field, Some("version"));
-//! assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+//! assert!(matches!(&err.kind, ErrorKind::AssertFailed { message } if message == "unsupported version 9"));
 //! // Encode is untouched by the guard — forging stays possible:
 //! assert_eq!(Event { version: 9, id: 7 }.to_bytes().unwrap(), [0x09, 0x00, 0x07]);
 //! ```

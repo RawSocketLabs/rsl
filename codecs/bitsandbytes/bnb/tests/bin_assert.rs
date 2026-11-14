@@ -1,6 +1,6 @@
 //! `#[br(assert(...))]` — the **decode-time guard** (binrw-parity spelling): after a
 //! field is read (and mapped), the expression must hold or decode fails with
-//! `ErrorKind::Convert`. The explicit opt-in strictness escape hatch — same rejection
+//! `ErrorKind::AssertFailed`. The explicit opt-in strictness escape hatch — same rejection
 //! family as `magic`, closed enums, and `try_map` (values unrepresentable in the
 //! domain); the default parser stays permissive. Read-only: no `bw` inverse needed.
 
@@ -31,11 +31,19 @@ mod macro_ {
     fn failing_assert_rejects_with_field_and_expr() {
         let err = Event::decode_exact(&[0x09, 0xBE, 0xEF]).unwrap_err();
         assert_eq!(err.field, Some("version"));
+        // No message given: the condition in backticks, as a literal nothing had to format.
+        // (How the compiler spaces the condition's tokens is its own business.)
         assert!(
-            matches!(&err.kind, ErrorKind::Convert { message }
-                if message.contains("assertion failed") && message.contains("contains")),
+            matches!(
+                &err.kind,
+                ErrorKind::AssertFailed { message: std::borrow::Cow::Borrowed(text) }
+                    if text.starts_with('`') && text.ends_with('`') && text.contains("contains")
+            ),
             "got {err:?}"
         );
+        let text = err.to_string();
+        assert!(text.starts_with("assertion failed: `"), "{text}");
+        assert!(text.ends_with("at bit 8 (field `version`)"), "{text}");
     }
 
     #[test]
@@ -61,7 +69,7 @@ mod macro_ {
     fn custom_message_form() {
         let err = Msg::decode_exact(&[0x09]).unwrap_err();
         assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message == "unsupported version 9"),
+            matches!(&err.kind, ErrorKind::AssertFailed { message } if message == "unsupported version 9"),
             "got {err:?}"
         );
     }
@@ -81,7 +89,7 @@ mod macro_ {
         let err = Ordered::decode_exact(&[5, 3]).unwrap_err();
         assert_eq!(err.field, Some("value"));
         assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message == "value 3 below the declared minimum 5")
+            matches!(&err.kind, ErrorKind::AssertFailed { message } if message == "value 3 below the declared minimum 5")
         );
     }
 
@@ -98,9 +106,9 @@ mod macro_ {
     fn multiple_asserts_in_order() {
         assert!(Multi::decode_exact(&[3]).is_ok());
         let err = Multi::decode_exact(&[0]).unwrap_err();
-        assert!(matches!(&err.kind, ErrorKind::Convert { message } if message == "first"));
+        assert!(matches!(&err.kind, ErrorKind::AssertFailed { message } if message == "first"));
         let err = Multi::decode_exact(&[9]).unwrap_err();
-        assert!(matches!(&err.kind, ErrorKind::Convert { message } if message == "second"));
+        assert!(matches!(&err.kind, ErrorKind::AssertFailed { message } if message == "second"));
     }
 
     /// The guard runs AFTER `map` — it sees the mapped (domain) value.
@@ -118,7 +126,7 @@ mod macro_ {
         // raw 0 maps to -40 → the guard (over the mapped value) fires.
         let err = Mapped::decode_exact(&[0x00]).unwrap_err();
         assert!(
-            matches!(&err.kind, ErrorKind::Convert { message } if message == "sensor floor breached: -40")
+            matches!(&err.kind, ErrorKind::AssertFailed { message } if message == "sensor floor breached: -40")
         );
         assert_eq!(Mapped::decode_exact(&[50]).unwrap(), Mapped { celsius: 10 });
     }

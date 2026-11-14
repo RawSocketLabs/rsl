@@ -12,7 +12,7 @@ mod adversarial {
     #[test]
     fn foreign_magic_is_a_bad_magic_error() {
         let err = TunerInfo::decode_exact(b"HTTP/1.1 200").unwrap_err();
-        assert!(matches!(err.kind, bnb::ErrorKind::BadMagic { .. }), "{err}");
+        assert!(matches!(err.kind, bnb::ErrorKind::BadMagic(_)), "{err}");
     }
 
     #[test]

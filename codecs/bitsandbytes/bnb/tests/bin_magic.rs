@@ -4,7 +4,7 @@
 
 mod macro_ {
 
-    use bnb::{ErrorKind, bin, u3, u4, u12};
+    use bnb::{ErrorKind, MagicMismatch, MagicValue, bin, u3, u4, u12, u108};
 
     // A byte-aligned magic in front of a sub-byte message.
     #[bin(magic = 0x7Eu8)]
@@ -38,13 +38,10 @@ mod macro_ {
         .unwrap();
         bytes[0] = 0x5A; // corrupt the magic
         let err = Framed::decode_exact(&bytes).unwrap_err();
-        assert!(matches!(
+        assert_eq!(
             err.kind,
-            ErrorKind::BadMagic {
-                expected: 0x7E,
-                found: 0x5A
-            }
-        ));
+            ErrorKind::BadMagic(MagicMismatch::new(0x7E, 0x5A))
+        );
         assert_eq!(err.field, Some("magic"));
         assert_eq!(err.at, 0);
     }
@@ -64,5 +61,66 @@ mod macro_ {
         assert_eq!(bytes.len(), 2, "3 + 8 = 11 bits -> 2 bytes");
         assert_eq!(bytes[0] >> 5, 0b110, "the 3-bit magic leads");
         assert_eq!(SubByteMagic::decode_exact(&bytes).unwrap(), s);
+    }
+
+    // A magic wider than 64 bits (a long sync word): the error keeps what was read.
+    #[bin(big, magic = u108::new(0x0755_FD7D_F75F_7D5F_7D7D_5F7F_75F7))]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    struct WideMagic {
+        tail: u4,
+    }
+
+    #[test]
+    fn a_magic_wider_than_64_bits_reports_what_was_read() {
+        let ok = WideMagic { tail: u4::new(9) };
+        let mut bytes = ok.to_bytes().unwrap();
+        assert_eq!(WideMagic::decode_exact(&bytes).unwrap(), ok);
+        bytes[0] ^= 0x80;
+        let err = WideMagic::decode_exact(&bytes).unwrap_err();
+        let ErrorKind::BadMagic(mismatch) = &err.kind else {
+            panic!("{err:?}")
+        };
+        assert_eq!(mismatch.expected(), None);
+        let found = 0x0755_FD7D_F75F_7D5F_7D7D_5F7F_75F7_u128 ^ (1 << 107);
+        assert_eq!(mismatch.found(), Some(MagicValue::Int(found)));
+        assert_eq!((err.at, err.field), (0, Some("magic")));
+    }
+
+    // A variant's own magic, checked after a prefix selected the enum: a byte string and
+    // an integer, each reported as a magic that did not match, never as a text conversion.
+    #[bin(big, magic = b"PK")]
+    #[derive(Debug, PartialEq)]
+    enum Prefixed {
+        #[bin(magic = 1u8)]
+        One(u8),
+    }
+
+    #[bin(big)]
+    #[derive(Debug, PartialEq)]
+    enum Numbered {
+        #[bin(magic = 0x0102u16)]
+        Known(u8),
+    }
+
+    #[test]
+    fn a_prefix_or_variant_magic_that_does_not_match_is_a_bad_magic() {
+        let err = Prefixed::decode_exact(b"PX\x01\x07").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::BadMagic(MagicMismatch::bytes(b"PK")));
+        assert_eq!((err.at, err.field), (0, Some("magic")));
+        assert_eq!(
+            err.to_string(),
+            "bad magic: expected 0x504b at bit 0 (field `magic`)"
+        );
+        // Decoding as a named variant checks that variant's magic.
+        let err = Numbered::decode_as_known(&[0x01, 0x03, 0x07]).unwrap_err();
+        assert_eq!(
+            err.kind,
+            ErrorKind::BadMagic(MagicMismatch::new(0x0102, 0x0103))
+        );
+        assert_eq!((err.at, err.field), (0, Some("magic")));
+        // The variant's magic after a prefix that matched: reported at the bit it starts.
+        let err = Prefixed::decode_as_one(b"PK\x02\x07").unwrap_err();
+        assert_eq!(err.kind, ErrorKind::BadMagic(MagicMismatch::new(1, 2)));
+        assert_eq!((err.at, err.field), (16, Some("magic")));
     }
 }

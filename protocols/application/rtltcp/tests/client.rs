@@ -59,7 +59,7 @@ mod client {
         let (addr, server) = spawn_server(b"NOPE\0\0\0\0\0\0\0\0".to_vec(), Vec::new(), false);
         let err = Client::connect(addr.as_str(), TIMEOUT).unwrap_err();
         assert!(
-            matches!(&err, ClientError::Handshake(e) if matches!(e.kind, ErrorKind::BadMagic { .. })),
+            matches!(&err, ClientError::Handshake(e) if matches!(e.kind, ErrorKind::BadMagic(_))),
             "{err}"
         );
         server.join().unwrap();

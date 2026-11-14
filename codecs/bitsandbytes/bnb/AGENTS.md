@@ -164,7 +164,7 @@ attribute handles byte-aligned headers and sub-byte frames alike.
   `pad_before`/`pad_after`/
   `align_*`/`seek`/`restore_position`, `dbg`, and `assert(<expr>[, "fmt", args…])`
   (a **decode-time guard**, binrw-parity: runs after the field is read + mapped, over
-  this and earlier fields; fails with `ErrorKind::Convert` + the field name; read-only —
+  this and earlier fields; fails with `ErrorKind::AssertFailed` + the field name; read-only —
   no inverse, encode untouched, so forging stays possible. The explicit opt-in
   strictness escape hatch — same rejection family as `magic`/closed enums/`try_map`;
   the default parser stays permissive. Struct-level `validate = <path>` remains the

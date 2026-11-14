@@ -161,9 +161,8 @@ pub(in crate::bitstream) fn desugar_count_prefix(
             CountPrefixSite::Variant => quote!(#id.len()),
         };
         let calc_expr = quote! {
-            <#pty as #bnb::__private::CountPrefix>::try_from_count(#len_expr)
-                .map_err(|__bnb_e| #bnb::__private::BitError::from(__bnb_e)
-                    .in_field(#id_str))?
+            #bnb::__private::prefix_for_count::<#pty>(#len_expr, 0)
+                .map_err(|__bnb_e| __bnb_e.in_field(#id_str))?
         };
         out.push(syn::Field::parse_named.parse2(quote! {
             #[br(temp)]

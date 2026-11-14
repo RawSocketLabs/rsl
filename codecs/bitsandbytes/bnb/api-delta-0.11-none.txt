@@ -1,0 +1,323 @@
+Removed items from the public API
+=================================
+-pub bnb::bitstream::ErrorKind::BadMagic::expected: u128
+-pub bnb::bitstream::ErrorKind::BadMagic::found: u128
+-pub bnb::bitstream::ErrorKind::Convert::message: alloc::string::String
+-pub fn bnb::bitstream::BitError::convert(alloc::string::String, usize) -> Self
+-pub fn bnb::bitstream::BitError::convert(alloc::string::String, usize) -> Self
+-pub bnb::ErrorKind::BadMagic::expected: u128
+-pub bnb::ErrorKind::BadMagic::found: u128
+-pub bnb::ErrorKind::Convert::message: alloc::string::String
+
+Changed items in the public API
+===============================
+-pub bnb::bitstream::ErrorKind::BadMagic
++pub bnb::bitstream::ErrorKind::BadMagic(bnb::bitstream::MagicMismatch)
+-pub bnb::bitstream::ErrorKind::Convert
++pub bnb::bitstream::ErrorKind::Convert(bnb::bitstream::Conversion)
+-pub bnb::ErrorKind::BadMagic
++pub bnb::ErrorKind::BadMagic(bnb::bitstream::MagicMismatch)
+-pub bnb::ErrorKind::Convert
++pub bnb::ErrorKind::Convert(bnb::bitstream::Conversion)
+
+Added items to the public API
+=============================
++pub bnb::bitstream::ErrorKind::AssertFailed
++pub bnb::bitstream::ErrorKind::AssertFailed::message: alloc::borrow::Cow<'static, str>
++pub bnb::bitstream::ErrorKind::CountOutOfRange
++pub bnb::bitstream::ErrorKind::CountOutOfRange::bits: u32
++pub bnb::bitstream::ErrorKind::CountOutOfRange::count: usize
++pub bnb::bitstream::ErrorKind::EmbeddedNul
++pub bnb::bitstream::ErrorKind::EmbeddedNul::index: usize
++pub bnb::bitstream::ErrorKind::InvalidUtf8
++pub bnb::bitstream::ErrorKind::InvalidUtf8::valid_up_to: usize
++pub bnb::bitstream::ErrorKind::UnresolvedWireLen
++pub bnb::bitstream::ErrorKind::ValueOutOfRange
++pub bnb::bitstream::ErrorKind::ValueOutOfRange::bits: u32
++pub bnb::bitstream::ErrorKind::VarintOverflow
++pub bnb::bitstream::ErrorKind::VarintOverflow::bits: u32
++#[non_exhaustive] pub enum bnb::bitstream::MagicValue
++pub bnb::bitstream::MagicValue::Bytes(&'static [u8])
++pub bnb::bitstream::MagicValue::Int(u128)
++impl core::clone::Clone for bnb::bitstream::MagicValue
++impl core::clone::Clone for bnb::bitstream::MagicValue
++pub fn bnb::bitstream::MagicValue::clone(&self) -> bnb::bitstream::MagicValue
++pub fn bnb::bitstream::MagicValue::clone(&self) -> bnb::bitstream::MagicValue
++impl core::cmp::Eq for bnb::bitstream::MagicValue
++impl core::cmp::Eq for bnb::bitstream::MagicValue
++impl core::cmp::PartialEq for bnb::bitstream::MagicValue
++impl core::cmp::PartialEq for bnb::bitstream::MagicValue
++pub fn bnb::bitstream::MagicValue::eq(&self, &bnb::bitstream::MagicValue) -> bool
++pub fn bnb::bitstream::MagicValue::eq(&self, &bnb::bitstream::MagicValue) -> bool
++impl core::fmt::Debug for bnb::bitstream::MagicValue
++impl core::fmt::Debug for bnb::bitstream::MagicValue
++pub fn bnb::bitstream::MagicValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::bitstream::MagicValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl core::marker::Copy for bnb::bitstream::MagicValue
++impl core::marker::Copy for bnb::bitstream::MagicValue
++impl core::marker::StructuralPartialEq for bnb::bitstream::MagicValue
++impl core::marker::StructuralPartialEq for bnb::bitstream::MagicValue
++impl core::marker::Freeze for bnb::bitstream::MagicValue
++impl core::marker::Freeze for bnb::bitstream::MagicValue
++impl core::marker::Send for bnb::bitstream::MagicValue
++impl core::marker::Send for bnb::bitstream::MagicValue
++impl core::marker::Sync for bnb::bitstream::MagicValue
++impl core::marker::Sync for bnb::bitstream::MagicValue
++impl core::marker::Unpin for bnb::bitstream::MagicValue
++impl core::marker::Unpin for bnb::bitstream::MagicValue
++impl core::marker::UnsafeUnpin for bnb::bitstream::MagicValue
++impl core::marker::UnsafeUnpin for bnb::bitstream::MagicValue
++impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::MagicValue
++impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::MagicValue
++impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::MagicValue
++impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::MagicValue
++impl<T, U> core::convert::Into<U> for bnb::bitstream::MagicValue where U: core::convert::From<T>
++impl<T, U> core::convert::Into<U> for bnb::bitstream::MagicValue where U: core::convert::From<T>
++pub fn bnb::bitstream::MagicValue::into(self) -> U
++pub fn bnb::bitstream::MagicValue::into(self) -> U
++impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::MagicValue where U: core::convert::Into<T>
++impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::MagicValue where U: core::convert::Into<T>
++pub type bnb::bitstream::MagicValue::Error = core::convert::Infallible
++pub type bnb::bitstream::MagicValue::Error = core::convert::Infallible
++pub fn bnb::bitstream::MagicValue::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
++pub fn bnb::bitstream::MagicValue::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
++impl<T, U> core::convert::TryInto<U> for bnb::bitstream::MagicValue where U: core::convert::TryFrom<T>
++impl<T, U> core::convert::TryInto<U> for bnb::bitstream::MagicValue where U: core::convert::TryFrom<T>
++pub type bnb::bitstream::MagicValue::Error = <U as core::convert::TryFrom<T>>::Error
++pub type bnb::bitstream::MagicValue::Error = <U as core::convert::TryFrom<T>>::Error
++pub fn bnb::bitstream::MagicValue::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
++pub fn bnb::bitstream::MagicValue::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
++impl<T> alloc::borrow::ToOwned for bnb::bitstream::MagicValue where T: core::clone::Clone
++impl<T> alloc::borrow::ToOwned for bnb::bitstream::MagicValue where T: core::clone::Clone
++pub type bnb::bitstream::MagicValue::Owned = T
++pub type bnb::bitstream::MagicValue::Owned = T
++pub fn bnb::bitstream::MagicValue::clone_into(&self, &mut T)
++pub fn bnb::bitstream::MagicValue::clone_into(&self, &mut T)
++pub fn bnb::bitstream::MagicValue::to_owned(&self) -> T
++pub fn bnb::bitstream::MagicValue::to_owned(&self) -> T
++impl<T> core::any::Any for bnb::bitstream::MagicValue where T: 'static + ?core::marker::Sized
++impl<T> core::any::Any for bnb::bitstream::MagicValue where T: 'static + ?core::marker::Sized
++pub fn bnb::bitstream::MagicValue::type_id(&self) -> core::any::TypeId
++pub fn bnb::bitstream::MagicValue::type_id(&self) -> core::any::TypeId
++impl<T> core::borrow::Borrow<T> for bnb::bitstream::MagicValue where T: ?core::marker::Sized
++impl<T> core::borrow::Borrow<T> for bnb::bitstream::MagicValue where T: ?core::marker::Sized
++pub fn bnb::bitstream::MagicValue::borrow(&self) -> &T
++pub fn bnb::bitstream::MagicValue::borrow(&self) -> &T
++impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::MagicValue where T: ?core::marker::Sized
++impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::MagicValue where T: ?core::marker::Sized
++pub fn bnb::bitstream::MagicValue::borrow_mut(&mut self) -> &mut T
++pub fn bnb::bitstream::MagicValue::borrow_mut(&mut self) -> &mut T
++impl<T> core::clone::CloneToUninit for bnb::bitstream::MagicValue where T: core::clone::Clone
++impl<T> core::clone::CloneToUninit for bnb::bitstream::MagicValue where T: core::clone::Clone
++pub unsafe fn bnb::bitstream::MagicValue::clone_to_uninit(&self, *mut u8)
++pub unsafe fn bnb::bitstream::MagicValue::clone_to_uninit(&self, *mut u8)
++impl<T> core::convert::From<T> for bnb::bitstream::MagicValue
++impl<T> core::convert::From<T> for bnb::bitstream::MagicValue
++pub fn bnb::bitstream::MagicValue::from(T) -> T
++pub fn bnb::bitstream::MagicValue::from(T) -> T
++pub fn bnb::bitstream::BitError::convert(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, usize) -> Self
++pub fn bnb::bitstream::BitError::convert(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, usize) -> Self
++pub fn bnb::bitstream::BitError::tag(&self) -> core::option::Option<&'static str>
++pub fn bnb::bitstream::BitError::tag(&self) -> core::option::Option<&'static str>
++pub fn bnb::bitstream::BitError::with_tag(self, &'static str) -> Self
++pub fn bnb::bitstream::BitError::with_tag(self, &'static str) -> Self
++pub struct bnb::bitstream::Conversion(_)
++impl bnb::bitstream::Conversion
++impl bnb::bitstream::Conversion
++pub fn bnb::bitstream::Conversion::message(&self) -> &str
++pub fn bnb::bitstream::Conversion::message(&self) -> &str
++pub fn bnb::bitstream::Conversion::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
++pub fn bnb::bitstream::Conversion::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
++pub fn bnb::bitstream::Conversion::tag(&self) -> core::option::Option<&'static str>
++pub fn bnb::bitstream::Conversion::tag(&self) -> core::option::Option<&'static str>
++pub fn bnb::bitstream::Conversion::with_tag(self, &'static str) -> Self
++pub fn bnb::bitstream::Conversion::with_tag(self, &'static str) -> Self
++impl core::clone::Clone for bnb::bitstream::Conversion
++impl core::clone::Clone for bnb::bitstream::Conversion
++pub fn bnb::bitstream::Conversion::clone(&self) -> bnb::bitstream::Conversion
++pub fn bnb::bitstream::Conversion::clone(&self) -> bnb::bitstream::Conversion
++impl core::cmp::Eq for bnb::bitstream::Conversion
++impl core::cmp::Eq for bnb::bitstream::Conversion
++impl core::cmp::PartialEq for bnb::bitstream::Conversion
++impl core::cmp::PartialEq for bnb::bitstream::Conversion
++pub fn bnb::bitstream::Conversion::eq(&self, &bnb::bitstream::Conversion) -> bool
++pub fn bnb::bitstream::Conversion::eq(&self, &bnb::bitstream::Conversion) -> bool
++impl core::fmt::Debug for bnb::bitstream::Conversion
++impl core::fmt::Debug for bnb::bitstream::Conversion
++pub fn bnb::bitstream::Conversion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::bitstream::Conversion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl core::marker::StructuralPartialEq for bnb::bitstream::Conversion
++impl core::marker::StructuralPartialEq for bnb::bitstream::Conversion
++impl core::marker::Freeze for bnb::bitstream::Conversion
++impl core::marker::Freeze for bnb::bitstream::Conversion
++impl core::marker::Send for bnb::bitstream::Conversion
++impl core::marker::Send for bnb::bitstream::Conversion
++impl core::marker::Sync for bnb::bitstream::Conversion
++impl core::marker::Sync for bnb::bitstream::Conversion
++impl core::marker::Unpin for bnb::bitstream::Conversion
++impl core::marker::Unpin for bnb::bitstream::Conversion
++impl core::marker::UnsafeUnpin for bnb::bitstream::Conversion
++impl core::marker::UnsafeUnpin for bnb::bitstream::Conversion
++impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::Conversion
++impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::Conversion
++impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::Conversion
++impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::Conversion
++impl<T, U> core::convert::Into<U> for bnb::bitstream::Conversion where U: core::convert::From<T>
++impl<T, U> core::convert::Into<U> for bnb::bitstream::Conversion where U: core::convert::From<T>
++pub fn bnb::bitstream::Conversion::into(self) -> U
++pub fn bnb::bitstream::Conversion::into(self) -> U
++impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::Conversion where U: core::convert::Into<T>
++impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::Conversion where U: core::convert::Into<T>
++pub type bnb::bitstream::Conversion::Error = core::convert::Infallible
++pub type bnb::bitstream::Conversion::Error = core::convert::Infallible
++pub fn bnb::bitstream::Conversion::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
++pub fn bnb::bitstream::Conversion::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
++impl<T, U> core::convert::TryInto<U> for bnb::bitstream::Conversion where U: core::convert::TryFrom<T>
++impl<T, U> core::convert::TryInto<U> for bnb::bitstream::Conversion where U: core::convert::TryFrom<T>
++pub type bnb::bitstream::Conversion::Error = <U as core::convert::TryFrom<T>>::Error
++pub type bnb::bitstream::Conversion::Error = <U as core::convert::TryFrom<T>>::Error
++pub fn bnb::bitstream::Conversion::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
++pub fn bnb::bitstream::Conversion::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
++impl<T> alloc::borrow::ToOwned for bnb::bitstream::Conversion where T: core::clone::Clone
++impl<T> alloc::borrow::ToOwned for bnb::bitstream::Conversion where T: core::clone::Clone
++pub type bnb::bitstream::Conversion::Owned = T
++pub type bnb::bitstream::Conversion::Owned = T
++pub fn bnb::bitstream::Conversion::clone_into(&self, &mut T)
++pub fn bnb::bitstream::Conversion::clone_into(&self, &mut T)
++pub fn bnb::bitstream::Conversion::to_owned(&self) -> T
++pub fn bnb::bitstream::Conversion::to_owned(&self) -> T
++impl<T> core::any::Any for bnb::bitstream::Conversion where T: 'static + ?core::marker::Sized
++impl<T> core::any::Any for bnb::bitstream::Conversion where T: 'static + ?core::marker::Sized
++pub fn bnb::bitstream::Conversion::type_id(&self) -> core::any::TypeId
++pub fn bnb::bitstream::Conversion::type_id(&self) -> core::any::TypeId
++impl<T> core::borrow::Borrow<T> for bnb::bitstream::Conversion where T: ?core::marker::Sized
++impl<T> core::borrow::Borrow<T> for bnb::bitstream::Conversion where T: ?core::marker::Sized
++pub fn bnb::bitstream::Conversion::borrow(&self) -> &T
++pub fn bnb::bitstream::Conversion::borrow(&self) -> &T
++impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::Conversion where T: ?core::marker::Sized
++impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::Conversion where T: ?core::marker::Sized
++pub fn bnb::bitstream::Conversion::borrow_mut(&mut self) -> &mut T
++pub fn bnb::bitstream::Conversion::borrow_mut(&mut self) -> &mut T
++impl<T> core::clone::CloneToUninit for bnb::bitstream::Conversion where T: core::clone::Clone
++impl<T> core::clone::CloneToUninit for bnb::bitstream::Conversion where T: core::clone::Clone
++pub unsafe fn bnb::bitstream::Conversion::clone_to_uninit(&self, *mut u8)
++pub unsafe fn bnb::bitstream::Conversion::clone_to_uninit(&self, *mut u8)
++impl<T> core::convert::From<T> for bnb::bitstream::Conversion
++impl<T> core::convert::From<T> for bnb::bitstream::Conversion
++pub fn bnb::bitstream::Conversion::from(T) -> T
++pub fn bnb::bitstream::Conversion::from(T) -> T
++pub struct bnb::bitstream::MagicMismatch(_)
++impl bnb::bitstream::MagicMismatch
++impl bnb::bitstream::MagicMismatch
++pub const fn bnb::bitstream::MagicMismatch::bytes(&'static [u8]) -> Self
++pub const fn bnb::bitstream::MagicMismatch::bytes(&'static [u8]) -> Self
++pub fn bnb::bitstream::MagicMismatch::expected(&self) -> core::option::Option<bnb::bitstream::MagicValue>
++pub fn bnb::bitstream::MagicMismatch::expected(&self) -> core::option::Option<bnb::bitstream::MagicValue>
++pub fn bnb::bitstream::MagicMismatch::found(&self) -> core::option::Option<bnb::bitstream::MagicValue>
++pub fn bnb::bitstream::MagicMismatch::found(&self) -> core::option::Option<bnb::bitstream::MagicValue>
++pub fn bnb::bitstream::MagicMismatch::new(u128, u128) -> Self
++pub fn bnb::bitstream::MagicMismatch::new(u128, u128) -> Self
++impl core::clone::Clone for bnb::bitstream::MagicMismatch
++impl core::clone::Clone for bnb::bitstream::MagicMismatch
++pub fn bnb::bitstream::MagicMismatch::clone(&self) -> bnb::bitstream::MagicMismatch
++pub fn bnb::bitstream::MagicMismatch::clone(&self) -> bnb::bitstream::MagicMismatch
++impl core::cmp::Eq for bnb::bitstream::MagicMismatch
++impl core::cmp::Eq for bnb::bitstream::MagicMismatch
++impl core::cmp::PartialEq for bnb::bitstream::MagicMismatch
++impl core::cmp::PartialEq for bnb::bitstream::MagicMismatch
++pub fn bnb::bitstream::MagicMismatch::eq(&self, &bnb::bitstream::MagicMismatch) -> bool
++pub fn bnb::bitstream::MagicMismatch::eq(&self, &bnb::bitstream::MagicMismatch) -> bool
++impl core::fmt::Debug for bnb::bitstream::MagicMismatch
++impl core::fmt::Debug for bnb::bitstream::MagicMismatch
++pub fn bnb::bitstream::MagicMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::bitstream::MagicMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::bitstream::MagicMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++pub fn bnb::bitstream::MagicMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl core::fmt::Display for bnb::bitstream::MagicMismatch
++impl core::fmt::Display for bnb::bitstream::MagicMismatch
++impl core::marker::Copy for bnb::bitstream::MagicMismatch
++impl core::marker::Copy for bnb::bitstream::MagicMismatch
++impl core::marker::StructuralPartialEq for bnb::bitstream::MagicMismatch
++impl core::marker::StructuralPartialEq for bnb::bitstream::MagicMismatch
++impl core::marker::Freeze for bnb::bitstream::MagicMismatch
++impl core::marker::Freeze for bnb::bitstream::MagicMismatch
++impl core::marker::Send for bnb::bitstream::MagicMismatch
++impl core::marker::Send for bnb::bitstream::MagicMismatch
++impl core::marker::Sync for bnb::bitstream::MagicMismatch
++impl core::marker::Sync for bnb::bitstream::MagicMismatch
++impl core::marker::Unpin for bnb::bitstream::MagicMismatch
++impl core::marker::Unpin for bnb::bitstream::MagicMismatch
++impl core::marker::UnsafeUnpin for bnb::bitstream::MagicMismatch
++impl core::marker::UnsafeUnpin for bnb::bitstream::MagicMismatch
++impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::MagicMismatch
++impl core::panic::unwind_safe::RefUnwindSafe for bnb::bitstream::MagicMismatch
++impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::MagicMismatch
++impl core::panic::unwind_safe::UnwindSafe for bnb::bitstream::MagicMismatch
++impl<T, U> core::convert::Into<U> for bnb::bitstream::MagicMismatch where U: core::convert::From<T>
++impl<T, U> core::convert::Into<U> for bnb::bitstream::MagicMismatch where U: core::convert::From<T>
++pub fn bnb::bitstream::MagicMismatch::into(self) -> U
++pub fn bnb::bitstream::MagicMismatch::into(self) -> U
++impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::MagicMismatch where U: core::convert::Into<T>
++impl<T, U> core::convert::TryFrom<U> for bnb::bitstream::MagicMismatch where U: core::convert::Into<T>
++pub type bnb::bitstream::MagicMismatch::Error = core::convert::Infallible
++pub type bnb::bitstream::MagicMismatch::Error = core::convert::Infallible
++pub fn bnb::bitstream::MagicMismatch::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
++pub fn bnb::bitstream::MagicMismatch::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
++impl<T, U> core::convert::TryInto<U> for bnb::bitstream::MagicMismatch where U: core::convert::TryFrom<T>
++impl<T, U> core::convert::TryInto<U> for bnb::bitstream::MagicMismatch where U: core::convert::TryFrom<T>
++pub type bnb::bitstream::MagicMismatch::Error = <U as core::convert::TryFrom<T>>::Error
++pub type bnb::bitstream::MagicMismatch::Error = <U as core::convert::TryFrom<T>>::Error
++pub fn bnb::bitstream::MagicMismatch::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
++pub fn bnb::bitstream::MagicMismatch::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
++impl<T> alloc::borrow::ToOwned for bnb::bitstream::MagicMismatch where T: core::clone::Clone
++impl<T> alloc::borrow::ToOwned for bnb::bitstream::MagicMismatch where T: core::clone::Clone
++pub type bnb::bitstream::MagicMismatch::Owned = T
++pub type bnb::bitstream::MagicMismatch::Owned = T
++pub fn bnb::bitstream::MagicMismatch::clone_into(&self, &mut T)
++pub fn bnb::bitstream::MagicMismatch::clone_into(&self, &mut T)
++pub fn bnb::bitstream::MagicMismatch::to_owned(&self) -> T
++pub fn bnb::bitstream::MagicMismatch::to_owned(&self) -> T
++impl<T> alloc::string::ToString for bnb::bitstream::MagicMismatch where T: core::fmt::Display + ?core::marker::Sized
++impl<T> alloc::string::ToString for bnb::bitstream::MagicMismatch where T: core::fmt::Display + ?core::marker::Sized
++pub fn bnb::bitstream::MagicMismatch::to_string(&self) -> alloc::string::String
++pub fn bnb::bitstream::MagicMismatch::to_string(&self) -> alloc::string::String
++impl<T> core::any::Any for bnb::bitstream::MagicMismatch where T: 'static + ?core::marker::Sized
++impl<T> core::any::Any for bnb::bitstream::MagicMismatch where T: 'static + ?core::marker::Sized
++pub fn bnb::bitstream::MagicMismatch::type_id(&self) -> core::any::TypeId
++pub fn bnb::bitstream::MagicMismatch::type_id(&self) -> core::any::TypeId
++impl<T> core::borrow::Borrow<T> for bnb::bitstream::MagicMismatch where T: ?core::marker::Sized
++impl<T> core::borrow::Borrow<T> for bnb::bitstream::MagicMismatch where T: ?core::marker::Sized
++pub fn bnb::bitstream::MagicMismatch::borrow(&self) -> &T
++pub fn bnb::bitstream::MagicMismatch::borrow(&self) -> &T
++impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::MagicMismatch where T: ?core::marker::Sized
++impl<T> core::borrow::BorrowMut<T> for bnb::bitstream::MagicMismatch where T: ?core::marker::Sized
++pub fn bnb::bitstream::MagicMismatch::borrow_mut(&mut self) -> &mut T
++pub fn bnb::bitstream::MagicMismatch::borrow_mut(&mut self) -> &mut T
++impl<T> core::clone::CloneToUninit for bnb::bitstream::MagicMismatch where T: core::clone::Clone
++impl<T> core::clone::CloneToUninit for bnb::bitstream::MagicMismatch where T: core::clone::Clone
++pub unsafe fn bnb::bitstream::MagicMismatch::clone_to_uninit(&self, *mut u8)
++pub unsafe fn bnb::bitstream::MagicMismatch::clone_to_uninit(&self, *mut u8)
++impl<T> core::convert::From<T> for bnb::bitstream::MagicMismatch
++impl<T> core::convert::From<T> for bnb::bitstream::MagicMismatch
++pub fn bnb::bitstream::MagicMismatch::from(T) -> T
++pub fn bnb::bitstream::MagicMismatch::from(T) -> T
++pub bnb::ErrorKind::AssertFailed
++pub bnb::ErrorKind::AssertFailed::message: alloc::borrow::Cow<'static, str>
++pub bnb::ErrorKind::CountOutOfRange
++pub bnb::ErrorKind::CountOutOfRange::bits: u32
++pub bnb::ErrorKind::CountOutOfRange::count: usize
++pub bnb::ErrorKind::EmbeddedNul
++pub bnb::ErrorKind::EmbeddedNul::index: usize
++pub bnb::ErrorKind::InvalidUtf8
++pub bnb::ErrorKind::InvalidUtf8::valid_up_to: usize
++pub bnb::ErrorKind::UnresolvedWireLen
++pub bnb::ErrorKind::ValueOutOfRange
++pub bnb::ErrorKind::ValueOutOfRange::bits: u32
++pub bnb::ErrorKind::VarintOverflow
++pub bnb::ErrorKind::VarintOverflow::bits: u32
++#[non_exhaustive] pub enum bnb::MagicValue
++pub bnb::MagicValue::Bytes(&'static [u8])
++pub bnb::MagicValue::Int(u128)
++pub struct bnb::Conversion(_)
++pub struct bnb::MagicMismatch(_)
+

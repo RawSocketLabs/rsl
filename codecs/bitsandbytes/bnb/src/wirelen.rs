@@ -15,7 +15,9 @@
 //! `WireLen::set(n)` deliberately deviates. Derivation is checked ([`CountPrefix`]) — an
 //! oversized length is a [`BitError`], never a silent truncation.
 
-use crate::bitstream::{BitDecode, BitEncode, BitError, CountPrefix, FixedBitLen, Sink, Source};
+use crate::bitstream::{
+    BitDecode, BitEncode, BitError, CountPrefix, ErrorKind, FixedBitLen, Sink, Source,
+};
 use crate::field::Bits;
 use alloc::vec::Vec;
 
@@ -80,9 +82,7 @@ impl<T: CountPrefix> WireLen<T> {
     pub fn resolve_count(&self, len: usize) -> Result<Self, BitError> {
         match self {
             WireLen::Set(v) => Ok(WireLen::Set(*v)),
-            WireLen::Auto => Ok(WireLen::Set(
-                T::try_from_count(len).map_err(BitError::from)?,
-            )),
+            WireLen::Auto => Ok(WireLen::Set(crate::bitstream::prefix_for_count(len, 0)?)),
         }
     }
 }
@@ -104,13 +104,7 @@ impl<T: Bits> BitEncode for WireLen<T> {
     fn bit_encode<K: Sink>(&self, w: &mut K) -> Result<(), BitError> {
         match self {
             WireLen::Set(v) => w.write(*v),
-            WireLen::Auto => Err(BitError::convert(
-                "unresolved `WireLen::Auto`: this field needs a \
-                 `#[bw(auto_len = count(f)|bytes(f))]` (or `#[bin(auto_len(...))]`) directive \
-                 to derive its value, or set it explicitly with `WireLen::set(n)`"
-                    .into(),
-                w.bit_pos(),
-            )),
+            WireLen::Auto => Err(BitError::new(ErrorKind::UnresolvedWireLen, w.bit_pos())),
         }
     }
 }

@@ -12,7 +12,7 @@ mod macro_ {
     fn construction_error_bridges_into_bit_error() {
         let e = WidthError::ValueTooLarge { value: 20, bits: 4 };
         let be: BitError = e.into();
-        assert!(matches!(be.kind, ErrorKind::Convert { .. }));
+        assert_eq!(be.kind, ErrorKind::ValueOutOfRange { bits: 4 });
         assert_eq!(be.at, 0); // no cursor context for a borrowed construction failure
     }
 
@@ -34,7 +34,7 @@ mod macro_ {
     fn parse_with_propagates_construction_error() {
         assert_eq!(Small::decode_exact(&[0x05]).unwrap().v, u4::new(5)); // in range
         let err = Small::decode_exact(&[0xFF]).unwrap_err(); // 0xFF doesn't fit in 4 bits
-        assert!(matches!(err.kind, ErrorKind::Convert { .. }));
+        assert_eq!(err.kind, ErrorKind::ValueOutOfRange { bits: 4 });
     }
 
     // --- restore_position over a non-slice seekable source ------------------------

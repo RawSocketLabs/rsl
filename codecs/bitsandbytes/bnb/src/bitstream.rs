@@ -27,8 +27,9 @@
 //! assert_eq!(r.read::<u12>().unwrap(), u12::new(0xBCD));
 //! ```
 
+use alloc::borrow::Cow;
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::any::{Any, TypeId};
 use core::fmt;
@@ -128,6 +129,215 @@ impl EnumDispatchError {
     }
 }
 
+/// One side of a magic that did not match: see [`MagicMismatch`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MagicValue {
+    /// A numeric magic, as its type-erased low bits ([`Bits::into_bits`]).
+    Int(u128),
+    /// A byte-string magic.
+    Bytes(&'static [u8]),
+}
+
+/// A magic that did not match ([`ErrorKind::BadMagic`]). It owns no allocation, so a
+/// caller that tries one message type after another pays for none on a miss.
+///
+/// A side that was not kept reads as `None`: what a byte-string magic found on the wire,
+/// and what a numeric magic expected when either value needs more than 64 bits. Two
+/// mismatches are equal when the sides they kept are, so for such a wide magic equality
+/// compares only what was read.
+///
+/// ```
+/// use bnb::{MagicMismatch, MagicValue};
+///
+/// let miss = MagicMismatch::new(0xC0DE, 0xBEEF);
+/// assert_eq!(miss.expected(), Some(MagicValue::Int(0xC0DE)));
+/// assert_eq!(miss.found(), Some(MagicValue::Int(0xBEEF)));
+/// ```
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct MagicMismatch(MagicRepr);
+
+// Three payloads of two words each, so the error stays small with no `Box`. A `u128`
+// field would align the whole error to 16 bytes; halves do not.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MagicRepr {
+    Int { expected: u64, found: u64 },
+    Wide { found_low: u64, found_high: u64 },
+    Bytes { expected: &'static [u8] },
+}
+
+impl MagicMismatch {
+    /// A numeric magic that expected `expected` and read `found`. If either needs more than
+    /// 64 bits, only `found` is kept.
+    #[must_use]
+    pub fn new(expected: u128, found: u128) -> Self {
+        match (u64::try_from(expected), u64::try_from(found)) {
+            (Ok(expected), Ok(found)) => Self(MagicRepr::Int { expected, found }),
+            // Wider than 64 bits: what was read is kept, the constant is the type's own.
+            #[expect(clippy::cast_possible_truncation, reason = "the two halves of a u128")]
+            _ => Self(MagicRepr::Wide {
+                found_low: found as u64,
+                found_high: (found >> 64) as u64,
+            }),
+        }
+    }
+
+    /// A byte-string magic that expected `expected`. What was read is not kept.
+    #[must_use]
+    pub const fn bytes(expected: &'static [u8]) -> Self {
+        Self(MagicRepr::Bytes { expected })
+    }
+
+    /// What the codec expected, unless either side of a numeric magic needs more than 64 bits.
+    #[must_use]
+    pub fn expected(&self) -> Option<MagicValue> {
+        match self.0 {
+            MagicRepr::Int { expected, .. } => Some(MagicValue::Int(u128::from(expected))),
+            MagicRepr::Wide { .. } => None,
+            MagicRepr::Bytes { expected } => Some(MagicValue::Bytes(expected)),
+        }
+    }
+
+    /// What was read, unless the magic is a byte string.
+    #[must_use]
+    pub fn found(&self) -> Option<MagicValue> {
+        match self.0 {
+            MagicRepr::Int { found, .. } => Some(MagicValue::Int(u128::from(found))),
+            MagicRepr::Wide {
+                found_low,
+                found_high,
+            } => Some(MagicValue::Int(
+                u128::from(found_high) << 64 | u128::from(found_low),
+            )),
+            MagicRepr::Bytes { .. } => None,
+        }
+    }
+}
+
+/// `expected 0xc0de, found 0xbeef`, with whichever side was kept.
+impl fmt::Display for MagicMismatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let sides = [("expected", self.expected()), ("found", self.found())];
+        let mut first = true;
+        for (name, value) in sides {
+            let Some(value) = value else { continue };
+            if !first {
+                f.write_str(", ")?;
+            }
+            first = false;
+            match value {
+                MagicValue::Int(value) => write!(f, "{name} {value:#x}")?,
+                MagicValue::Bytes(bytes) => {
+                    write!(f, "{name} 0x")?;
+                    bytes.iter().try_for_each(|byte| write!(f, "{byte:02x}"))?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for MagicMismatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MagicMismatch")
+            .field("expected", &self.expected())
+            .field("found", &self.found())
+            .finish()
+    }
+}
+
+/// A failed conversion of the caller's own ([`ErrorKind::Convert`]): a message, and a tag
+/// if the code that raised it attached one.
+///
+/// The message is for people. To tell one failure from another in code, attach a tag
+/// where the error is raised and compare that: a constant of your own, prefixed with your
+/// crate's name so that it cannot collide with another codec's.
+///
+/// A tag is attached where a [`BitError`] is built, so it is for `parse_with`/`write_with`
+/// functions and codecs. The error a `try_map` or `try_wire` closure returns is rendered
+/// to its message, whatever its type, and carries none.
+///
+/// ```
+/// use bnb::{BitError, Conversion, ErrorKind};
+///
+/// const POINTER_LOOP: &str = "dns.pointer_loop";
+///
+/// let error = BitError::convert("compression pointer loop", 96).with_tag(POINTER_LOOP);
+/// assert_eq!(error.tag(), Some(POINTER_LOOP));
+/// assert_eq!(
+///     error.kind,
+///     ErrorKind::Convert(Conversion::new("compression pointer loop").with_tag(POINTER_LOOP))
+/// );
+/// ```
+///
+/// Two conversions are equal when their messages and tags are.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Conversion(Box<ConversionDetail>);
+
+// Behind one pointer: the error stays small, and a field added here later changes no size.
+#[derive(Clone, PartialEq, Eq)]
+struct ConversionDetail {
+    message: Cow<'static, str>,
+    tag: Option<&'static str>,
+}
+
+impl Conversion {
+    /// A conversion failure with `message` and no tag. A `&'static str` is kept as it is; a
+    /// `String` is taken over.
+    #[must_use]
+    pub fn new(message: impl Into<Cow<'static, str>>) -> Self {
+        Self(Box::new(ConversionDetail {
+            message: message.into(),
+            tag: None,
+        }))
+    }
+
+    /// The same failure carrying `tag`.
+    #[must_use]
+    pub fn with_tag(mut self, tag: &'static str) -> Self {
+        self.0.tag = Some(tag);
+        self
+    }
+
+    /// The message.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.0.message
+    }
+
+    /// The tag, if one was attached.
+    #[must_use]
+    pub fn tag(&self) -> Option<&'static str> {
+        self.0.tag
+    }
+}
+
+impl fmt::Debug for Conversion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Conversion")
+            .field("message", &self.message())
+            .field("tag", &self.tag())
+            .finish()
+    }
+}
+
+// The error is returned from every read: its size is the decoder's frame and the cost of
+// each copy on a failing path (DESIGN.md §27). No variant holds a `u128` or more than three
+// words, and nothing allocates but a conversion, a dispatch miss and a formatted assert.
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(size_of::<MagicMismatch>() == 24);
+    assert!(size_of::<Conversion>() == 8);
+    assert!(size_of::<ErrorKind>() == 32);
+    assert!(size_of::<BitError>() == 56);
+};
+
+// It crosses threads inside an `io::Error`, and a caller may catch a panic around a decode.
+const _: fn() = || {
+    fn all<T: Send + Sync + Unpin + core::panic::UnwindSafe + core::panic::RefUnwindSafe>() {}
+    all::<BitError>();
+};
+
 /// The cause of a [`BitError`]. `#[non_exhaustive]`: new variants may be added
 /// without a major version bump, so match with a wildcard arm.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -185,23 +395,60 @@ pub enum ErrorKind {
     /// An I/O error while encoding to a [`std::io::Write`] sink (the `std` feature).
     #[cfg(feature = "std")]
     Io(std::io::ErrorKind),
-    /// A `magic` constant read off the wire did not match. Both values are the
-    /// type-erased low-bit representations ([`Bits::into_bits`]).
-    BadMagic {
-        /// The constant the codec expected.
-        expected: u128,
-        /// The value actually read.
-        found: u128,
-    },
+    /// A `magic` constant read off the wire did not match: a numeric magic or a byte
+    /// string. Never allocates.
+    BadMagic(MagicMismatch),
     /// No variant of a closed `#[bin]` enum matched. Details are allocated only on
     /// failure and boxed so they do not enlarge the inline error representation.
     /// Signature, prefix, and selected-payload failures keep their original kinds.
     NoMatchingVariant(Box<EnumDispatchError>),
-    /// A wire-value or positioning/count conversion failed; `message` describes it.
-    Convert {
-        /// The converter's error, rendered.
-        message: String,
+    /// A conversion of the caller's own failed: a `try_map` or `try_wire` that returned
+    /// an error, or a `parse_with`/`write_with` function or codec that raised one with
+    /// [`BitError::convert`]. The crate's own failures have variants of their own.
+    Convert(Conversion),
+    /// A `#[br(assert(...))]` rejected the decoded value. `message` is the directive's
+    /// message, or the condition in backticks when it gave none.
+    AssertFailed {
+        /// The assertion's message.
+        message: Cow<'static, str>,
     },
+    /// A string codec read bytes that are not UTF-8.
+    InvalidUtf8 {
+        /// How many bytes from the start of the string were valid.
+        valid_up_to: usize,
+    },
+    /// A value does not fit an integer of `bits` bits: what a failed
+    /// [`UInt::try_new`](crate::UInt::try_new) (a [`WidthError`](crate::WidthError))
+    /// becomes when it is propagated with `?`. The value itself is not kept.
+    ValueOutOfRange {
+        /// The width of the target, in bits.
+        bits: u32,
+    },
+    /// A collection is too long for the count or length that describes it on the wire
+    /// (a `count_prefix`, a [`WireLen`](crate::WireLen), a string's length prefix), or a
+    /// `count` expression does not fit a `usize` (then `count` is `usize::MAX` and `bits`
+    /// is `usize::BITS`).
+    CountOutOfRange {
+        /// The number of elements or bytes.
+        count: usize,
+        /// The width of the count on the wire, in bits.
+        bits: u32,
+    },
+    /// A variable-length integer (LEB128) overflows its `bits`-bit type, or has no final
+    /// byte within the bytes that type can take.
+    VarintOverflow {
+        /// The width of the target type, in bits.
+        bits: u32,
+    },
+    /// A NUL-terminated string to be written contains a NUL at byte `index`: the decoded
+    /// value would stop there.
+    EmbeddedNul {
+        /// The offset of the first NUL in the value.
+        index: usize,
+    },
+    /// A [`WireLen::Auto`](crate::WireLen) reached encode with no `auto_len` directive to
+    /// derive it and no explicit value.
+    UnresolvedWireLen,
     /// A position directive (`restore_position`/seek) ran on a non-seekable
     /// [`Source`] (a forward-only stream). Decode from a slice ([`BitReader`]) or a
     /// seekable source instead. Also a seek on a `BufSource` (with `std`) to a position
@@ -264,14 +511,68 @@ impl BitError {
     /// values ([`Bits::into_bits`]).
     #[must_use]
     pub fn bad_magic(expected: u128, found: u128, at: usize) -> Self {
-        Self::new(ErrorKind::BadMagic { expected, found }, at)
+        Self::new(ErrorKind::BadMagic(MagicMismatch::new(expected, found)), at)
+    }
+
+    /// Builds an [`ErrorKind::BadMagic`] error for a byte-string magic at bit offset `at`.
+    #[doc(hidden)]
+    #[cold]
+    #[inline(never)]
+    #[must_use]
+    pub fn bad_magic_bytes(expected: &'static [u8], at: usize) -> Self {
+        Self::new(ErrorKind::BadMagic(MagicMismatch::bytes(expected)), at)
+    }
+
+    /// Builds an [`ErrorKind::AssertFailed`] error at bit offset `at`.
+    #[doc(hidden)]
+    #[cold]
+    #[inline(never)]
+    #[must_use]
+    pub fn assert_failed(message: Cow<'static, str>, at: usize) -> Self {
+        Self::new(ErrorKind::AssertFailed { message }, at)
+    }
+
+    /// Builds an [`ErrorKind::CountOutOfRange`] error at bit offset `at`.
+    #[doc(hidden)]
+    #[cold]
+    #[inline(never)]
+    #[must_use]
+    pub fn count_out_of_range(count: usize, bits: u32, at: usize) -> Self {
+        Self::new(ErrorKind::CountOutOfRange { count, bits }, at)
     }
 
     /// Builds an [`ErrorKind::Convert`] error (a value conversion or codec check failed) at
     /// absolute bit offset `at`.
     #[must_use]
-    pub fn convert(message: String, at: usize) -> Self {
-        Self::new(ErrorKind::Convert { message }, at)
+    pub fn convert(message: impl Into<Cow<'static, str>>, at: usize) -> Self {
+        // One body for every message type: the generic part is the conversion alone.
+        #[cold]
+        #[inline(never)]
+        fn build(message: Cow<'static, str>, at: usize) -> BitError {
+            BitError::new(ErrorKind::Convert(Conversion::new(message)), at)
+        }
+        build(message.into(), at)
+    }
+
+    /// Attaches `tag` to an [`ErrorKind::Convert`] error, for the caller to tell this
+    /// failure from the codec's others without reading its message; see [`Conversion`].
+    /// Any other kind of error is returned unchanged. An error returned from a `try_map`
+    /// or `try_wire` closure does not keep a tag: only its message is taken.
+    #[must_use]
+    pub fn with_tag(mut self, tag: &'static str) -> Self {
+        if let ErrorKind::Convert(conversion) = &mut self.kind {
+            conversion.0.tag = Some(tag);
+        }
+        self
+    }
+
+    /// The tag of an [`ErrorKind::Convert`] error, if it carries one.
+    #[must_use]
+    pub fn tag(&self) -> Option<&'static str> {
+        match &self.kind {
+            ErrorKind::Convert(conversion) => conversion.tag(),
+            _ => None,
+        }
     }
 
     /// Macro implementation detail: construct a type-attributed dispatch miss.
@@ -332,6 +633,25 @@ impl BitError {
     pub fn is_incomplete(&self) -> bool {
         matches!(self.kind, ErrorKind::Incomplete { .. })
     }
+
+    /// The additional-byte hint if this is the retry signal ([`ErrorKind::Incomplete`]),
+    /// else the error back. A retry signal owns nothing, so it is let go without the
+    /// error's drop code, which is otherwise a call on every short attempt.
+    #[inline]
+    pub(crate) fn into_retry(self) -> Result<Option<usize>, Self> {
+        if let ErrorKind::Incomplete { needed } = self.kind {
+            // Every field named and shown to own nothing, so that a new one, or one of
+            // these becoming a type with drop code, stops this compiling.
+            fn owns_nothing<T: Copy>(_: &T) {}
+            let Self { kind: _, at, field } = &self;
+            owns_nothing(at);
+            owns_nothing(field);
+            core::mem::forget(self);
+            Ok(needed)
+        } else {
+            Err(self)
+        }
+    }
 }
 
 #[cfg(feature = "std")]
@@ -373,9 +693,7 @@ impl fmt::Display for BitError {
             }
             #[cfg(feature = "std")]
             ErrorKind::Io(kind) => write!(f, "I/O error: {kind:?}")?,
-            ErrorKind::BadMagic { expected, found } => {
-                write!(f, "bad magic: expected {expected:#x}, found {found:#x}")?;
-            }
+            ErrorKind::BadMagic(mismatch) => write!(f, "bad magic: {mismatch}")?,
             ErrorKind::NoMatchingVariant(details) => {
                 write!(f, "unrecognized {} discriminant", details.enum_name())?;
                 match &details.observed {
@@ -389,9 +707,38 @@ impl fmt::Display for BitError {
                     None => {}
                 }
             }
-            ErrorKind::Convert { message } => {
-                write!(f, "conversion failed: {message}")?;
+            ErrorKind::Convert(conversion) => {
+                write!(f, "conversion failed: {}", conversion.message())?;
             }
+            ErrorKind::AssertFailed { message } => write!(f, "assertion failed: {message}")?,
+            ErrorKind::InvalidUtf8 { valid_up_to } => {
+                write!(
+                    f,
+                    "invalid UTF-8 after {valid_up_to} valid bytes of a string"
+                )?;
+            }
+            ErrorKind::ValueOutOfRange { bits } => {
+                write!(f, "value does not fit in {bits} bits")?;
+            }
+            ErrorKind::CountOutOfRange {
+                count: usize::MAX,
+                bits: usize::BITS,
+            } => f.write_str("count does not fit in a usize")?,
+            ErrorKind::CountOutOfRange { count, bits } => {
+                write!(f, "count {count} does not fit in {bits} bits")?;
+            }
+            ErrorKind::VarintOverflow { bits } => {
+                write!(f, "variable-length integer does not fit in {bits} bits")?;
+            }
+            ErrorKind::EmbeddedNul { index } => write!(
+                f,
+                "embedded NUL at byte {index}: a NUL-terminated string cannot represent it"
+            )?,
+            ErrorKind::UnresolvedWireLen => f.write_str(
+                "unresolved `WireLen::Auto`: this field needs a \
+                 `#[bw(auto_len = count(f)|bytes(f))]` (or `#[bin(auto_len(...))]`) directive \
+                 to derive its value, or set it explicitly with `WireLen::set(n)`",
+            )?,
             ErrorKind::NotSeekable => {
                 write!(f, "seek to a position this source cannot reach")?;
             }
@@ -426,8 +773,42 @@ impl From<crate::error::WidthError> for BitError {
     /// failures with no cursor context.
     #[inline]
     fn from(e: crate::error::WidthError) -> Self {
-        BitError::convert(e.to_string(), 0)
+        let (crate::error::WidthError::ValueTooLarge { bits, .. }
+        | crate::error::WidthError::Negative { bits, .. }) = e;
+        BitError::new(ErrorKind::ValueOutOfRange { bits }, 0)
     }
+}
+
+/// The count or length prefix for `len` elements, or [`ErrorKind::CountOutOfRange`] at
+/// bit offset `at` if `P` cannot hold it. Behind `count_prefix`, [`WireLen`](crate::WireLen)
+/// and the length-prefixed string codec.
+#[doc(hidden)]
+#[inline]
+pub fn prefix_for_count<P: CountPrefix>(len: usize, at: usize) -> Result<P, BitError> {
+    P::try_from_count(len).map_err(|_| BitError::count_out_of_range(len, P::BITS, at))
+}
+
+/// A `#[br(assert(...))]` message: borrowed when it is a plain literal, formatted (once)
+/// when it interpolates anything.
+#[doc(hidden)]
+#[must_use]
+pub fn assert_message(args: fmt::Arguments<'_>) -> Cow<'static, str> {
+    match args.as_str() {
+        Some(literal) => Cow::Borrowed(literal),
+        None => Cow::Owned(alloc::fmt::format(args)),
+    }
+}
+
+/// [`ErrorKind::InvalidUtf8`] at bit offset `at`, where the caller's read of the string
+/// (its length prefix, if it has one) began.
+#[cold]
+pub(crate) fn invalid_utf8(error: &alloc::string::FromUtf8Error, at: usize) -> BitError {
+    BitError::new(
+        ErrorKind::InvalidUtf8 {
+            valid_up_to: error.utf8_error().valid_up_to(),
+        },
+        at,
+    )
 }
 
 /// The bit width of a [`Bits`] value's type. Generated `BIT_LEN` consts and the
@@ -2001,7 +2382,11 @@ pub(crate) fn decode_attempt<T: DecodeWith<A>, A>(
         let mut reader = reader();
         let value = T::decode_with(&mut reader, args).map_err(|mut error| {
             if let ErrorKind::Incomplete { needed } = error.kind {
-                error.kind = ErrorKind::IncompleteAtEof { needed };
+                // The kind replaced owns nothing: let it go without the drop code.
+                core::mem::forget(core::mem::replace(
+                    &mut error.kind,
+                    ErrorKind::IncompleteAtEof { needed },
+                ));
             }
             error
         })?;
@@ -3538,7 +3923,8 @@ impl<R: std::io::Read> StreamBitReader<R> {
         self.pos += got * 8;
         stopped
             .map(Stopped::in_a_stream)
-            .or((fits < dst.len()).then_some(ErrorKind::PositionOverflow))
+            // Lazily: an error kind built and dropped unused is a call into its drop code.
+            .or_else(|| (fits < dst.len()).then_some(ErrorKind::PositionOverflow))
             .map(|kind| BitError::new(kind, self.pos))
     }
 }
@@ -3630,7 +4016,10 @@ impl<R: std::io::Read> Source for StreamBitReader<R> {
         if self.lead_bits != 0 {
             return read_into_per_byte(self, buf);
         }
-        self.fill(buf).map_or(Ok(()), Err)
+        match self.fill(buf) {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
     fn bit_pos(&self) -> usize {
         self.pos
@@ -3864,7 +4253,10 @@ impl<R: std::io::Read> Source for BufSource<R> {
         }
         let (run, stopped) = self.take_run(buf.len());
         buf[..run.len()].copy_from_slice(&self.buf[run]);
-        stopped.map_or(Ok(()), Err)
+        match stopped {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
     fn bit_pos(&self) -> usize {
         self.bit_pos
@@ -4138,8 +4530,7 @@ impl BitBuf {
     pub fn pull<T: BitDecode + BitEncode>(&mut self) -> Result<Option<T>, BitError> {
         match self.try_pull::<T>() {
             Ok(msg) => Ok(Some(msg)),
-            Err(e) if e.is_incomplete() => Ok(None),
-            Err(e) => Err(e),
+            Err(e) => e.into_retry().map(|_| None),
         }
     }
 
@@ -6099,15 +6490,179 @@ mod unit {
     }
 
     #[test]
+    fn a_magic_mismatch_keeps_both_sides_of_a_narrow_magic_and_what_was_read_of_a_wide_one() {
+        let narrow = MagicMismatch::new(0xC0DE, u128::from(u64::MAX));
+        assert_eq!(narrow.expected(), Some(MagicValue::Int(0xC0DE)));
+        assert_eq!(narrow.found(), Some(MagicValue::Int(u128::from(u64::MAX))));
+        assert_eq!(
+            narrow.to_string(),
+            "expected 0xc0de, found 0xffffffffffffffff"
+        );
+        // One bit past 64 on either side: the constant is the type's own and is not kept.
+        let wide_value = (0xAB_u128 << 100) | 0x1234_5678_9ABC_DEF0;
+        for wide in [
+            MagicMismatch::new(1 << 64, wide_value),
+            MagicMismatch::new(7, wide_value),
+        ] {
+            assert_eq!(wide.expected(), None);
+            assert_eq!(wide.found(), Some(MagicValue::Int(wide_value)));
+            assert_eq!(wide.to_string(), format!("found {wide_value:#x}"));
+        }
+        // A wide constant against a narrow read (a zeroed buffer): still only what was read.
+        let zeroed = MagicMismatch::new(1 << 64, 0);
+        assert_eq!(
+            (zeroed.expected(), zeroed.found()),
+            (None, Some(MagicValue::Int(0)))
+        );
+        assert_eq!(zeroed, MagicMismatch::new((1 << 64) + 1, 0));
+        assert_ne!(MagicMismatch::new(1, 2), MagicMismatch::new(1, 3));
+        assert_ne!(MagicMismatch::new(1, 2), MagicMismatch::new(2, 2));
+        let bytes = MagicMismatch::bytes(b"AB");
+        assert_eq!(bytes.expected(), Some(MagicValue::Bytes(b"AB")));
+        assert_eq!(bytes.found(), None);
+        assert_eq!(bytes.to_string(), "expected 0x4142");
+        assert_eq!(
+            MagicMismatch::bytes(&[0x00, 0x0A]).to_string(),
+            "expected 0x000a"
+        );
+        assert_eq!(
+            format!("{narrow:?}"),
+            "MagicMismatch { expected: Some(Int(49374)), found: Some(Int(18446744073709551615)) }"
+        );
+        assert_eq!(
+            BitError::bad_magic_bytes(b"AB", 16).to_string(),
+            "bad magic: expected 0x4142 at bit 16"
+        );
+    }
+
+    #[test]
+    fn a_conversion_carries_its_message_and_a_tag_only_if_one_was_attached() {
+        let plain = BitError::convert("out of range", 8);
+        assert_eq!(plain.tag(), None);
+        assert_eq!(
+            plain.kind,
+            ErrorKind::Convert(Conversion::new("out of range"))
+        );
+        assert_eq!(
+            plain.to_string(),
+            "conversion failed: out of range at bit 8"
+        );
+        let tagged = BitError::convert(String::from("out of range"), 8).with_tag("crate.range");
+        assert_eq!(tagged.tag(), Some("crate.range"));
+        let ErrorKind::Convert(conversion) = &tagged.kind else {
+            panic!("{tagged:?}")
+        };
+        assert_eq!(
+            (conversion.message(), conversion.tag()),
+            ("out of range", Some("crate.range"))
+        );
+        assert_eq!(
+            format!("{conversion:?}"),
+            r#"Conversion { message: "out of range", tag: Some("crate.range") }"#
+        );
+        // Equal by message and tag, whatever the message was built from.
+        assert_eq!(
+            *conversion,
+            Conversion::new("out of range").with_tag("crate.range")
+        );
+        assert_ne!(tagged.kind, plain.kind);
+        assert_ne!(
+            *conversion,
+            Conversion::new("other").with_tag("crate.range")
+        );
+        // Any other kind of error has no tag and takes none.
+        let other = BitError::new(ErrorKind::NotSeekable, 0).with_tag("crate.range");
+        assert_eq!((other.tag(), &other.kind), (None, &ErrorKind::NotSeekable));
+    }
+
+    #[test]
+    fn each_failure_of_the_crates_own_says_what_it_is() {
+        for (kind, text) in [
+            (
+                ErrorKind::AssertFailed {
+                    message: Cow::Borrowed("`level < 12`"),
+                },
+                "assertion failed: `level < 12`",
+            ),
+            (
+                ErrorKind::InvalidUtf8 { valid_up_to: 3 },
+                "invalid UTF-8 after 3 valid bytes of a string",
+            ),
+            (
+                ErrorKind::ValueOutOfRange { bits: 4 },
+                "value does not fit in 4 bits",
+            ),
+            (
+                ErrorKind::CountOutOfRange {
+                    count: 300,
+                    bits: 8,
+                },
+                "count 300 does not fit in 8 bits",
+            ),
+            (
+                ErrorKind::CountOutOfRange {
+                    count: usize::MAX,
+                    bits: usize::BITS,
+                },
+                "count does not fit in a usize",
+            ),
+            (
+                ErrorKind::VarintOverflow { bits: 32 },
+                "variable-length integer does not fit in 32 bits",
+            ),
+            (
+                ErrorKind::EmbeddedNul { index: 5 },
+                "embedded NUL at byte 5: a NUL-terminated string cannot represent it",
+            ),
+        ] {
+            assert_eq!(
+                BitError::new(kind, 8).to_string(),
+                format!("{text} at bit 8")
+            );
+        }
+        assert!(
+            BitError::new(ErrorKind::UnresolvedWireLen, 0)
+                .to_string()
+                .starts_with("unresolved `WireLen::Auto`")
+        );
+    }
+
+    #[test]
+    fn an_assert_message_is_borrowed_unless_it_interpolates() {
+        assert!(matches!(
+            assert_message(format_args!("too deep")),
+            Cow::Borrowed("too deep")
+        ));
+        let depth = 9;
+        let formatted = assert_message(format_args!("depth {depth}"));
+        assert!(matches!(&formatted, Cow::Owned(text) if text == "depth 9"));
+    }
+
+    #[test]
+    fn a_retry_signal_gives_its_hint_and_any_other_error_comes_back_whole() {
+        let retry = BitError::new(ErrorKind::Incomplete { needed: Some(3) }, 8);
+        assert_eq!(retry.into_retry(), Ok(Some(3)));
+        let unknown = BitError::new(ErrorKind::Incomplete { needed: None }, 8);
+        assert_eq!(unknown.into_retry(), Ok(None));
+        let other = BitError::convert("no", 8).in_field("f");
+        assert_eq!(other.clone().into_retry(), Err(other));
+        // Out of input for good is not a retry.
+        let at_eof = BitError::new(ErrorKind::IncompleteAtEof { needed: Some(3) }, 8);
+        assert_eq!(at_eof.clone().into_retry(), Err(at_eof));
+    }
+
+    #[test]
     fn is_incomplete_is_true_only_for_incomplete() {
         assert!(BitError::new(ErrorKind::Incomplete { needed: None }, 0).is_incomplete());
         assert!(!BitError::new(ErrorKind::NotSeekable, 0).is_incomplete());
     }
 
     #[test]
-    fn construction_error_bridges_to_a_convert_error() {
+    fn construction_error_bridges_to_a_value_out_of_range_error() {
         let e: BitError = crate::error::WidthError::ValueTooLarge { value: 99, bits: 4 }.into();
-        assert!(matches!(e.kind, ErrorKind::Convert { .. }));
+        assert_eq!(e.kind, ErrorKind::ValueOutOfRange { bits: 4 });
+        let negative: BitError = crate::error::WidthError::Negative { value: -1, bits: 7 }.into();
+        assert_eq!(negative.kind, ErrorKind::ValueOutOfRange { bits: 7 });
         assert_eq!(e.at, 0);
         assert!(e.to_string().contains("does not fit in 4 bits"));
     }

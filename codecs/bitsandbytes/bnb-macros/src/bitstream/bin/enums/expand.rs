@@ -566,10 +566,7 @@ pub(in crate::bitstream::bin) fn bin_enum(
                     .tag
                     .as_ref()
                     .expect("invariant: a tag variant outside named-tag dispatch has `tag = V`");
-                let verify = v
-                    .magic
-                    .as_ref()
-                    .map(|m| m.verify(&v.variant.ident.to_string()));
+                let verify = v.magic.as_ref().map(Magic::verify);
                 let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
                 arms.push(quote! {
                     #tagval => {
@@ -597,7 +594,7 @@ pub(in crate::bitstream::bin) fn bin_enum(
         magic_block
     };
 
-    let prefix_verify = dispatch.prefix.as_ref().map(|m| m.verify("prefix"));
+    let prefix_verify = dispatch.prefix.as_ref().map(Magic::verify);
     let prefix_write = dispatch.prefix.as_ref().map(Magic::write_const);
 
     let decode_body = quote! {
@@ -714,10 +711,7 @@ pub(in crate::bitstream::bin) fn bin_enum(
         }
         let mname = format_ident!("decode_as_{}", snake_case(&v.variant.ident));
         let (reads, ctor, _) = variant_field_codec(name, v.variant, None, &[], dirs)?;
-        let magic_verify = v
-            .magic
-            .as_ref()
-            .map(|m| m.verify(&v.variant.ident.to_string()));
+        let magic_verify = v.magic.as_ref().map(Magic::verify);
         let doc = format!(
             "Decode `bytes` as the `{}` variant — its `magic` (if any) then its payload, requiring every whole byte consumed.",
             v.variant.ident

@@ -92,7 +92,7 @@ pub(in crate::bitstream) struct FieldBr {
     pub(in crate::bitstream) dbg: bool,
     /// `#[br(assert(<expr>))]` / `#[br(assert(<expr>, "fmt", args…))]` — a **decode-time
     /// guard**: after the field is read (and mapped), the expression (over this and
-    /// earlier fields) must hold, else decode fails with `ErrorKind::Convert`. The
+    /// earlier fields) must hold, else decode fails with `ErrorKind::AssertFailed`. The
     /// *explicit opt-in* strictness escape hatch (same rejection family as `magic`,
     /// closed enums, and `try_map`: values unrepresentable in the domain) — the default
     /// stays permissive. Read-only: no `bw` inverse is needed, and encode is untouched.

@@ -11,6 +11,21 @@ use std::collections::HashMap;
 /// whole message, but one resolved `Name` can never exceed 255 bytes of labels.
 const MAX_NAME_LEN: usize = 255;
 
+/// The tags on the errors this codec raises itself ([`BitError::tag`]): compare these, not
+/// the message text, to tell one failure from another.
+pub mod error_tag {
+    /// Compression pointers that never reach a label: a loop, or too long a chain.
+    pub const POINTER_LOOP: &str = "dns.pointer_loop";
+    /// A name longer than 255 bytes on the wire (RFC 1035 §3.1).
+    pub const NAME_TOO_LONG: &str = "dns.name_too_long";
+    /// A label whose two high bits are a reserved marker.
+    pub const RESERVED_LABEL: &str = "dns.reserved_label";
+    /// A label longer than 63 bytes, at encode.
+    pub const LABEL_TOO_LONG: &str = "dns.label_too_long";
+    /// A query that does not fit a TCP frame's 16-bit length (raised by the client).
+    pub const QUERY_TOO_LONG: &str = "dns.query_too_long";
+}
+
 /// The maximum number of compression-pointer jumps to follow before declaring a loop.
 /// RFC 1035 allows arbitrarily-chained pointers, but a well-formed name resolves in far
 /// fewer hops than this; the bound turns a malicious pointer cycle into a clean error.
@@ -154,9 +169,10 @@ fn decode_labels<S: Source>(r: &mut S) -> Result<Vec<Vec<u8>>, BitError> {
                 hops += 1;
                 if hops > MAX_POINTER_HOPS {
                     return Err(BitError::convert(
-                        "DNS name: compression pointer loop (too many hops)".to_string(),
+                        "DNS name: compression pointer loop (too many hops)",
                         r.bit_pos(),
-                    ));
+                    )
+                    .with_tag(error_tag::POINTER_LOOP));
                 }
                 r.seek_to_bit(offset * 8)?;
             }
@@ -171,7 +187,8 @@ fn decode_labels<S: Source>(r: &mut S) -> Result<Vec<Vec<u8>>, BitError> {
                     return Err(BitError::convert(
                         format!("DNS name exceeds the {MAX_NAME_LEN}-byte limit (RFC 1035 §3.1)"),
                         r.bit_pos(),
-                    ));
+                    )
+                    .with_tag(error_tag::NAME_TOO_LONG));
                 }
                 let label = r.read_bytes(usize::from(first))?;
                 labels.push(label);
@@ -180,7 +197,8 @@ fn decode_labels<S: Source>(r: &mut S) -> Result<Vec<Vec<u8>>, BitError> {
                 return Err(BitError::convert(
                     format!("DNS name: reserved label marker 0b{marker:02b}"),
                     r.bit_pos(),
-                ));
+                )
+                .with_tag(error_tag::RESERVED_LABEL));
             }
         }
     }
@@ -240,7 +258,8 @@ fn encode_labels<K: Sink>(labels: &[Vec<u8>], w: &mut K) -> Result<(), BitError>
             return Err(BitError::convert(
                 format!("DNS label is {} bytes; the maximum is 63", label.len()),
                 w.bit_pos(),
-            ));
+            )
+            .with_tag(error_tag::LABEL_TOO_LONG));
         }
         let offset = w.bit_pos() / 8;
         // Consult/extend the compression dictionary if the sink carries one. The scratch
@@ -284,7 +303,8 @@ pub fn write_name_uncompressed<K: Sink>(name: &Name, w: &mut K) -> Result<(), Bi
             return Err(BitError::convert(
                 format!("DNS label is {} bytes; the maximum is 63", label.len()),
                 w.bit_pos(),
-            ));
+            )
+            .with_tag(error_tag::LABEL_TOO_LONG));
         }
         w.write(label.len() as u8)?;
         w.write_bytes(label)?;
@@ -389,17 +409,25 @@ mod component {
     #[test]
     fn pointer_loop_is_bounded_not_hung() {
         let err = Name::decode_exact(&[0xC0, 0x00]).unwrap_err();
-        assert!(
-            matches!(&err.kind, bnb::bitstream::ErrorKind::Convert { message } if message.contains("loop")),
-            "got {err:?}"
-        );
+        assert_eq!(err.tag(), Some(error_tag::POINTER_LOOP), "got {err:?}");
     }
 
     #[test]
     fn oversized_label_is_refused_on_encode() {
         let n = Name(vec![vec![b'a'; 64]]);
         let mut w = BitWriter::new();
-        assert!(encode_labels(n.labels(), &mut w).is_err());
+        let err = encode_labels(n.labels(), &mut w).unwrap_err();
+        assert_eq!(err.tag(), Some(error_tag::LABEL_TOO_LONG), "got {err:?}");
+        let err = write_name_uncompressed(&n, &mut BitWriter::new()).unwrap_err();
+        assert_eq!(err.tag(), Some(error_tag::LABEL_TOO_LONG), "got {err:?}");
+    }
+
+    #[test]
+    fn a_reserved_label_marker_is_refused_on_decode() {
+        for marker in [0x40, 0x80] {
+            let err = Name::decode_exact(&[marker, 0x00]).unwrap_err();
+            assert_eq!(err.tag(), Some(error_tag::RESERVED_LABEL), "got {err:?}");
+        }
     }
 
     #[test]

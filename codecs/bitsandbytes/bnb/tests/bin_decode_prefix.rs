@@ -7,7 +7,7 @@
 
 mod macro_ {
 
-    use bnb::{BitDecode, BitError, ErrorKind, Source, bin, u4};
+    use bnb::{BitDecode, BitError, ErrorKind, MagicMismatch, Source, bin, u4};
 
     // The bare derive shares `gen_decode` with `#[bin]` structs: 4 + 4 + 4 = 12 bits.
     #[derive(BitDecode, Debug, PartialEq, Eq)]
@@ -126,13 +126,10 @@ mod macro_ {
             Framed::decode_prefix(&bytes).unwrap_err(),
             Framed::decode_prefix_eof(&bytes).unwrap_err(),
         ] {
-            assert!(matches!(
+            assert_eq!(
                 error.kind,
-                ErrorKind::BadMagic {
-                    expected: 0xCAFE,
-                    found: 0
-                }
-            ));
+                ErrorKind::BadMagic(MagicMismatch::new(0xCAFE, 0))
+            );
         }
         // A partial magic that still matches is only short.
         assert!(Framed::decode_prefix(&[0xCA]).unwrap_err().is_incomplete());
@@ -220,7 +217,7 @@ mod macro_ {
         assert!(Pct::decode_prefix(&[]).unwrap_err().is_incomplete());
         assert!(matches!(
             Pct::decode_prefix(&[200]).unwrap_err().kind,
-            ErrorKind::Convert { .. }
+            ErrorKind::Convert(_)
         ));
 
         assert_eq!(
