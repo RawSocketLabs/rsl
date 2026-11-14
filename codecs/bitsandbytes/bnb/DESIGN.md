@@ -3239,3 +3239,116 @@ values and cursors. It confirmed both earlier fixes, and that `Source` is sealed
 third-party source can lend. Left as they are: a field named `__bnb_used` or
 `__bnb_start` does not compile, and a user expression naming `__bnb_r` sees the window's
 position; both names are inside the reserved prefix.
+
+### Phase 5: the readers over `std::io::Read` ask for whole bytes together (2026-11-13)
+
+`StreamBitReader` and `BufSource` kept the per-byte defaults of `Source::read_bytes` and
+`read_into`, and `StreamBitReader::read_bits` called `read_exact` on one byte at a time:
+row 8 of the review. The probe gained eight modes for them (66 with `tokio`): a 44-byte
+fixed message, an envelope with a 64-byte body and one with a 4 KiB body, each decoded
+again and again from a reader that serves the same message without end, and an envelope
+cut one byte short. On the base a payload byte cost about 180 instructions through
+either reader, and a 44-byte fixed message 6,575 against 122 from a slice.
+
+**What changed.**
+
+- `StreamBitReader::read_bits`: a width of whole bytes read from between two bytes asks
+  the reader for all of them (`pull`: `Read::read` until the buffer is full, an
+  interrupted read tried again, the end of the input or an error stopping it). Anything
+  else takes the old loop, kept as `read_bits_per_byte`.
+- `StreamBitReader::read_bytes` and `read_into` from between two bytes: the same, into
+  the caller's buffer or into a `Vec` grown a step at a time.
+- `BufSource::read_bytes` and `read_into` from a byte boundary: the run is retained by
+  one `fill_to` and copied out once (`take_run`).
+- A step is at most 4 KiB before any of the run has arrived and then as much again as
+  has (`RUN_STEP`), so a count read off the wire sizes neither an allocation nor a
+  request. `BufSource::fill_to` takes the same bound.
+
+**What stays as it was, by construction and by test.** The values; the error kind and
+its offset; the reader's own state after a success and after a failure; exactly which
+bytes, and which of the reader's errors, were consumed; what `BufSource` retains and its
+end-of-input flag; where a run stops at `BufSource`'s cap (`BufferFull`), at the end of
+the input, and where the position can count no further: a run reads the bytes the
+position can still count and then reports `PositionOverflow`, as the per-byte loop did,
+so the review's concern about `PositionOverflow` mid-run does not arise. A run of no
+bytes reads nothing, not even what a forward seek skipped.
+
+**What changes.** Owner decision, 2026-11-13: all three approved.
+
+1. How the reader is called. Whole bytes from a byte boundary reach the reader as
+   `Read::read` with room for what the field still needs. Before, `StreamBitReader`
+   called `Read::read_exact` on one byte, and `BufSource` asked for a run one byte at a
+   time (it already asked for a whole value at once). Two kinds of reader can tell:
+   one that overrides `read_exact` to behave differently from a loop over `read`, and
+   one whose `read` depends on the length it is lent (a datagram socket that drops what
+   does not fit, a descriptor that refuses less than one record). The second kind lost
+   all but the first byte of each datagram before.
+2. `read_into` after an error. A reader is now lent the caller's buffer, so one that
+   writes past what it reports leaves that there. The documentation now says the
+   buffer's contents after an error are unspecified. Error and offset are unchanged.
+3. Two failures that become answers. An uncapped `BufSource` sought far past what it
+   retains and then read tried to allocate the whole gap (the reviewer saw 1 TiB abort);
+   it now fills in steps and reports `UnexpectedEof`. A reader that claims more bytes
+   than it was lent overflowed or panicked; the claim is now held to what was lent.
+
+**Measurements.** Rust 1.99.1, against the probe commit `a297775a`, instructions per
+decode:
+
+| Mode | Tier | Base | Candidate | Cycles |
+|---|---|---:|---:|---|
+| `stream_reader_fixed44` | happy | 6,574.95 | 933.95 | 1,389.4 → 208.3 |
+| `stream_reader_envelope` | happy | 13,054.95 | 489.95 | 2,436.7 → 156.9 |
+| `stream_reader_payload_4k` | happy | 745,045.81 | 963.79 | 136,323.2 → 446.3 |
+| `stream_reader_short_envelope` | terminal | 7,146.90 | 525.90 | 1,339.7 → 143.8 |
+| `buf_source_fixed44` | happy | 4,844.95 | 1,954.95 | 1,045.6 → 403.6 |
+| `buf_source_envelope` | happy | 14,838.95 | 667.95 | 2,773.8 → 133.0 |
+| `buf_source_payload_4k` | happy | 875,854.04 | 1,368.81 | 155,785.2 → 566.7 |
+| `buf_source_short_envelope` | terminal | 14,566.90 | 1,119.90 | 2,789.8 → 227.0 |
+
+The other 58 modes are identical. Nothing pays in any tier; the probe's `.text` goes
+447,507 → 456,179 bytes.
+
+**Not covered.** A read that starts or ends inside a byte still takes the stream one
+byte at a time, on both readers. A `LimitedSource` window over either reader still reads
+its runs per byte (it builds them on `aligned_run`, which these readers cannot lend).
+`BufSource` still makes one reader call per typed field.
+
+**Tests.** `component::stream_runs`. Two differentials, 4,000 random programs each: ten
+steps of byte runs of every size (a count no input could back among them), bit reads of
+0 to 136 bits, seeks and `compact`, in the four layouts, over a scripted reader that
+hands over a fixed or a varying amount per call and, once each at chosen offsets,
+interrupts, refuses (`WouldBlock`), fails, or reports `UnexpectedEof` as an error; one
+case in eight starts where the position is about to stop counting; `BufSource` caps from
+0 to `usize::MAX`. One reader goes through its own reads and its twin through the old
+per-byte code (`read_bits_per_byte`, verbatim, for the forward reader); after every step
+the outcome, the partial fill and the whole state including the scripted reader's must
+match. Each differential also counts how its runs ended and fails unless every ending
+was met often (success, the end of the input, a reader error, the cap, the position
+bound). Four more: a run and a whole-byte value are asked of the reader in one call, a
+long run in growing steps; a count nothing backs sizes neither the request nor what is
+held; a reader that trickles one byte a call is not lent a freshly cleared step for
+every read; a reader that claims more than it was lent is held to what it was lent.
+912 tests with all features across both crates and 823 with default, each beside the
+one known snapshot failure; clippy with both; rustdoc with warnings denied; the
+`no_std` check; Rust 1.85.
+
+**Mutants.** 34 by hand, all killed, none by a timeout: the conditions that choose the
+new paths (never taken, taken inside a byte, taken for any width, for a width above 128
+bits); the byte order a value is assembled in and where in the buffer it is read; the
+position and cursor after a success and after a short run; each error's kind and where
+it is reported; an interrupted read; the end of the input against a reader's error; the
+position bound; the empty run after a seek; where a run lies in what is retained; the
+copy out; the step sized by the count, and the step that does not grow, on both
+readers; a step cleared again for every read; a reader's count taken at its word.
+
+**Independent review.** One blocking finding, fixed: `BufSource::fill_to` cleared a whole
+step before every `read` and cut it back to what came, so a reader that returns less
+than it is asked made a run quadratic (1 MiB at one byte a read 8.2 ms → 1.65 s, 64 MiB
+at 1,460 bytes a read 0.50 s → 6.56 s, measured by the reviewer; the forward reader was
+linear throughout). A step is now cleared once and filled by as many reads as it takes,
+with the trickle test above. Also from the review: the reader-length sensitivity in
+item 1; item 2; both parts of item 3; a whole-byte width above 128 bits, whose guard no
+test reached, now in the differentials; wider generators (varying read sizes, events on
+step boundaries, caps of 0, 1 and around a step, seeks to byte boundaries). The
+reviewer's own differential against the parent commit through the public API, 400,000
+programs per reader, was identical in outcomes and state.

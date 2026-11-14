@@ -95,12 +95,18 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          per-type way to turn the window off for a type known to arrive in pieces (owner
          decides the spelling); the distance to the measured ceiling (`sub_byte` 103,
          `fixed44` 55), unscheduled.
-   - [ ] **Phase 5, stream readers.** A differential test (per-byte against bulk, across
-         readers and error kinds) first, then bulk reads for `StreamBitReader` and
-         `BufSource`. Transport reads past the 4 KiB scratch are researched (a 1 MiB
-         envelope in 8 socket reads instead of 258) and retried on the phase 2 base. Owner
-         approves every behaviour that changes (`PositionOverflow` mid-run, third-party
-         readers' `read_exact`, `DESIGN.md` §12.1).
+   - [ ] **Phase 5, stream readers.** Done: `StreamBitReader` and `BufSource` ask their
+         reader for a byte-aligned run, and the first for a value of whole bytes, together
+         instead of a byte a call (a 4 KiB payload 745,046 → 964 and 875,854 → 1,369
+         instructions; a 44-byte fixed message 6,575 → 934 and 4,845 → 1,955), with a
+         differential test against the per-byte reads across reader behaviours and error
+         kinds. `PositionOverflow` mid-run is unchanged; the owner approved what a reader
+         can tell (`Read::read` with room for the field in place of `read_exact` on one
+         byte) on 2026-11-13. `DESIGN.md` §22, phase 5. Still per byte, unscheduled: reads
+         that start or end inside a byte, and a `LimitedSource` window over either reader.
+         Open: transport reads past the 4 KiB scratch are researched (a 1 MiB envelope in
+         8 socket reads instead of 258) and retried on the phase 2 base, sync and async
+         together; the owner approves what changes in `DESIGN.md` §12.1.
    - [x] **Phase 6, small items.** Done: byte-string magic fallthrough (one look at the
          longest magic when it is in memory, else the chain, each magic compared where it
          lies: `magic_eighth` 675 → 150 instructions, `mixed_magic/slice_eighth` 25.4 →
