@@ -1,6 +1,7 @@
 //! Stateful buffer/input accounting, independently modeled as length-prefixed bytes.
 #![no_main]
-use bnb::{BitBuf, MessageStream, Source, bin};
+use bnb::{BinCodec, BitBuf, BitError, ErrorKind, MessageStream, Source, bin};
+use bytes::BytesMut;
 use libfuzzer_sys::fuzz_target;
 use std::io::Read;
 use std::{
@@ -10,6 +11,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 use tokio::io::{AsyncRead, ReadBuf};
+use tokio_util::codec::{Decoder, Encoder};
 
 struct Input<'a> {
     bytes: &'a [u8],
@@ -104,6 +106,76 @@ fn message_reads(data: &[u8]) {
             }
         }
     }
+}
+
+// `BinCodec` as `Framed` drives it, against the same length-prefixed model: bytes arrive in
+// pieces, every whole frame within the cap comes out once and in order, a frame longer
+// than the cap is refused as soon as the cap is buffered or the frame is whole (so the
+// answer does not depend on how the input was split), a refusal leaves the buffer as it
+// was, and what was decoded encodes back to the bytes it came from.
+fn codec_reads(data: &[u8]) {
+    let [config, shape, bytes @ ..] = data else {
+        return;
+    };
+    let bytes = &bytes[..bytes.len().min(512)];
+    let cap = (config % 4 != 0).then(|| usize::from(*config) % 70);
+    let chunk = usize::from(*shape % 23) + 1;
+    let mut codec = cap.map_or_else(BinCodec::<Frame>::new, BinCodec::with_max_frame);
+    let cap = cap.unwrap_or(usize::MAX);
+    let (mut buffer, mut encoded) = (BytesMut::new(), BytesMut::new());
+    let mut consumed = 0;
+    let mut pieces = bytes.chunks(chunk);
+    loop {
+        let piece = pieces.next();
+        let eof = piece.is_none();
+        buffer.extend_from_slice(piece.unwrap_or_default());
+        loop {
+            let held = buffer.len();
+            assert_eq!(&buffer[..], &bytes[consumed..consumed + held]);
+            let result = if eof {
+                codec.decode_eof(&mut buffer)
+            } else {
+                codec.decode(&mut buffer)
+            };
+            let frame = buffer_frame(&bytes[consumed..consumed + held]);
+            match (result, frame) {
+                (Ok(None), None) => break,
+                (Ok(None), Some(length)) => {
+                    assert!(!eof && held < length.min(cap), "{held} of {length} held");
+                    break;
+                }
+                (Ok(Some(message)), Some(length)) => {
+                    assert!(length <= held && length <= cap);
+                    assert_eq!(message.bytes, bytes[consumed + 1..consumed + length]);
+                    assert_eq!(buffer.len(), held - length);
+                    codec.encode(message, &mut encoded).unwrap();
+                    consumed += length;
+                    assert_eq!(&encoded[..], &bytes[..consumed]);
+                }
+                (Err(error), Some(length)) => {
+                    // Refused: longer than the cap, or cut short by the end of input.
+                    assert_eq!(buffer.len(), held, "a refusal consumes nothing");
+                    let kind = BitError::from(error).kind;
+                    if length.min(held) > cap || held >= cap {
+                        assert_eq!(kind, ErrorKind::BufferFull { cap });
+                    } else {
+                        assert!(eof && held < length, "{kind:?} with {held} of {length}");
+                    }
+                    return;
+                }
+                (result, frame) => panic!("{result:?} for a buffered frame of {frame:?}"),
+            }
+        }
+        if eof {
+            assert!(buffer.is_empty());
+            return;
+        }
+    }
+}
+
+/// The length of the frame at the front of `held`, prefix included, if anything is held.
+fn buffer_frame(held: &[u8]) -> Option<usize> {
+    held.first().map(|&length| usize::from(length) + 1)
 }
 
 #[bin(big)]
@@ -213,6 +285,7 @@ enum Magic {
 fuzz_target!(|data: &[u8]| {
     message_reads(data);
     large_message_reads(data);
+    codec_reads(data);
     let mut buffer = BitBuf::bounded(64);
     let mut model = Vec::new();
     // Fixed-size operations keep the harness's own resource use bounded as well.

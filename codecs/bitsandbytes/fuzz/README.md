@@ -52,6 +52,11 @@ cargo +nightly fuzz run decode codecs/bitsandbytes/fuzz/artifacts/decode/crash-<
   A second model reads up to four records of up to 12 KiB each (the input chooses
   lengths; bodies are a pattern), so a message is read straight into the buffer past the
   scratch, bounded and unbounded, sync and async with the same drop on `Pending`.
+  A third drives `BinCodec` as `Framed` does (`Decoder`/`Encoder` over a `BytesMut`, input
+  in pieces, with and without a frame cap): every whole frame within the cap once and in
+  order, a longer one refused as soon as the cap is buffered or the frame is whole, a
+  refusal that consumes nothing, a truncated frame an error at the end of input, and
+  what was decoded encoding back to the bytes it came from.
   Custom zero/unknown/huge hints, injected I/O errors, empty scratch and position-sensitive
   rebase are covered by deterministic component tests. Run
   `cargo +nightly fuzz run stream_decode --fuzz-dir codecs/bitsandbytes/fuzz

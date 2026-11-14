@@ -16,11 +16,19 @@ libfuzzer-sys = "0.4"
 
 [dependencies.bitsandbytes]
 path = "../bnb"
-features = ["tokio-io"]
+features = ["tokio"]
 
 [dependencies.tokio]
 version = "1"
 features = ["io-util"]
+
+# `BinCodec` is driven as `Framed` drives it: through `Decoder`/`Encoder` over a `BytesMut`.
+[dependencies.tokio-util]
+version = "0.7"
+features = ["codec"]
+
+[dependencies.bytes]
+version = "1"
 
 [[bin]]
 name = "decode"
