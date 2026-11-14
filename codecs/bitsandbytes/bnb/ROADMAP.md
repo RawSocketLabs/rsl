@@ -95,7 +95,7 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          per-type way to turn the window off for a type known to arrive in pieces (owner
          decides the spelling); the distance to the measured ceiling (`sub_byte` 103,
          `fixed44` 55), unscheduled.
-   - [ ] **Phase 5, stream readers.** Done: `StreamBitReader` and `BufSource` ask their
+   - [x] **Phase 5, stream readers.** Done: `StreamBitReader` and `BufSource` ask their
          reader for a byte-aligned run, and the first for a value of whole bytes, together
          instead of a byte a call (a 4 KiB payload 745,046 → 964 and 875,854 → 1,369
          instructions; a 44-byte fixed message 6,575 → 934 and 4,845 → 1,955), with a
@@ -104,9 +104,12 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          can tell (`Read::read` with room for the field in place of `read_exact` on one
          byte) on 2026-11-13. `DESIGN.md` §22, phase 5. Still per byte, unscheduled: reads
          that start or end inside a byte, and a `LimitedSource` window over either reader.
-         Open: transport reads past the 4 KiB scratch are researched (a 1 MiB envelope in
-         8 socket reads instead of 258) and retried on the phase 2 base, sync and async
-         together; the owner approves what changes in `DESIGN.md` §12.1.
+         Transport reads: a message that needs at least a scratch more, and at least
+         4 KiB, is read straight into the buffer, sync and async (over a socket a 64 KiB
+         message in 0.42 of the time and a 1 MiB one in 0.43, 16 read system calls for
+         256); `MessageStream::with_read_scratch` sets the scratch length. A reader
+         outside `std` that fills large requests pays 14 to 20% from 16 KiB up; the owner
+         chose direct reads as the default with that cost, 2026-11-13.
    - [x] **Phase 6, small items.** Done: byte-string magic fallthrough (one look at the
          longest magic when it is in memory, else the chain, each magic compared where it
          lies: `magic_eighth` 675 → 150 instructions, `mixed_magic/slice_eighth` 25.4 →

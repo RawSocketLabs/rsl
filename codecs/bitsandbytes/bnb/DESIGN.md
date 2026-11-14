@@ -848,7 +848,9 @@ codecs must use `None` unless the bound is provable. Overstated downstream hints
 reads; the contract cannot be enforced on arbitrary user code and is not a memory-safety rule.
 
 Decode precedes scratch validation and transport access. Each read is bounded by scratch
-and free retained capacity. Even huge hints fill remaining capacity before `BufferFull`,
+and free retained capacity (since 0.10.x a message that needs at least a scratch more,
+and at least 4 KiB, is read straight into the buffer instead, bounded by its hint and the
+capacity: §22, phase 5). Even huge hints fill remaining capacity before `BufferFull`,
 without an extra read. EOF immediately makes a finite attempt despite an unmet hint; empty
 EOF is `Io(UnexpectedEof)`, truncation/custom finite failure is `Codec`. Both normal and finite
 success consume final byte padding; core `BitBuf` preserves packed bits. Every successful
@@ -3352,3 +3354,141 @@ test reached, now in the differentials; wider generators (varying read sizes, ev
 step boundaries, caps of 0, 1 and around a step, seeks to byte boundaries). The
 reviewer's own differential against the parent commit through the public API, 400,000
 programs per reader, was identical in outcomes and state.
+
+### Phase 5: a large message is read straight into the buffer (2026-11-13)
+
+`net::read_message` and `read_message_async` read a scratch at a time and copied each
+piece into the `BitBuf`. `MessageStream`'s scratch is 4 KiB, so a 1 MiB message took 256
+read system calls. The research prototype was rebuilt on this base with an async path.
+
+**Owner decisions, 2026-11-13.** Direct reads are the default. A larger scratch is an
+option on top, not the alternative: `MessageStream::with_read_scratch(len)` (the first of
+three shapes offered; a read-policy enum with a way to turn direct reads off, and no new
+API, were the others). The cost to readers outside `std` below was shown with the choice.
+
+**What changed.**
+
+- A message known to need at least `scratch.len()` more bytes, and at least 4 KiB
+  (`DIRECT_FLOOR`), is read straight into the buffer's storage: exactly what its hint
+  asks for, or as much as a bounded buffer has room for, with no read-ahead. Smaller
+  needs go through the scratch as before.
+- Sync: `Read::take(reader, want).read_to_end(storage)`. Async: room is reserved a step
+  at a time (a scratch before anything has come, then as much again as has) and
+  `take(step).read_buf(storage)` appends what arrives. Neither sizes an allocation or a
+  request by the hint, which a length off the wire may have set.
+- `BitBuf::make_room_in_place` makes the room `push` would and says whether the cursor
+  moved. If it did, nothing is read and the message is decoded again, the rule the
+  scratch path already had for a rebased cursor.
+- After a direct read the message is always decoded again: the read carries no count of
+  what is still missing.
+- `MessageStream::with_read_scratch(len)` sets the scratch length, 4 KiB otherwise; zero
+  is taken as one.
+
+**What changes for a caller** (§12.1's "each read is bounded by scratch and free
+retained capacity"): a read for a large message is bounded by its hint and the capacity,
+not by the scratch; that read takes nothing past the message, where the scratch reads
+ahead; the scratch length is also the size from which a message bypasses it. Unchanged:
+`BufferFull` before another read, the empty scratch, `Interrupted` retried, the
+transport's own error kept, accepted bytes kept across an error, one finite attempt at
+the end of the input, and, for the async form, exactly the accepted input kept when the
+future is dropped while a read is pending.
+
+**Measurements.** Wall time per message through a `MessageStream`, best of three rounds,
+Rust 1.99.1, a throwaway harness (kept on the measuring machine, not committed), ns:
+
+| Reader | Size | `main` | Candidate | Ratio | Read system calls |
+|---|---:|---:|---:|---:|---|
+| Unix socket | 4 KB | 1,637 | 1,630 | 1.00 | 1.0 → 1.0 |
+| Unix socket | 16 KiB | 4,552 | 3,736 | 0.82 | 4.0 → 3.0 |
+| Unix socket | 64 KiB | 17,265 | 7,308 | 0.42 | 16.0 → 3.2 |
+| Unix socket | 1 MiB | 268,454 | 115,110 | 0.43 | 256.0 → 15.8 |
+| `&[u8]` | 16 KiB | 586 | 488 | 0.83 | |
+| `&[u8]` | 64 KiB | 2,164 | 1,762 | 0.81 | |
+| `&[u8]` | 1 MiB | 38,852 | 31,761 | 0.82 | |
+| Outside `std`, fills every request | 16 KiB | 589 | 689 | 1.17 | |
+| Outside `std`, fills every request | 64 KiB | 2,185 | 2,497 | 1.14 | |
+| Outside `std`, fills every request | 1 MiB | 39,577 | 47,388 | 1.20 | |
+| Outside `std`, 1,460 bytes a call | 16 KiB | 639 | 644 | 1.01 | |
+| Outside `std`, 1,460 bytes a call | 64 KiB | 2,332 | 2,262 | 0.97 | |
+| Outside `std`, 1,460 bytes a call | 1 MiB | 43,124 | 44,638 | 1.04 | |
+
+Messages of 4 KB read 0.92 to 1.00 from every reader. The probe gained three modes (69
+with `tokio`), whose reader is of the kind outside `std`; instructions per message
+against the probe commit `d321577d`:
+
+| Mode | Tier | Base | Candidate | Cycles |
+|---|---|---:|---:|---|
+| `stream_payload_64k_whole` | happy | 12,516.93 | 11,481.92 | 10,108.6 → 12,272.1 |
+| `stream_payload_64k_1460` | happy | 17,315.99 | 16,470.98 | 12,195.5 → 11,540.3 |
+| `stream_payload_1m_1460` | happy | 265,877.48 | 248,672.11 | 227,639.5 → 217,525.4 |
+| `stream_16x40_whole` | happy | 318.85 | 312.41 | 114.4 → 109.9 |
+| `stream_16x40_64` | expected | 524.22 | 509.66 | 208.0 → 191.0 |
+| `stream_16x40_1` | expected | 6,519.73 | 6,236.73 | 1,313.5 → 1,224.8 |
+
+**What pays.**
+
+- A reader outside `std` that fills large requests: 1.14 to 1.20 of the time on
+  messages of 16 KiB and up, and `stream_payload_64k_whole` +21% in cycles. `std` clears
+  the buffer it lends a reader that does not implement `read_buf`, which no reader
+  outside `std` can on stable Rust; the scratch path copied instead. Such a reader
+  normally does work per byte (TLS, decompression) that this is small beside. There is
+  no way to turn the direct read off; the owner chose the shape without one.
+- Three `StreamBitReader` modes read 4 instructions more and `buf_source_short_envelope`
+  8 (0.4% to 0.8%; cycles level or lower). Not this change's code: those decoders and
+  readers are the same instructions in both binaries, compared function by function,
+  so the difference is in what they call outside the crate.
+- The probe's `.text` goes 457,299 → 462,099 bytes.
+
+**Measured and not taken as the default.** A 64 KiB scratch for every `MessageStream`:
+the same socket gain from 16 KiB up and 0.76 at 4 KB, for 60 KiB more held per
+connection and 1.15 to 1.27 on messages of 64 KiB and up from any reader that fills
+requests. Direct reads with a 64 KiB scratch, which is what `with_read_scratch(64 * 1024)`
+gives: 0.84 at 4 KB, 0.42 at 16 KiB, 0.41 at 64 KiB, 0.43 at 1 MiB over the socket.
+
+**Tests.** `net::component::direct`, twelve. A sync and an async differential (600 and
+400 scripted transports: one to six messages of sizes around the scratch, sometimes cut
+short, handed over 1, 7, 1,460 bytes or everything at a time, with interruptions,
+refusals and resets at chosen offsets, into unbounded and bounded buffers): reading with
+a scratch of 1, 16 or 4,096 bytes gives the messages, the errors and the bytes consumed
+that reading through a 64 KiB scratch gives, which no message of the script outgrows.
+A message at the threshold exactly and past it is read with nothing after it taken and
+only the first read through the scratch; one byte under it reads ahead. A prefix
+claiming 4 GiB with ten bytes behind it sizes neither the buffer nor a read, sync and
+async. A bounded buffer takes what it has room for, reclaims a consumed message, and
+does not grow, sync and async. Room made by moving the cursor voids the hint before
+anything is read. A message that starts inside a byte. An async read dropped while
+pending, inside a step, at a step's end and well on, keeps exactly what came, and the
+message then completes. The scratch length can be set, reads ahead as far as it
+reaches, and a short one does not send small messages direct. 925 tests with all
+features across both crates, 876 with `mock` and 823 with default, each beside the one
+known snapshot failure; clippy with
+all features, default and `mock`; rustdoc with warnings denied; the `no_std` check;
+the library on Rust 1.85.
+
+**Mutants.** 20 by hand, all killed, one by a timeout (the end of the transport going
+unnoticed loops): the threshold at its exact value, without the floor and without the
+scratch's length; never direct, sync and async; the buffer's room ignored; no room made;
+going on after the cursor moved, in the buffer and in the caller; a read that takes all
+the transport has, sync and async; a decode skipped after a direct read; no room
+reserved for an async step, a step sized by what is missing, and a step that does not
+grow; an interrupted async read; the scratch length kept at zero and not set. A first
+run let four through. Two were a count of what a full buffer left unread, which only
+saved one decode attempt before `BufferFull` and is gone. Two were the threshold at its
+exact value, where both ways take the same bytes: the tests now look at what the
+scratch still holds. After the floor went in, three more got through until the cursor
+test asked for a body large enough to go direct and the scratch test fed its message
+piecemeal.
+
+**Independent review.** One blocking finding: the snapshot `public-api.txt` lists
+`MessageStream` twice, by its path and as a re-export, and the new method had been
+added once. Fixed by hand; the pinned nightly that generates the file is not on the
+measuring machine, so the CI job is its check. Taken from the review besides: the floor
+(a caller with a 16-byte scratch saw a 64-byte message go 69–73 → 96–97 ns through a
+direct read); the async read as `reserve` and `read_buf` in place of a zero-filled step
+cut back by a drop guard, which a leaked future or an `AsyncRead` that replaces its
+buffer could leave holding bytes the transport never gave; the differentials now
+compare the bytes consumed, as their comment said; read-count assertions loosened where
+they pinned `std`'s growth heuristics. Found sound: a bounded buffer cannot be pushed
+past its capacity or reallocated, `read_to_end` keeps what arrived before an error, no
+overflow and no new unbounded loop, and `BinCodec`, the datagram types and the raw
+handoff are untouched.
