@@ -251,9 +251,18 @@ fuzz_target!(|data: &[u8]| {
         Region => BIG,
     );
     for (bijection, bytes) in [
-        (HeaderLe::decode_exact(data).map(|v| v.to_bytes().unwrap()), "HeaderLe"),
-        (FrameLsb::decode_exact(data).map(|v| v.to_bytes().unwrap()), "FrameLsb"),
-        (Windowed::decode_exact(data).map(|v| v.to_bytes().unwrap()), "Windowed"),
+        (
+            HeaderLe::decode_exact(data).map(|v| v.to_bytes().unwrap()),
+            "HeaderLe",
+        ),
+        (
+            FrameLsb::decode_exact(data).map(|v| v.to_bytes().unwrap()),
+            "FrameLsb",
+        ),
+        (
+            Windowed::decode_exact(data).map(|v| v.to_bytes().unwrap()),
+            "Windowed",
+        ),
     ] {
         if let Ok(again) = bijection {
             assert_eq!(again, data, "{bytes} is not a bijection");
