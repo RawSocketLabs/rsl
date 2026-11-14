@@ -3525,6 +3525,97 @@ past its capacity or reallocated, `read_to_end` keeps what arrived before an err
 overflow and no new unbounded loop, and `BinCodec`, the datagram types and the raw
 handoff are untouched.
 
+### Phase 5, corrected: an async direct read lends by what each read gives (2026-11-14)
+
+The fixes made after this change's last review had not been reviewed. An independent
+read of the path as merged found one defect and two wrong statements.
+
+**The defect.** The async direct read asked its transport for as much again as had
+already arrived (`have.max(4 KiB)`). An `AsyncRead` may clear everything it is lent
+before filling any of it (`initialize_unfilled`; `tokio-util`'s `Compat` and
+`tokio-native-tls` do, tokio's `TcpStream` and `tokio-rustls` 0.26.6 do not), so a slow
+transport of that kind paid for the whole request on every read: work in the square of
+the message, set off by a peer that sends a large message a byte at a time. A bounded
+buffer did not help. The sync path was never affected: `std` remembers what it has
+cleared.
+
+The request now follows the transport: twice what the last read gave, starting from a
+scratch. A request smaller than the scratch is read through the scratch, which is
+cleared already and costs such a transport nothing to be lent, and copied on; a larger
+one is read into fresh room. So the fresh room a transport is lent stays within twice
+what its last read gave, a trickle costs what it cost before direct reads existed, and a
+transport that fills every request is still asked for twice as much each time. A first
+form of the fix, without the scratch, sent a fast transport back to two-byte requests
+after one tiny delivery (3,320 reads for 514 bursts of 1 then 4,095 bytes; the
+reviewer's second pass); this form reads that in 514 with a scratch of 4 KiB or more
+(2,045 with a 64-byte scratch, 3,323 with one of a byte, each still far fewer than that
+scratch's own path).
+
+Measured with the reviewer's harness (release, Rust 1.99.0, a reader that clears what it
+is lent; a `Framed` body through `read_message_async`, 4 KiB scratch), against the same
+message forced through a scratch longer than itself:
+
+| Body | Bytes a read | Before: cleared ÷ body, time | After | Through the scratch |
+|------|-------------:|-----------------------------:|------:|--------------------:|
+| 1 MiB | 1 | 262,152×, 1,755 ms | 4 KiB in all, 9 ms | 12 ms |
+| 1 MiB, bounded | 1 | 262,152×, 1,694 ms | 4 KiB in all, 8 ms | 10 ms |
+| 1 MiB | 1,460 | 179×, 1 ms | 4 KiB in all, under 1 ms | under 1 ms |
+| 16 MiB | 16,384 | 256×, 43 ms | 2×, 12 ms | 13 ms |
+| 64 MiB | 16,384 | 1,024×, 644 ms | 2×, 61 ms | 56 ms |
+
+Reads against deliveries, 1 MiB: bursts of 1 then 4,095 bytes, 514 for 514; of 1 then
+65,535, 98 for 34; of 4,097, 511 for 256 (a burst one byte longer than the request it
+meets takes two reads); a transport that fills every request, 10 reads.
+
+What pays, and what is left:
+
+- A read that gives nothing (pending, or interrupted) is lent the same fresh room again,
+  and a clearing transport clears it again: bounded for each poll at twice the last
+  delivery, not by the message. Measured: 1,000 pending polls after a 512 KiB fill
+  cleared 501 times the body in 3 ms; 8,000 pending polls in a row within a 16 MiB
+  message of 16 KiB records cleared 17.6 times the body. A peer reaches it with partial records
+  over a transport that clears; a ceiling on the request would make it constant for
+  each poll and was not added.
+- A delivery under half a scratch is copied through the scratch, as every delivery was
+  before direct reads.
+- No probe mode covers the async direct read, and it was not timed over a real socket
+  or a real `Compat` or native-TLS transport: the cost was measured with a stand-in
+  that clears its buffer the same way.
+
+Tests. The scripted async transport now asserts the rule on every read of every async
+test: fresh room is a scratch at most, or twice what the last read gave.
+`an_async_direct_read_lends_fresh_room_by_what_the_last_read_gave` reads a 300,000-byte
+message at one byte a read, a segment a read, everything asked for, and everything
+asked for up to a third of the way then a byte a read: a slow transport clears one
+scratch in all and is read once for each delivery, and one that fills every request is
+read eight times. A transport that breaks the buffer contract on a scratch read
+(reports more than it was lent) panics, as on every other read, and leaves nothing
+stale in the buffer; the reviewer's third pass found it appended instead. Ten hand
+mutants, all killed: a request that grows with the total (the
+defect) or with the largest read so far, one that does not grow, four times what came,
+never and always through the scratch, the scratch from a full scratch on, either kind of
+read not clipped to what is wanted, and a scratch read not appended.
+
+**The statements.**
+
+- "The same messages and errors as through a scratch no message outgrows" holds for
+  messages that do not seek to a position in the buffer. One that does (`#[br(seek =
+  …)]`) reads positions local to the buffer, which read-ahead and the compaction it
+  causes move: the reviewer's case decodes with a 64-byte scratch and fails with an
+  8 KiB one, in a bounded buffer with a byte already pulled. That is the scratch path's
+  behaviour and older than this change (`BitBuf::try_pull` warns of it); the claim, and
+  `read_message`'s documentation, now say so.
+- "As few reads as the transport allows" was not true: a transport that fills every
+  request is read 11 times for 1 MiB by the sync path (`std`'s growth) and 10 by the
+  async one, since requests double. The comments say that now.
+
+Not found: a hint of `u32::MAX` or `u64::MAX` bytes sized neither a request nor the heap;
+a bounded buffer never passed its cap; end of input, errors and dropped futures left
+exactly the bytes taken; a 1,500-case differential with two direct reads a message,
+little-endian layout, a start inside a byte and a drop on every `Pending` matched a
+1 MiB scratch. Not checked by the reviewer: Miri, and a real `Compat` or native-TLS
+transport (the cost was measured with a stand-in that clears its buffer the same way).
+
 ## 23. Transport readers for a type that does not encode (0.10.1)
 
 ROADMAP 0.10.x item 3. `net::read_message`, `net::read_message_async`,
