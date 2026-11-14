@@ -5,3 +5,14 @@ fail-fast = false
 
 [profile.ci.junit]
 path = "junit.xml"
+
+# The compile-fail snapshot tests build in one directory, and trybuild's lock between
+# processes is best-effort (a holder that misses its heartbeat for 1.5 s loses it). nextest
+# runs each test in its own process, so under load two of them built there at once and a
+# case that must not compile was reported as compiling. One at a time.
+[test-groups]
+trybuild = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(bitsandbytes) & binary(compile_fail)'
+test-group = 'trybuild'
