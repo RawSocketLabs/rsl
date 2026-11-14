@@ -388,7 +388,11 @@ Run: `cargo bench -p bitsandbytes`.
 
 ## Examples
 
-See [`examples/README.md`](examples/README.md) (indexed by feature).
+See [`examples/README.md`](examples/README.md) (indexed by feature). CI runs each one with all
+features wherever it runs this crate's all-features suite (`scripts/ci/run.py`,
+`bnb_examples`), so an example must finish unattended, without privileges, and exit non-zero when a result is
+wrong. One that has not returned in three minutes is stopped and fails its job; the socket
+examples that read from a peer without a timeout rely on that.
 
 ## Scope notes
 

@@ -1,6 +1,9 @@
 # `bnb` examples
 
-Runnable, self-checking walkthroughs — each ends in `all checks passed` (or panics). They're
+Runnable, self-checking walkthroughs — each checks its own results and exits non-zero when
+one is wrong (most end by printing `all checks passed`). CI runs every one of them, so a new
+example needs only its `<name>.rs` file here (and a `required-features` entry in `Cargo.toml`
+if it needs a feature). They're
 grouped by what they exercise; the [guide module](https://docs.rs/bitsandbytes/latest/bnb/guide/) is the
 prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--features <feat>]`.
 

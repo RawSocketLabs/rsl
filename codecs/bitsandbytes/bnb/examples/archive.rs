@@ -59,6 +59,7 @@ fn main() -> Result<(), bnb::BitError> {
     println!("{index:#?}");
 
     // Random access: seek to each entry's offset and read its blob — reversed, to prove it.
+    let mut blobs = Vec::new();
     for entry in index.entries.iter().rev() {
         src.seek_to_bit(entry.offset as usize * 8)?;
         let blob = src.read_bytes(entry.len as usize)?; // bulk read at the seeked offset
@@ -68,7 +69,9 @@ fn main() -> Result<(), bnb::BitError> {
             entry.len,
             String::from_utf8_lossy(&blob)
         );
+        blobs.push(blob);
     }
+    assert_eq!(blobs, [blob_b, blob_a]);
 
     println!("all checks passed");
     Ok(())

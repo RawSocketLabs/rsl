@@ -3682,8 +3682,22 @@ are not these.) Of the 84:
 
 ### Not done here
 
-Running the examples' assertions in CI changes CI beyond this crate; it waits for the
-owner.
+Nothing: the two parts that waited for the owner are below.
+
+### The examples run in CI (2026-11-14)
+
+The examples end in assertions, and CI compiled them without running them, so one could
+go stale unnoticed. On the owner's decision `scripts/ci/run.py` now runs each
+(`cargo run --locked -p bitsandbytes --all-features --example <name>`, listed from the
+directory) after the all-features suite that builds them: in the routine `extra` part
+whenever this crate is selected, and in the release profile. All 50 take about six
+seconds on the development machine once built. Five socket examples read from a peer with
+no timeout (`tcp`, `sockets`, `unix_stream`, `tokio_framed`, `tokio_udp`), so a framing
+regression could leave both ends waiting: the runner stops any example after three
+minutes, which fails the job with the example's name on the last line. `archive` checked
+nothing and now asserts what it read back. The alternative, a test in the crate that
+finds the built example binaries, was not taken: a filtered `cargo test` does not build
+them, so it would have to skip silently or fail spuriously.
 
 ### The toolchain the snapshots are recorded against (2026-11-14)
 

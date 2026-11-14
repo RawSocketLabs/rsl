@@ -140,8 +140,8 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    fuzz shapes for LSB and little-endian layouts, a `parse_with` codec, `LimitedSource`,
    `decode_prefix`, the window decode and the transports' direct read. The toolchain
    the trybuild snapshots are recorded against is pinned in the root `rust-toolchain.toml`
-   (owner's decision, 2026-11-14). Open: a `BinCodec` fuzz model; and, for the owner
-   because it changes CI, running the examples' assertions there.
+   (owner's decision, 2026-11-14), and CI runs every example, not only compiles it
+   (owner's decision, same day). Open: a `BinCodec` fuzz model.
 6. **A dispatch check that builds no error**, when a consumer needs it. A caller that tries
    one message type after another pays for a full `NoMatchingVariant`/`BadMagic` on every
    miss (118 to 188 cycles against 33 for a hit, with an allocation). A generated,
