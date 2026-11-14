@@ -232,8 +232,9 @@
 //! the length, and a newer sender's longer body leaves bytes behind. `limit_bytes(n)`
 //! lends any source, at a byte boundary, through a window of exactly `n` bytes. A read
 //! past the window's end fails there, and `finish()` fails if the value stopped short.
-//! To step over a body you do not parse, read the window through (`read_bytes`) and drop
-//! it: that works on a forward-only source, where a seek does not.
+//! To step over a body you do not parse, `skip_bytes(n)` it: that makes no `Vec` for the
+//! bytes, works on a forward-only source, where a seek does not, and fails if the bytes
+//! never arrive, where a seek past the end of some readers' data succeeds.
 //! `examples/regions.rs` is the whole container.
 //!
 //! ```

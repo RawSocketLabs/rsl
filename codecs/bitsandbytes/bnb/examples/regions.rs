@@ -7,13 +7,14 @@
 //! body leaves bytes behind that are then taken for the next record.
 //! [`Source::limit_bytes`] lends the reader through a window of exactly that many bytes:
 //! reads past its end fail *inside the record*, [`LimitedSource::finish`] rejects a body
-//! that stopped short, and a body this program does not understand is read through to
-//! the end of its window and dropped. All of it works on a reader that cannot seek.
+//! that stopped short, and a body this program does not understand is skipped
+//! ([`Source::skip_bytes`]). All of it works on a reader that cannot seek.
 //!
 //! Run with: `cargo run -p bitsandbytes --example regions`
 //!
 //! [`Source::limit_bytes`]: bnb::Source::limit_bytes
 //! [`LimitedSource::finish`]: bnb::LimitedSource::finish
+//! [`Source::skip_bytes`]: bnb::Source::skip_bytes
 
 use bnb::{BitDecode, BitError, ErrorKind, Source, StreamBitReader, bin};
 
@@ -43,10 +44,9 @@ fn record<S: Source>(r: &mut S) -> Result<Body, BitError> {
         1 => Body::Route(Route::bit_decode(&mut region)?),
         2 => Body::Name(region.read_bytes(len)?),
         _ => {
-            // Not ours to parse: read the region through and drop it. Reading, not
-            // seeking: it works on a forward-only reader, and it fails if the bytes the
-            // length promised never arrive.
-            region.read_bytes(len)?;
+            // Not ours to parse: skip it. A skip, not a seek: it works on a forward-only
+            // reader, and it fails if the bytes the length promised never arrive.
+            region.skip_bytes(len)?;
             Body::Unknown(kind)
         }
     };

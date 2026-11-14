@@ -39,7 +39,7 @@ prose companion. Run any with `cargo run -p bitsandbytes --example <name> [--fea
 | `ctx_length` | **`ctx`** sizing a field: a column count threaded into a `count`-loop of rows (`decode_with`/`…Ctx`) | `--example ctx_length` |
 | `versioned_cells` | **`ctx`** + **`try_map`**: a `try_map`-validated version threaded into each cell to set its data width | `--example versioned_cells` |
 | `tlv` | A Type-Length-Value codec: enum `magic` dispatch over `count`-driven heterogeneous records | `--example tlv` |
-| `regions` | **Length-delimited records**, each decoded inside `Source::limit_bytes`: a body cannot read past its length, `finish()` rejects one that stops short, and an unknown kind is stepped over | `--example regions` |
+| `regions` | **Length-delimited records**, each decoded inside `Source::limit_bytes`: a body cannot read past its length, `finish()` rejects one that stops short, and an unknown kind is skipped (`Source::skip_bytes`) | `--example regions` |
 | `derived_lengths` | **`WireLen` + `auto_len`**: a count the encoder fills in, in the same struct or in a header that sizes its siblings (the DNS shape), and `WireLen::set` to forge one | `--example derived_lengths` |
 | `checked` | **`try_map`** — reject an unrepresentable wire value at decode (`ErrorKind::Convert`, with field + bit offset) | `--example checked` |
 | `wire_map` | **Struct-level wire mapping** (`#[bin(wire = W)]`): a logical type serialized via a separate wire type through `From`/`From<&Self>` impls — reusable in-program, nests via a one-line `FixedBitLen` | `--example wire_map` |

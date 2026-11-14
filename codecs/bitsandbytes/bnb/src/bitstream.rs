@@ -1381,6 +1381,38 @@ pub trait Source: sealed::Sealed {
         read_into_per_byte(self, buf)
     }
 
+    /// Consumes `n` bytes and drops them (at any bit offset):
+    /// [`read_bytes`](Source::read_bytes) without the `Vec`. For a body this decoder does
+    /// not parse: an unknown record kind, padding a length field covers, a field of a newer
+    /// version. It works on a source that cannot seek, and it fails if the bytes are not
+    /// there, where a seek past the end of the data succeeds on `BufSource`, `SeekReader`,
+    /// `BufSeekReader` and `BytesReader`.
+    ///
+    /// No `Vec` is made for the bytes, whatever `n` says: a run already in memory is passed
+    /// over in one step, and any other is read through a small fixed buffer. Each source
+    /// otherwise does what a read of the same bytes does. `BufSource` keeps what it skips,
+    /// as it keeps all it reads so that it can seek back, and past its cap the skip fails
+    /// with [`BufferFull`](ErrorKind::BufferFull); `SeekReader` reads a byte at a time
+    /// (`BufSeekReader` does not).
+    ///
+    /// ```
+    /// use bnb::{BitReader, Source};
+    ///
+    /// let mut r = BitReader::new(&[1, 2, 3, 4, 5]);
+    /// r.skip_bytes(3).unwrap();
+    /// assert_eq!(r.read::<u8>().unwrap(), 4);
+    /// assert!(r.skip_bytes(2).is_err()); // one byte is left
+    /// ```
+    ///
+    /// # Errors
+    /// As [`read_into`](Source::read_into), for the first part of the run that is not
+    /// there. In a decode attempt on partial input (`BitBuf::try_pull`, `decode_prefix`,
+    /// the transports) the retry signal carries the whole shortfall, as `read_bytes`'s
+    /// does, also from inside a [`limit_bytes`](Source::limit_bytes) region.
+    fn skip_bytes(&mut self, n: usize) -> Result<(), BitError> {
+        skip_bytes_in_steps(self, n)
+    }
+
     /// Consumes and lends the next `n` bytes when the cursor is byte-aligned and all of them
     /// are already in memory; otherwise `None`, consuming nothing. The hook behind bulk
     /// counted runs of byte-multiple integers ([`BitDecode::decode_vec`]), behind
@@ -1449,6 +1481,23 @@ fn read_bytes_per_byte<S: Source + ?Sized>(s: &mut S, n: usize) -> Result<Vec<u8
         v.push(s.read::<u8>()?);
     }
     Ok(v)
+}
+
+/// [`Source::skip_bytes`] for any source: a run it lends is passed over whole, and any other
+/// is read through a buffer on the stack, a step at a time, with that source's own bulk
+/// `read_into`.
+fn skip_bytes_in_steps<S: Source + ?Sized>(s: &mut S, n: usize) -> Result<(), BitError> {
+    if s.aligned_run(n).is_some() {
+        return Ok(());
+    }
+    let mut dropped = [0; 256];
+    let mut left = n;
+    while left > 0 {
+        let step = left.min(dropped.len());
+        s.read_into(&mut dropped[..step])?;
+        left -= step;
+    }
+    Ok(())
 }
 
 // Out of line: it is the fallback of every bulk `read_into`, and folded into a fixed
@@ -1672,6 +1721,18 @@ impl<S: Source> Source for LimitedSource<'_, S> {
         self.source.seek_to_bit(pos)
     }
 
+    // A skip the window has room for is the wrapped source's own: over a decode attempt
+    // that asks for the whole shortfall at once, where the loop through this window asks
+    // for a byte, and an attempt after every read is work in the square of a large body.
+    // One that would leave the window runs through the window, which stops it at the edge.
+    fn skip_bytes(&mut self, n: usize) -> Result<(), BitError> {
+        if n > self.remaining_bits() / 8 {
+            skip_bytes_in_steps(self, n)
+        } else {
+            self.source.skip_bytes(n)
+        }
+    }
+
     // As `BitReader`: a run the window lends is copied whole, and any other runs the
     // per-byte loop through this window, so errors, positions and hints are that loop's.
     // Not the wrapped source's `read_bytes`: over the incremental reader that reports the
@@ -1886,6 +1947,16 @@ impl Source for IncrementalReader<'_> {
             }
             None => self.read_into_per_byte(buf),
         }
+    }
+
+    // As `read_bytes`: the whole shortfall in one signal, so a transport reads what a
+    // skipped body still lacks at once instead of attempting again after every read.
+    fn skip_bytes(&mut self, n: usize) -> Result<(), BitError> {
+        let available = self.0.remaining_bits() / 8;
+        if n > available {
+            return Err(self.incomplete_bytes(n - available));
+        }
+        skip_bytes_in_steps(self, n)
     }
 
     // A run that is all here needs no retry signal; a short one is `None`, read per element.
