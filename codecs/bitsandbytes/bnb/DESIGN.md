@@ -182,8 +182,8 @@ sized through one uniform codec path, with no marker (§8).
 
 **Struct-level options:** `big`/`little`, `bits = msb|lsb`, `magic = <expr>`
 (a leading constant verified on read, emitted on write — any `Bits` value, so it can be
-sub-byte), `read_only`/`write_only`, `no_builder`, `forward_only`, `ctx(name: Ty, …)`,
-and `validate = <path>`.
+sub-byte), `read_only`/`write_only`, `no_builder`, `forward_only`, `no_window` (§22,
+phase 4), `ctx(name: Ty, …)`, and `validate = <path>`.
 
 **Field directives** (`#[br]`/`#[bw]`, the inherited vocabulary): `count`, `ctx { … }`,
 `temp` + `calc`, `if(…)`, `map`/`try_map` (+ inverse `bw(map)`),
@@ -3195,8 +3195,40 @@ and the stream modes (the stream readers do not lend).
   rule's guard, which is a constant, and the tuple the window returns.
 - A per-type way to turn the window off, for a type its author knows arrives in pieces.
   The owner asked whether the macro can be told what to expect; it can, by a `#[bin]`
-  option, which is additive. Its spelling is the owner's decision and is not in this
-  change.
+  option, which is additive. Closed below.
+
+**The opt-out: `#[bin(no_window)]` (2026-11-14).** The owner chose a bare flag, as
+`no_builder` is, over a key that names what the caller expects (`arrives = partial`):
+the flag says what it turns off and promises no tuning direction the crate may not keep.
+
+- It removes the attempt from the type's own decode and nothing else. The type still
+  reports that it suits a window, so a parent's window covers it as before, and inside
+  that window its fields read from the window. A parent that itself arrives in pieces
+  takes the option too.
+- It is a tuning option: the values, errors and cursor are those of the field-by-field
+  body, which every windowed message already falls back to.
+- Like `no_builder`, it is true of every item that has no window attempt (an enum, a
+  mapped struct, a codec newtype, a variable-length or traced message), so it is accepted
+  on them all and does nothing there. The bare derives do not take it.
+
+Measured on Rust 1.99.1 with two probe modes on `Pieces44`, which is `Fixed44` with the
+option (71 modes now):
+
+| Mode | Tier | `Fixed44` | `Pieces44` (`no_window`) |
+|------|------|----------:|-------------------------:|
+| whole message, `decode_exact` (`fixed44`, `pieces44`) | happy | 121.99 | 225.99 |
+| 43 of 44 bytes, `decode_prefix` (`prefix_short_fixed44`, `prefix_short_pieces44`) | expected | 633.97 | 619.97 |
+
+Both `Pieces44` numbers are what `Fixed44` measured before phase 4 (226, and 14 fewer on
+the short attempt). The 69 existing modes are instruction-identical to the previous table
+(largest difference 0.0%, `stream_payload_1m_1460` −8 of 248,679). The option pays only
+for a type whose attempts are mostly short: it breaks even near seven short attempts for
+each whole message (7 × 14 saved against 104 lost) and loses below that.
+
+Tests: `component::window::a_message_that_declines_a_window_still_suits_its_parents`
+counts what the decode asks of its source: no lend and three reads on its own, one lend
+of the parent's whole length and no read as a field. Two hand mutants of the generator,
+both killed by it: the flag ignored, and the flag also hiding the type from its parent.
 
 **Tests.** `component::window`, each decode compared with the same type behind a wrapper
 that never lends: the rule admits what a window serves and nothing else (sub-byte fields

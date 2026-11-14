@@ -95,10 +95,11 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
          runs, so errors are unchanged and `FixedBitLen` stays a sizing hint. Other
          messages compile to the old body alone. A short attempt pays 14 to 15
          instructions (owner accepted, 2026-11-13); a rejected message decodes twice
-         (`fixed44_rejected` +49, terminal). `DESIGN.md` §22, phase 4. Open: a
-         per-type way to turn the window off for a type known to arrive in pieces (owner
-         decides the spelling); the distance to the measured ceiling (`sub_byte` 103,
-         `fixed44` 55), unscheduled.
+         (`fixed44_rejected` +49, terminal). `DESIGN.md` §22, phase 4. A type
+         known to arrive in pieces declines its own window with `#[bin(no_window)]`
+         (owner's spelling, 2026-11-14): the short attempt gets its 14 instructions back
+         and a whole message costs 226 again. Open: the distance to the measured ceiling
+         (`sub_byte` 103, `fixed44` 55), unscheduled.
    - [x] **Phase 5, stream readers.** Done: `StreamBitReader` and `BufSource` ask their
          reader for a byte-aligned run, and the first for a value of whole bytes, together
          instead of a byte a call (a 4 KiB payload 745,046 → 964 and 875,854 → 1,369
@@ -285,7 +286,7 @@ Audit follow-ups (not silently waived or bundled into this feature):
       (no canonical/`validate`).
 - [x] **Struct options:** `big`/`little`, `bits = msb|lsb`, `magic = <expr>`
       (sub-byte allowed), `read_only`/`write_only`, `no_builder`, `forward_only`,
-      `ctx(name: Ty, …)`, `validate = <path>`.
+      `no_window`, `ctx(name: Ty, …)`, `validate = <path>`.
 - [x] **Field directives:** `count`, `ctx { … }`, `temp` + `calc`, `if(…)`,
       `map`/`try_map` (+ inverse `bw(map)`), `parse_with`/`write_with`, `ignore`,
       `pad_*`/`align_*`, `restore_position`, `#[reserved]`/`#[reserved_with(…)]`,
