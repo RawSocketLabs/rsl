@@ -19,7 +19,7 @@
 //! `read_message_async` with caller-owned reusable scratch space.
 
 use crate::bitstream::{encode_into, encode_to_vec};
-use crate::{BitBuf, BitDecode, BitEncode, BitError, ErrorKind};
+use crate::{BitBuf, BitDecode, BitEncode, BitError, DecodeWith, ErrorKind, Layout};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
@@ -162,6 +162,20 @@ fn message_at_eof<T: BitDecode + BitEncode>(buffer: &mut BitBuf) -> Result<T, Me
     })
 }
 
+fn message_at_eof_with<T: DecodeWith<A>, A>(
+    buffer: &mut BitBuf,
+    layout: Layout,
+    args: A,
+) -> Result<T, MessageReadError> {
+    buffer.pull_eof_with(layout, args)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "connection closed before a message",
+        )
+        .into()
+    })
+}
+
 /// Read one independently byte-padded message using borrowed transport, buffer, and scratch.
 ///
 /// Tries buffered decoding first, then reads until the blocked operation's additional-byte
@@ -201,8 +215,71 @@ pub fn read_message<T: BitDecode + BitEncode, R: Read + ?Sized>(
     buffer: &mut BitBuf,
     scratch: &mut [u8],
 ) -> Result<T, MessageReadError> {
+    read_loop(
+        reader,
+        buffer,
+        scratch,
+        BitBuf::try_pull::<T>,
+        message_at_eof::<T>,
+    )
+}
+
+/// [`read_message`] with the layout and the decode context supplied, for a message that
+/// has no [`BitEncode`] to state its layout (`#[bin(read_only)]`) or that decodes with
+/// context (`#[bin(ctx(...))]`). `layout` is the order the type declares (`#[bin(little)]`
+/// is `ByteOrder::Little`); the type is decoded in the layout given, whatever it declares.
+/// `args` is cloned for each decode attempt, one per refill, and once more if the
+/// transport ends.
+///
+/// ```
+/// use bnb::{bin, net::read_message_with, BitBuf, BitOrder, ByteOrder, Layout};
+///
+/// #[bin(little, read_only)]
+/// #[derive(Debug, PartialEq)]
+/// struct Reading { sensor: u8, value: u16 }
+///
+/// let mut wire: &[u8] = &[7, 0x34, 0x12];
+/// let (mut buffer, mut scratch) = (BitBuf::new(), [0; 64]);
+/// let little = Layout { bit: BitOrder::Msb, byte: ByteOrder::Little };
+/// let reading: Reading =
+///     read_message_with(&mut wire, &mut buffer, &mut scratch, little, ()).unwrap();
+/// assert_eq!(reading, Reading { sensor: 7, value: 0x1234 });
+/// ```
+///
+/// # Errors
+/// As [`read_message`].
+///
+/// # Panics
+/// As [`read_message`].
+pub fn read_message_with<T: DecodeWith<A>, A: Clone, R: Read + ?Sized>(
+    reader: &mut R,
+    buffer: &mut BitBuf,
+    scratch: &mut [u8],
+    layout: Layout,
+    args: A,
+) -> Result<T, MessageReadError> {
+    read_loop(
+        reader,
+        buffer,
+        scratch,
+        |buffer| buffer.try_pull_with::<T, A>(layout, args.clone()),
+        |buffer| message_at_eof_with(buffer, layout, args.clone()),
+    )
+}
+
+/// The read loop of [`read_message`] and [`read_message_with`]: decode what is buffered
+/// (`attempt`), read what the attempt says is missing, and decode once more with the
+/// input declared finite (`at_eof`) when the transport ends. The two differ only in how
+/// they decode, and each gets its own copy with its attempt built in.
+fn read_loop<T, R: Read + ?Sized>(
+    reader: &mut R,
+    buffer: &mut BitBuf,
+    scratch: &mut [u8],
+    mut attempt: impl FnMut(&mut BitBuf) -> Result<T, BitError>,
+    at_eof: impl FnOnce(&mut BitBuf) -> Result<T, MessageReadError>,
+) -> Result<T, MessageReadError> {
     let message = 'message: loop {
-        let mut missing = match buffer.try_pull::<T>() {
+        let mut missing = match attempt(buffer) {
             Ok(message) => break message,
             Err(error) => shortfall(error)?,
         };
@@ -221,7 +298,7 @@ pub fn read_message<T: BitDecode + BitEncode, R: Read + ?Sized>(
                 }
             };
             if count == 0 {
-                break 'message message_at_eof(buffer)?;
+                break 'message at_eof(buffer)?;
             }
             let start = crate::Source::bit_pos(buffer);
             buffer
@@ -261,10 +338,59 @@ pub async fn read_message_async<
     buffer: &mut BitBuf,
     scratch: &mut [u8],
 ) -> Result<T, MessageReadError> {
+    read_loop_async(
+        reader,
+        buffer,
+        scratch,
+        BitBuf::try_pull::<T>,
+        message_at_eof::<T>,
+    )
+    .await
+}
+
+/// [`read_message_async`] with the layout and the decode context supplied; see
+/// [`read_message_with`].
+///
+/// # Errors
+/// As [`read_message`].
+///
+/// # Panics
+/// As [`read_message_async`].
+#[cfg(feature = "tokio-io")]
+pub async fn read_message_async_with<
+    T: DecodeWith<A>,
+    A: Clone,
+    R: tokio::io::AsyncRead + Unpin + ?Sized,
+>(
+    reader: &mut R,
+    buffer: &mut BitBuf,
+    scratch: &mut [u8],
+    layout: Layout,
+    args: A,
+) -> Result<T, MessageReadError> {
+    read_loop_async(
+        reader,
+        buffer,
+        scratch,
+        |buffer| buffer.try_pull_with::<T, A>(layout, args.clone()),
+        |buffer| message_at_eof_with(buffer, layout, args.clone()),
+    )
+    .await
+}
+
+/// [`read_loop`] over an `AsyncRead`.
+#[cfg(feature = "tokio-io")]
+async fn read_loop_async<T, R: tokio::io::AsyncRead + Unpin + ?Sized>(
+    reader: &mut R,
+    buffer: &mut BitBuf,
+    scratch: &mut [u8],
+    mut attempt: impl FnMut(&mut BitBuf) -> Result<T, BitError>,
+    at_eof: impl FnOnce(&mut BitBuf) -> Result<T, MessageReadError>,
+) -> Result<T, MessageReadError> {
     use tokio::io::AsyncReadExt;
 
     let message = 'message: loop {
-        let mut missing = match buffer.try_pull::<T>() {
+        let mut missing = match attempt(buffer) {
             Ok(message) => break message,
             Err(error) => shortfall(error)?,
         };
@@ -283,7 +409,7 @@ pub async fn read_message_async<
                 }
             };
             if count == 0 {
-                break 'message message_at_eof(buffer)?;
+                break 'message at_eof(buffer)?;
             }
             let start = crate::Source::bit_pos(buffer);
             buffer
@@ -457,6 +583,29 @@ impl<S: Read> MessageStream<S> {
         // One scratch for the stream's life: a fresh one per call is 4 KiB zeroed per message.
         read_message(&mut self.inner, &mut self.buf, &mut self.scratch)
     }
+
+    /// [`read_message`](Self::read_message) with the layout and the decode context
+    /// supplied, for a `#[bin(read_only)]` message or one that decodes with context; see
+    /// [`net::read_message_with`](crate::net::read_message_with).
+    ///
+    /// # Errors
+    /// As [`read_message`](Self::read_message).
+    ///
+    /// # Panics
+    /// As [`read_message`](Self::read_message).
+    pub fn read_message_with<T: DecodeWith<A>, A: Clone>(
+        &mut self,
+        layout: Layout,
+        args: A,
+    ) -> Result<T, MessageReadError> {
+        read_message_with(
+            &mut self.inner,
+            &mut self.buf,
+            &mut self.scratch,
+            layout,
+            args,
+        )
+    }
 }
 
 impl<S: Read> Read for MessageStream<S> {
@@ -625,6 +774,23 @@ impl<D: DatagramSocket> MessageDatagram<D> {
     pub fn recv_message<T: BitDecode + BitEncode>(&mut self) -> Result<(T, D::Addr), BitError> {
         let (n, from) = self.sock.recv_from(&mut self.buf)?;
         let msg = crate::bitstream::decode_exact(&self.buf[..n], T::LAYOUT)?;
+        Ok((msg, from))
+    }
+
+    /// [`recv_message`](Self::recv_message) with the layout and the decode context
+    /// supplied, for a `#[bin(read_only)]` message or one that decodes with context.
+    ///
+    /// # Errors
+    /// As [`recv_message`](Self::recv_message).
+    pub fn recv_message_with<T: DecodeWith<A>, A>(
+        &mut self,
+        layout: Layout,
+        args: A,
+    ) -> Result<(T, D::Addr), BitError> {
+        let (n, from) = self.sock.recv_from(&mut self.buf)?;
+        let msg = crate::bitstream::decode_exact_with(&self.buf[..n], layout, |r| {
+            T::decode_with(r, args)
+        })?;
         Ok((msg, from))
     }
 }

@@ -184,6 +184,29 @@
 //! assert_eq!(Nb { v: 5 }.to_bytes().unwrap(), [0x00, 0x05]);
 //! ```
 //!
+//! A type that does not encode has no `BitEncode::LAYOUT` for a transport to read, so
+//! the transports take the layout, and a decode context where there is one, through
+//! their `_with` forms: `MessageStream::read_message_with`, `net::read_message_with`,
+//! `net::read_message_async_with` and `MessageDatagram::recv_message_with`. The layout
+//! given is the one decoded in, so state the order the type declares. `BinCodec` reads
+//! the layout from `BitEncode` and does not take such a type.
+//!
+//! ```
+//! # #[cfg(feature = "net")] {
+//! use bnb::{bin, BitOrder, ByteOrder, Layout, MessageStream};
+//!
+//! #[bin(little, read_only)]
+//! #[derive(Debug, PartialEq)]
+//! struct Reading { sensor: u8, value: u16 }
+//!
+//! let wire: &[u8] = &[7, 0x34, 0x12];
+//! let mut stream = MessageStream::new(wire);
+//! let little = Layout { bit: BitOrder::Msb, byte: ByteOrder::Little };
+//! let reading: Reading = stream.read_message_with(little, ()).unwrap();
+//! assert_eq!(reading, Reading { sensor: 7, value: 0x1234 });
+//! # }
+//! ```
+//!
 //! `forward_only` — decode from a non-seekable stream, with a compile-time no-seek
 //! guarantee (a `#[br(restore_position)]` field would then be a compile error):
 //!

@@ -2082,6 +2082,7 @@ impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageReadError
 pub struct bnb::net::MessageDatagram<D>
 impl<D: bnb::net::DatagramSocket> bnb::net::MessageDatagram<D>
 pub fn bnb::net::MessageDatagram<D>::recv_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<(T, <D as bnb::net::DatagramSocket>::Addr), bnb::bitstream::BitError>
+pub fn bnb::net::MessageDatagram<D>::recv_message_with<T: bnb::bitstream::DecodeWith<A>, A>(&mut self, bnb::bitstream::Layout, A) -> core::result::Result<(T, <D as bnb::net::DatagramSocket>::Addr), bnb::bitstream::BitError>
 pub fn bnb::net::MessageDatagram<D>::send_message<T: bnb::bitstream::BitEncode>(&self, &T, &<D as bnb::net::DatagramSocket>::Addr) -> core::result::Result<usize, bnb::bitstream::BitError>
 impl<D> bnb::net::MessageDatagram<D>
 pub fn bnb::net::MessageDatagram<D>::get_mut(&mut self) -> &mut D
@@ -2119,6 +2120,7 @@ impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageDatagram<D>
 pub struct bnb::net::MessageStream<S>
 impl<S: std::io::Read> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::read_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<T, bnb::net::MessageReadError>
+pub fn bnb::net::MessageStream<S>::read_message_with<T: bnb::bitstream::DecodeWith<A>, A: core::clone::Clone>(&mut self, bnb::bitstream::Layout, A) -> core::result::Result<T, bnb::net::MessageReadError>
 impl<S: std::io::Write> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::write_message<T: bnb::bitstream::BitEncode>(&mut self, &T) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<S> bnb::net::MessageStream<S>
@@ -2268,6 +2270,8 @@ pub fn std::os::unix::net::datagram::UnixDatagram::recv_from(&self, &mut [u8]) -
 pub fn std::os::unix::net::datagram::UnixDatagram::send_to(&self, &[u8], &Self::Addr) -> std::io::error::Result<usize>
 pub fn bnb::net::read_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode, R: std::io::Read + ?core::marker::Sized>(&mut R, &mut bnb::bitstream::BitBuf, &mut [u8]) -> core::result::Result<T, bnb::net::MessageReadError>
 pub async fn bnb::net::read_message_async<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode, R: tokio::io::async_read::AsyncRead + core::marker::Unpin + ?core::marker::Sized>(&mut R, &mut bnb::bitstream::BitBuf, &mut [u8]) -> core::result::Result<T, bnb::net::MessageReadError>
+pub async fn bnb::net::read_message_async_with<T: bnb::bitstream::DecodeWith<A>, A: core::clone::Clone, R: tokio::io::async_read::AsyncRead + core::marker::Unpin + ?core::marker::Sized>(&mut R, &mut bnb::bitstream::BitBuf, &mut [u8], bnb::bitstream::Layout, A) -> core::result::Result<T, bnb::net::MessageReadError>
+pub fn bnb::net::read_message_with<T: bnb::bitstream::DecodeWith<A>, A: core::clone::Clone, R: std::io::Read + ?core::marker::Sized>(&mut R, &mut bnb::bitstream::BitBuf, &mut [u8], bnb::bitstream::Layout, A) -> core::result::Result<T, bnb::net::MessageReadError>
 pub mod bnb::prelude
 pub trait bnb::prelude::BitAmount: core::marker::Copy + bnb::bitstream::sealed::Sealed
 pub fn bnb::prelude::BitAmount::bits(self) -> u32
@@ -3400,6 +3404,7 @@ impl<T> tracing::instrument::WithSubscriber for bnb::bitstream::LimitedSource<'a
 pub struct bnb::MessageDatagram<D>
 impl<D: bnb::net::DatagramSocket> bnb::net::MessageDatagram<D>
 pub fn bnb::net::MessageDatagram<D>::recv_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<(T, <D as bnb::net::DatagramSocket>::Addr), bnb::bitstream::BitError>
+pub fn bnb::net::MessageDatagram<D>::recv_message_with<T: bnb::bitstream::DecodeWith<A>, A>(&mut self, bnb::bitstream::Layout, A) -> core::result::Result<(T, <D as bnb::net::DatagramSocket>::Addr), bnb::bitstream::BitError>
 pub fn bnb::net::MessageDatagram<D>::send_message<T: bnb::bitstream::BitEncode>(&self, &T, &<D as bnb::net::DatagramSocket>::Addr) -> core::result::Result<usize, bnb::bitstream::BitError>
 impl<D> bnb::net::MessageDatagram<D>
 pub fn bnb::net::MessageDatagram<D>::get_mut(&mut self) -> &mut D
@@ -3437,6 +3442,7 @@ impl<T> tracing::instrument::WithSubscriber for bnb::net::MessageDatagram<D>
 pub struct bnb::MessageStream<S>
 impl<S: std::io::Read> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::read_message<T: bnb::bitstream::BitDecode + bnb::bitstream::BitEncode>(&mut self) -> core::result::Result<T, bnb::net::MessageReadError>
+pub fn bnb::net::MessageStream<S>::read_message_with<T: bnb::bitstream::DecodeWith<A>, A: core::clone::Clone>(&mut self, bnb::bitstream::Layout, A) -> core::result::Result<T, bnb::net::MessageReadError>
 impl<S: std::io::Write> bnb::net::MessageStream<S>
 pub fn bnb::net::MessageStream<S>::write_message<T: bnb::bitstream::BitEncode>(&mut self, &T) -> core::result::Result<(), bnb::bitstream::BitError>
 impl<S> bnb::net::MessageStream<S>

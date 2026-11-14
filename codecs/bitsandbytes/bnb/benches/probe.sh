@@ -36,7 +36,8 @@ covered Envelope 'probe::repeat::<' 3 || inlined+=("prefix_*envelope")
 covered Fixed44 'probe::repeat::<' 2 || inlined+=("prefix_*fixed44")
 covered Envelope 'pull' 1 || inlined+=("pull_short")
 if grep -q '^stream_' <<<"$modes"; then
-    covered Envelope 'read_message::<' 1 || inlined+=("stream_*")
+    # The transport's read loop, which `read_message` and `read_message_with` share.
+    covered Envelope 'net::read_loop::<' 1 || inlined+=("stream_*")
 fi
 if grep -q '^codec_decode ' <<<"$modes"; then
     covered Envelope 'BinCodec<' 1 || inlined+=("codec_decode")
