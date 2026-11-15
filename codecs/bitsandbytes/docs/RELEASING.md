@@ -64,13 +64,11 @@ Changes affecting bnb, its dependencies, or its gate policy trigger bnb's comple
 strict all-target/all-feature Clippy, warning-free rustdocs, feature tests, MSRV,
 bare-metal renamed-dependency compilation, public API, source compatibility,
 fuzzing, and cargo-deny. The compatibility
-baseline is explicitly published `0.10.1` in `.github/ci/bnb.toml`; advance it deliberately after releases.
+baseline is explicitly published `0.11.0` in `.github/ci/bnb.toml`; advance it deliberately after releases.
 Compatible additions enforce `--release-type patch` in all three feature modes.
-The breaking 0.4 → 0.5, 0.5 → 0.6 and 0.9 → 0.10 transitions used major mode plus exact reviewed API deltas,
-switching the file to `release_type = "major"` while the candidate was unreleased and back to
-`patch` with the new baseline once it was published. The 0.10 → 0.11 transition (the error
-types) is in that state now: the file reads `release_type = "major"` against `0.10.1`; once 0.11.0
-is published, set `baseline = "0.11.0"` and `release_type = "patch"` again.
+The breaking 0.4 → 0.5, 0.5 → 0.6, 0.9 → 0.10 and 0.10 → 0.11 (the error types) transitions used
+major mode plus exact reviewed API deltas, switching the file to `release_type = "major"` while the
+candidate was unreleased and back to `patch` with the new baseline once it was published.
 The `bnb/api-delta-0.5-{all,default,none}.txt`, `bnb/api-delta-0.6-{all,default,none}.txt` and
 `bnb/api-delta-0.10-{all,default,none}.txt` (0.9.0 to the candidate: nothing removed; changed are
 `BitWriter::with_scratch`, both writers becoming `Send`, and four `encode_slice` renderings) and
