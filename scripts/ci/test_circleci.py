@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 import tomllib
 import unittest
 from unittest import mock
@@ -478,6 +479,36 @@ class ReleasePathTests(unittest.TestCase):
                 with self.subTest(branch=branch, job=name):
                     kinds = {key for step in job["steps"] if isinstance(step, dict) for key in step}
                     self.assertFalse(kinds & {"restore_cache", "save_cache"})
+
+    def test_auto_routes_to_the_runner_only_while_its_heartbeat_is_fresh(self):
+        now = 1_800_000_000
+        for seen, expected in ((None, "medium"), ("", "medium"), ("junk", "medium"),
+                               (str(now - 30), circleci.RUNNER_CLASS), (str(now + 30), circleci.RUNNER_CLASS),
+                               (str(now - circleci.RUNNER_FRESH - 1), "medium"), (str(now + 120), "medium")):
+            env = {} if seen is None else {"CI_RUNNER_SEEN": seen}
+            for chosen in (None, "auto"):
+                with self.subTest(seen=seen, chosen=chosen):
+                    self.assertEqual(circleci.routed_class({**env, **({"CI_INPUT_CLASS": chosen} if chosen else {})}, now),
+                                     expected)
+        # An explicit class wins over the heartbeat, in both directions.
+        fresh = {"CI_RUNNER_SEEN": str(now)}
+        self.assertEqual(circleci.routed_class({**fresh, "CI_INPUT_CLASS": "medium"}, now), "medium")
+        self.assertEqual(circleci.routed_class({"CI_INPUT_CLASS": "ns/runner"}, now), "ns/runner")
+        self.assertEqual(circleci.routed_class(fresh, now, cloud=True), "medium")
+        self.assertEqual(circleci.routed_class({"CI_RUNNER_SEEN": "\u00b2"}, now), "medium")  # No ValueError.
+
+    def test_cache_saving_and_release_runs_stay_on_the_cloud_with_a_fresh_runner(self):
+        fresh = {"CI_RUNNER_SEEN": str(int(time.time()))}
+        routine = cont(test_plan.planned(full=True), BNB_GATE, {"CIRCLE_BRANCH": "feat/x", **fresh})
+        self.assertEqual(routine["jobs"]["policy"]["resource_class"], circleci.RUNNER_CLASS)
+        weekly = cont(test_plan.planned(full=True), BNB_GATE,
+                      {"CIRCLE_BRANCH": "main", "CI_TRIGGER_SOURCE": "scheduled_pipeline", **fresh})
+        release = test_plan.planned(release=True)
+        release["release_candidate"] = True
+        qualifying = cont(release, BNB_GATE, {"CIRCLE_BRANCH": "main", **fresh})
+        for config in (weekly, qualifying):
+            self.assertTrue(all(job.get("resource_class") in ("medium", "large", None)
+                                for job in config["jobs"].values()))
 
     def test_a_self_hosted_class_keeps_build_state_on_the_runner_not_in_circleci_caches(self):
         plan = test_plan.planned(full=True)

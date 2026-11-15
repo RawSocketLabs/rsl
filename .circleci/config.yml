@@ -26,9 +26,9 @@ parameters:
     type: boolean
     default: false
   resource_class:
-    description: Resource class for check and fuzz jobs; a namespace/name class selects a self-hosted container runner.
+    description: Resource class for check and fuzz jobs; a namespace/name class selects a self-hosted container runner, and auto picks the MS-01 runner when its heartbeat is fresh, else medium.
     type: string
-    default: medium
+    default: auto
 
 jobs:
   plan:

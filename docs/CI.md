@@ -255,7 +255,13 @@ triggers live in the CircleCI project settings, not in code: the GitHub App push
 measured 1.5 GiB peak, and a machine executor is the one-line fallback if a job runs out of
 memory. A
 namespaced `resource_class` parameter selects a self-hosted container runner with the same image;
-`policy` and the gate then run there too, and checks do not wait for `policy`.
+`policy` and the gate then run there too, and checks do not wait for `policy`. The default, `auto`,
+selects `rawsocketlabs/ms01` while the project's `CI_RUNNER_SEEN` is under three minutes old (a
+timer on the MS-01 writes it each minute while CircleCI sees the agent connected) and `medium`
+otherwise. Cache-saving trunk runs and release qualification stay on `medium`, which keeps the
+cloud caches warm for a fallback and release evidence on CircleCI's machines. A rerun keeps the
+class it was planned with, so jobs stranded on a runner that dropped need a new pipeline: trigger
+one with `resource_class=medium`, or wait until `CI_RUNNER_SEEN` is stale.
 
 Caches are keyed by job, toolchain, job image and the job's lockfile (the root `Cargo.lock`, or a
 fuzz workspace's own), then the week of the save (the Sunday of the weekly schedule). Each key is

@@ -47,6 +47,11 @@ MSRV = "1.85.0"
 # 2 vCPU, 4 GB at half large's credit rate: on large most jobs took 1-2 minutes (insights,
 # 2026-11) and the heaviest trial job peaked at 1.5 GiB. Pass resource_class=large to go faster.
 DEFAULT_CLASS = "medium"
+# The `auto` class picks the MS-01 runner while mini's ci-heartbeat timer keeps the project's
+# CI_RUNNER_SEEN (epoch seconds, written each minute while CircleCI sees the agent connected)
+# fresh, and DEFAULT_CLASS otherwise, so a home outage falls back to the cloud. A rerun keeps the
+# generated class, so jobs stranded on a dropped runner need a new pipeline instead.
+AUTO_CLASS, RUNNER_CLASS, RUNNER_FRESH = "auto", "rawsocketlabs/ms01", 180
 NO_RUST = {"deny", "blessed"}
 # Every job's budget: a slow job fails rather than stretching the pipeline past it.
 BUDGET = "10m"
@@ -104,7 +109,7 @@ PARAMETERS = {"full": {"type": "boolean", "default": False}, "base": {"type": "s
               "release": {"type": "boolean", "default": False},
               "products": {"type": "string", "default": ""},
               "audit": {"type": "boolean", "default": False},
-              "resource_class": {"type": "string", "default": DEFAULT_CLASS}}
+              "resource_class": {"type": "string", "default": AUTO_CLASS}}
 SHA = re.compile(r"[0-9a-f]{40}")
 # `current` and `candidate` exit with SKIP when a release job has nothing to do; any other
 # failure fails the job.
@@ -327,6 +332,18 @@ RUNNER_CACHE = "/ci-cache/target"
 RUNNER_CRATES = "/ci-cache/crates"
 
 
+def routed_class(env, now=None, *, cloud=False):
+    chosen = env.get("CI_INPUT_CLASS") or AUTO_CLASS
+    if chosen != AUTO_CLASS:
+        return chosen
+    seen = env.get("CI_RUNNER_SEEN", "").strip()
+    age = (time.time() if now is None else now) - int(seen) if seen.isascii() and seen.isdigit() else None
+    if cloud:
+        return DEFAULT_CLASS
+    # A minute of tolerance for clock skew between mini and CircleCI.
+    return RUNNER_CLASS if age is not None and -60 <= age <= RUNNER_FRESH else DEFAULT_CLASS
+
+
 def self_hosted(resource_class):
     return "/" in resource_class
 
@@ -439,7 +456,6 @@ def image_job():
 def continuation(plan, bnb, env, event):
     """The continued pipeline: policy, the selected checks and fuzz targets, the gate, then
     for a trunk push the release jobs."""
-    resource_class = env.get("CI_INPUT_CLASS") or DEFAULT_CLASS
     trunk = env.get("CIRCLE_BRANCH") == TRUNK
     caches = not plan["release"]  # Evidence that can authorise publication restores no cache.
     # Only full-coverage trunk runs save: the weekly schedule, and a push that changed a key's
@@ -447,6 +463,9 @@ def continuation(plan, bnb, env, event):
     save = trunk and caches and plan["full"] and (env.get("CI_TRIGGER_SOURCE") == "scheduled_pipeline"
                                                   or cache_inputs_changed(plan))
     week = cache_week()
+    # Runs that refresh the cloud caches (which keep the fallback warm) or produce release
+    # evidence stay on CircleCI's machines.
+    resource_class = routed_class(env, cloud=save or not caches)
     local = trunk if self_hosted(resource_class) else None  # Which runner-local directory set, if any.
     # A runner's tasks cost no credits, so policy and the gate run there too, and checks need not
     # wait for policy to save credits on a policy failure; the gate still requires it.
