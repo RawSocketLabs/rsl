@@ -346,8 +346,9 @@ def cached(key, paths, steps, *, save, toolchain, week, lock="Cargo.lock", enabl
 # runner as network egress, so its build state stays local: trunk and branches keep separate
 # directories, so main never builds on a branch's output, and the host wipes them weekly.
 RUNNER_CACHE = "/ci-cache/target"
-# Concurrent jobs of one name each lease their own slot under it (linked); one more builds cold.
-RUNNER_SLOTS = 4
+# Concurrent jobs of one name each lease their own slot under it (linked). The runner takes 20
+# tasks at once, so no job finds every slot busy; a slot takes disk only once it is first leased.
+RUNNER_SLOTS = 20
 # Downloaded .crate files are shared across the runner's jobs (cargo checksums them on unpack); the
 # rest of the registry stays private, because cargo's lock for it lives in each job's CARGO_HOME.
 RUNNER_CRATES = "/ci-cache/crates"
