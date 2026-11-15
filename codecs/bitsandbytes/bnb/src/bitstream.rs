@@ -6930,6 +6930,55 @@ mod unit {
     }
 
     #[test]
+    fn limited_source_refuses_a_window_between_bytes_or_past_the_address_space() {
+        let mut source = BitReader::new(&[0x00, 0x11]);
+        source.read_bits(3).unwrap();
+        let error = source.limit_bytes(1).unwrap_err();
+        assert_eq!((error.kind, error.at), (ErrorKind::NotByteAligned, 3));
+
+        let mut source = BitReader::new(&[0x00, 0x11]);
+        source.read_bits(8).unwrap();
+        for n in [usize::MAX, usize::MAX / 8] {
+            let error = source.limit_bytes(n).unwrap_err();
+            assert_eq!(
+                (error.kind, error.at),
+                (ErrorKind::PositionOverflow, 8),
+                "a window of {n} bytes has no representable end"
+            );
+        }
+    }
+
+    #[test]
+    fn limited_source_seek_outside_reports_the_target_and_window_size() {
+        let mut source = BitReader::new(&[0x00, 0x11, 0x22, 0x33]);
+        source.read::<u8>().unwrap();
+        let mut child = source.limit_bytes(2).unwrap();
+        child.read_bits(4).unwrap();
+        let past = child.seek_to_bit(30).unwrap_err();
+        let before = child.seek_to_bit(0).unwrap_err();
+        assert_eq!(
+            (past.kind, past.at),
+            (
+                ErrorKind::UnexpectedEof {
+                    needed: 22,
+                    remaining: 16
+                },
+                12
+            )
+        );
+        assert_eq!(
+            (before.kind, before.at),
+            (
+                ErrorKind::UnexpectedEof {
+                    needed: 0,
+                    remaining: 16
+                },
+                12
+            )
+        );
+    }
+
+    #[test]
     fn limited_source_reads_in_its_parents_layout() {
         // LSB-first, little-endian is the one layout where dropping *either* order to its
         // default changes a byte-multiple value (see `Source::bit_order`).

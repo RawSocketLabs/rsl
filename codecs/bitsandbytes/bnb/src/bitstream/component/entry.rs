@@ -54,6 +54,12 @@ fn decode_all_and_iter_collect_back_to_back() {
     assert_eq!(collected.unwrap(), vec![w, w]);
 }
 
+#[test]
+fn decode_all_and_iter_of_empty_input_are_empty_not_an_error() {
+    assert_eq!(Word::decode_all(&[]).unwrap(), Vec::<Word>::new());
+    assert_eq!(Word::decode_iter(&[]).count(), 0);
+}
+
 #[derive(BitDecode, BitEncode, Debug, PartialEq, Eq, Clone, Copy)]
 struct Twelve {
     v: u12,

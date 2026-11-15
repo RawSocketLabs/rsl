@@ -52,6 +52,35 @@ mod macro_ {
         assert_eq!(Spaced::decode_exact(&bytes).unwrap(), f);
     }
 
+    // A pad wider than one 128-bit read: skipped and written in several steps.
+    #[bin]
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    struct WidePad {
+        a: u4,
+        #[br(pad_before = 33.bytes())] // 264 bits: three steps of at most 128
+        b: u4,
+    }
+
+    #[test]
+    fn a_pad_wider_than_one_read_is_skipped_and_written_whole() {
+        let f = WidePad {
+            a: u4::new(0xA),
+            b: u4::new(0xB),
+        };
+        let bytes = f.to_bytes().unwrap();
+        let mut expected = vec![0u8; 34];
+        expected[0] = 0xA0;
+        expected[33] = 0x0B;
+        assert_eq!(bytes, expected, "all 264 pad bits are written as zero");
+        // Set pad bits must still be skipped, every one of them.
+        let mut wire = vec![0xFF; 34];
+        wire[0] = 0xAF;
+        wire[33] = 0xFB;
+        let mut r = BitReader::new(&wire);
+        assert_eq!(WidePad::decode(&mut r).unwrap(), f);
+        assert_eq!(r.bit_pos(), 34 * 8);
+    }
+
     // ── Each directive moves the cursor in *both* directions ─────────────────────────────
     // The decode inputs below carry `1` bits in the padding: a decoder that forgot the
     // directive would read them as the next field (or stop short of them), so the following

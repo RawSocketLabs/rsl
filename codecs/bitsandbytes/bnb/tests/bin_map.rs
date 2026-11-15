@@ -66,5 +66,9 @@ mod macro_ {
         let err = Msg::decode_exact(&[0x00, 200]).unwrap_err();
         assert!(matches!(err.kind, ErrorKind::Convert(_)));
         assert_eq!(err.field, Some("value"));
+        assert_eq!(
+            err.at, 8,
+            "the error points at the mapped value, not past it"
+        );
     }
 }

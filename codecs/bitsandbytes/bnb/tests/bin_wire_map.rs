@@ -85,6 +85,18 @@ mod macro_ {
         assert!(matches!(err.kind, ErrorKind::Convert(_)));
     }
 
+    #[test]
+    fn try_map_failure_points_at_the_start_of_the_message() {
+        let mut r = bnb::BitReader::new(&[0x00, 200]);
+        r.read_bits(8).unwrap();
+        let err = Pct::decode(&mut r).unwrap_err();
+        assert!(matches!(err.kind, ErrorKind::Convert(_)));
+        assert_eq!(
+            err.at, 8,
+            "the message began at bit 8; its wire value ended at 16"
+        );
+    }
+
     // Read-only mapped: only `map` (no bw_map) generates the decode side alone.
     #[bin(map = |w: u16| Tick(w))]
     #[derive(Debug, PartialEq)]
