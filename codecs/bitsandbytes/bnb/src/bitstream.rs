@@ -4651,11 +4651,7 @@ impl Source for BitBuf {
         &mut self.depth
     }
     fn read_bits(&mut self, n: u32) -> Result<u128, BitError> {
-        let mut r = BitReader::with_layout(&self.buf, self.layout);
-        r.seek_to_bit(self.cursor)?;
-        let v = r.read_bits(n)?;
-        self.cursor = r.bit_pos();
-        Ok(v)
+        read_via_slice(&self.buf, self.layout, &mut self.cursor, |r| r.read_bits(n))
     }
 
     fn bit_pos(&self) -> usize {

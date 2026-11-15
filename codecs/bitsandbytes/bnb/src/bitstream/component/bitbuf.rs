@@ -198,6 +198,30 @@ fn reads_as_a_source_respecting_layout() {
     assert!(bb.is_empty());
 }
 
+#[test]
+fn a_refused_bit_read_leaves_the_cursor_where_it_was() {
+    use crate::{ErrorKind, Source as _};
+
+    let mut buffer = BitBuf::new();
+    buffer.push(&[0xAB, 0xCD]).unwrap();
+    assert_eq!(buffer.read_bits(4).unwrap(), 0xA);
+    // Past the end, as a slice reads it: what was asked, what was left, and where.
+    let error = buffer.read_bits(13).unwrap_err();
+    assert_eq!(
+        error.kind,
+        ErrorKind::UnexpectedEof {
+            needed: 13,
+            remaining: 12
+        }
+    );
+    assert_eq!(error.at, 4);
+    let error = buffer.read_bits(129).unwrap_err();
+    assert_eq!(error.kind, ErrorKind::TooWide { width: 129 });
+    assert_eq!((error.at, error.field), (4, None));
+    assert_eq!(buffer.bit_pos(), 4, "a refused read consumes nothing");
+    assert_eq!(buffer.read_bits(12).unwrap(), 0xBCD);
+}
+
 // BitBuf is a `SeekSource`, so a `restore_position` message decodes over it through the
 // `decode` cursor path — exercising BitBuf's `seek_to_bit` (the rewind).
 #[test]
