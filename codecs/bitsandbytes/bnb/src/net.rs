@@ -2653,6 +2653,16 @@ mod component {
     }
 
     #[test]
+    fn a_datagram_that_fails_to_encode_sends_nothing() {
+        let peer = MessageDatagram::new(MockDatagramSocket::new());
+        let to = "127.0.0.1:3".parse().unwrap();
+        // 300 bytes do not fit a one-byte count.
+        let direct = run(300).to_bytes().unwrap_err();
+        assert_eq!(peer.send_message(&run(300), &to).unwrap_err(), direct);
+        assert!(peer.get_ref().sent().is_empty(), "nothing is sent");
+    }
+
+    #[test]
     fn datagram_recv_error_is_injected() {
         let mut peer = MessageDatagram::new(MockDatagramSocket::new().fail_next_recv());
         assert!(peer.recv_message::<Msg>().is_err());
