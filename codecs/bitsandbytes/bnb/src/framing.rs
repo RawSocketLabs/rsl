@@ -658,6 +658,18 @@ mod component {
     }
 
     #[test]
+    fn a_cap_of_zero_rejects_every_message_and_keeps_the_buffer() {
+        let mut codec = BinCodec::<Var>::with_max_frame(0);
+        let cap0 = (bnb::ErrorKind::BufferFull { cap: 0 }, 0);
+        let mut whole = BytesMut::from(&frame(1)[..]);
+        assert_eq!(buffer_full(codec.decode(&mut whole).unwrap_err()), cap0);
+        assert_eq!(whole.len(), 2);
+        let mut partial = BytesMut::from(&frame(1)[..1]);
+        assert_eq!(buffer_full(codec.decode(&mut partial).unwrap_err()), cap0);
+        assert_eq!(partial.len(), 1);
+    }
+
+    #[test]
     fn the_default_codec_has_no_cap() {
         let mut codec = BinCodec::<Var>::new();
         let mut wire = BytesMut::from(&frame(255)[..255]);
