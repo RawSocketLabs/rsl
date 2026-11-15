@@ -57,6 +57,7 @@ NO_RUST = {"deny", "blessed"}
 BUDGET = "10m"
 # nextest's `ci` profile (.config/nextest.toml) writes JUnit here for CircleCI's test insights.
 JUNIT = "target/nextest/ci/junit.xml"
+JUNIT_KEPT = "/tmp/ci/junit"
 # The critical path; its parts run on separate machines (run.py workspace_parts).
 WORKSPACE_PARTS = ("lint", "test", "extra")
 # Short profiles share a job: each job pays ~30 s of spin-up, checkout and cache restore, and most
@@ -345,6 +346,8 @@ def cached(key, paths, steps, *, save, toolchain, week, lock="Cargo.lock", enabl
 # runner as network egress, so its build state stays local: trunk and branches keep separate
 # directories, so main never builds on a branch's output, and the host wipes them weekly.
 RUNNER_CACHE = "/ci-cache/target"
+# Concurrent jobs of one name each lease their own slot under it (linked); one more builds cold.
+RUNNER_SLOTS = 4
 # Downloaded .crate files are shared across the runner's jobs (cargo checksums them on unpack); the
 # rest of the registry stays private, because cargo's lock for it lives in each job's CARGO_HOME.
 RUNNER_CRATES = "/ci-cache/crates"
@@ -370,11 +373,33 @@ def self_hosted(resource_class):
 
 
 def linked(name, roots, steps, *, toolchain, trunk):
+    """Prefix the job's build step with an exclusive lease on one of the job's slot directories.
+    Concurrent pipelines must never share a target: cargo trusts a path crate whose artifacts are
+    newer than its sources, so a build from another branch would pass for this one. The lease is
+    an flock on fd 9, held by the build step's shell until it exits. Taking it after checkout,
+    the step touches the checkout so it is newer than anything the slot's last holder wrote.
+    With every slot busy the job builds cold in its own target rather than wait."""
     base = f"{RUNNER_CACHE}/{'trunk' if trunk else 'branch'}/{name}-{toolchain}-{IMAGE.rsplit(':', 1)[1][:12]}"
-    links = " && ".join([f"mkdir -p ~/.cargo/registry && ln -sfn {RUNNER_CRATES} ~/.cargo/registry/cache",
-                         *(f"mkdir -p {base}/{slug(root) or 'root'} && ln -sfn {base}/{slug(root) or 'root'} {root}/target"
-                           for root in roots)])
-    return [run("Link the runner's persistent build directories", links), *steps]
+    links = "\n".join(f'  mkdir -p "$slot/{slug(root) or "root"}" && ln -sfn "$slot/{slug(root) or "root"}" {root}/target'
+                      for root in roots)
+    lease = (f"mkdir -p ~/.cargo/registry && ln -sfn {RUNNER_CRATES} ~/.cargo/registry/cache\n"
+             f"mkdir -p {base}\n"
+             "slot=\n"
+             f"for n in $(seq 0 {RUNNER_SLOTS - 1}); do\n"
+             f'  exec 9>"{base}/$n.lock"\n'
+             f'  if flock -n 9; then slot="{base}/$n"; break; fi\n'
+             "  exec 9>&-\n"
+             "done\n"
+             'if [ -n "$slot" ]; then\n'
+             '  echo "Leased $slot"\n'
+             "  git ls-files -z | xargs -0r touch -c --\n"
+             f"{links}\n"
+             "else\n"
+             f'  echo "Every slot under {base} is busy; building cold"\n'
+             "fi")
+    first = next(i for i, step in enumerate(steps) if "run" in step)
+    step = steps[first]["run"]
+    return [*steps[:first], {"run": {**step, "command": f"{lease}\n{step['command']}"}}, *steps[first + 1:]]
 
 
 def slug(text):
@@ -393,10 +418,15 @@ def bucket_of(profile):
 def check_job(name, profiles, *, save, caches, toolchain, week, part=None, local=None):
     # The budget bounds the whole job's profiles, not only a silent stretch.
     selection = ' --part "$PART"' if part else ""
-    steps = [run("Run the complete selected profiles",
-                 f'timeout {BUDGET} python3 scripts/ci/run.py $PROFILES{selection}', no_output_timeout=BUDGET)]
+    command = f'timeout {BUDGET} python3 scripts/ci/run.py $PROFILES{selection}'
     if part == "test":
-        steps.append({"store_test_results": {"path": JUNIT}})
+        # Copied out while the build still owns its target: a runner slot may be another job's by
+        # the time results upload, and a run that wrote none must not upload a previous one.
+        command = (f"rm -f {JUNIT}\n"
+                   f"trap 'mkdir -p {JUNIT_KEPT} && cp {JUNIT} {JUNIT_KEPT}/ 2>/dev/null || true' EXIT\n{command}")
+    steps = [run("Run the complete selected profiles", command, no_output_timeout=BUDGET)]
+    if part == "test":
+        steps.append({"store_test_results": {"path": JUNIT_KEPT}})
     if local is not None and caches and not set(profiles) <= NO_RUST:
         return linked(name, [".", *DETACHED_TARGETS], steps, toolchain=toolchain, trunk=local)
     return cached(f"v5-{name}", CACHE_PATHS + [f"{root}/target" for root in DETACHED_TARGETS], steps,

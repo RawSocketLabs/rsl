@@ -1,5 +1,6 @@
 """CircleCI adapter tests: event mapping and the continued pipeline's job selection."""
 
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -558,6 +559,49 @@ class ReleasePathTests(unittest.TestCase):
         self.assertEqual(cloud["jobs"][circleci.GATE]["resource_class"], "medium")
         self.assertTrue(all(self.workflow(cloud)[name] == {"requires": ["policy"]}
                             for name in cloud["jobs"] if name.startswith("checks-")))
+
+    def test_concurrent_runner_jobs_never_share_a_target_and_never_trust_an_older_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo, cache, home = tmp / "repo", tmp / "cache", tmp / "home"
+            repo.mkdir()
+            home.mkdir()
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            (repo / "lib.rs").write_text("")
+            subprocess.run(["git", "-C", str(repo), "add", "lib.rs"], check=True)
+            # The build reports its slot, and whether the slot's lock is free while it builds.
+            probe = ('t=$(readlink target) || { echo cold; exit; }\n'
+                     'flock -n "$(dirname "$t").lock" true && echo LEASE-NOT-HELD\necho "$t"')
+            with mock.patch.object(circleci, "RUNNER_CACHE", str(cache)):
+                [step] = circleci.linked("checks-x", ["."], [circleci.run("Build", probe)],
+                                         toolchain="t", trunk=False)
+            script = step["run"]["command"]
+
+            def build():
+                os.utime(repo / "lib.rs", (1, 1))  # Checked out before the slot's last build.
+                result = subprocess.run(["bash", "-eo", "pipefail", "-c", script], cwd=repo, check=True,
+                                        capture_output=True, text=True, env={**os.environ, "HOME": str(home)})
+                self.assertNotIn("LEASE-NOT-HELD", result.stdout)  # Held for the whole build.
+                (repo / "target").unlink(missing_ok=True)
+                built = result.stdout.strip().splitlines()[-1]
+                if built != "cold":  # A leased slot's artifacts must not look newer than the checkout.
+                    self.assertGreater((repo / "lib.rs").stat().st_mtime, 1)
+                return built
+
+            first = build()
+            self.assertRegex(first, r"/branch/checks-x-t-[^/]+/0/root$")
+            self.assertEqual(build(), first)  # A released slot is reused.
+            held = []
+            for n in range(circleci.RUNNER_SLOTS):
+                lock = open(f"{Path(first).parent.parent}/{n}.lock", "w")
+                held.append(lock)
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if n + 1 < circleci.RUNNER_SLOTS:
+                    self.assertTrue(build().endswith(f"/{n + 1}/root"))  # Never a held slot.
+            self.assertEqual(build(), "cold")
+            for lock in held:
+                lock.close()
+            self.assertTrue((home / ".cargo/registry/cache").is_symlink())
 
     def test_release_jobs_exist_only_for_a_trunk_push(self):
         plan = test_plan.planned(release=True)
