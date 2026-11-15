@@ -3332,22 +3332,7 @@ impl<T: BitEncode> EncodeWith<()> for T {
 /// start (a zero-width message, or one whose `seek` leaves the cursor at or before it).
 #[doc(hidden)]
 pub fn decode_all<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<Vec<T>, BitError> {
-    let mut r = BitReader::with_layout(bytes, layout);
-    let mut out = Vec::new();
-    while r.remaining_bits() > 0 {
-        let before = r.bit_pos();
-        let item = match T::bit_decode(&mut r) {
-            Ok(item) => item,
-            Err(e) if is_padding(bytes, before, layout.bit, &e) => break,
-            Err(e) => return Err(e),
-        };
-        if r.bit_pos() <= before {
-            // Zero-width, or a backward `seek`: without this the loop never ends.
-            return Err(BitError::new(ErrorKind::NoProgress, before));
-        }
-        out.push(item);
-    }
-    Ok(out)
+    decode_iter(bytes, layout).collect()
 }
 
 /// Whether a failed decode that started at bit `at` only ran into the final byte's padding:
