@@ -679,9 +679,10 @@ class ImageTests(unittest.TestCase):
     def arg(self, name):
         return re.search(rf"^ARG {name}=(\S+)$", self.dockerfile, re.M).group(1)
 
-    def test_setup_config_and_generator_pin_the_same_image(self):
-        self.assertIn(f"- image: {circleci.IMAGE}\n", (ROOT / ".circleci/config.yml").read_text())
+    def test_the_generator_and_setup_config_pin_their_images_by_digest(self):
         self.assertRegex(circleci.IMAGE, r"^ghcr\.io/rawsocketlabs/rsl-ci@sha256:[0-9a-f]{64}$")
+        self.assertRegex((ROOT / ".circleci/config.yml").read_text(),
+                         r"\n      - image: ghcr\.io/rawsocketlabs/rsl-ci-plan@sha256:[0-9a-f]{64}\n")
 
     def test_the_dockerfile_holds_the_toolchains_jobs_select_or_the_pending_stable(self):
         bnb = tomllib.loads((ROOT / ".github/ci/bnb.toml").read_text())
@@ -693,6 +694,17 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(self.arg("NIGHTLY"), bnb["public_api_toolchain"])
         self.assertEqual(self.arg("PUBLIC_API"), bnb["public_api_version"])
         self.assertEqual(self.arg("SEMVER"), bnb["semver_version"])
+
+    def test_a_cache_refresh_follows_the_job_image_pin_not_every_generator_edit(self):
+        plan = {"base": "a" * 40, "paths": [circleci.GENERATOR]}
+        with mock.patch.object(circleci, "image_pin_at", return_value=circleci.IMAGE):
+            self.assertFalse(circleci.cache_inputs_changed(plan))
+            self.assertFalse(circleci.cache_inputs_changed({**plan, "paths": [".circleci/config.yml"]}))
+            self.assertTrue(circleci.cache_inputs_changed({**plan, "paths": ["Cargo.lock"]}))
+        for before in ("ghcr.io/rawsocketlabs/rsl-ci@sha256:" + "0" * 64, None):  # Moved, or unreadable.
+            with self.subTest(before=before), mock.patch.object(circleci, "image_pin_at", return_value=before):
+                self.assertTrue(circleci.cache_inputs_changed(plan))
+        self.assertEqual(circleci.pinned_image((ROOT / circleci.GENERATOR).read_text()), circleci.IMAGE)
 
     def test_the_plan_image_carries_the_job_image_cargo(self):
         # The gate recomputes the plan on rsl-ci, so the plan image's cargo must read metadata alike.

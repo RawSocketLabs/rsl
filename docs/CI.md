@@ -204,8 +204,8 @@ behavior. Relevant feature ladders, renamed no_std compilation, strict codec/SOC
 bridge checks, and pinned public-API/compatibility gates are not replaced with compile-only
 approximations.
 
-Every job runs the `rsl-ci` image (`.circleci/image/Dockerfile`), pinned by digest in the
-generator and the setup config: its toolchains (pinned stable, MSRV, and the pinned nightly for
+Every job but `plan` runs the `rsl-ci` image (`.circleci/image/Dockerfile`), pinned by digest in
+the generator (`plan` runs the small `rsl-ci-plan`, pinned in the setup config): its toolchains (pinned stable, MSRV, and the pinned nightly for
 public-API and fuzzing), cargo tools, release-plz, native libraries and DSDcc headers are fixed at
 build time, and nothing is installed at run time. A change under `.circleci/image/` adds an
 `image` job to a main push, after `rsl` passes, that builds and publishes
@@ -218,7 +218,8 @@ image, which lacks the new version, so a change that moved every pin at once wou
 install a bare toolchain at run time and fail. First the Dockerfile's `ARG STABLE` moves alone (with `plan.Dockerfile`'s `ARG CARGO`
 and `CARGO_SHA256`),
 with `NEXT_STABLE` in `scripts/ci/circleci.py` naming it, and the main push publishes that image.
-Then one change adopts its digest (the `image` job prints it on its `Pin:` line), moves `STABLE`
+Then one change adopts both digests the `image` job prints on its `Pin:` lines (`IMAGE` in the
+generator, `rsl-ci-plan` in the setup config, so the plan and the gate run the same cargo), moves `STABLE`
 and the root `rust-toolchain.toml`, clears `NEXT_STABLE`, and carries whatever the new compiler
 asks of the code; its jobs build cold, since cache keys hold the toolchain and the digest and only
 the weekly run saves. Before the first change lands, build its image by hand and run the second
@@ -227,7 +228,8 @@ and `release --product bitsandbytes --image …`): the release tier is where a p
 cannot read the new compiler's output would show, and fixing that is another image. Any other
 image change made while `NEXT_STABLE` is set is adopted with that second change. To try any other changed image first, build it locally and run
 `scripts/ci-local.sh pre-push --image localhost/rsl-ci:<tag>`. `test_circleci.py` keeps the
-Dockerfile pins, `bnb.toml`, the generator, the setup config and the root `rust-toolchain.toml` in step. `commitlint` lints every
+Dockerfile pins (including `plan.Dockerfile`'s cargo), `bnb.toml`, the generator and the root
+`rust-toolchain.toml` in step, and checks that the setup config pins `rsl-ci-plan` by digest. `commitlint` lints every
 commit since the base with the pinned upstream commitlint image and `.config/commitlint.config.mjs`.
 
 Event mapping: main compares against `pipeline.git.base_revision`. GitHub App pipelines never set
@@ -271,7 +273,7 @@ Caches are keyed by job, toolchain, job image and the job's lockfile (the root `
 fuzz workspace's own), then the week of the save (the Sunday of the weekly schedule). Each key is
 written from a clean build, and only by full-coverage runs on main, so a scoped push cannot store a
 partial build: the weekly schedule, and a full push that changes the root `Cargo.lock`,
-`rust-toolchain.toml` or the image pin in `.circleci/config.yml`, so a mid-week key change is warm
+`rust-toolchain.toml` or the job image pin (`IMAGE` in `scripts/ci/circleci.py`), so a mid-week key change is warm
 before Sunday rather than cold until then. Other jobs restore the newest key for their lockfile, else
 the newest of any. A scoped lockfile change still waits for Sunday. Detached
 workspaces' own lockfiles are not in the key. Jobs build with `CARGO_INCREMENTAL=0` and

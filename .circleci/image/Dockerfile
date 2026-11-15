@@ -1,7 +1,7 @@
 # CircleCI job image: every toolchain, cargo tool and native library the CI profiles use,
 # pinned here so a run is reproducible from the image digest. Published as
-# ghcr.io/rawsocketlabs/rsl-ci by the CircleCI `image` job; scripts/ci/circleci.py and
-# .circleci/config.yml reference it by digest, and test_circleci.py holds the pins in step.
+# ghcr.io/rawsocketlabs/rsl-ci by the CircleCI `image` job; scripts/ci/circleci.py references it
+# by digest, and test_circleci.py holds the pins in step.
 FROM docker.io/library/ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 
 # May be one bump ahead of the image jobs run: `NEXT_STABLE` in scripts/ci/circleci.py names it

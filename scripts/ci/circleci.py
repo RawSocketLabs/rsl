@@ -76,8 +76,9 @@ BUCKETS = {
 # changes a key's inputs. CircleCI never overwrites a live key, so each key names the week of its
 # save (cache_week) and lives one CACHE_RETENTION, under 7 days: the next Sunday writes a new one.
 CACHE_RETENTION = "6d"
-# What a cache key is made of: the lockfile, toolchain and job image (pinned in the setup config too).
-CACHE_INPUTS = {"Cargo.lock", "rust-toolchain.toml", ".circleci/config.yml"}
+# What a cache key is made of: the lockfile, toolchain and job image (followed through GENERATOR).
+CACHE_INPUTS = {"Cargo.lock", "rust-toolchain.toml"}
+GENERATOR = "scripts/ci/circleci.py"  # Holds IMAGE, whose digest every cache key carries.
 CACHE_PATHS = ["~/.cargo/registry/index", "~/.cargo/registry/cache", "~/.cargo/git/db", "target"]
 DETACHED_TARGETS = [
     "codecs/bitsandbytes/bnb/nostd-check", "tools/rust-skills", "bindings/usdr",
@@ -200,8 +201,22 @@ def image_changed(plan):
     return any(path.startswith(IMAGE_SOURCE) for path in plan.get("paths", ()))
 
 
+def pinned_image(source):
+    match = re.search(r'^IMAGE = "([^"]+)"$', source, re.M)
+    return match and match.group(1)
+
+
+def image_pin_at(revision, root="."):
+    """The job image `revision` pinned, or None when that revision cannot be read."""
+    result = subprocess.run(["git", "show", f"{revision}:{GENERATOR}"], cwd=root, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, text=True)
+    return pinned_image(result.stdout) if result.returncode == 0 else None
+
+
 def cache_inputs_changed(plan):
-    return bool(CACHE_INPUTS & set(plan.get("paths", ())))
+    paths = set(plan.get("paths", ()))
+    # Paths are only listed against a base, so one exists when GENERATOR changed.
+    return bool(CACHE_INPUTS & paths) or (GENERATOR in paths and image_pin_at(plan["base"]) != IMAGE)
 
 
 def cache_week(now=None):
