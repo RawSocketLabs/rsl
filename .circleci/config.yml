@@ -35,7 +35,7 @@ jobs:
     docker:
       # The small plan image (.circleci/image/plan.Dockerfile), by digest: a fresh machine pulls
       # ~100 MB, not the full job image scripts/ci/circleci.py pins for every other job.
-      - image: ghcr.io/rawsocketlabs/rsl-ci-plan@sha256:0d7a41675188fb151c7130d13a3094447f016ea0cdf301e8fd92c967140ca2e6
+      - image: ghcr.io/rawsocketlabs/rsl-ci-plan@sha256:04f47f2ae764054b0364c72175817188013353824d8ea24e84a69f901635f1d6
     resource_class: medium
     environment:
       CI_TEMP: /tmp/ci

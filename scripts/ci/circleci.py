@@ -33,7 +33,7 @@ TRUNK = "main"
 REPOSITORY = "RawSocketLabs/rsl"
 # The job image (.circleci/image/Dockerfile), by digest. Its toolchains and tools are the only
 # ones jobs use: nothing is installed at run time. test_circleci.py holds these pins in step.
-IMAGE = "ghcr.io/rawsocketlabs/rsl-ci@sha256:7a7593791aa5b42cf1e180fb274834bb61f0f685b4fd37ddeed6e9c6b5582a31"
+IMAGE = "ghcr.io/rawsocketlabs/rsl-ci@sha256:2ab0a36590389f553e985d63622c25ee059e0f2e62b8860978c5f68f8d06ab37"
 # The upstream commitlint image (21.2.3), which carries @commitlint/config-conventional.
 COMMITLINT = ("docker.io/commitlint/commitlint@"
               "sha256:33f225c84111a38ebac0c81fa21c488a79709b8a8e04056dfaaf4f80ef20be25")
@@ -348,6 +348,9 @@ RUNNER_CACHE = "/ci-cache/target"
 # Downloaded .crate files are shared across the runner's jobs (cargo checksums them on unpack); the
 # rest of the registry stays private, because cargo's lock for it lives in each job's CARGO_HOME.
 RUNNER_CRATES = "/ci-cache/crates"
+# The oracles' build scripts recompile vendored libusdr after every checkout (fresh mtimes); ccache
+# keys on content, so each job reuses its own objects. One directory serves every runner job.
+RUNNER_CCACHE = "/ci-cache/ccache"
 
 
 def routed_class(env, now=None, *, cloud=False):
@@ -500,7 +503,9 @@ def continuation(plan, bnb, env, event):
               # A runner's linked target directory never leaves its disk, so Cargo's own default
               # (incremental dev and test builds) spares recompiling unchanged owned crates after each
               # checkout; elsewhere incremental state would only bloat a cache or a release build.
-              **({} if local is not None and caches else {"CARGO_INCREMENTAL": "0"}),
+              **({"CC_x86_64_unknown_linux_gnu": "ccache cc",
+                  "CXX_x86_64_unknown_linux_gnu": "ccache c++", "CCACHE_DIR": RUNNER_CCACHE}
+                 if local is not None and caches else {"CARGO_INCREMENTAL": "0"}),
               "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
               "CI_MERGE_BASE": plan["base"] or "",
               # The plan job's pin (`plan_for_event`): the previous pipeline's revision, or "none"

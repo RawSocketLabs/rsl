@@ -503,7 +503,8 @@ class ReleasePathTests(unittest.TestCase):
         config = cont(release, BNB_GATE, {"CIRCLE_BRANCH": "main", "CI_INPUT_CLASS": "ns/runner"})
         checks = [job for name, job in config["jobs"].items() if name.startswith("checks-")]
         self.assertTrue(checks)
-        self.assertTrue(all(job["environment"]["CARGO_INCREMENTAL"] == "0" for job in checks))
+        self.assertTrue(all(job["environment"]["CARGO_INCREMENTAL"] == "0" and "CC_x86_64_unknown_linux_gnu" not in job["environment"]
+                            for job in checks))
 
     def test_cache_saving_and_release_runs_stay_on_the_cloud_with_a_fresh_runner(self):
         fresh = {"CI_RUNNER_SEEN": str(int(time.time()))}
@@ -535,6 +536,9 @@ class ReleasePathTests(unittest.TestCase):
                         self.assertIn("ln -sfn /ci-cache/crates ~/.cargo/registry/cache", links[0])
             self.assertTrue(any(any("ln -sfn" in c for c in run_commands(job)) for job in checks.values()))
             self.assertFalse(any("CARGO_INCREMENTAL" in job["environment"] for job in checks.values()))
+            self.assertTrue(all(job["environment"]["CC_x86_64_unknown_linux_gnu"] == "ccache cc"
+                                and job["environment"]["CCACHE_DIR"] == circleci.RUNNER_CCACHE
+                                for job in checks.values()))
             oracles = set(circleci.BUCKETS["oracles-a"] + circleci.BUCKETS["oracles-b"])
             self.assertTrue({f"checks-{profile}" for profile in oracles} <= checks.keys())
             self.assertFalse({"checks-oracles-a", "checks-oracles-b"} & checks.keys())
@@ -549,7 +553,7 @@ class ReleasePathTests(unittest.TestCase):
         self.assertFalse(any("ln -sfn" in c for job in cloud["jobs"].values() for c in run_commands(job)))
         self.assertEqual(cloud["jobs"]["policy"]["resource_class"], "medium")
         self.assertTrue({"checks-oracles-a", "checks-oracles-b"} <= cloud["jobs"].keys())
-        self.assertTrue(all(job["environment"]["CARGO_INCREMENTAL"] == "0"
+        self.assertTrue(all(job["environment"]["CARGO_INCREMENTAL"] == "0" and "CC_x86_64_unknown_linux_gnu" not in job["environment"]
                             for name, job in cloud["jobs"].items() if name.startswith("checks-")))
         self.assertEqual(cloud["jobs"][circleci.GATE]["resource_class"], "medium")
         self.assertTrue(all(self.workflow(cloud)[name] == {"requires": ["policy"]}

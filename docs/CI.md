@@ -279,7 +279,8 @@ partial build: the weekly schedule, and a full push that changes the root `Cargo
 before Sunday rather than cold until then. Other jobs restore the newest key for their lockfile, else
 the newest of any. A scoped lockfile change still waits for Sunday. Detached
 workspaces' own lockfiles are not in the key. Cloud and release jobs build with `CARGO_INCREMENTAL=0` (other
-runner jobs, whose targets stay on the runner's disk, build incrementally; if one fails on corrupt
+runner jobs, whose targets stay on the runner's disk, build incrementally; they also compile C through
+ccache in the runner's shared `/ci-cache/ccache`; if one fails on corrupt
 incremental state, delete its `/srv/ci-cache/target/<side>/<job>-…` directory on the runner or rerun
 with `resource_class=medium`) and line-tables-only debuginfo
 to keep cached targets small, and `scripts/ci/prune.py` removes every
