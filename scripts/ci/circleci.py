@@ -4,7 +4,8 @@
 The static `.circleci/config.yml` is a setup workflow: its `plan` job selects coverage with
 `plan.py` and continues the pipeline with jobs for the selected check profiles (short ones share
 a job) and fuzz targets.
-Unselected work is never scheduled. Every generated job runs concurrently after `policy`; the
+Unselected work is never scheduled. Every generated job runs concurrently after `policy` (with
+it, on a self-hosted runner); the
 final `CI` job recomputes the plan and requires the handed-on plan to match before it writes
 the coverage receipt. On the trunk, `release` publishes a qualified release-plz merge and
 `release-pr` refreshes the release PR, both serialised and holding the only secrets.
@@ -447,6 +448,9 @@ def continuation(plan, bnb, env, event):
                                                   or cache_inputs_changed(plan))
     week = cache_week()
     local = trunk if self_hosted(resource_class) else None  # Which runner-local directory set, if any.
+    # A runner's tasks cost no credits, so policy and the gate run there too, and checks need not
+    # wait for policy to save credits on a policy failure; the gate still requires it.
+    light = resource_class if local is not None else "medium"
     handed = json.dumps(handed_on(plan), separators=(",", ":"), sort_keys=True)
     if len(handed.encode()) > ENV_LIMIT:
         raise ValueError("the handed-on plan exceeds one environment variable's limit")
@@ -473,7 +477,7 @@ def continuation(plan, bnb, env, event):
         # Fast tier has no Cargo invocation, builds, registry access, or extra Python dependencies.
         run("CI tooling tests", "python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v"),
         run("Shell syntax", "bash -n scripts/ci-local.sh"),
-    ], resource="medium")}
+    ], resource=light)}
     selected = []
     if plan["base"] and plan["base"] != plan["head"]:  # A tested trunk commit has no new commits.
         jobs["commitlint"] = commitlint_job(plan["base"])
@@ -510,9 +514,10 @@ def continuation(plan, bnb, env, event):
         run("Recompute coverage and reject any divergence", "python3 scripts/ci/circleci.py gate"),
         {"persist_to_workspace": {"root": "/tmp/ci", "paths": ["ci-coverage.json"]}},
         {"store_artifacts": {"path": "/tmp/ci/ci-coverage.json", "destination": "ci-coverage.json"}},
-    ], resource="medium", CI_NEEDS=json.dumps(needs, sort_keys=True))
+    ], resource=light, CI_NEEDS=json.dumps(needs, sort_keys=True))
     workflow = [{"policy": {}},
-                *({name: {} if name == "commitlint" else {"requires": ["policy"]}} for name in selected),
+                *({name: {} if name == "commitlint" or local is not None else {"requires": ["policy"]}}
+                  for name in selected),
                 {gate: {"requires": ["policy", *selected]}}]
     if event == "push":
         # Only reviewed trunk commits reach a secret. The image publishes after CI passes.

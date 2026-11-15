@@ -495,9 +495,19 @@ class ReleasePathTests(unittest.TestCase):
                         self.assertIn(f"/ci-cache/target/{side}/{name}-", links[0])
                         self.assertIn("ln -sfn /ci-cache/crates ~/.cargo/registry/cache", links[0])
             self.assertTrue(any(any("ln -sfn" in c for c in run_commands(job)) for job in checks.values()))
-        # A cloud class is unchanged: CircleCI caches, no runner links.
+            # Policy and the gate run on the runner; checks start without waiting for policy.
+            self.assertEqual(config["jobs"]["policy"]["resource_class"], "ns/runner")
+            self.assertEqual(config["jobs"][circleci.GATE]["resource_class"], "ns/runner")
+            workflow = self.workflow(config)
+            self.assertFalse(any(workflow[name] for name in checks))
+            self.assertIn("policy", workflow[circleci.GATE]["requires"])
+        # A cloud class is unchanged: CircleCI caches, no runner links, checks after policy.
         cloud = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
         self.assertFalse(any("ln -sfn" in c for job in cloud["jobs"].values() for c in run_commands(job)))
+        self.assertEqual(cloud["jobs"]["policy"]["resource_class"], "medium")
+        self.assertEqual(cloud["jobs"][circleci.GATE]["resource_class"], "medium")
+        self.assertTrue(all(self.workflow(cloud)[name] == {"requires": ["policy"]}
+                            for name in cloud["jobs"] if name.startswith("checks-")))
 
     def test_release_jobs_exist_only_for_a_trunk_push(self):
         plan = test_plan.planned(release=True)

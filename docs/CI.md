@@ -181,7 +181,8 @@ built from `.circleci/image/`). Build targets and the Cargo registry are cached 
 `.circleci/config.yml` is a setup workflow: its `plan` job runs the selector through
 `scripts/ci/circleci.py` and continues the pipeline with only the selected jobs. Unselected
 profiles are never scheduled; a prose-only change runs `policy`, `commitlint` and the `rsl` gate.
-Selected jobs all start once `policy` passes and run concurrently. The `workspace` profile, the
+Selected jobs all start once `policy` passes and run concurrently (alongside it on a self-hosted
+runner). The `workspace` profile, the
 critical path, runs as three jobs (`run.py --part`): `lint` (fmt and Clippy), `test` (`cargo
 nextest run`, which runs every test binary at once, plus `cargo test --doc`), and `extra`
 (all-feature adapter tests, the codec's examples and selector integration tests). Together they are exactly the
@@ -253,7 +254,8 @@ triggers live in the CircleCI project settings, not in code: the GitHub App push
 (`full=true`) and Mondays at 06:00 UTC (`audit=true`). Jobs use the Docker executor; the heaviest
 measured 1.5 GiB peak, and a machine executor is the one-line fallback if a job runs out of
 memory. A
-namespaced `resource_class` parameter selects a self-hosted container runner with the same image.
+namespaced `resource_class` parameter selects a self-hosted container runner with the same image;
+`policy` and the gate then run there too, and checks do not wait for `policy`.
 
 Caches are keyed by job, toolchain, job image and the job's lockfile (the root `Cargo.lock`, or a
 fuzz workspace's own), then the week of the save (the Sunday of the weekly schedule). Each key is
