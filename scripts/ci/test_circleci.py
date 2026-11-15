@@ -497,6 +497,14 @@ class ReleasePathTests(unittest.TestCase):
         self.assertEqual(circleci.routed_class(fresh, now, cloud=True), "medium")
         self.assertEqual(circleci.routed_class({"CI_RUNNER_SEEN": "\u00b2"}, now), "medium")  # No ValueError.
 
+    def test_a_release_run_forced_onto_the_runner_builds_non_incrementally(self):
+        release = test_plan.planned(release=True)
+        release["release_candidate"] = True
+        config = cont(release, BNB_GATE, {"CIRCLE_BRANCH": "main", "CI_INPUT_CLASS": "ns/runner"})
+        checks = [job for name, job in config["jobs"].items() if name.startswith("checks-")]
+        self.assertTrue(checks)
+        self.assertTrue(all(job["environment"]["CARGO_INCREMENTAL"] == "0" for job in checks))
+
     def test_cache_saving_and_release_runs_stay_on_the_cloud_with_a_fresh_runner(self):
         fresh = {"CI_RUNNER_SEEN": str(int(time.time()))}
         routine = cont(test_plan.planned(full=True), BNB_GATE, {"CIRCLE_BRANCH": "feat/x", **fresh})
@@ -526,6 +534,7 @@ class ReleasePathTests(unittest.TestCase):
                         self.assertIn(f"/ci-cache/target/{side}/{name}-", links[0])
                         self.assertIn("ln -sfn /ci-cache/crates ~/.cargo/registry/cache", links[0])
             self.assertTrue(any(any("ln -sfn" in c for c in run_commands(job)) for job in checks.values()))
+            self.assertFalse(any("CARGO_INCREMENTAL" in job["environment"] for job in checks.values()))
             # Policy and the gate run on the runner; checks start without waiting for policy.
             self.assertEqual(config["jobs"]["policy"]["resource_class"], "ns/runner")
             self.assertEqual(config["jobs"][circleci.GATE]["resource_class"], "ns/runner")
@@ -536,6 +545,8 @@ class ReleasePathTests(unittest.TestCase):
         cloud = cont(plan, BNB_GATE, {"CIRCLE_BRANCH": "feat/x"})
         self.assertFalse(any("ln -sfn" in c for job in cloud["jobs"].values() for c in run_commands(job)))
         self.assertEqual(cloud["jobs"]["policy"]["resource_class"], "medium")
+        self.assertTrue(all(job["environment"]["CARGO_INCREMENTAL"] == "0"
+                            for name, job in cloud["jobs"].items() if name.startswith("checks-")))
         self.assertEqual(cloud["jobs"][circleci.GATE]["resource_class"], "medium")
         self.assertTrue(all(self.workflow(cloud)[name] == {"requires": ["policy"]}
                             for name in cloud["jobs"] if name.startswith("checks-")))

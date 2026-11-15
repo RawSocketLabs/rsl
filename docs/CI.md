@@ -276,8 +276,11 @@ partial build: the weekly schedule, and a full push that changes the root `Cargo
 `rust-toolchain.toml` or the job image pin (`IMAGE` in `scripts/ci/circleci.py`), so a mid-week key change is warm
 before Sunday rather than cold until then. Other jobs restore the newest key for their lockfile, else
 the newest of any. A scoped lockfile change still waits for Sunday. Detached
-workspaces' own lockfiles are not in the key. Jobs build with `CARGO_INCREMENTAL=0` and
-line-tables-only debuginfo to keep cached targets small, and `scripts/ci/prune.py` removes every
+workspaces' own lockfiles are not in the key. Cloud and release jobs build with `CARGO_INCREMENTAL=0` (other
+runner jobs, whose targets stay on the runner's disk, build incrementally; if one fails on corrupt
+incremental state, delete its `/srv/ci-cache/target/<side>/<job>-…` directory on the runner or rerun
+with `resource_class=medium`) and line-tables-only debuginfo
+to keep cached targets small, and `scripts/ci/prune.py` removes every
 owned (path) package's units, test and example executables, and nextest/doc output before a save,
 so a cache holds only third-party artifacts (measured on the local workspace test and all-feature
 targets: about a tenth of the target). A pruning failure never fails the job; that target is left

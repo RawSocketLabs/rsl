@@ -494,7 +494,11 @@ def continuation(plan, bnb, env, event):
     # Incremental state and full debuginfo are most of a cached target directory; line tables
     # keep panic locations.
     common = {"CI_PLAN": handed, "CI_TEMP": "/tmp/ci", "RUNNER_TEMP": "/tmp/ci",
-              "CARGO_INCREMENTAL": "0", "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
+              # A runner's linked target directory never leaves its disk, so Cargo's own default
+              # (incremental dev and test builds) spares recompiling unchanged owned crates after each
+              # checkout; elsewhere incremental state would only bloat a cache or a release build.
+              **({} if local is not None and caches else {"CARGO_INCREMENTAL": "0"}),
+              "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
               "CI_MERGE_BASE": plan["base"] or "",
               # The plan job's pin (`plan_for_event`): the previous pipeline's revision, or "none"
               # when there was no proven one and coverage is full against the first parent. Only a
