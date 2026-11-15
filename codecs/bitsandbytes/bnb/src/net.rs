@@ -174,14 +174,9 @@ async fn read_direct_async<R: tokio::io::AsyncRead + Unpin + ?Sized>(
     Ok(true)
 }
 
+/// [`message_at_eof_with`] in the message's own layout, as [`BitBuf::pull_eof`] decodes.
 fn message_at_eof<T: BitDecode + BitEncode>(buffer: &mut BitBuf) -> Result<T, MessageReadError> {
-    buffer.pull_eof()?.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            "connection closed before a message",
-        )
-        .into()
-    })
+    message_at_eof_with(buffer, T::LAYOUT, ())
 }
 
 fn message_at_eof_with<T: DecodeWith<A>, A>(
@@ -1235,6 +1230,26 @@ mod component {
         assert_eq!(
             read_message::<EofFallback, _>(&mut &b""[..], &mut buffer, &mut [0; 8]).unwrap(),
             EofFallback::Raw(crate::u4::new(4))
+        );
+        assert!(buffer.is_empty());
+    }
+
+    #[bin(little)]
+    #[derive(Debug, PartialEq, Eq)]
+    enum LittleEofFallback {
+        #[bin(magic = b"ABCDE")]
+        Long,
+        Raw(u16),
+    }
+
+    #[test]
+    fn a_message_only_the_end_completes_is_decoded_in_its_own_layout() {
+        let mut buffer = BitBuf::new();
+        buffer.push(b"AB").unwrap();
+        assert_eq!(
+            read_message::<LittleEofFallback, _>(&mut &b""[..], &mut buffer, &mut [0; 8]).unwrap(),
+            LittleEofFallback::Raw(0x4241),
+            "the finite attempt reads the type's declared little-endian layout"
         );
         assert!(buffer.is_empty());
     }
