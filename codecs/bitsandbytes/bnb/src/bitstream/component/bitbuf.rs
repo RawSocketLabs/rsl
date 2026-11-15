@@ -287,6 +287,29 @@ fn unbounded_push_never_fails() {
 }
 
 #[test]
+fn a_bounded_clone_allocates_its_whole_cap_and_reads_on_where_the_original_was() {
+    // Unread bytes short of the cap: a plain `Vec` clone would reserve only those.
+    let mut original = BitBuf::bounded(24);
+    original.push(&numbered(0, 3)).unwrap();
+    assert_eq!(original.pull::<LeMsg>().unwrap().unwrap().b, 0);
+    let mut copy = original.clone();
+    assert_eq!(copy.capacity(), Some(24));
+    assert!(
+        copy.buf.capacity() >= 24,
+        "a bounded clone keeps the alloc-once promise"
+    );
+    copy.push(&numbered(3, 1)).unwrap();
+    for b in 1..4 {
+        assert_eq!(copy.pull::<LeMsg>().unwrap().unwrap().b, b);
+    }
+    assert_eq!(
+        original.pull::<LeMsg>().unwrap().unwrap().b,
+        1,
+        "the original is its own"
+    );
+}
+
+#[test]
 fn a_streaming_push_pull_loop_stays_within_a_tiny_cap() {
     // Pushed one message at a time and drained immediately, a bounded buffer reuses the same
     // allocation forever: each push fits because the prior message was reclaimed in place.
