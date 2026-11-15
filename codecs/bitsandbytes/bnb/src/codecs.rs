@@ -365,9 +365,14 @@ mod unit {
         assert_eq!(err.at, 0, "error points at the varint's start");
 
         // u32: the 5th byte may carry 4 bits; 0x1F sets bit 33 → overflow.
-        let mut r = BitReader::new(&[0xFF, 0xFF, 0xFF, 0xFF, 0x1F]);
+        let mut r = BitReader::new(&[0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x1F]);
+        r.read::<u8>().unwrap();
         let err = leb128::parse::<_, u32>(&mut r).unwrap_err();
-        assert_eq!(err.kind, ErrorKind::VarintOverflow { bits: 32 });
+        assert_eq!(
+            (err.kind, err.at),
+            (ErrorKind::VarintOverflow { bits: 32 }, 8),
+            "error points at the varint's start, not the byte that overflowed"
+        );
 
         // u128: 19th byte may carry 2 bits (18·7 = 126); 0x03 fits, 0x04 overflows.
         let mut ok = vec![0xFF; 18];
@@ -419,8 +424,14 @@ mod unit {
     #[test]
     fn cstring_write_rejects_embedded_nul() {
         let mut w = BitWriter::new();
+        w.write(0xAB_u8).unwrap();
         let err = cstring::write(&[1, 0, 2], &mut w).unwrap_err();
-        assert_eq!(err.kind, ErrorKind::EmbeddedNul { index: 1 });
+        assert_eq!(
+            (err.kind, err.at),
+            (ErrorKind::EmbeddedNul { index: 1 }, 8),
+            "reported where the string would start"
+        );
+        assert_eq!(w.into_bytes(), [0xAB], "nothing of the string is written");
         // The str form delegates, so it rejects the same way.
         let mut w = BitWriter::new();
         assert!(cstring::write_utf8("a\0b", &mut w).is_err());
@@ -432,9 +443,14 @@ mod unit {
         let mut r = BitReader::new(&bytes);
         assert_eq!(cstring::parse_utf8(&mut r).unwrap(), "héllo");
 
-        let mut r = BitReader::new(&[0xFF, 0x00]);
+        let mut r = BitReader::new(&[0x07, b'a', 0xFF, 0x00]);
+        r.read::<u8>().unwrap();
         let err = cstring::parse_utf8(&mut r).unwrap_err();
-        assert_eq!(err.kind, ErrorKind::InvalidUtf8 { valid_up_to: 0 });
+        assert_eq!(
+            (err.kind, err.at),
+            (ErrorKind::InvalidUtf8 { valid_up_to: 1 }, 8),
+            "reported at the string's first byte"
+        );
     }
 
     // ——— prefixed ———
