@@ -192,10 +192,12 @@ feature unification. Nextest's `ci` profile reports JUnit to CircleCI's test ins
 profiles share jobs (`circleci.BUCKETS`): each job pays about half a minute of spin-up, checkout
 and cache restore, and most profiles take a minute or two, so short profiles of one toolchain run
 in sequence on one machine (`run.py PROFILE...`), each bucket's summed median near the critical
-path's. A full routine run is nine jobs (`policy`, five check buckets, the three workspace parts)
+path's. A full routine run on the cloud is nine jobs (`policy`, five check buckets, the three workspace parts; twelve on a runner)
 plus the gate, not 23. Release-only profiles stay one job each: release runs restore no cache. A
 shared job runs all its profiles even after one fails, then fails naming each. A job keeps its bucket's name and cache key whatever subset a plan selects;
-a profile not in a bucket runs alone. Every job is bounded by a 10-minute budget.
+a profile not in a bucket runs alone. On a self-hosted runner, where a job costs nothing to start,
+each oracle profile runs as its own job instead (`RUNNER_UNBUCKETED`), so the oracles build in
+parallel. Every job is bounded by a 10-minute budget.
 
 Fuzz targets run as separate jobs and processes: bnb retains 60 seconds/2,000,000 runs per
 target, crypto/PKI retain 45 seconds/500,000 runs, and SOCKS runs the documented 2,000,000 cases

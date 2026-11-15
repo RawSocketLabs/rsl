@@ -72,6 +72,9 @@ BUCKETS = {
     # Release-only profiles stay unbucketed: release runs restore no cache, so a shared job would
     # be several cold builds under one 10-minute budget, and a timeout blocks a release.
 }
+# Buckets only save cloud spin-ups. A runner's jobs cost nothing to start and its CPU idles while a
+# bucket's oracles build one after another (measured 2026-11-15), so there each oracle is a job.
+RUNNER_UNBUCKETED = {"oracles-a", "oracles-b"}
 # Caches are written by full-coverage trunk runs: the weekly schedule (Sundays), and a push that
 # changes a key's inputs. CircleCI never overwrites a live key, so each key names the week of its
 # save (cache_week) and lives one CACHE_RETENTION, under 7 days: the next Sunday writes a new one.
@@ -528,7 +531,10 @@ def continuation(plan, bnb, env, event):
         if profile == "workspace":
             buckets.update({f"workspace-{part}": ([profile], part) for part in WORKSPACE_PARTS})
         else:
-            buckets.setdefault(bucket_of(profile), ([], None))[0].append(profile)
+            bucket = bucket_of(profile)
+            if local is not None and bucket in RUNNER_UNBUCKETED:
+                bucket = profile
+            buckets.setdefault(bucket, ([], None))[0].append(profile)
     for bucket, (profiles, part) in buckets.items():
         profiles = sorted(profiles, key=BUCKETS.get(bucket, profiles).index)  # The listed order: deny first.
         toolchains = {toolchain_of(profile, bnb) for profile in profiles if profile not in NO_RUST}
