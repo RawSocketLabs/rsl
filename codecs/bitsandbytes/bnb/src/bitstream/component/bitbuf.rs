@@ -171,6 +171,25 @@ fn clear_and_capacity() {
     assert!(bb.is_empty());
 }
 
+#[test]
+fn compact_drops_the_consumed_whole_bytes_and_keeps_a_partial_one() {
+    use crate::Source as _;
+
+    let mut buffer = BitBuf::new();
+    buffer.push(&[0x01, 0x02, 0x03]).unwrap();
+    assert_eq!(buffer.read_bits(12).unwrap(), 0x010);
+    buffer.compact();
+    // One whole byte went; the cursor is rebased into the byte it was inside.
+    assert_eq!(buffer.buf.len(), 2, "the consumed whole byte is released");
+    assert_eq!(
+        buffer.bit_pos(),
+        4,
+        "positions are buffer-local after compaction"
+    );
+    assert_eq!(buffer.bit_len(), 12, "no unread bit is lost");
+    assert_eq!(buffer.read_bits(12).unwrap(), 0x203);
+}
+
 // BitBuf is a Source: it reads through the same `bit_decode` entry the renamed `decode` uses.
 // The default-order buffer reads a big message; `with_layout` reads a little one (this also
 // proves byte order is applied exactly once — no double-ordering in the Source delegation).
