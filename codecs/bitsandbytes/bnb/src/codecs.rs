@@ -130,15 +130,12 @@ pub mod leb128 {
     pub fn write<K: Sink, T: Varint>(v: &T, w: &mut K) -> Result<(), BitError> {
         let mut value = v.into_bits();
         loop {
-            let mut byte = (value & 0x7F) as u8;
+            let byte = (value & 0x7F) as u8;
             value >>= 7;
-            if value != 0 {
-                byte |= 0x80;
-            }
-            w.write(byte)?;
             if value == 0 {
-                return Ok(());
+                return w.write(byte);
             }
+            w.write(byte | 0x80)?;
         }
     }
 }
@@ -345,6 +342,11 @@ mod unit {
     fn leb128_golden_bytes() {
         assert_eq!(encode_with(leb128::write, &300u64), [0xAC, 0x02]);
         assert_eq!(encode_with(leb128::write, &1u32), [0x01]);
+        assert_eq!(encode_with(leb128::write, &0u8), [0x00], "zero is one byte");
+        // protobuf: u64::MAX is nine 0xFF groups and a final 0x01, ten bytes in all.
+        let mut max = vec![0xFF; 9];
+        max.push(0x01);
+        assert_eq!(encode_with(leb128::write, &u64::MAX), max);
     }
 
     #[test]
