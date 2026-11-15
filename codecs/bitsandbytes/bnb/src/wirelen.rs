@@ -144,7 +144,18 @@ mod unit {
         assert_eq!(w.into_bytes(), [0xAB, 0xCD]);
 
         let mut w = BitWriter::new();
-        assert!(WireLen::<u16>::auto().bit_encode(&mut w).is_err());
+        w.write(0xFF_u8).unwrap();
+        let err = WireLen::<u16>::auto().bit_encode(&mut w).unwrap_err();
+        assert_eq!(
+            (err.kind, err.at),
+            (ErrorKind::UnresolvedWireLen, 8),
+            "an unresolved Auto is reported where it would have been written"
+        );
+    }
+
+    #[test]
+    fn unresolved_auto_counts_as_zero() {
+        assert_eq!(WireLen::<u16>::auto().to_count(), 0);
     }
 
     #[test]
@@ -158,7 +169,13 @@ mod unit {
             WireLen::Set(9)
         ); // Set wins
         // 300 doesn't fit a u8 → checked error, not a truncation to 44.
-        assert!(WireLen::<u8>::auto().resolve_count(300).is_err());
+        assert_eq!(
+            WireLen::<u8>::auto().resolve_count(300).unwrap_err().kind,
+            ErrorKind::CountOutOfRange {
+                count: 300,
+                bits: 8
+            }
+        );
     }
 
     #[test]
