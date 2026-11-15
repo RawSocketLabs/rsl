@@ -443,14 +443,17 @@ def release_jobs(release):
 
 
 def image_job():
-    """Publish the job image for a changed Dockerfile; adopting it is a reviewed digest change."""
+    """Publish the job and plan images for a changed Dockerfile; adopting either is a reviewed
+    digest change."""
     publish = ('echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin\n'
-               'image="ghcr.io/rawsocketlabs/rsl-ci:$CIRCLE_SHA1"\n'
-               f'docker build --tag "$image" {IMAGE_SOURCE}\n'
-               'docker push "$image"\n'
-               "echo \"Pin: $(docker inspect --format '{{index .RepoDigests 0}}' \"$image\")\"")
+               'for pair in rsl-ci:Dockerfile rsl-ci-plan:plan.Dockerfile; do\n'
+               '  image="ghcr.io/rawsocketlabs/${pair%%:*}:$CIRCLE_SHA1"\n'
+               f'  docker build --tag "$image" --file "{IMAGE_SOURCE}${{pair#*:}}" {IMAGE_SOURCE}\n'
+               '  docker push "$image"\n'
+               "  echo \"Pin: $(docker inspect --format '{{index .RepoDigests 0}}' \"$image\")\"\n"
+               'done')
     return {"machine": {"image": "ubuntu-2404:current"}, "resource_class": "large",
-            "steps": ["checkout", run("Build and publish rsl-ci", publish, no_output_timeout="45m")]}
+            "steps": ["checkout", run("Build and publish rsl-ci and rsl-ci-plan", publish, no_output_timeout="45m")]}
 
 
 def continuation(plan, bnb, env, event):

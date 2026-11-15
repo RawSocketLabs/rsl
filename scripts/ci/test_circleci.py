@@ -694,6 +694,11 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(self.arg("PUBLIC_API"), bnb["public_api_version"])
         self.assertEqual(self.arg("SEMVER"), bnb["semver_version"])
 
+    def test_the_plan_image_carries_the_job_image_cargo(self):
+        # The gate recomputes the plan on rsl-ci, so the plan image's cargo must read metadata alike.
+        plan = (ROOT / ".circleci/image/plan.Dockerfile").read_text()
+        self.assertEqual(re.search(r"^ARG CARGO=(\S+)$", plan, re.M).group(1), self.arg("STABLE"))
+
     def test_a_checkout_pins_the_stable_toolchain_jobs_run(self):
         pin = tomllib.loads((ROOT / "rust-toolchain.toml").read_text())["toolchain"]
         self.assertEqual(pin["channel"], circleci.STABLE)
