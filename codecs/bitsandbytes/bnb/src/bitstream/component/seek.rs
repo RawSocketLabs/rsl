@@ -18,6 +18,12 @@ fn seek_and_align_need_no_seek_trait() {
     r.seek_to_bit(9).unwrap();
     r.align_to_byte();
     assert_eq!(r.bit_pos(), 16);
+    r.align_to_byte();
+    assert_eq!(r.bit_pos(), 16, "an aligned cursor must not move");
+    r.seek_to_bit(23).unwrap();
+    r.align_to_byte();
+    assert_eq!(r.bit_pos(), 24, "aligning in the last byte reaches the end");
+    assert_eq!(r.remaining_bits(), 0);
 
     // Seeking past the end is a clean error, not a panic.
     assert!(r.seek_to_bit(999).is_err());
