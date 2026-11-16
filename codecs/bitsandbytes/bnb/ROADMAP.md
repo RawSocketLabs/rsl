@@ -136,8 +136,8 @@ they are ready; 0.11.0 is one deliberate breaking release for the error types.
    `decode_attempt` can be measured. Done of it (owner's decision, 2026-11-14): the
    component test suites moved out of `bitstream.rs` to one file each under
    `src/bitstream/component/` (10,126 → 6,677 lines; unit tests stay inline; same test
-   paths, and the probe binary is byte-identical). The split of the code itself follows
-   the release, as its own measured change.
+   paths, and the probe binary is byte-identical). The split of the code itself followed
+   on 0.11.0 as its own measured change (`DESIGN.md` §28).
 5. **Verification debt.** Done (`DESIGN.md` §24): `cargo mutants --in-diff` over the
    runtime's changes from 0.9.0 to `main` (822 mutants; 28 real gaps closed, the depth
    budget on every reader among them); the suites on a 32-bit target (two tests fixed);
@@ -470,7 +470,7 @@ a direct RFC bit-diagram, `count = <expr>`, ctx-`tag` unions, `WireLen`, `#[bin(
 newtypes + `Sink::scratch` all carried real protocols with no workaround. **What it surfaced**
 (small, additive): a ready-made `internet_checksum` helper (the network crates + the `ipv4`
 example each hand-roll RFC 1071; open under §C) and `BitDecode`/`BitEncode` for
-`std::net::Ipv4Addr`/`Ipv6Addr` (done: `src/bitstream.rs`, `tests/bin_net_addr.rs`). Neither
+`std::net::Ipv4Addr`/`Ipv6Addr` (done: `src/bitstream/codec.rs`, `tests/bin_net_addr.rs`). Neither
 blocks 1.0.
 
 ### B. Correctness hardening — it parses untrusted bytes
@@ -490,7 +490,7 @@ blocks 1.0.
 - [x] Boundary stress: `u127`/`u128` incl. all-ones (`edge_cases.rs`), the endian ×
       bit-order matrix at the bitfield layer (`comprehensive.rs` + the combined `bits × bytes`
       case), the message layer (`bin_order_matrix.rs` — the 2×2 compose-without-aliasing), **and
-      the low-level cursor** (`bitstream.rs::cursor_layout_matrix`), sub-byte straddles
+      the low-level cursor** (`bitstream/cursor.rs::cursor_layout_matrix`), sub-byte straddles
       (`bitstream_dmr`), and **attacker-controlled `count`** (`bin_count_adversarial.rs`:
       over-count → graceful `UnexpectedEof`, `u32::MAX` count → no pre-alloc, under-count
       → `TrailingBytes`, nested over-read keeps the innermost span).
@@ -586,10 +586,11 @@ blocks 1.0.
       `DESIGN.md` §19). Profile the failing-attempt path the way the one-byte-chunk case was
       (store-forwarding on the 80-byte error) and recover it. Now 0.10.x item 4, phase 1 and
       its research row (`DESIGN.md` §22).
-- [ ] **Split `bnb/src/bitstream.rs` into modules.** Built and rejected once: the move
+- [x] **Split `bnb/src/bitstream.rs` into modules.** Built and rejected once: the move
       changed how the incremental pull path is compiled in consumers (12–23% slower,
-      `DESIGN.md` §19). Needs measured `#[inline]` decisions on `try_pull_with` /
-      `decode_attempt` first; the macro crate's split is done.
+      `DESIGN.md` §19). Built again on 0.11.0 as a pure move, one module per part under
+      `src/bitstream/`; that regression does not reproduce and no `#[inline]` change was
+      needed (`DESIGN.md` §28).
 - [ ] Direct calls to `read_bits`/`write_bits` with a constant width in a hand-written loop
       fold less than they did where the old read happened to inline (`DESIGN.md` §19). No
       in-tree code does this; add a bench before tuning it. Generated decoders were in the

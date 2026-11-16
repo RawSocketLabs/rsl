@@ -302,8 +302,9 @@ confusion, not remove it).
 **Six layers, by `mod` name** — every test lives in a named module so a level can be run on
 its own (`cargo test <layer>` filters by the test's module path). **`unit` and `component`
 live inline in the `src/` file they exercise** (they have a logical home next to the code),
-except `bitstream.rs`'s component suites, which are one file each under
-`src/bitstream/component/` (still `bitstream::component::<suite>`; its `unit` tests stay inline);
+except the codec runtime's component suites, which are one file each under
+`src/bitstream/component/` (`bitstream::component::<suite>`). The runtime's `unit` tests sit in
+the module they exercise (`bitstream::<module>::unit`) and share `src/bitstream/fixtures.rs`;
 `macro_`/`integration`/`e2e`/`property` live in `tests/` (no single src home). Put a new test
 in the layer that matches its subject:
 
@@ -311,7 +312,7 @@ in the layer that matches its subject:
   expansion, no I/O (`UInt`, `Bits`/`Bitfield`, the `BitReader`/`BitWriter` cursor + `BitError`
   Display + the `Source`/`Sink` trait defaults via tiny in-test impls, `error`/`builder`).
 - **`component`** — `#[cfg(test)] mod component` in `src/*.rs`, next to the adapter it
-  exercises: `bitstream.rs` (suites in `src/bitstream/component/`) for the I/O ladder (`BufSource`/`SeekReader`/`StreamBitReader`/
+  exercises: `src/bitstream/component/` for the I/O ladder (`BufSource`/`SeekReader`/`StreamBitReader`/
   `BitBuf`/the `bytes` adapters), `net.rs` for the `mock`-driven `Message*` wrappers, `framing.rs`
   for the `tokio` `BinCodec`. (`#[bin]` works inside the crate's own test mods via
   `extern crate self as bnb`.)

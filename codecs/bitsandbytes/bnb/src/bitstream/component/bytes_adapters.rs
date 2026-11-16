@@ -1,4 +1,4 @@
-use crate::bitstream::read_by_bits;
+use crate::bitstream::source::read_by_bits;
 use bnb::{
     BitEncode, BitOrder, ByteOrder, BytesReader, BytesWriter, Layout, Source, bin, u4, u12, u24,
 };

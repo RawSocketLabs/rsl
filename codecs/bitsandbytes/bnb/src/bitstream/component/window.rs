@@ -1,7 +1,8 @@
 //! A fixed-length message decoded from a window of its own length against the
 //! same message decoded field by field: the value or the whole error, and where
 //! the cursor is left, for every input.
-use crate::bitstream::{IncrementalReader, WINDOW_LEAF, WINDOW_WHOLE, sealed, window_kind};
+use crate::bitstream::incremental::IncrementalReader;
+use crate::bitstream::{WINDOW_LEAF, WINDOW_WHOLE, sealed, window_kind};
 use bnb::{
     BitBuf, BitDecode, BitEnum, BitError, BitOrder, BitReader, ByteOrder, FixedBitLen, Layout,
     Source, bin, u2, u4, u12,

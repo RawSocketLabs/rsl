@@ -3,7 +3,9 @@
 //! source and sink that lends an aligned run, in all four layouts, at aligned and
 //! unaligned starts, for complete and truncated input.
 use super::byte_runs::LAYOUTS;
-use crate::bitstream::{IncrementalReader, decode_vec_each, encode_slice_each};
+use crate::bitstream::codec::encode_slice_each;
+use crate::bitstream::decode_vec_each;
+use crate::bitstream::incremental::IncrementalReader;
 use crate::{BitBuf, BitDecode, BitEncode, BitReader, BitWriter, ErrorKind, Layout};
 use crate::{Sink, Source};
 use core::fmt::Debug;

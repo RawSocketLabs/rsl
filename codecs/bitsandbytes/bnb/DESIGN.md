@@ -288,7 +288,7 @@ identity corners are the two real-world conventions — `big`+`msb` is network o
 `little`+`lsb` is DBC-Intel/SMB — and the mixed corners (`little`+`msb`, `big`+`lsb`) are
 the deliberate swaps. Pinned against the embedded DBC reference formula in
 `tests/bin_lsb_dbc.rs` (golden + property-tested), and golden at every layer in
-`bin_order_matrix.rs` (message) and `bitstream.rs::cursor_layout_matrix` (cursor). The
+`bin_order_matrix.rs` (message) and `bitstream/cursor.rs::cursor_layout_matrix` (cursor). The
 `#[bitfield]` layer agrees by construction: `bits = lsb` packs `v << offset` into the
 backing integer and `bytes = little` emits `to_le_bytes` — the same DBC layout.
 
@@ -4100,3 +4100,48 @@ On `477786a2`, the commit that reached `main`:
   than `main` by more than the table above says.
 - Not run: a 32-bit run of the unit suite, `cargo mutants`, libsdr's benchmarks, and fuzz
   campaigns longer than the release tier's.
+
+## 28. The runtime leaves `bitstream.rs` (0.11.0)
+
+`bnb/src/bitstream.rs` (7,251 lines) is now a facade of declarations and re-exports, with
+the code in one module per part under `src/bitstream/`: `error`, `layout` (the wire layout
+and the bit-packing primitives), `cursor` (`BitReader`/`BitWriter`), `source`, `sink`,
+`limited`, `incremental` (the attempt the buffered readers share), `codec` (the traits and
+leaf impls), `count_prefix`, `amount`, `entry` (the slice entry points), `support` (the
+doc-hidden helpers generated code calls), `stream` (`StreamBitReader` and `BufSource`),
+`bitbuf`, `seek` and `bytes_io`. Each module's unit tests moved with it
+(`bitstream::<module>::unit`), keeping the owner's rule that they sit beside the private
+helpers they test (§26). `src/bitstream/fixtures.rs` holds the three fixtures several of
+them share. The component suites are unchanged.
+
+It is a move. Items keep their bodies; private items that a sibling or a component suite uses
+became `pub(super)`. The
+one inherent method that shares a name with a trait method, `BitReader::aligned_run`, is
+`pub(super)` so `source` and `incremental` still resolve to it rather than to the trait's.
+The test binary lists the same lib tests, 341 with all features and 245 by default (only the
+`unit` paths changed). The public API
+is the same items: `cargo public-api` on the pinned nightly differs only in the canonical
+path it prints (`bnb::X` for an item whose defining module is now private, where it printed
+`bnb::bitstream::X`; both paths still resolve), and `cargo semver-checks` against `main`
+needs no update. The trybuild snapshots changed in the source path they quote and in the
+order of rustc's candidate-impl list.
+
+### Placement
+
+This split was first rejected because rustc partitions a crate by module (§19). Measured on
+the final layout (rustc 1.100.0, core 61):
+
+- **`incremental_envelope`** (`message_bench`, built with
+  `-C llvm-args=-align-all-functions=6`, runs alternating base, candidate, base, candidate):
+  the twelve cases read 0.67–1.05 of `main` (faster in eight), against base runs that differ
+  by up to 16% between themselves. §19's 12–23% loss does not reproduce, so the split needed
+  no `#[inline]` change.
+- **Probe, default build:** across the happy modes the geometric mean is -0.22%; the most
+  any rises is +2.62% (`stream_reader_fixed44`). Three short-input modes rise more:
+  `limit_fixed44_short` +4.69% (terminal), `limit_prefix_short_envelope` +4.88% and
+  `limit_prefix_short_fixed44` +6.70% (expected). An intermediate layout cost `BufSource`'s
+  happy modes 2–7%, because `pull`, its read helper, was compiled apart from it; `BufSource`
+  and `StreamBitReader` share `pull` and its `Stopped` result, so they share the `stream`
+  module. `decode_attempt` stays out of line in every attempt mode.
+- **Probe, `codegen-units=1`:** all 67 modes count the same instructions as `main`. The
+  differences in the default build are codegen-unit placement, not the move.

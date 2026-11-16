@@ -1,7 +1,7 @@
 //! Byte runs on the readers over `std::io::Read` against the per-byte loops they
 //! replace: the same values, errors, partial fills and cursor, the same bytes taken
 //! from the reader and the same ones retained, whatever the reader does on the way.
-use crate::bitstream::RUN_STEP;
+use crate::bitstream::stream::RUN_STEP;
 use crate::{BitError, BitOrder, BufSource, ByteOrder, ErrorKind, Layout, Source, StreamBitReader};
 use core::fmt;
 use std::io;

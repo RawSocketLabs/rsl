@@ -1,9 +1,10 @@
 //! Bulk byte runs (`read_bytes`/`read_into`/`write_bytes`) against the per-byte loops
 //! they replace: identical values, errors, partial fills, and final cursor for every
 //! source and sink that overrides them, at every bit offset in all four layouts.
-use crate::bitstream::{
-    IncrementalReader, read_bytes_per_byte, read_into_per_byte, write_bytes_per_byte,
-};
+use crate::bitstream::incremental::IncrementalReader;
+use crate::bitstream::sink::write_bytes_per_byte;
+use crate::bitstream::source::read_bytes_per_byte;
+use crate::bitstream::source::read_into_per_byte;
 use crate::{BitBuf, BitOrder, BitReader, BitWriter, ByteOrder, Layout, Sink, Source};
 
 pub(super) const LAYOUTS: [Layout; 4] = [

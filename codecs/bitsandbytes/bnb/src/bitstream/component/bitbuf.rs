@@ -62,7 +62,7 @@ fn an_unbounded_buffer_reclaims_once_the_consumed_bytes_match_the_unread() {
 #[test]
 fn the_reader_behind_an_attempt_lends_as_the_slice_reader_does() {
     use crate::Source as _;
-    use crate::bitstream::IncrementalReader;
+    use crate::bitstream::incremental::IncrementalReader;
 
     let mut reader = IncrementalReader(crate::BitReader::new(&[1, 2, 3]));
     assert_eq!(reader.aligned_run(2), Some(&[1, 2][..]));
