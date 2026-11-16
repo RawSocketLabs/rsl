@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Entries below `0.1.0` are generated from Conventional Commits by release-plz.
 
+## [0.11.1](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.11.0...bitsandbytes-v0.11.1) - 2026-11-16
+
+### Other
+
+- *(bitsandbytes)* give decode_exact its own body again
+- *(bitsandbytes)* split the codec runtime into modules
+- *(bitsandbytes)* pin BitBuf::compact and record mutation-checked reviews
+- *(bitsandbytes)* pin a bounded BitBuf clone's alloc-once capacity
+- *(bitsandbytes)* read BitBuf bits through read_via_slice like its siblings
+- *(bitsandbytes)* pin a datagram that fails to encode; record read loop reviews
+- *(bitsandbytes)* pin BinCodec's zero frame cap; record attempt and ran_out reviews
+- *(bitsandbytes)* decode the plain stream EOF attempt through message_at_eof_with
+- *(bitsandbytes)* decode_exact delegates to decode_exact_with
+- *(bitsandbytes)* decode_all collects decode_iter
+- *(bitsandbytes)* pin entry-point and window helpers before review
+- *(bitsandbytes)* write the final leb128 byte from one branch
+- *(bitsandbytes)* pin codec error offsets; record clean codec reviews
+- *(bitsandbytes)* pin WireLen error kinds, offset and unresolved count
+- *(bitsandbytes)* pin BitReader::align_to_byte on an aligned cursor and at the end
+
 ## [0.11.0](https://github.com/RawSocketLabs/rsl/compare/bitsandbytes-v0.10.1...bitsandbytes-v0.11.0) - 2026-11-14
 
 ### Added
