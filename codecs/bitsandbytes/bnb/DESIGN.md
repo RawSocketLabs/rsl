@@ -4145,3 +4145,18 @@ the final layout (rustc 1.100.0, core 61):
   module. `decode_attempt` stays out of line in every attempt mode.
 - **Probe, `codegen-units=1`:** all 67 modes count the same instructions as `main`. The
   differences in the default build are codegen-unit placement, not the move.
+
+## 29. `decode_exact` keeps its own body (0.11.1)
+
+`aad090ac` made `decode_exact` call `decode_exact_with` with a `bit_decode` closure. Its
+probe run showed no change, and in the default build there is none. Built with
+`codegen-units=1`, which takes code placement out of the count, three slice modes ran
+more instructions than 0.11.0 from that commit on, and from no other since the tag:
+`pieces44` 170.99 → 180.99 (+5.85%), `fixed44_short` 488.95 → 494.95 (+1.23%) and
+`sub_byte` 113.97 → 114.97 (+0.88%). The probe was bisected over the six source commits
+between `bitsandbytes-v0.11.0` and `537a6694` (rustc 1.100.0, core 61).
+
+`decode_exact` has its own body again, as in 0.11.0, with a comment saying why. At one
+codegen unit all 67 probe modes now count what 0.11.0 counts. In the default build they
+count what `main` counts, so the gain is for builds that partition the way the one-unit
+build does (LTO or `codegen-units=1` consumers).

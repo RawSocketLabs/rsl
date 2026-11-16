@@ -221,7 +221,20 @@ where
 /// [`ErrorKind::TrailingBytes`] if whole bytes remain, else the decode error.
 #[doc(hidden)]
 pub fn decode_exact<T: BitDecode>(bytes: &[u8], layout: Layout) -> Result<T, BitError> {
-    decode_exact_with(bytes, layout, |r| T::bit_decode(r))
+    // Not `decode_exact_with`: through the closure this costs 10 instructions more per
+    // `pieces44` message at one codegen unit (DESIGN.md §29).
+    let mut r = BitReader::with_layout(bytes, layout);
+    let v = T::bit_decode(&mut r)?;
+    let consumed = r.bit_pos().div_ceil(8);
+    if consumed < bytes.len() {
+        return Err(BitError::new(
+            ErrorKind::TrailingBytes {
+                remaining: bytes.len() - consumed,
+            },
+            r.bit_pos(),
+        ));
+    }
+    Ok(v)
 }
 
 /// Decodes one message from the front of `bytes` and returns it with the **bits** it consumed —
