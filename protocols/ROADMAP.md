@@ -69,13 +69,13 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        approval, and TCP helpers with bounded accept and separate phase deadlines.
        Remaining: managed/Tokio/Mio BIND, explicit raw/malformed codec, GSS-API,
        UDP ASSOCIATE, SOCKS4, and SOCKS4A. Windows/macOS Mio runtime qualification is deferred.
-6. [~] **`session/tls`** — in-house TLS client. Landed: the TLS 1.2 wire types (record header,
-       alerts, and the handshake messages of an ECDHE exchange, each round-tripping a captured
-       OpenSSL handshake byte for byte), plus peer-chain parsing and server verification
-       delegated to `x509`/`pki`, and the TLS 1.2 key schedule and AES-128-GCM record
-       protection on `crypto`, which reproduce that capture's `Finished` values and protected
-       records. Remaining: the sans-I/O client handshake, a blocking adapter. Plan and
-       decisions: its `DESIGN.md`.
+6. [~] **`session/tls`** — in-house TLS client. Landed: the TLS 1.2 wire types, peer-chain
+       parsing and server verification delegated to `x509`/`pki`, the key schedule and
+       AES-128-GCM record layer on `crypto`, and a sans-I/O `Client` (one suite, X25519,
+       RSA-PSS, extended master secret required) that completes a handshake and exchanges
+       data with OpenSSL; its tests replay that connection byte for byte. Remaining: a
+       blocking adapter (needs an OS random source in `crypto`), a fuzz target, then more
+       suites as servers require. Plan and decisions: its `DESIGN.md`.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
 ## Gaps found in the layers below
@@ -92,8 +92,11 @@ crate. Known so far:
 - [ ] **`pki`: IP-address service identities.** Only `dNSName` is matched today.
 - [ ] **`crypto`: an operating-system `RandomSource`.** Only test implementations exist. The
       sans-I/O `tls` core takes one from the caller; the blocking adapter needs a real one.
-- [ ] **`crypto`: a public constant-time comparison.** `tls` must compare a received `Finished`
-      value without leaking where it differs; `crypto`'s tag comparison is private.
+- [ ] **`crypto`: an upper bound on RSA public keys.** Verification cost grows with the cube
+      of the modulus length and `from_components` accepts any length; `tls` bounds what it
+      passes in (8192 bits, 8-byte exponent) until `crypto` does.
+- [x] **`crypto`: a public constant-time comparison.** `tls` must compare a received `Finished`
+      value without leaking where it differs. Added as `Secret::matches`.
 - [ ] **`crypto`: RSA PKCS #1 v1.5 signature verification outside `crypto-legacy`**, only if a
       gateway will not sign its TLS 1.2 key exchange with RSA-PSS. The reference gateway's
       :443 does use RSA-PSS (observed 2026-11-16); the tunnel nodes are unobserved.

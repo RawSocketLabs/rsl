@@ -81,9 +81,34 @@ sangfor-*  http1        consumers
     under one key without the sequence number wrapping, which TLS already forbids. OpenSSL
     uses a random starting value instead; both interoperate, because the receiver reads the
     nonce from the record.
-11. **Both master-secret derivations exist.** The client offers `extended_master_secret` and
-    uses whichever the server confirms. The reference gateway confirms it (observed
+11. **Both master-secret derivations exist.** `MasterSecret::derive_extended` is the one the
+    `Client` uses (decision 13); `MasterSecret::derive` is there for callers building their
+    own handshake. The reference gateway confirms `extended_master_secret` (observed
     2026-11-16).
+
+12. **`Unverified` still requires the key-exchange signature** (decided 2026-11-16). The chain
+    is not validated, but the server must sign its ephemeral key with the leaf's key.
+    Otherwise an attacker could present a gateway's public certificate with a key of their
+    own, and a consumer that pins or hashes that certificate (aTrust does) would be fooled.
+    The cost is that a gateway whose leaf `x509` cannot parse, or whose RSA key is under
+    2048 bits, is unreachable. A second, fully unauthenticated mode is added only if a real
+    gateway needs it.
+13. **`extended_master_secret` is required**, not preferred (RFC 7627 §5.2). Without it the
+    master secret is not bound to the handshake. `MasterSecret::derive` exists for callers
+    building their own handshake; the `Client` does not use it. An opt-out is added only for
+    a named server that needs one.
+14. **The offer is one suite, one group, one signature scheme.** Each addition widens a state
+    machine that has no audit. The cost is that servers without RSA-PSS in TLS 1.2 (those
+    predating TLS 1.3 support) or without X25519 cannot be reached. The reference gateway's
+    :443 accepts this offer; its tunnel nodes are unobserved.
+15. **The client is strict where the RFC lets it choose.** Every alert except `close_notify`
+    ends the connection, warnings included. `HelloRequest` during the handshake is an error;
+    after it, it is refused with a `no_renegotiation` warning a bounded number of times.
+    Record versions other than 3.3 are refused once the `ServerHello` is accepted.
+16. **Closing is not a half-close guarantee.** `close` stops this end's writes and keeps
+    reading, but TLS 1.2 lets a peer answer `close_notify` by closing at once and discarding
+    what it had not sent. Whether a given gateway keeps sending is its choice; the aTrust TCP
+    tunnel's need for it must be checked against the vendor client's traffic.
 
 ## 4. Build order
 
@@ -94,8 +119,11 @@ sangfor-*  http1        consumers
 3. Key schedule and record protection: the TLS 1.2 PRF on HMAC-SHA-256, AES-128-GCM records
    — **done**.
 4. The sans-I/O client handshake, including write half-close (send `close_notify`, keep
-   reading), which the aTrust TCP tunnel needs.
-5. A blocking adapter, then an interoperability test against a local server.
+   reading), which the aTrust TCP tunnel needs — **done**. Still owed from this step: a fuzz
+   target for the client's input path (§7 promises one per step; the crate has no fuzz
+   directory yet).
+5. A blocking adapter. The interoperability test against a local server landed with step 4
+   (`tests/interop.rs`), driven by a loop in the test itself.
 6. `legacy` feature: TLS 1.1 with `TLS_RSA_WITH_RC4_128_SHA` and ClientHello hooks. Deferred
    with EasyConnect.
 
@@ -123,12 +151,19 @@ sangfor-*  http1        consumers
   from the caller, so this blocks only the blocking adapter (step 5), which needs an
   OS-backed source in `crypto`.
 
-- **`crypto`: no public constant-time comparison.** A receiver must compare the peer's
-  12-byte `Finished` value against the expected one without leaking where they differ.
-  `crypto`'s tag comparison is private, and `HmacSha256::verify` takes only a full 32-byte
-  tag. `MasterSecret` therefore returns the expected value and leaves the comparison to the
-  caller. Build step 4 needs a constant-time equality in `crypto` and a `verify_finished`
-  here that uses it.
+- **`crypto`: no public constant-time comparison** — fixed 2026-11-16 by `Secret::matches`.
+  The `Client` holds the expected `Finished` value in `SecretBytes` and compares with it. A
+  caller of `MasterSecret::finished_verify_data` must do the same.
+
+- **`crypto`: no upper bound on an RSA public key.** `RsaPublicKey::from_components` accepts
+  any modulus and exponent length, and verification cost grows with the cube of the modulus
+  length (measured in a test build: 0.7 s at 2048 bits, 43 s at 8192, 345 s at 16384, with a
+  full-width exponent). A server chooses its key before it has proved anything, so the
+  `Client` refuses a modulus over 8192 bits or an exponent over 8 bytes before verifying.
+  The bound belongs in `crypto`.
+- **`crypto` is slow.** It is an unoptimised reference implementation by design. One RSA
+  verification with an ordinary 2048-bit key and exponent 65537 is fast, but bulk AES-GCM in
+  a debug build is slow enough that the tests keep protected payloads small.
 
 ### Readiness check, 2026-11-16
 
@@ -158,8 +193,11 @@ below are `no_std + alloc`, so it stays possible, but no consumer needs it).
   HMAC outputs are held in `SecretBytes`. Copies the compiler makes while moving them, and
   the state inside `crypto` (HMAC, the AES key schedule), follow that crate's own handling.
   No timing analysis has been done on any of it.
-- **The master-secret derivations are checked against `openssl kdf`, not a live handshake.**
-  The capture's pre-master secret is not recoverable, so those two tests share their label
-  spelling with the code. The first live handshake (build step 5) closes that.
+- **Only the extended master-secret derivation is checked against a live peer.** The replayed
+  and live OpenSSL connections both use it. `MasterSecret::derive`, the standard one, is
+  checked only against `openssl kdf`, with the label spelled the same way in test and code.
+- **The routine tests replay one recording.** They prove the client still speaks to that
+  OpenSSL build's bytes. Only the ignored `interop` test meets a live peer, so a change to
+  the client, key schedule or record layer must run it by hand.
 - **A TLS stack is a large security surface.** Each step lands with RFC vectors, adversarial
   tests and a fuzz target for the handshake parser before a consumer depends on it.

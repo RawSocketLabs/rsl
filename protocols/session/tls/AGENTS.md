@@ -7,23 +7,42 @@ A from-scratch TLS client stack, beginning with TLS 1.2 (RFC 5246). refcheck pro
 > [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
 > (dual-use philosophy, the codec) also apply.
 
-## Status — dev (parts built, no connection yet)
+## Status — dev (a working sans-I/O client, no socket adapter)
 
-Four pieces exist: the wire types (record header, alerts, and the handshake messages of an
-ECDHE exchange), the certificate module (peer chain plus the server-verification policy), the
-TLS 1.2 key schedule, and AES-128-GCM record protection. Nothing drives them yet: there is no
-handshake state machine and no connection type, so the crate cannot open a TLS connection. [`DESIGN.md`](DESIGN.md)
-records the plan, the decisions and the lower-layer gaps.
+A sans-I/O TLS 1.2 `Client` completes a handshake and exchanges data with OpenSSL. It offers
+one cipher suite (`TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`), X25519 and RSA-PSS signatures,
+requires `extended_master_secret`, and does not resume, renegotiate or send a client
+certificate. There is no blocking or async adapter and no operating-system random source, so a
+caller supplies both. Nothing here is audited. [`DESIGN.md`](DESIGN.md) records the plan, the
+decisions and the lower-layer gaps.
 
 ## Architecture
 
+- `src/client/` — `Client`, the state machine, with `ClientConfig` and `Error`. The driver
+  contract is in `Client`'s rustdoc. Rules it enforces that are easy to break:
+  - Each handshake message is accepted in exactly one state; anything else is
+    `unexpected_message`. `ChangeCipherSpec` is accepted only right after our `Finished`, and
+    never while part of a handshake message is buffered.
+  - The server may choose only what was offered: version, suite, null compression, and
+    extensions (none unsolicited, none repeated). `extended_master_secret` is mandatory.
+  - The key-exchange signature is verified under every `ServerVerification`, `Unverified`
+    included, over the parameter bytes exactly as received.
+  - Application data is delivered only after the server's `Finished` verifies, and that
+    check uses `crypto::Secret::matches`, never `==`.
+  - Every alert but `close_notify` on an established connection ends the connection. Every
+    `Err` is final; `Error::alert` says what the peer is told.
+  - Buffers are bounded: `receive` pauses at `PLAINTEXT_LIMIT` and takes nothing it cannot
+    process (the rest stays with the caller, so a pause cannot strand a record), `write`
+    pauses at `TRANSMIT_LIMIT`, and empty records and `HelloRequest`s are counted.
+  - A server's RSA key is size-checked before it is used, because the server picks it before
+    proving anything.
 - `src/wire/` — TLS 1.2 wire types on bnb, one message or registry per file. Codecs do no I/O
   and enforce no policy.
   - Record layer: `RecordHeader` (the 5-byte header; the fragment is not part of it),
     `ContentType`, `ProtocolVersion`, `Alert`.
   - Handshake: `HandshakeHeader` (type and `u24` length), then one body type per message:
-    `ClientHello`, `ServerHello`, `Certificate`, `ServerKeyExchange`, `ClientKeyExchange`,
-    `Finished`. A body is decoded with `decode_exact` from exactly the bytes its header
+    `ClientHello`, `ServerHello`, `Certificate`, `ServerKeyExchange`, `CertificateRequest`,
+    `ClientKeyExchange`, `Finished`. A body is decoded with `decode_exact` from exactly the bytes its header
     counts. `ServerHelloDone` has an empty body and so no type. `ChangeCipherSpec` is the
     single byte `1` and has no type either.
   - `ServerKeyExchange` and `ClientKeyExchange` are the ECDHE layouts (RFC 8422). Decode them
@@ -44,8 +63,9 @@ records the plan, the decisions and the lower-layer gaps.
 - `src/record/` — the record layer.
   - `WriteState` and `ReadState` are the guided path. Each owns its direction's protection
     and sequence number, so a sequence number is never used twice under a key; `protect`
-    is the key change. `ReadState` also owns the receive buffer, bounded to one largest
-    record, and refuses an oversized record as soon as its header arrives.
+    is the key change. `ReadState` also owns the receive buffer, which holds one record at
+    most: it takes bytes only to the end of the record it is reading, and refuses an
+    oversized record as soon as its header arrives.
   - `Aes128GcmProtection` is one direction's AES-128-GCM protection and is stateless: the
     caller passes each record's sequence number, type and version. Used directly it is the
     raw path, as is `seal_with_explicit_nonce`.
@@ -94,7 +114,10 @@ This is the crate's standing rule. TLS carries certificates; it does not interpr
 - `PeerChain` keeps the peer's bytes unparsed, so a chain `x509` rejects can still be read or
   pinned by the caller.
 - `ServerVerification` has no default. `Unverified` is the explicit escape hatch; nothing in
-  the crate may fall back to it silently.
+  the crate may fall back to it silently. It skips chain validation, not the proof that the
+  server holds the leaf's key.
+- The `Client` is the guided path and is strict. A caller who wants to send something it
+  refuses builds it from `wire`, `record` and `schedule` directly.
 
 ## Testing
 
@@ -110,6 +133,19 @@ This is the crate's standing rule. TLS carries certificates; it does not interpr
 - **`adversarial`** — `tests/adversarial.rs`: unknown values, lists whose lengths lie in each
   direction, every truncation of the captured messages; a protected record with any one bit
   flipped, or opened under another sequence number, type, version or key.
+- **`client`** — `tests/client.rs`: the state machine against a recorded connection. The
+  server's bytes came from OpenSSL and the client's randomness is reproducible, so replaying
+  them must reproduce the client's recorded bytes exactly. The rejection tests change the
+  server's first flight one thing at a time (order, duplicates, early `ChangeCipherSpec`,
+  injected data and alerts, each `ServerHello` field), then play the server under the
+  session's re-derived keys for the protected part. A new state or check needs a row there:
+  delete the check and confirm a test fails, which is how the existing rows were verified.
+- **`interop`** — `tests/interop.rs`, ignored by default: the client against a live
+  `openssl s_server` on loopback, once plainly and once with the server requesting a client
+  certificate. Run it with
+  `cargo test -p tls --test interop -- --ignored` after any change to the client, the key
+  schedule or the record layer; with `TLS_RECORD_DIR` set it re-records the connection
+  `client` replays.
 - **`integration`** — `tests/integration.rs`: certificates built by `x509`, signed with
   `crypto` Ed25519 keys through `pki::issuance`, then parsed and verified through this crate.
   Rejections are pinned to the `pki::ErrorKind` that caused them, and each argument `verify`

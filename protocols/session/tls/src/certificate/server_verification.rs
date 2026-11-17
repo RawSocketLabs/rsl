@@ -24,10 +24,15 @@ pub enum ServerVerification<'a> {
         /// The server name the leaf must be valid for, in ASCII or IDNA A-label form.
         dns_name: &'a str,
     },
-    /// Accept any chain without looking at it, even an empty or unparseable one.
+    /// Accept the chain without validating it against any trust anchor, name or time.
     ///
-    /// The connection is then open to an active attacker. It exists for gateways that present
-    /// certificates no trust store validates, and for dual-use testing.
+    /// The connection is then open to an active attacker who presents a certificate of their
+    /// own. It exists for gateways that present certificates no trust store validates, and
+    /// for dual-use testing. [`verify`](Self::verify) itself accepts anything under this
+    /// policy, even an empty or unparseable chain. The handshake is stricter: the
+    /// [`Client`](crate::Client) still requires the server to sign its key exchange with the
+    /// leaf certificate's key, so the leaf must parse and the peer must hold its key. That
+    /// makes the chain the caller reads afterwards the one the peer can actually speak for.
     Unverified,
 }
 

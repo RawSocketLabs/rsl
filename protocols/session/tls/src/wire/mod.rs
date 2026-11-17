@@ -2,6 +2,7 @@
 
 mod alert;
 mod certificate;
+mod certificate_request;
 mod cipher_suite;
 mod client_hello;
 mod client_key_exchange;
@@ -20,6 +21,7 @@ mod signature_scheme;
 
 pub use alert::{Alert, AlertDescription, AlertLevel};
 pub use certificate::{Asn1Cert, Certificate};
+pub use certificate_request::CertificateRequest;
 pub use cipher_suite::CipherSuite;
 pub use client_hello::ClientHello;
 pub use client_key_exchange::ClientKeyExchange;

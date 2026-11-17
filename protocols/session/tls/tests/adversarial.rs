@@ -371,11 +371,33 @@ mod adversarial {
 
     #[test]
     fn read_buffer_never_holds_more_than_one_largest_record() {
-        let mut state = ReadState::plain();
-        let flood = vec![0; ReadState::CAPACITY * 4];
+        let mut state = client_record_reader();
+        // A header announcing the largest protected record, then far more bytes than that.
+        let mut flood = vec![23, 3, 3, 0x48, 0x00];
+        flood.resize(ReadState::CAPACITY * 4, 0);
         assert_eq!(state.receive(&flood), ReadState::CAPACITY);
         assert_eq!(state.receive_limit(), 0);
         assert_eq!(state.receive(&flood), 0);
+    }
+
+    #[test]
+    fn read_state_takes_bytes_only_to_the_end_of_one_record() {
+        let mut state = client_record_reader();
+        let first = hex(support::CLIENT_FINISHED_RECORD);
+        let second = hex(support::CLIENT_APPLICATION_RECORD);
+        let both = [first.as_slice(), &second].concat();
+        assert_eq!(
+            state.receive(&both),
+            first.len(),
+            "the second record is left"
+        );
+        assert_eq!(
+            state.receive(&both[first.len()..]),
+            0,
+            "until the first is taken"
+        );
+        assert!(state.next_record().unwrap().is_some());
+        assert_eq!(state.receive(&both[first.len()..]), second.len());
     }
 
     #[test]

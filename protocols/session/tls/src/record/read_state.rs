@@ -7,9 +7,10 @@ use crate::wire::RecordHeader;
 /// The record layer's read state: bytes received but not yet framed, the protection in
 /// force, and the sequence number of the next record (RFC 5246 §6.1).
 ///
-/// The buffer holds at most one maximum-size record. A caller offers it no more than
-/// [`receive_limit`](Self::receive_limit) bytes and takes records out with
-/// [`next_record`](Self::next_record) to make room.
+/// The buffer holds at most one record: [`receive`](Self::receive) takes bytes only up to the
+/// end of the record it is reading, and the caller takes that record out with
+/// [`next_record`](Self::next_record) before offering what follows. Bytes of later records
+/// therefore stay with the caller, where a paused connection cannot lose track of them.
 pub struct ReadState {
     buffer: Vec<u8>,
     protection: Option<Aes128GcmProtection>,
@@ -43,17 +44,34 @@ impl ReadState {
         self.protection.is_some()
     }
 
-    /// How many more bytes [`receive`](Self::receive) accepts right now.
+    /// How many more bytes complete the header or the record being read. Zero means a whole
+    /// record (or one too long to accept) is waiting for [`next_record`](Self::next_record).
     #[must_use]
     pub fn receive_limit(&self) -> usize {
-        Self::CAPACITY - self.buffer.len()
+        let Some((header, _)) = self.buffer.split_first_chunk::<{ RecordHeader::LEN }>() else {
+            return RecordHeader::LEN - self.buffer.len();
+        };
+        let length = u16::from_be_bytes([header[3], header[4]]);
+        if length > RecordHeader::MAX_CIPHERTEXT_LEN {
+            return 0;
+        }
+        (RecordHeader::LEN + usize::from(length)).saturating_sub(self.buffer.len())
     }
 
-    /// Buffers bytes from the peer and returns how many were taken, which is fewer than
-    /// offered once the buffer is full.
+    /// Buffers bytes from the peer, stopping at the end of the record being read, and
+    /// returns how many were taken. Offer the rest again after
+    /// [`next_record`](Self::next_record).
     pub fn receive(&mut self, bytes: &[u8]) -> usize {
-        let taken = bytes.len().min(self.receive_limit());
-        self.buffer.extend_from_slice(&bytes[..taken]);
+        let mut taken = 0;
+        // Two rounds at most: the rest of the header, then the body it announces.
+        while taken < bytes.len() {
+            let step = self.receive_limit().min(bytes.len() - taken);
+            if step == 0 {
+                break;
+            }
+            self.buffer.extend_from_slice(&bytes[taken..taken + step]);
+            taken += step;
+        }
         taken
     }
 

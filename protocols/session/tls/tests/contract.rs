@@ -12,10 +12,10 @@ mod contract {
         record::{Aes128GcmProtection, ReadState, TlsPlaintext, TrafficKeys, WriteState},
         schedule::{ConnectionEnd, MasterSecret},
         wire::{
-            Alert, AlertDescription, AlertLevel, Asn1Cert, Certificate, CipherSuite, ClientHello,
-            ClientKeyExchange, ContentType, EcCurveType, Extension, ExtensionType, Finished,
-            HandshakeHeader, HandshakeType, NamedGroup, ProtocolVersion, RecordHeader, ServerHello,
-            ServerKeyExchange, SignatureScheme,
+            Alert, AlertDescription, AlertLevel, Asn1Cert, Certificate, CertificateRequest,
+            CipherSuite, ClientHello, ClientKeyExchange, ContentType, EcCurveType, Extension,
+            ExtensionType, Finished, HandshakeHeader, HandshakeType, NamedGroup, ProtocolVersion,
+            RecordHeader, ServerHello, ServerKeyExchange, SignatureScheme,
         },
     };
 
@@ -97,6 +97,23 @@ mod contract {
         let alert = Alert::new(AlertLevel::Fatal, AlertDescription::HandshakeFailure);
         assert_eq!(alert.to_bytes().unwrap(), [2, 40]);
         assert_eq!(Alert::decode_exact(&[2, 40]).unwrap(), alert);
+    }
+
+    // --- RFC 5246 §7.4.4: byte-counted types, uint16-counted algorithms and authorities ---
+
+    #[test]
+    fn certificate_request_is_types_then_algorithms_then_authorities() {
+        let request = CertificateRequest {
+            certificate_types: vec![1, 64],
+            supported_signature_algorithms: vec![
+                SignatureScheme::RsaPssRsaeSha256,
+                SignatureScheme::EcdsaSecp256r1Sha256,
+            ],
+            certificate_authorities: vec![0, 1, 0x30],
+        };
+        let wire = [2, 1, 64, 0, 4, 0x08, 0x04, 0x04, 0x03, 0, 3, 0, 1, 0x30];
+        assert_eq!(request.to_bytes().unwrap(), wire);
+        assert_eq!(CertificateRequest::decode_exact(&wire).unwrap(), request);
     }
 
     // --- RFC 5246 §7.4.2: uint24 list length, then each certificate behind a uint24 length ---
@@ -645,9 +662,11 @@ mod contract {
     fn read_all(state: &mut ReadState, bytes: &[u8], step: usize) -> Vec<TlsPlaintext> {
         let mut records = Vec::new();
         for piece in bytes.chunks(step) {
-            assert_eq!(state.receive(piece), piece.len());
-            while let Some(record) = state.next_record().unwrap() {
-                records.push(record);
+            // The state takes bytes up to the end of one record at a time.
+            let mut rest = piece;
+            while !rest.is_empty() {
+                rest = &rest[state.receive(rest)..];
+                records.extend(state.next_record().unwrap());
             }
         }
         records
