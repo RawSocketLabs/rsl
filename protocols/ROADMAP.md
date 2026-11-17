@@ -116,7 +116,11 @@ single-sign-on logins, the L3 tunnel and EasyConnect come after it.
        specification's vectors V1 to V8. **`sangfor-atrust-wire`** (bnb data-plane codecs) —
        done for session authentication and the TCP tunnel (vectors V12, V14, V16, V17); the L3
        frames are not written. Both are pure, vector-tested, no I/O.
-5. [ ] **`sangfor-atrust`** — api, auth, policy and TCP-tunnel modules on the crates above.
+5. [~] **`sangfor-atrust`** — modules on the crates above, in this order: `policy` (done:
+       parsing and lookups, vectors V21 and V23 to V26), `api` (request builders and response
+       parsers over a one-exchange `Portal` trait), `login` (password first), `tcp` (sans-I/O
+       handshake and frames with a blocking driver), `net` (sockets, TLS and HTTP behind a
+       feature).
 6. [ ] **`otp`** — RFC 4226/6238 one-time passwords, with base32 decoding. Not needed for the
        first milestone.
 7. [ ] **EasyConnect** — deferred. Its tunnel needs TLS 1.1 with RC4, and the reference gateway

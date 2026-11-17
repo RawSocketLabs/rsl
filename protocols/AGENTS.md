@@ -142,6 +142,7 @@ corpus name once compliance tracking is wired.
 | `application/cookie` | application | dev (`Set-Cookie` parsing and a one-host jar with path matching and expiry; no `Domain` handling; hand-rolled, not on bnb) | `cookie` (RFC 6265) |
 | `application/sangfor/atrust-sig` (`sangfor-atrust-sig`) | application | functional (the pure primitives of the aTrust client: sign key, anti-MITM checks, secret encryption, identifiers; matches the specification's vectors, unverified against a gateway) | — (no public standard; `application/sangfor/SPEC-atrust.md`) |
 | `application/sangfor/atrust-wire` (`sangfor-atrust-wire`) | application | wire layer (tunnel session authentication and the TCP tunnel handshake and frame header; matches the specification's vectors, unverified against a node; L3 frames not written) | — (no public standard; `application/sangfor/SPEC-atrust.md`) |
+| `application/sangfor/atrust` (`sangfor-atrust`) | application | in progress (the access policy: parsing and lookups, matching the specification's vectors; the control-plane API, login and the TCP tunnel are not written) | — (no public standard; `application/sangfor/SPEC-atrust.md`) |
 | `system/netlink` | system | functional (route/generic codecs, blocking transport, typed WireGuard API) | `netlink` (Linux UAPI) |
 | `examples` (`protocol-examples`) | — | demos, unpublished (forged UDP/ARP over rawsock `network`/`link`) | — |
 

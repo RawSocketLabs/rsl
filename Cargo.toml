@@ -82,6 +82,7 @@ members = [
     "protocols/application/rtltcp",
     "protocols/application/http1",
     "protocols/application/cookie",
+    "protocols/application/sangfor/atrust",
     "protocols/application/sangfor/atrust-sig",
     "protocols/application/sangfor/atrust-wire",
     # Linux kernel/userspace protocols

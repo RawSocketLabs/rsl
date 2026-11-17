@@ -3617,6 +3617,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sangfor-atrust"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "sangfor-atrust-sig"
 version = "0.1.0"
 dependencies = [

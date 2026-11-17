@@ -1,0 +1,16 @@
+[package]
+name = "sangfor-atrust"
+version = "0.1.0"
+description = "Sangfor aTrust VPN client protocol: the access policy, and (in progress) login and the TCP tunnel."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# The policy document is JSON whose key spelling is not fixed, so it is walked as a value.
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
