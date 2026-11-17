@@ -79,8 +79,9 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        suites as servers require. Plan and decisions: its `DESIGN.md`.
 7. [~] **`application/http1`** — HTTP/1.1 for a client. Landed: request encoding and a
        sans-I/O response decoder that owns every framing decision (RFC 9112 §6.3), tested by
-       split invariance. Not on bnb; see its `AGENTS.md`. Remaining: a blocking exchange over
-       any `Read + Write`, including a deadline for the whole exchange, and a fuzz target.
+       split invariance, and a blocking exchange over any `Read + Write`. Not on bnb; see its
+       `AGENTS.md`. Remaining: a transport that enforces a deadline for a whole exchange, and
+       a fuzz target.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
 ## Gaps found in the layers below

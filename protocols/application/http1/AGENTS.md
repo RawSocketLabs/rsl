@@ -7,12 +7,13 @@ refcheck protocol name: **`http1`**.
 > [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
 > (dual-use philosophy) also apply.
 
-## Status — dev (codec only)
+## Status — dev (codec and a blocking exchange)
 
-A request type that encodes to bytes, and a sans-I/O decoder that turns a server's bytes into
-a response. No I/O yet: a caller writes the request and feeds the decoder itself. No
-redirects, cookies, connection pool, proxies or `Expect: 100-continue`; no content codings
-(nothing is decompressed); no transfer coding but `chunked`.
+A request type that encodes to bytes, a sans-I/O decoder that turns a server's bytes into a
+response, and `blocking::exchange`, which does one request and response over any blocking
+`Read + Write` transport. No redirects, cookies, connection pool, proxies or
+`Expect: 100-continue`; no content codings (nothing is decompressed); no transfer coding but
+`chunked`; no clock, so no timeout of its own.
 
 ## Architecture
 
@@ -31,6 +32,12 @@ redirects, cookies, connection pool, proxies or `Expect: 100-continue`; no conte
   interim responses, body, end of connection. Every framing decision lives here, so that a
   read loop built on it needs none. A loop that inspects a status code or a header to decide
   how much to read is a bug in the making; move the decision into the decoder.
+- `src/blocking/` — `exchange`: write the request, flush, read until the decoder says the
+  response is complete. It holds no protocol logic beyond telling the decoder how the
+  connection ended (end of input is a clean close; an `UnexpectedEof` error, which is how a
+  TLS stream reports a missing `close_notify`, is not) and clearing `keep_alive` when the
+  request asked to close, was not HTTP/1.1, or surplus bytes arrived with the response's
+  end. Surplus that arrives later cannot be seen through `Read`.
 - `src/limits.rs` — `Limits`. Every buffer is bounded and each bound fails as soon as it is
   known to be exceeded.
 
@@ -62,6 +69,9 @@ shared text-line layer would be.
   over belongs to the next response.
 - `BodyFraming::of_response` and `ChunkedDecoder` are public for callers that frame bodies
   themselves; the decoder is the normal way in.
+- One exchange over a transport: `blocking::exchange(&mut transport, &request, limits)`.
+  Reuse the transport for another only when the response's `keep_alive` is true, and treat
+  a failure on a reused connection as a reason to retry on a new one.
 
 ## The dual-use rule here
 
@@ -97,6 +107,10 @@ shared text-line layer would be.
   the guided request refusals beside the raw path.
 - **`unit`** — inline, for what only the crate can reach: the token-byte table, the
   whitespace trim, and the interim-response arm of the framing rules.
+- **`blocking`** — `tests/blocking.rs`: the exchange over a scripted transport that panics
+  on a read before the request is flushed or after the response is complete.
+- **`interop`** — `tests/interop.rs`, ignored by default: the exchange against Python's
+  `http.server` over real TCP. Run it with `cargo test -p http1 --test interop -- --ignored`.
 - Each framing decision was confirmed by changing it and seeing a test fail. Do the same for
   a new one. There is no fuzz target yet; one is owed before another crate trusts this
   decoder with a hostile peer.
@@ -108,3 +122,6 @@ Run everything: `cargo test -p http1`.
 - Field and list syntax follow RFC 9110 §5; only what framing needs is interpreted
   (`Content-Length`, `Transfer-Encoding`, `Connection`).
 - Form encoding, URIs and cookies are not HTTP/1 syntax and are not in this crate.
+- A deadline for a whole exchange is the transport's to enforce: a read timeout on a socket
+  bounds one read, not the exchange. A transport wrapper that re-arms the remaining time
+  before each read and write is still to be written.

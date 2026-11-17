@@ -1,7 +1,7 @@
 [package]
 name = "http1"
 version = "0.1.0"
-description = "HTTP/1.1 client message syntax: request encoding and a sans-I/O response decoder"
+description = "HTTP/1.1 for a client: request encoding, a sans-I/O response decoder, and a blocking exchange"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

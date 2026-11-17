@@ -8,6 +8,9 @@
 //!   are split across reads. It owns every framing decision: where the head ends, whether
 //!   there is a body, how long it is, and whether the connection can be used again.
 //!
+//! - [`blocking::exchange`] sends one request and reads its response over any blocking
+//!   `Read + Write` transport, such as a TLS stream.
+//!
 //! This crate is not a client. It opens no connections, follows no redirects, and keeps no
 //! cookies or pool; a caller does that with these parts.
 //!
@@ -32,6 +35,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod blocking;
 mod error;
 mod limits;
 pub mod wire;
