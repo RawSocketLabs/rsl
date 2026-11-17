@@ -30,7 +30,8 @@ no cross-repo version pinning to keep in sync.
   chip crates (unpublished; see `devices/AGENTS.md`).
 - **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer
   crates `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `tls`, `dns`,
-  `rtltcp`, and `http1` and `cookie` (text protocols, hand-rolled rather than on `bnb`), plus `protocol-examples` (runnable injection examples, unpublished), and
+  `rtltcp`, `http1` and `cookie` (text protocols, hand-rolled rather than on `bnb`), and
+  `sangfor-atrust-sig` (the first of the Sangfor aTrust VPN client crates), plus `protocol-examples` (runnable injection examples, unpublished), and
   **`netlink`** (`protocols/system/netlink`) for strict Linux route/generic-netlink
   transport and typed link, address, route, rule, and WireGuard operations.
 - **`rsl`** — the owned-library facade: one feature-gated re-export of the crates above.

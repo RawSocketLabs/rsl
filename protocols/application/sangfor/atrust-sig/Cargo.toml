@@ -1,0 +1,22 @@
+[package]
+name = "sangfor-atrust-sig"
+version = "0.1.0"
+description = "Sangfor aTrust client primitives: the sign key, anti-MITM checks, secret encryption and identifiers. No I/O."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+# SHA-256, HMAC-SHA-256 and the AES-128 block cipher.
+crypto.workspace = true
+# What the vendor protocol needs that is no longer recommended: CBC, MD5, RSA PKCS #1 v1.5.
+crypto-legacy.workspace = true
+# The anti-MITM signature covers a JSON object's values exactly as received.
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
+thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -3617,6 +3617,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sangfor-atrust-sig"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "crypto",
+ "crypto-legacy",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"

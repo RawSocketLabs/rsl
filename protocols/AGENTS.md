@@ -140,6 +140,7 @@ corpus name once compliance tracking is wired.
 | `application/rtltcp` | application | functional (greeting + command codec, blocking client) | — (no RFC) |
 | `application/http1` | application | dev (request encoding, a sans-I/O response decoder for `Content-Length`, chunked and read-to-close framing, and a blocking exchange; hand-rolled, not on bnb) | `http1` (RFC 9112) |
 | `application/cookie` | application | dev (`Set-Cookie` parsing and a one-host jar with path matching and expiry; no `Domain` handling; hand-rolled, not on bnb) | `cookie` (RFC 6265) |
+| `application/sangfor/atrust-sig` (`sangfor-atrust-sig`) | application | functional (the pure primitives of the aTrust client: sign key, anti-MITM checks, secret encryption, identifiers; matches the specification's vectors, unverified against a gateway) | — (no public standard; `application/sangfor/SPEC-atrust.md`) |
 | `system/netlink` | system | functional (route/generic codecs, blocking transport, typed WireGuard API) | `netlink` (Linux UAPI) |
 | `examples` (`protocol-examples`) | — | demos, unpublished (forged UDP/ARP over rawsock `network`/`link`) | — |
 
