@@ -88,9 +88,27 @@ sangfor-*  http1        consumers
   addressed by IP literal can never pass `Path`; `ServerVerification::Path` therefore takes a
   `dns_name` and has no IP form.
 - **`crypto`: PKCS #1 v1.5 signatures live in `crypto-legacy`.** With ECDHE-RSA the server
-  signs its key exchange. Step 4 will offer the RSA-PSS schemes in `signature_algorithms`;
-  whether a given gateway honours them in TLS 1.2 is untested. If one insists on v1.5, that
-  path sits behind the `legacy` feature.
+  signs its key exchange. Step 4 will offer the RSA-PSS schemes in `signature_algorithms`.
+  Observed 2026-11-16 with `openssl s_client -sigalgs rsa_pss_rsae_sha256`: the reference
+  gateway's :443 signs with `rsa_pss_rsae_sha256` in TLS 1.2 and accepts X25519 and P-256,
+  so core `crypto` is enough there. A gateway that insists on v1.5 would need the `legacy`
+  feature.
+- **`crypto`: no operating-system random source.** `RandomSource` is a trait with test-only
+  implementations; nothing in the workspace reads the OS generator. The handshake needs
+  entropy for the client random and the ECDHE key. The sans-I/O core takes a `RandomSource`
+  from the caller, so this blocks only the blocking adapter (step 5), which needs an
+  OS-backed source in `crypto`.
+
+### Readiness check, 2026-11-16
+
+A throwaway test (not kept) ran the operations the first suite needs against an independent
+implementation, Python `cryptography` 50.0.0, with freshly generated inputs. All agreed:
+RSA-PSS-SHA-256 verification with the key taken from a PKCS #1 v1.5-signed certificate through
+`PeerChain::leaf_public_key`; X25519 and ECDH P-256 shared secrets; AES-128-GCM seal and open
+with associated data; HMAC-SHA-256; and a cloned SHA-256 state for the transcript hash. The
+reference gateway's real three-certificate chain parses through `x509`, and its RSA keys are
+extracted; only the certificates' signature algorithm is unsupported, as recorded above. This
+shows the happy paths interoperate. It is not a security qualification of `crypto`.
 
 ## 6. Non-goals
 
@@ -102,5 +120,8 @@ below are `no_std + alloc`, so it stays possible, but no consumer needs it).
 - **Scope is set by one gateway.** The suite and versions in decision 4 were observed on :443
   only. The aTrust tunnel nodes listen on other hosts and ports that are listed only after
   login, so their TLS has not been observed.
+- **The layers below are early.** `crypto` describes itself as an early implementation with no
+  audit and no measured timing analysis; `x509` and `pki` are unaudited. A connection made with
+  this stack inherits that, whatever `tls` itself does.
 - **A TLS stack is a large security surface.** Each step lands with RFC vectors, adversarial
   tests and a fuzz target for the handshake parser before a consumer depends on it.

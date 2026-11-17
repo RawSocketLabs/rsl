@@ -75,6 +75,26 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        the sans-I/O client handshake, a blocking adapter. Plan and decisions: its `DESIGN.md`.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
+## Gaps found in the layers below
+
+The protocol crates are the first consumers of several workspace crates, so they keep finding
+gaps in them. A gap is fixed in the crate that owns it, never worked around in a protocol
+crate. Known so far:
+
+- [ ] **`pki`/`x509`: PKCS #1 v1.5 certificate signatures** (`sha256WithRSAEncryption`). Without
+      them `tls` cannot validate most public RSA chains. Not needed by the Sangfor clients,
+      which do not verify; needed before `tls` is useful as a general client.
+- [ ] **`pki`: report why a candidate issuer was rejected.** An unsupported signature algorithm
+      currently surfaces as `PathNotFound`.
+- [ ] **`pki`: IP-address service identities.** Only `dNSName` is matched today.
+- [ ] **`crypto`: an operating-system `RandomSource`.** Only test implementations exist. The
+      sans-I/O `tls` core takes one from the caller; the blocking adapter needs a real one.
+- [ ] **`crypto`: RSA PKCS #1 v1.5 signature verification outside `crypto-legacy`**, only if a
+      gateway will not sign its TLS 1.2 key exchange with RSA-PSS. The reference gateway's
+      :443 does use RSA-PSS (observed 2026-11-16); the tunnel nodes are unobserved.
+
+The record of each gap as it was found is in the consuming crate's `DESIGN.md` (for `tls`, §5).
+
 ## Draft harvest
 
 The protocol drafts (formerly the `draft/protocols-*` branches) hold binrw-era code migrated from a retired org. None of it is
