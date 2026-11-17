@@ -9,14 +9,11 @@
 mod support;
 
 mod client {
-    use crypto::{
-        agreement::x25519::{X25519, X25519PrivateKey, X25519PublicKey},
-        signature::ed25519::Ed25519SigningKey,
-    };
+    use crypto::signature::ed25519::Ed25519SigningKey;
     use pki::issuance::Ed25519CertificateSigner;
     use tls::{
         CertificateError, Client, ClientConfig, Error, ServerVerification,
-        handshake::{HandshakeJoiner, HandshakeMessage, Transcript},
+        handshake::{HandshakeMessage, Transcript},
         record::{Aes128GcmProtection, ReadState, RecordError, TrafficKeys, WriteState},
         schedule::{ConnectionEnd, MasterSecret},
         wire::{
@@ -29,7 +26,7 @@ mod client {
         builder::{CertificateBuilder, NameDer},
     };
 
-    use super::support::{self, CountingRandom, hex};
+    use super::support::{self, CountingRandom, ReplaySession, hex};
 
     const REQUEST: &[u8] = b"hello tls\n";
     const RESPONSE: &[u8] = b"slt olleh\n";
@@ -533,50 +530,16 @@ mod client {
         /// the client's known private key, the server's recorded public key, and the
         /// handshake messages both sides actually sent.
         fn after(first_flight: &[Vec<u8>]) -> Self {
-            let (mut client, server) = started();
+            let (mut client, _) = started();
             feed(&mut client, first_flight).unwrap();
             let flight = records(&drain(&mut client));
 
-            let mut scalar = [0; 32];
-            for (byte, value) in scalar.iter_mut().zip(33..) {
-                *byte = value; // the second 32 bytes CountingRandom yields
-            }
-            let exchange =
-                ServerKeyExchange::decode_exact(&server[SERVER_KEY_EXCHANGE][9..]).unwrap();
-            let server_public = X25519PublicKey::new(exchange.params.public.try_into().unwrap());
-            let shared = X25519::agree(&X25519PrivateKey::new(scalar), &server_public).unwrap();
-
-            // Every handshake record before the client's ChangeCipherSpec is in the clear.
             let client_hello = client_records().remove(0);
-            let sent_in_clear = flight.iter().take_while(|record| record[0] == 22);
-            let mut joiner = HandshakeJoiner::new();
-            let mut transcript = Transcript::new();
-            for record in [&client_hello]
-                .into_iter()
-                .chain(first_flight)
-                .chain(sent_in_clear)
-            {
-                joiner.push(&record[5..]);
-                while let Some(message) = joiner.next_message().unwrap() {
-                    transcript.add(&message);
-                }
-            }
-            let master_secret =
-                MasterSecret::derive_extended(shared.expose_secret(), &transcript.hash()).unwrap();
-            let client_verify = master_secret
-                .finished_verify_data(ConnectionEnd::Client, &transcript.hash())
-                .unwrap();
-            transcript.add(&HandshakeMessage::new(
-                HandshakeType::Finished,
-                &client_verify,
-            ));
-
-            let hello = ServerHello::decode_exact(&server[SERVER_HELLO][9..]).unwrap();
-            let mut client_random = [0; 32];
-            for (byte, value) in client_random.iter_mut().zip(1..) {
-                *byte = value; // the first 32 bytes CountingRandom yields
-            }
-            let randoms = (client_random, hello.random);
+            let ReplaySession {
+                master_secret,
+                transcript,
+                randoms,
+            } = ReplaySession::derive(&client_hello, first_flight, &flight);
             let keys = master_secret
                 .aes128_gcm_keys(&randoms.0, &randoms.1)
                 .unwrap();

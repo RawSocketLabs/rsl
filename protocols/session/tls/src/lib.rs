@@ -1,8 +1,9 @@
 //! **tls** — a from-scratch TLS client stack on the [`bnb`] bit-aware codec.
 //!
-//! A sans-I/O TLS 1.2 [`Client`] and the parts it is built from. There is no socket adapter
-//! yet: a caller moves the bytes itself.
+//! A sans-I/O TLS 1.2 [`Client`], a blocking [`Stream`](blocking::Stream) that drives it over
+//! any `Read + Write` transport, and the parts they are built from.
 //!
+//! - [`blocking`] — the stream: handshake on connect, then `Read` and `Write`.
 //! - [`client`] — the client state machine: one cipher suite
 //!   (`TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`), X25519, RSA-PSS signatures, and
 //!   `extended_master_secret` required.
@@ -30,6 +31,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod blocking;
 pub mod certificate;
 pub mod client;
 pub mod handshake;

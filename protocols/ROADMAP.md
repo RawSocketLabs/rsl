@@ -73,8 +73,9 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        parsing and server verification delegated to `x509`/`pki`, the key schedule and
        AES-128-GCM record layer on `crypto`, and a sans-I/O `Client` (one suite, X25519,
        RSA-PSS, extended master secret required) that completes a handshake and exchanges
-       data with OpenSSL; its tests replay that connection byte for byte. Remaining: a
-       blocking adapter, a fuzz target, then more
+       data with OpenSSL, with a blocking stream over it; the tests replay that connection byte
+       for byte. Remaining: a
+       fuzz target, then more
        suites as servers require. Plan and decisions: its `DESIGN.md`.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 

@@ -122,8 +122,8 @@ sangfor-*  http1        consumers
    reading), which the aTrust TCP tunnel needs — **done**. Still owed from this step: a fuzz
    target for the client's input path (§7 promises one per step; the crate has no fuzz
    directory yet).
-5. A blocking adapter. The interoperability test against a local server landed with step 4
-   (`tests/interop.rs`), driven by a loop in the test itself.
+5. A blocking adapter — **done**: `blocking::Stream`. The interoperability tests run
+   through it.
 6. `legacy` feature: TLS 1.1 with `TLS_RSA_WITH_RC4_128_SHA` and ClientHello hooks. Deferred
    with EasyConnect.
 

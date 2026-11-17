@@ -39,6 +39,91 @@ impl crypto::RandomSource for CountingRandom {
     }
 }
 
+/// What a test playing the server needs to continue a recorded session: its master secret,
+/// both hello randoms, and the transcript up to and including the client's `Finished`.
+pub(crate) struct ReplaySession {
+    pub(crate) master_secret: tls::schedule::MasterSecret,
+    pub(crate) transcript: tls::handshake::Transcript,
+    /// The client random, then the server random.
+    pub(crate) randoms: ([u8; 32], [u8; 32]),
+}
+
+impl ReplaySession {
+    /// Re-derives a session that a [`CountingRandom`] client took part in, from the records
+    /// both sides sent in the clear: the client's hello, the server's first flight, and the
+    /// client's second flight (of which only the records before its `ChangeCipherSpec` are
+    /// read). The client's private key is known because its randomness is reproducible; the
+    /// server's public key is in its `ServerKeyExchange`.
+    pub(crate) fn derive(
+        client_hello: &[u8],
+        first_flight: &[Vec<u8>],
+        client_flight: &[Vec<u8>],
+    ) -> Self {
+        use crypto::agreement::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
+        use tls::{
+            handshake::{HandshakeJoiner, HandshakeMessage, Transcript},
+            schedule::{ConnectionEnd, MasterSecret},
+            wire::{HandshakeType, ServerHello, ServerKeyExchange},
+        };
+
+        // CountingRandom yields 1..=32 for the client random, then 33..=64 for the key.
+        let (mut client_random, mut scalar) = ([0; 32], [0; 32]);
+        for (byte, value) in client_random.iter_mut().chain(&mut scalar).zip(1..) {
+            *byte = value;
+        }
+
+        let mut joiner = HandshakeJoiner::new();
+        let mut transcript = Transcript::new();
+        let (mut server_random, mut server_public) = (None, None);
+        let sent_in_clear = client_flight.iter().take_while(|record| record[0] == 22);
+        let client_hello = client_hello.to_vec();
+        for record in [&client_hello]
+            .into_iter()
+            .chain(first_flight)
+            .chain(sent_in_clear)
+        {
+            joiner.push(&record[5..]);
+            while let Some(message) = joiner.next_message().unwrap() {
+                match message.msg_type() {
+                    HandshakeType::ServerHello => {
+                        let hello = ServerHello::decode_exact(message.body()).unwrap();
+                        server_random = Some(hello.random);
+                    }
+                    HandshakeType::ServerKeyExchange => {
+                        let exchange = ServerKeyExchange::decode_exact(message.body()).unwrap();
+                        server_public = Some(exchange.params.public);
+                    }
+                    _ => {}
+                }
+                transcript.add(&message);
+            }
+        }
+        let server_public = X25519PublicKey::new(server_public.unwrap().try_into().unwrap());
+        let shared = X25519::agree(&X25519PrivateKey::new(scalar), &server_public).unwrap();
+        let master_secret =
+            MasterSecret::derive_extended(shared.expose_secret(), &transcript.hash()).unwrap();
+        let client_verify = master_secret
+            .finished_verify_data(ConnectionEnd::Client, &transcript.hash())
+            .unwrap();
+        transcript.add(&HandshakeMessage::new(
+            HandshakeType::Finished,
+            &client_verify,
+        ));
+        Self {
+            master_secret,
+            transcript,
+            randoms: (client_random, server_random.unwrap()),
+        }
+    }
+
+    /// Both directions' record keys.
+    pub(crate) fn keys(&self) -> tls::record::TrafficKeys {
+        self.master_secret
+            .aes128_gcm_keys(&self.randoms.0, &self.randoms.1)
+            .unwrap()
+    }
+}
+
 /// Decodes a hex string into bytes.
 pub(crate) fn hex(text: &str) -> Vec<u8> {
     (0..text.len())

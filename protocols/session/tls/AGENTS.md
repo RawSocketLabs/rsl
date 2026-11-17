@@ -7,17 +7,24 @@ A from-scratch TLS client stack, beginning with TLS 1.2 (RFC 5246). refcheck pro
 > [`AGENTS.md`](../../../AGENTS.md) and protocol guide [`../../AGENTS.md`](../../AGENTS.md)
 > (dual-use philosophy, the codec) also apply.
 
-## Status — dev (a working sans-I/O client, no socket adapter)
+## Status — dev (a working client, blocking and sans-I/O)
 
-A sans-I/O TLS 1.2 `Client` completes a handshake and exchanges data with OpenSSL. It offers
-one cipher suite (`TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`), X25519 and RSA-PSS signatures,
-requires `extended_master_secret`, and does not resume, renegotiate or send a client
-certificate. There is no blocking or async adapter, so a caller moves the bytes itself, and
-passes in the random source (`os_random::OsRandom` outside tests). Nothing here is audited. [`DESIGN.md`](DESIGN.md) records the plan, the
+A sans-I/O TLS 1.2 `Client`, and a blocking `Stream` that drives it over any `Read + Write`
+transport, complete a handshake and exchange data with OpenSSL. The client offers one cipher
+suite (`TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`), X25519 and RSA-PSS signatures, requires
+`extended_master_secret`, and does not resume, renegotiate or send a client certificate.
+There is no async adapter. The caller passes in the random source (`os_random::OsRandom`
+outside tests). Nothing here is audited. [`DESIGN.md`](DESIGN.md) records the plan, the
 decisions and the lower-layer gaps.
 
 ## Architecture
 
+- `src/blocking/` — `Stream`, the `Client` driven over a blocking `Read + Write` transport:
+  handshake in `connect`, then `Read` and `Write`. It holds no protocol logic. Its whole job
+  is moving bytes: send what the client queued, read once, offer the client what it will
+  take and keep the rest. `Read` returns `Ok(0)` only after the peer's `close_notify`; a
+  transport that ends without one is `UnexpectedEof`. It takes the random source from its
+  caller and never names `OsRandom`.
 - `src/client/` — `Client`, the state machine, with `ClientConfig` and `Error`. The driver
   contract is in `Client`'s rustdoc. Rules it enforces that are easy to break:
   - Each handshake message is accepted in exactly one state; anything else is
@@ -140,9 +147,15 @@ This is the crate's standing rule. TLS carries certificates; it does not interpr
   injected data and alerts, each `ServerHello` field), then play the server under the
   session's re-derived keys for the protected part. A new state or check needs a row there:
   delete the check and confirm a test fails, which is how the existing rows were verified.
-- **`interop`** — `tests/interop.rs`, ignored by default: the client against a live
-  `openssl s_server` on loopback, once plainly and once with the server requesting a client
-  certificate. Run it with
+- **`blocking`** — `tests/blocking.rs`: the stream over a scripted transport that plays the
+  same recording, releasing the server's bytes only after the client has written what came
+  before them and, on request, accepting a few bytes per write or holding writes until
+  flushed. It covers truncation, a failed handshake's alert, records left pending behind a
+  plaintext backlog, transport errors mid-write, and calls after a failure. Each rule of the
+  pump was confirmed by breaking it and seeing a test fail (or hang).
+- **`interop`** — `tests/interop.rs`, ignored by default: the blocking stream against a live
+  `openssl s_server` on loopback, once plainly (this is the run that records) and once with
+  the server requesting a client certificate. Run it with
   `cargo test -p tls --test interop -- --ignored` after any change to the client, the key
   schedule or the record layer; with `TLS_RECORD_DIR` set it re-records the connection
   `client` replays.
