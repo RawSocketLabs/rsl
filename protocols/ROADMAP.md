@@ -121,8 +121,8 @@ single-sign-on logins, the L3 tunnel and EasyConnect come after it.
        request builders and response parsers over a one-exchange `Portal` trait, vectors V6,
        V7 and V18), `login` (done for a password with no second factor, against a scripted
        gateway: sequence, anti-MITM checks, next-step resolution; vectors V1 to V6, V19, V28),
-       then `tcp` (sans-I/O
-       handshake and frames with a blocking driver), `net` (sockets, TLS and HTTP behind a
+       `tcp` (done against a scripted node: routing, the signed request, a sans-I/O handshake
+       and frame codec, and a blocking stream; vectors V14 to V17, V26, V27), then `net` (sockets, TLS and HTTP behind a
        feature).
 6. [ ] **`otp`** — RFC 4226/6238 one-time passwords, with base32 decoding. Not needed for the
        first milestone.

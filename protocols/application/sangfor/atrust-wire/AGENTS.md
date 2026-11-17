@@ -49,8 +49,10 @@ the layouts and the code registry are SOCKS5's, so the workspace keeps one codec
   `ReplyCode::Succeeded`. `VipHead` and `VipAddresses` are split the same way: the
   specification does not say what follows a failed query, and this must be settled against
   a real node.
-- **`AuthReply` is decoded whole before its status is looked at**, so a failure leaves the
-  stream framed.
+- **On a session-authentication connection `AuthReply` is decoded whole before its status
+  is looked at**, so a failure leaves the stream framed (§7.2). On a TCP tunnel a refusing
+  node sends the marker and status and nothing more (§9.1), so a client looks at those two
+  bytes before it waits for the rest.
 - **The JSON is not this crate's.** Building, signing and parsing it belong to
   `sangfor-atrust`; here it is bytes with a 16-bit length, and a longer document does not
   encode.

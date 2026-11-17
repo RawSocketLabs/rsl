@@ -1,7 +1,7 @@
 [package]
 name = "sangfor-atrust"
 version = "0.1.0"
-description = "Sangfor aTrust VPN client protocol: the access policy, and (in progress) login and the TCP tunnel."
+description = "Sangfor aTrust VPN client protocol: the access policy, password login and the TCP tunnel, without the network layer yet."
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -12,7 +12,10 @@ cookie.workspace = true
 # The random source a login draws trace ids and padding from; nothing here names an OS RNG.
 crypto.workspace = true
 http1.workspace = true
+# The tunnel's wire types report a short buffer through bnb's error type.
+bnb = { workspace = true, features = ["std"] }
 sangfor-atrust-sig.workspace = true
+sangfor-atrust-wire.workspace = true
 serde.workspace = true
 # The policy document is JSON whose key spelling is not fixed, so it is walked as a value;
 # the anti-MITM object is signed over its text as received, so it is kept raw.

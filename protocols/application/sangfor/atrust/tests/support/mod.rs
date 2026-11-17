@@ -146,3 +146,86 @@ pub(crate) fn header<'a>(request: &'a http1::Request, name: &str) -> Option<&'a 
         .get(name)
         .map(|value| std::str::from_utf8(value).unwrap())
 }
+
+/// A node that answers from a script: what it sends, in the pieces it sends it in, and a
+/// record of what it was sent. It can be told to fail in the ways a connection does.
+#[derive(Debug, Default)]
+pub(crate) struct Node {
+    /// What the node sends, one piece per read. When they run out the connection has ended.
+    incoming: std::collections::VecDeque<Vec<u8>>,
+    /// Everything written to the node.
+    pub(crate) written: Vec<u8>,
+    /// How much had been written at the last flush.
+    pub(crate) flushed: usize,
+    /// How many writes were made.
+    pub(crate) writes: usize,
+    /// How many times the write side was closed, successfully.
+    pub(crate) write_closes: usize,
+    /// How many reads are interrupted before one succeeds.
+    pub(crate) interruptions: usize,
+    /// When set, the write that would pass this many bytes in all stops there and the next
+    /// one times out, once.
+    pub(crate) write_limit: Option<usize>,
+    /// How many closes of the write side time out before one succeeds.
+    pub(crate) failing_closes: usize,
+}
+
+impl Node {
+    /// A node that sends `pieces`, one per read, and then ends the connection.
+    pub(crate) fn sending(pieces: &[&[u8]]) -> Self {
+        Self {
+            incoming: pieces.iter().map(|piece| piece.to_vec()).collect(),
+            ..Self::default()
+        }
+    }
+}
+
+impl std::io::Read for Node {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if self.interruptions > 0 {
+            self.interruptions -= 1;
+            return Err(std::io::ErrorKind::Interrupted.into());
+        }
+        let Some(mut piece) = self.incoming.pop_front() else {
+            return Ok(0);
+        };
+        let count = piece.len().min(buffer.len());
+        buffer[..count].copy_from_slice(&piece[..count]);
+        if count < piece.len() {
+            self.incoming.push_front(piece.split_off(count));
+        }
+        Ok(count)
+    }
+}
+
+impl std::io::Write for Node {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        self.writes += 1;
+        let room = self
+            .write_limit
+            .map_or(data.len(), |limit| limit.saturating_sub(self.written.len()));
+        if room == 0 && !data.is_empty() {
+            self.write_limit = None;
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
+        let count = room.min(data.len());
+        self.written.extend_from_slice(&data[..count]);
+        Ok(count)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.flushed = self.written.len();
+        Ok(())
+    }
+}
+
+impl sangfor_atrust::tcp::Transport for Node {
+    fn close_write(&mut self) -> std::io::Result<()> {
+        if self.failing_closes > 0 {
+            self.failing_closes -= 1;
+            return Err(std::io::ErrorKind::TimedOut.into());
+        }
+        self.write_closes += 1;
+        Ok(())
+    }
+}

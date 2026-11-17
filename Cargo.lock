@@ -3573,11 +3573,13 @@ dependencies = [
 name = "sangfor-atrust"
 version = "0.1.0"
 dependencies = [
+ "bitsandbytes",
  "cookie",
  "crypto",
  "crypto-legacy",
  "http1",
  "sangfor-atrust-sig",
+ "sangfor-atrust-wire",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

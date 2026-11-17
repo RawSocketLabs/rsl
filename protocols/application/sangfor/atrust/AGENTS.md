@@ -6,18 +6,19 @@ A client for the Sangfor aTrust VPN protocol, from the clean-room specification
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The group guide
 > [`../AGENTS.md`](../AGENTS.md), with its clean-room rule, applies first.
 
-## Status — in progress: a password login works against a scripted gateway
+## Status — the first milestone works against a scripted gateway and node
 
 | Module | Specification | Stage |
 |---|---|---|
 | `policy` | §6 | functional: parsing and lookups, matching vectors V21 and V23 to V26 |
 | `api` | §4 | functional for a password login: requests E1 to E3, E5, E10, E11, E22, E23 and their answers, matching vectors V6, V7 and V18 |
 | `login` | §5 | functional for a password login with no second factor: the sequence of §5.2, the anti-MITM checks of §5.3 (vectors V1 to V6), next-step resolution (V19); captcha, one-time codes and external logins are reported as unsupported |
-| `tcp` | §9 | not written: a sans-I/O handshake and frame core with a blocking driver |
+| `tcp` | §9, §6.6 | functional: routing, the signed request, the handshake and both data phases, matching vectors V14 to V17, V26 and V27 |
 | `net` | §2 | not written: the real socket, TLS and HTTP implementations, behind a feature |
 
-The first milestone is password login and one TCP stream through a node. Nothing here has
-been checked against a real gateway.
+The first milestone is password login and one TCP stream through a node. Both work against
+scripted peers; what is missing to try them for real is `net`. Nothing here has been checked
+against a real gateway.
 
 ## Architecture
 
@@ -75,8 +76,56 @@ built. Time and randomness are arguments; nothing reads a clock or an OS generat
 A login returns a `Login` (session identifier, user name, policy, zero-RTT flag, anti-MITM
 outcome) and leaves the `Session` holding what later control-plane requests need.
 
+### `tcp`
+
+The protocol parts do no I/O; one type drives them over a blocking transport.
+
+- `destination.rs` — `Destination::route`: §6.6 steps 1 to 5 on a `Policy`, yielding what
+  goes on the wire and into the request. Resolving a name the policy does not pin is a
+  closure the caller supplies.
+- `identity.rs` — `Identity`: session identifier, user name, device id, connection id and
+  the tunnel sign key. Fixed at client setup but for the session identifier.
+- `request.rs` — the signed JSON document of §9.2, serialised from a struct so that the
+  bytes signed are the bytes sent.
+- `handshake.rs` — `Handshake`: the first flight, and the node's answer read step by step
+  from a growing buffer with the `sangfor-atrust-wire` types. `Mode` and `Progress`.
+- `frames.rs` — `frame` and `FrameReader`: the framed data phase, in whatever pieces.
+- `stream.rs` — `Stream<T: Transport>`: `Read + Write` over a connection to a node, and
+  `close_write`. `Transport` is `Read + Write` plus stopping the write side, which a TLS
+  connection can do and a plain byte stream cannot say.
+
 ## Rules
 
+- **Nothing is sent after the first flight until the whole answer is in**, in either mode
+  (§9.1). Whether a gateway takes data early in zero-RTT mode is an open question, so it is
+  not tried.
+- **The verdict's first two bytes are judged before its JSON is waited for.** On a TCP
+  tunnel a refusing node sends `53` and a status and nothing more (§9.1), unlike on a
+  session-authentication connection (§7.2), where the JSON is always read. `AuthReply`
+  decodes both; here its start is looked at first.
+- **A verdict is a JSON object whose `code`, when present, is the integer zero.** No JSON at
+  all, a bare `null`, and a `code` of null or of another type all fail (§9.1). The message
+  is only for the error text.
+- **`Mode::reusable` needs both the gateway's zero-RTT and the node's flag** (§9.3). Only
+  then does this end finish with a close frame; otherwise with the transport's notice.
+- **A framed stream ends cleanly only between frames**: at a close frame, or when the
+  connection ends with no frame begun. An end inside a header, inside a frame's data, or
+  right after a header that promised data is a truncation.
+- **A broken frame breaks the stream for good**, and a close frame keeps it closed: the
+  reader remembers both. Data read before a bad frame is delivered before the break is
+  reported, so the outcome does not depend on how the bytes were cut into reads.
+- **A frame that went out in part ends the writing half.** A framed write or a close frame
+  that fails may have left half a frame with the node; anything sent after it would be read
+  as that frame's data. `Stream` remembers and refuses every later write and half-close. A
+  half-close counts as done only once its notice went out.
+- **Where a name's address comes from is this client's policy**, and differs from the
+  reference in two ways (§6.6 step 4): the policy's pins come before the caller's resolver,
+  where the reference asks the client's own table first; and the first pin is always used,
+  where the reference rotates among several. `Destination::route` says so.
+- **The request's process values are the reference client's**, by destination port (§9.2).
+  They are cosmetic; the fingerprint must match the path.
+- **Deadlines are the transport's.** The reference gives a node 18 s to answer the handshake;
+  `Stream::open` blocks for as long as its transport does.
 - **The anti-MITM outcome is advisory unless the caller says otherwise** (§5.3): the vendor's
   clients report a failed check and carry on, so `Options::strict_anti_mitm` is off by
   default, the password goes to a gateway that failed its checks, and `Login::anti_mitm`
@@ -151,13 +200,19 @@ One test binary per role, one file per module inside it:
   objects at any level, null and mistyped members, lists past the bound, and error answers
   with any payload.
 - `tests/support/` — a response built from its wire form, a gateway that answers from a
-  script (`Script`, the test double for `Portal`), a counting stand-in for randomness, and
-  the fixtures of the specification's vectors.
+  script (`Script`, the test double for `Portal`), a node that does (`Node`, the double for
+  `tcp::Transport`, which can interrupt reads and fail writes and closes), a counting
+  stand-in for randomness, and the fixtures of the specification's vectors.
+
+`tcp.rs` in `contract` has V26's routes, V15's request byte for byte, the answers of V16 and
+V27 however they are cut, V17's frames, and both kinds of stream over a scripted node; in
+`adversarial` it has verdicts that are not verdicts, nodes that hang up, and generated input.
 
 `login.rs` in `contract` has the sequence and what each request carries from the answers
 before it, V28, the anti-MITM checks in order with V1, V3, V4 and V6, and the §5.5 table with
 V19; in `adversarial` it has gateways that refuse, stall or break off at each step.
 
-A fuzz target for `Policy::parse` is owed, with those of the crates below.
+Fuzz targets are owed for `Policy::parse`, `tcp::Handshake::receive` and
+`tcp::FrameReader::read`, with those of the crates below.
 
 Run: `cargo test -p sangfor-atrust`.

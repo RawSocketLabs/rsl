@@ -130,6 +130,7 @@ cookie = { path = "protocols/application/cookie", version = "0.1.0" }
 http1 = { path = "protocols/application/http1", version = "0.1.0" }
 netlink = { path = "protocols/system/netlink", version = "0.1.0", default-features = false }
 sangfor-atrust-sig = { path = "protocols/application/sangfor/atrust-sig", version = "0.1.0" }
+sangfor-atrust-wire = { path = "protocols/application/sangfor/atrust-wire", version = "0.1.0" }
 socks = { path = "protocols/session/socks", version = "0.1.0", default-features = false }
 crypto = { path = "crypto/core", version = "0.1.0", default-features = false }
 crypto-legacy = { path = "crypto/legacy", version = "0.1.0", default-features = false }
