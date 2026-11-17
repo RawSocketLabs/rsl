@@ -92,6 +92,10 @@ crate. Known so far:
 - [ ] **`pki`: IP-address service identities.** Only `dNSName` is matched today.
 - [ ] **`crypto`: an operating-system `RandomSource`.** Only test implementations exist. The
       sans-I/O `tls` core takes one from the caller; the blocking adapter needs a real one.
+- [ ] **`crypto`: faster AES.** AES-128-GCM seals about 1.8 MiB/s in a release build, and 89%
+      of that time is AES-CTR (about 7.7 µs per block); GHASH alone manages about 16 MiB/s.
+      Fine for logins and API calls, too slow for a VPN tunnel. Needs a faster constant-time
+      S-box within `crypto`'s performance policy. Measurements: `session/tls/DESIGN.md` §5.
 - [ ] **`crypto`: an upper bound on RSA public keys.** Verification cost grows with the cube
       of the modulus length and `from_components` accepts any length; `tls` bounds what it
       passes in (8192 bits, 8-byte exponent) until `crypto` does.

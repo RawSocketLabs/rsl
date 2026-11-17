@@ -161,9 +161,15 @@ sangfor-*  http1        consumers
   full-width exponent). A server chooses its key before it has proved anything, so the
   `Client` refuses a modulus over 8192 bits or an exponent over 8 bytes before verifying.
   The bound belongs in `crypto`.
-- **`crypto` is slow.** It is an unoptimised reference implementation by design. One RSA
-  verification with an ordinary 2048-bit key and exponent 65537 is fast, but bulk AES-GCM in
-  a debug build is slow enough that the tests keep protected payloads small.
+- **`crypto`: AES is too slow for bulk data.** Measured 2026-11-16 in a release build:
+  sealing one 16 KiB record takes 8.9 ms, about 1.8 MiB/s. Authenticating the same 16 KiB as
+  associated data only (GHASH without AES-CTR) takes 1.0 ms, so about 89% of the time is
+  AES-CTR, near 7.7 µs per block. The handshake is not affected: it takes 1.0 ms on loopback
+  in release (13.7 ms in debug) and 0.63 s to the reference gateway, the same as curl with
+  OpenSSL, because two round trips of about 0.3 s dominate. `crypto`'s performance policy
+  asks only for speed "adequate for real TLS and SSH clients"; a tunnel at 1.8 MiB/s is not.
+  The fix belongs in `crypto`'s AES, within that policy (pure Rust, no tables indexed by
+  secrets, no intrinsics).
 
 ### Readiness check, 2026-11-16
 
