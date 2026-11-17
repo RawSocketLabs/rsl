@@ -88,6 +88,45 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        `Secure`/`HttpOnly` flags.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
+## Sangfor VPN stack (clean-room)
+
+Goal: client protocols for the Sangfor aTrust and EasyConnect VPN gateways, protocols only (no
+TUN, proxy or CLI). The behaviour specs are
+[`application/sangfor/SPEC-atrust.md`](application/sangfor/SPEC-atrust.md) and
+[`SPEC-easyconnect.md`](application/sangfor/SPEC-easyconnect.md), written clean-room from the
+behaviour of an AGPL-3.0 reference client; implementers work from the specs and never read
+that client's source. Every layer the protocols need is its own crate, built bottom-up, so no
+protocol crate carries a private copy of a generic layer.
+
+### The first milestone
+
+Log in to an aTrust gateway with a user name and password, then carry one TCP connection to a
+host behind it. That needs, in order: a socket adapter for `tls`, an HTTP/1.1 client, the
+aTrust request signing and login, the resource policy, and the TCP tunnel. SMS, captcha and
+single-sign-on logins, the L3 tunnel and EasyConnect come after it.
+
+### Crates, in build order
+
+1. [~] **`session/tls`** — adoption item 6 above. Client and blocking stream done.
+2. [~] **`application/http1`** — adoption item 7 above. Codec and blocking exchange done.
+3. [~] **`types/uri`** and **`application/cookie`** — form encoding (aTrust signs the encoded
+       bytes, so the kept-byte set and the order are the caller's) and the cookie jar. Done
+       as far as the first milestone needs.
+4. [ ] **`sangfor-atrust-sig`** (anti-MITM and request signing) and **`sangfor-atrust-wire`**
+       (bnb data-plane codecs): pure, vector-tested, no I/O.
+5. [ ] **`sangfor-atrust`** — api, auth, policy and TCP-tunnel modules on the crates above.
+6. [ ] **`otp`** — RFC 4226/6238 one-time passwords, with base32 decoding. Not needed for the
+       first milestone.
+7. [ ] **EasyConnect** — deferred. Its tunnel needs TLS 1.1 with RC4, and the reference gateway
+       refused TLS 1.1 on :443 when probed on 2026-11-16, so there is no server to test against.
+
+Gaps this stack finds in lower crates are listed under "Gaps found in the layers below". Two
+that only it needs:
+
+- [ ] **`pki`: a PKCS #12 reader.** Only EasyConnect certificate login needs it; deferred.
+- [ ] **`codecs/compression`: gzip/inflate.** Only if a gateway compresses responses although
+      `http1` sends no `Accept-Encoding`.
+
 ## Gaps found in the layers below
 
 The protocol crates are the first consumers of several workspace crates, so they keep finding
