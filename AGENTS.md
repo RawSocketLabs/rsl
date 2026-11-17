@@ -26,7 +26,7 @@ One directory per domain group; each crate's own (or its group's) `AGENTS.md` ho
 | `transports/` | `rawsock`, `usb` | L2/L3/L4 raw I/O via `rustix` (rawsock: `#![deny(unsafe_code)]`, one `unsafe` block in `link_addr`); owned USB host access over Linux usbfs (`usb`: `unsafe` in its usbfs, buffer, queue and dispatch modules; unpublished) |
 | `types/` | `rfus` | plain domain value types, each with its units, parsing and validation; no I/O, hardware or protocol logic, `no_std` where possible. `rfus`: RF frequencies, sample rates and scan targets |
 | `devices/` | drivers, simulators, oracles, shared chips, `hal` | pure-Rust device drivers, unpublished; see `devices/AGENTS.md` |
-| `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `tls`, `dns`, `rtltcp`, `netlink`, `protocol-examples` | dual-use protocol implementations on `bnb`; `system/netlink` covers the non-OSI Linux kernel/userspace protocol; `examples/` holds the runnable injection examples |
+| `protocols/<layer>/<proto>` | `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `tls`, `dns`, `rtltcp`, `http1`, `netlink`, `protocol-examples` | dual-use protocol implementations on `bnb` (`http1`, a text protocol, is hand-rolled); `system/netlink` covers the non-OSI Linux kernel/userspace protocol; `examples/` holds the runnable injection examples |
 | `rsl/` | `rsl` | owned-library facade (re-exports the above) |
 | `deps/` | `deps` | blessed external-dependency stack |
 | `bindings/` | `airspy`; `usdr-ffi`, `rust-dsdcc`, `bladerf`, `bladerf-sys` | `airspy` is a workspace member (links libairspy, which the CI image provides); the rest are **excluded** FFI workspaces (need native toolchains/libraries) |

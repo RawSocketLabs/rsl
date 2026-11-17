@@ -29,7 +29,7 @@ no cross-repo version pinning to keep in sync.
   chip crates (unpublished; see `devices/AGENTS.md`).
 - **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer
   crates `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `tls`, `dns`,
-  and `rtltcp`, plus `protocol-examples` (runnable injection examples, unpublished), and
+  `rtltcp`, and `http1` (a text protocol, hand-rolled rather than on `bnb`), plus `protocol-examples` (runnable injection examples, unpublished), and
   **`netlink`** (`protocols/system/netlink`) for strict Linux route/generic-netlink
   transport and typed link, address, route, rule, and WireGuard operations.
 - **`rsl`** — the owned-library facade: one feature-gated re-export of the crates above.

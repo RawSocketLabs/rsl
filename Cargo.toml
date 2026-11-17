@@ -78,6 +78,7 @@ members = [
     "protocols/session/tls",
     "protocols/application/dns",
     "protocols/application/rtltcp",
+    "protocols/application/http1",
     # Linux kernel/userspace protocols
     "protocols/system/netlink",
     # facades

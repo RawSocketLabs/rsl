@@ -1,0 +1,14 @@
+[package]
+name = "http1"
+version = "0.1.0"
+description = "HTTP/1.1 client message syntax: request encoding and a sans-I/O response decoder"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

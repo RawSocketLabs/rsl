@@ -77,6 +77,10 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        for byte. Remaining: a
        fuzz target, then more
        suites as servers require. Plan and decisions: its `DESIGN.md`.
+7. [~] **`application/http1`** — HTTP/1.1 for a client. Landed: request encoding and a
+       sans-I/O response decoder that owns every framing decision (RFC 9112 §6.3), tested by
+       split invariance. Not on bnb; see its `AGENTS.md`. Remaining: a blocking exchange over
+       any `Read + Write`, including a deadline for the whole exchange, and a fuzz target.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
 ## Gaps found in the layers below
@@ -318,6 +322,12 @@ Developing bnb in-workspace (a workspace path dependency) exists to feed these b
       (`bnb/src/bitstream/seek.rs`), and a `limit_bytes` window wider than its data reports
       zero remaining with window bytes unread. A `Source::is_empty`, or `#[br(if_remaining)]`
       and `#[br(rest)]` directives, would replace matching on an error.
+- [ ] **No fit for delimiter-terminated text** — surfaced by `http1`: a head is lines ended by
+      CRLF with token grammars and optional whitespace. bnb's one delimiter codec reads a byte
+      at a time to a one-byte terminator, refuses to write a value containing it (which the
+      raw request path must send), and gives no "need more" hint, so an incremental decode
+      rescans from the start. `http1` is hand-rolled and records why in its `AGENTS.md`.
+      Whether bnb should grow a text-line layer waits for a second text protocol.
 - [x] **Confirmed covered (verified during Increment 1, not gaps):** ctx-`tag` dispatch composed
       with an auxiliary ctx param used in variant `count`s + a catch-all binding the unmatched
       tag and reading the remaining bytes; `count = <expr>` arithmetic; `BitEnum` catch-all

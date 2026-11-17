@@ -138,6 +138,7 @@ corpus name once compliance tracking is wired.
 | `session/tls` | session | dev (TLS 1.2 record, alert and ECDHE handshake message codecs; peer-chain parsing and server verification on `x509`/`pki`; key schedule and AES-128-GCM record layer on `crypto`; sans-I/O client and blocking stream that interoperate with OpenSSL, one suite) | `tls` (RFC 5246) |
 | `application/dns` | application | functional (codec + UDP/TCP resolver client) | `dns` (RFC 1034/1035) |
 | `application/rtltcp` | application | functional (greeting + command codec, blocking client) | — (no RFC) |
+| `application/http1` | application | dev (request encoding and a sans-I/O response decoder: head, `Content-Length`, chunked and read-to-close framing; no I/O yet; hand-rolled, not on bnb) | `http1` (RFC 9112) |
 | `system/netlink` | system | functional (route/generic codecs, blocking transport, typed WireGuard API) | `netlink` (Linux UAPI) |
 | `examples` (`protocol-examples`) | — | demos, unpublished (forged UDP/ARP over rawsock `network`/`link`) | — |
 
