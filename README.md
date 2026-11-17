@@ -17,6 +17,8 @@ no cross-repo version pinning to keep in sync.
 - **`crypto-legacy`** (`crypto/legacy/`) — separately opted-in historical and broken
   primitives for controlled interoperability, capture decoding, fixtures, and teaching; it is
   never included by the facade's bundles.
+- **`os-random`** (`crypto/os-random/`) — the operating system's random generator as a
+  `crypto::RandomSource`; the one place the workspace asks an operating system for randomness.
 - **`asn1`**, **`x509`**, **`pki`** (`pki/*`) — strict DER transport, borrowed
   certificate syntax with exact signed-byte preservation, and fail-closed path validation.
 - **`compression`** (`codecs/compression/`) — explicit stateful compression/decompression contracts.

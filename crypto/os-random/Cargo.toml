@@ -1,0 +1,16 @@
+[package]
+name = "os-random"
+version = "0.1.0"
+description = "The operating system's random generator as a crypto::RandomSource."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+crypto.workspace = true
+# The one place the workspace asks an operating system for randomness.
+getrandom.workspace = true
+
+[lints]
+workspace = true

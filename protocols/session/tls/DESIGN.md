@@ -145,11 +145,12 @@ sangfor-*  http1        consumers
   gateway's :443 signs with `rsa_pss_rsae_sha256` in TLS 1.2 and accepts X25519 and P-256,
   so core `crypto` is enough there. A gateway that insists on v1.5 would need the `legacy`
   feature.
-- **`crypto`: no operating-system random source.** `RandomSource` is a trait with test-only
-  implementations; nothing in the workspace reads the OS generator. The handshake needs
-  entropy for the client random and the ECDHE key. The sans-I/O core takes a `RandomSource`
-  from the caller, so this blocks only the blocking adapter (step 5), which needs an
-  OS-backed source in `crypto`.
+- **No operating-system random source in the workspace** — fixed 2026-11-16 by the
+  `os-random` crate. This was first recorded as a gap in `crypto`, which was wrong: `crypto`
+  defines `RandomSource` and deliberately names no platform generator
+  (`crypto/core/src/random.rs`), so the adapter is a crate of its own. `tls` does not depend
+  on it: every entry point takes `&mut impl RandomSource`, and the caller passes
+  `os_random::OsRandom`.
 
 - **`crypto`: no public constant-time comparison** — fixed 2026-11-16 by `Secret::matches`.
   The `Client` holds the expected `Finished` value in `SecretBytes` and compares with it. A

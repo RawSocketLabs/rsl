@@ -74,7 +74,7 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        AES-128-GCM record layer on `crypto`, and a sans-I/O `Client` (one suite, X25519,
        RSA-PSS, extended master secret required) that completes a handshake and exchanges
        data with OpenSSL; its tests replay that connection byte for byte. Remaining: a
-       blocking adapter (needs an OS random source in `crypto`), a fuzz target, then more
+       blocking adapter, a fuzz target, then more
        suites as servers require. Plan and decisions: its `DESIGN.md`.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
@@ -90,8 +90,9 @@ crate. Known so far:
 - [ ] **`pki`: report why a candidate issuer was rejected.** An unsupported signature algorithm
       currently surfaces as `PathNotFound`.
 - [ ] **`pki`: IP-address service identities.** Only `dNSName` is matched today.
-- [ ] **`crypto`: an operating-system `RandomSource`.** Only test implementations exist. The
-      sans-I/O `tls` core takes one from the caller; the blocking adapter needs a real one.
+- [x] **An operating-system `RandomSource`.** Only test implementations existed. Added as the
+      `os-random` crate, not inside `crypto`, which deliberately names no platform generator.
+      Protocol crates still take the source from their caller.
 - [ ] **`crypto`: faster AES.** AES-128-GCM seals about 1.8 MiB/s in a release build, and 89%
       of that time is AES-CTR (about 7.7 µs per block); GHASH alone manages about 16 MiB/s.
       Fine for logins and API calls, too slow for a VPN tunnel. Needs a faster constant-time

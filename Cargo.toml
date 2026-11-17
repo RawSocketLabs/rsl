@@ -11,6 +11,8 @@ members = [
     # independent accuracy-first domains
     "crypto/core",
     "crypto/legacy",
+    # the operating system's random generator as a crypto::RandomSource
+    "crypto/os-random",
     # ASN.1 transport, X.509 structures, and PKI validation
     "pki/asn1",
     "pki/x509",
@@ -120,6 +122,7 @@ deps = { path = "deps", version = "0.1.0", default-features = false }
 netlink = { path = "protocols/system/netlink", version = "0.1.0", default-features = false }
 crypto = { path = "crypto/core", version = "0.1.0", default-features = false }
 crypto-legacy = { path = "crypto/legacy", version = "0.1.0", default-features = false }
+os-random = { path = "crypto/os-random", version = "0.1.0" }
 asn1 = { path = "pki/asn1", version = "0.1.0", default-features = false }
 x509 = { path = "pki/x509", version = "0.1.0", default-features = false }
 pki = { path = "pki/validation", version = "0.1.0", default-features = false }
@@ -157,6 +160,8 @@ thiserror = "2.0"
 tracing = "0.1"
 bytes = "1"
 rustix = { version = "1", features = ["net"] }
+# os-random's backend: the one place the workspace asks an operating system for randomness.
+getrandom = { version = "0.4", default-features = false }
 libc = "0.2"
 zeroize = "1"
 # rfus's parser combinators.

@@ -12,8 +12,8 @@ A from-scratch TLS client stack, beginning with TLS 1.2 (RFC 5246). refcheck pro
 A sans-I/O TLS 1.2 `Client` completes a handshake and exchanges data with OpenSSL. It offers
 one cipher suite (`TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`), X25519 and RSA-PSS signatures,
 requires `extended_master_secret`, and does not resume, renegotiate or send a client
-certificate. There is no blocking or async adapter and no operating-system random source, so a
-caller supplies both. Nothing here is audited. [`DESIGN.md`](DESIGN.md) records the plan, the
+certificate. There is no blocking or async adapter, so a caller moves the bytes itself, and
+passes in the random source (`os_random::OsRandom` outside tests). Nothing here is audited. [`DESIGN.md`](DESIGN.md) records the plan, the
 decisions and the lower-layer gaps.
 
 ## Architecture
