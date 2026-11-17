@@ -72,9 +72,10 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
 6. [~] **`session/tls`** — in-house TLS client. Landed: the TLS 1.2 wire types (record header,
        alerts, and the handshake messages of an ECDHE exchange, each round-tripping a captured
        OpenSSL handshake byte for byte), plus peer-chain parsing and server verification
-       delegated to `x509`/`pki`. Remaining: the TLS 1.2 key schedule and AES-GCM record
-       protection, the sans-I/O client handshake, a blocking adapter. Plan and decisions: its
-       `DESIGN.md`.
+       delegated to `x509`/`pki`, and the TLS 1.2 key schedule and AES-128-GCM record
+       protection on `crypto`, which reproduce that capture's `Finished` values and protected
+       records. Remaining: the sans-I/O client handshake, a blocking adapter. Plan and
+       decisions: its `DESIGN.md`.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
 ## Gaps found in the layers below
@@ -91,6 +92,8 @@ crate. Known so far:
 - [ ] **`pki`: IP-address service identities.** Only `dNSName` is matched today.
 - [ ] **`crypto`: an operating-system `RandomSource`.** Only test implementations exist. The
       sans-I/O `tls` core takes one from the caller; the blocking adapter needs a real one.
+- [ ] **`crypto`: a public constant-time comparison.** `tls` must compare a received `Finished`
+      value without leaking where it differs; `crypto`'s tag comparison is private.
 - [ ] **`crypto`: RSA PKCS #1 v1.5 signature verification outside `crypto-legacy`**, only if a
       gateway will not sign its TLS 1.2 key exchange with RSA-PSS. The reference gateway's
       :443 does use RSA-PSS (observed 2026-11-16); the tunnel nodes are unobserved.

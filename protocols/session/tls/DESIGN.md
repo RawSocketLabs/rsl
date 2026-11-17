@@ -72,13 +72,29 @@ sangfor-*  http1        consumers
    contract tests use one handshake captured from OpenSSL 4.0.3 as the independent reference,
    beside vectors laid out by hand from the structure definitions.
 
+9. **Record protection is stateless; the record layer owns sequence numbers.** A protection
+   value is a key and a salt. That keeps it testable against captured records at any sequence
+   number, and puts the one rule that matters (never seal a sequence number twice) in the
+   single place that counts records. Nothing enforces that rule yet, because nothing calls
+   `seal` yet. Build step 4 must add the write state that owns the counter (seal takes
+   `&mut self`, increments, and fails at wrap) and make it the guided path; the stateless
+   pair then remains only as the raw path.
+10. **The explicit nonce is the sequence number** (RFC 5288 §3 suggests it). It cannot repeat
+    under one key without the sequence number wrapping, which TLS already forbids. OpenSSL
+    uses a random starting value instead; both interoperate, because the receiver reads the
+    nonce from the record.
+11. **Both master-secret derivations exist.** The client offers `extended_master_secret` and
+    uses whichever the server confirms. The reference gateway confirms it (observed
+    2026-11-16).
+
 ## 4. Build order
 
 1. Record header, peer chain, server verification — **done** (the skeleton).
 2. Handshake wire types: ClientHello and ServerHello with extensions, Certificate (which
    yields `PeerChain`), ServerKeyExchange, ClientKeyExchange, Finished, and alerts —
    **done**.
-3. Key schedule and record protection: the TLS 1.2 PRF on HMAC-SHA-256, AES-128-GCM records.
+3. Key schedule and record protection: the TLS 1.2 PRF on HMAC-SHA-256, AES-128-GCM records
+   — **done**.
 4. The sans-I/O client handshake, including write half-close (send `close_notify`, keep
    reading), which the aTrust TCP tunnel needs.
 5. A blocking adapter, then an interoperability test against a local server.
@@ -109,6 +125,13 @@ sangfor-*  http1        consumers
   from the caller, so this blocks only the blocking adapter (step 5), which needs an
   OS-backed source in `crypto`.
 
+- **`crypto`: no public constant-time comparison.** A receiver must compare the peer's
+  12-byte `Finished` value against the expected one without leaking where they differ.
+  `crypto`'s tag comparison is private, and `HmacSha256::verify` takes only a full 32-byte
+  tag. `MasterSecret` therefore returns the expected value and leaves the comparison to the
+  caller. Build step 4 needs a constant-time equality in `crypto` and a `verify_finished`
+  here that uses it.
+
 ### Readiness check, 2026-11-16
 
 A throwaway test (not kept) ran the operations the first suite needs against an independent
@@ -133,5 +156,12 @@ below are `no_std + alloc`, so it stays possible, but no consumer needs it).
 - **The layers below are early.** `crypto` describes itself as an early implementation with no
   audit and no measured timing analysis; `x509` and `pki` are unaudited. A connection made with
   this stack inherits that, whatever `tls` itself does.
+- **Zeroing is best effort.** The master secret, the key block and the PRF's intermediate
+  HMAC outputs are held in `SecretBytes`. Copies the compiler makes while moving them, and
+  the state inside `crypto` (HMAC, the AES key schedule), follow that crate's own handling.
+  No timing analysis has been done on any of it.
+- **The master-secret derivations are checked against `openssl kdf`, not a live handshake.**
+  The capture's pre-master secret is not recoverable, so those two tests share their label
+  spelling with the code. The first live handshake (build step 5) closes that.
 - **A TLS stack is a large security surface.** Each step lands with RFC vectors, adversarial
   tests and a fuzz target for the handshake parser before a consumer depends on it.

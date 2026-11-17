@@ -6,9 +6,13 @@ mod support;
 
 mod adversarial {
     use bnb::ErrorKind;
-    use tls::wire::{
-        Certificate, CipherSuite, ClientHello, ClientKeyExchange, ContentType, Extension,
-        ExtensionType, Finished, ProtocolVersion, RecordHeader, ServerHello, ServerKeyExchange,
+    use tls::{
+        record::{Aes128GcmProtection, RecordError},
+        schedule::MasterSecret,
+        wire::{
+            Certificate, CipherSuite, ClientHello, ClientKeyExchange, ContentType, Extension,
+            ExtensionType, Finished, ProtocolVersion, RecordHeader, ServerHello, ServerKeyExchange,
+        },
     };
 
     use super::support::{self, hex};
@@ -202,8 +206,113 @@ mod adversarial {
         let [(body, hello)] = server.as_slice() else {
             panic!("{} truncations of the server hello decoded", server.len());
         };
-        // version, random, empty session id, the suite, the compression method.
-        assert_eq!(body.len(), 2 + 32 + 1 + 2 + 1);
+        // version, random, a 32-byte session id, the suite, the compression method.
+        assert_eq!(body.len(), 2 + 32 + (1 + 32) + 2 + 1);
         assert_eq!(hello.extensions, None);
+    }
+
+    // --- Record protection ---
+
+    /// The capture's client-side record protection and its application-data fragment.
+    fn client_application_record() -> (Aes128GcmProtection, Vec<u8>) {
+        let client = ClientHello::decode_exact(&hex(support::CLIENT_HELLO)[4..]).unwrap();
+        let server = ServerHello::decode_exact(&hex(support::SERVER_HELLO)[4..]).unwrap();
+        let secret = MasterSecret::from_bytes(hex(support::MASTER_SECRET).try_into().unwrap());
+        let keys = secret
+            .aes128_gcm_keys(&client.random, &server.random)
+            .unwrap();
+        let fragment = hex(support::CLIENT_APPLICATION_RECORD)[RecordHeader::LEN..].to_vec();
+        (keys.client_write, fragment)
+    }
+
+    /// Opens `fragment` as the capture's second client record unless told otherwise.
+    fn open(protection: &Aes128GcmProtection, fragment: &[u8]) -> Result<Vec<u8>, RecordError> {
+        let version = ProtocolVersion::TLS_1_2;
+        protection.open(1, ContentType::ApplicationData, version, fragment)
+    }
+
+    #[test]
+    fn record_with_any_flipped_bit_fails_authentication() {
+        let (protection, fragment) = client_application_record();
+        assert!(open(&protection, &fragment).is_ok());
+        for bit in 0..fragment.len() * 8 {
+            let mut altered = fragment.clone();
+            altered[bit / 8] ^= 1 << (bit % 8);
+            assert_eq!(
+                open(&protection, &altered),
+                Err(RecordError::BadRecordMac),
+                "bit {bit}"
+            );
+        }
+    }
+
+    #[test]
+    fn record_opened_as_another_sequence_type_or_version_fails_authentication() {
+        let (protection, fragment) = client_application_record();
+        let version = ProtocolVersion::TLS_1_2;
+        let data = ContentType::ApplicationData;
+        assert_eq!(
+            protection.open(2, data, version, &fragment),
+            Err(RecordError::BadRecordMac),
+            "replayed at another sequence number"
+        );
+        assert_eq!(
+            protection.open(1, ContentType::Handshake, version, &fragment),
+            Err(RecordError::BadRecordMac),
+            "relabelled as another content type"
+        );
+        assert_eq!(
+            protection.open(1, data, ProtocolVersion::TLS_1_1, &fragment),
+            Err(RecordError::BadRecordMac),
+            "relabelled as another version"
+        );
+    }
+
+    #[test]
+    fn record_opened_with_the_other_directions_key_fails_authentication() {
+        let (_, fragment) = client_application_record();
+        let client = ClientHello::decode_exact(&hex(support::CLIENT_HELLO)[4..]).unwrap();
+        let server = ServerHello::decode_exact(&hex(support::SERVER_HELLO)[4..]).unwrap();
+        let secret = MasterSecret::from_bytes(hex(support::MASTER_SECRET).try_into().unwrap());
+        let keys = secret
+            .aes128_gcm_keys(&client.random, &server.random)
+            .unwrap();
+        assert_eq!(
+            open(&keys.server_write, &fragment),
+            Err(RecordError::BadRecordMac)
+        );
+    }
+
+    #[test]
+    fn record_shorter_than_its_nonce_and_tag_is_truncated_not_a_panic() {
+        let (protection, fragment) = client_application_record();
+        for len in 0..Aes128GcmProtection::OVERHEAD {
+            assert_eq!(
+                open(&protection, &fragment[..len]),
+                Err(RecordError::Truncated),
+                "{len} bytes"
+            );
+        }
+        assert_eq!(
+            open(&protection, &fragment[..Aes128GcmProtection::OVERHEAD]),
+            Err(RecordError::BadRecordMac),
+            "an empty record that is long enough still has to authenticate"
+        );
+    }
+
+    #[test]
+    fn plaintext_whose_record_would_not_fit_a_16_bit_length_is_refused() {
+        let (protection, _) = client_application_record();
+        let version = ProtocolVersion::TLS_1_2;
+        let plaintext = vec![0; Aes128GcmProtection::MAX_PLAINTEXT_LEN + 1];
+        let longest = &plaintext[..Aes128GcmProtection::MAX_PLAINTEXT_LEN];
+        let sealed = protection
+            .seal(0, ContentType::ApplicationData, version, longest)
+            .unwrap();
+        assert_eq!(sealed.len(), usize::from(u16::MAX));
+        assert_eq!(
+            protection.seal(0, ContentType::ApplicationData, version, &plaintext),
+            Err(RecordError::PlaintextTooLong)
+        );
     }
 }

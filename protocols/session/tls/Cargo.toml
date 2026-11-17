@@ -1,7 +1,7 @@
 [package]
 name = "tls"
 version = "0.1.0"
-description = "TLS record-layer wire codecs on the bnb bit-aware codec, with certificate handling on x509 and pki"
+description = "TLS 1.2 client building blocks: wire codecs on bnb, certificates on x509 and pki, key schedule and record protection on crypto"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -9,14 +9,12 @@ rust-version.workspace = true
 
 [dependencies]
 bnb = { workspace = true, features = ["std"] }
+# Primitives only: HMAC-SHA-256 for the PRF, AES-128-GCM for records. Nothing is implemented here.
+crypto.workspace = true
 # Peer chains are parsed and validated by the workspace PKI crates, never re-implemented here.
 pki.workspace = true
 thiserror.workspace = true
 x509.workspace = true
-
-[dev-dependencies]
-# Signs the test certificates the certificate tests validate.
-crypto.workspace = true
 
 [lints]
 workspace = true
