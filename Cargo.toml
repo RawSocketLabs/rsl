@@ -73,6 +73,7 @@ members = [
     "protocols/network/ip",
     "protocols/network/icmp",
     "protocols/session/socks",
+    "protocols/session/tls",
     "protocols/application/dns",
     "protocols/application/rtltcp",
     # Linux kernel/userspace protocols

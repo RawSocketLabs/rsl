@@ -1,0 +1,22 @@
+[package]
+name = "tls"
+version = "0.1.0"
+description = "TLS record-layer wire codecs on the bnb bit-aware codec, with certificate handling on x509 and pki"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb = { workspace = true, features = ["std"] }
+# Peer chains are parsed and validated by the workspace PKI crates, never re-implemented here.
+pki.workspace = true
+thiserror.workspace = true
+x509.workspace = true
+
+[dev-dependencies]
+# Signs the test certificates the certificate tests validate.
+crypto.workspace = true
+
+[lints]
+workspace = true

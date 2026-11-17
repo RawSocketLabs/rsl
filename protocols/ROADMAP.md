@@ -69,6 +69,10 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        approval, and TCP helpers with bounded accept and separate phase deadlines.
        Remaining: managed/Tokio/Mio BIND, explicit raw/malformed codec, GSS-API,
        UDP ASSOCIATE, SOCKS4, and SOCKS4A. Windows/macOS Mio runtime qualification is deferred.
+6. [~] **`session/tls`** — in-house TLS client. Skeleton landed: the RFC 5246 record-header
+       codec, plus peer-chain parsing and server verification delegated to `x509`/`pki`.
+       Remaining: handshake wire types, the TLS 1.2 key schedule and AES-GCM record protection,
+       the sans-I/O client handshake, a blocking adapter. Plan and decisions: its `DESIGN.md`.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
 ## Draft harvest

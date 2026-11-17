@@ -26,8 +26,8 @@ no cross-repo version pinning to keep in sync.
 - **`devices/*`** — pure-Rust device drivers with their simulators, parity oracles and shared
   chip crates (unpublished; see `devices/AGENTS.md`).
 - **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer
-  crates `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `dns`, and
-  `rtltcp`, plus `protocol-examples` (runnable injection examples, unpublished), and
+  crates `ethertype`, `ethernet`, `arp`, `tcp`, `udp`, `ip`, `icmp`, `socks`, `tls`, `dns`,
+  and `rtltcp`, plus `protocol-examples` (runnable injection examples, unpublished), and
   **`netlink`** (`protocols/system/netlink`) for strict Linux route/generic-netlink
   transport and typed link, address, route, rule, and WireGuard operations.
 - **`rsl`** — the owned-library facade: one feature-gated re-export of the crates above.
