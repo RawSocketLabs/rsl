@@ -82,6 +82,10 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        split invariance, and a blocking exchange over any `Read + Write`. Not on bnb; see its
        `AGENTS.md`. Remaining: a transport that enforces a deadline for a whole exchange, and
        a fuzz target.
+8. [~] **`application/cookie`** — cookies for a client (RFC 6265 subset): `Set-Cookie`
+       parsing by the user-agent algorithm and a jar for one scheme and host. Remaining: a
+       fuzz target; and, when a consumer needs them, `Domain` and host matching and the
+       `Secure`/`HttpOnly` flags.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
 ## Gaps found in the layers below

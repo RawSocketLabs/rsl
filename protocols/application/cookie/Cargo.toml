@@ -1,0 +1,11 @@
+[package]
+name = "cookie"
+version = "0.1.0"
+description = "HTTP cookies for a client: Set-Cookie parsing and a jar for one host (RFC 6265 subset)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
