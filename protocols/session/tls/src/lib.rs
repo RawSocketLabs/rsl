@@ -25,6 +25,7 @@
 #![deny(missing_docs)]
 
 pub mod certificate;
+pub mod handshake;
 pub mod record;
 pub mod schedule;
 pub mod wire;

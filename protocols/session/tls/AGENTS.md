@@ -54,6 +54,11 @@ records the plan, the decisions and the lower-layer gaps.
   - A receiver answers `RecordError::RecordOverflow` with `record_overflow` and every other
     read error with a fatal `bad_record_mac` (RFC 5288 §3); the variants exist for
     diagnostics, not for the peer.
+- `src/handshake/` — the handshake layer's plumbing. `HandshakeJoiner` joins messages out of
+  record fragments and refuses one longer than 64 KiB when its header arrives.
+  `HandshakeMessage` is one whole message, header and body, kept as sent. `Transcript` is
+  the running SHA-256 over messages; its caller decides what is added (`HelloRequest` is
+  not).
 - `src/certificate/` — `PeerChain` (the DER certificates as received, leaf first),
   `ServerVerification` (`Path` or `Unverified`) and `CertificateError`.
 - `lib.rs` and each `mod.rs` are facades: declarations and re-exports only.

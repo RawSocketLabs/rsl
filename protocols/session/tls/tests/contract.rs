@@ -6,9 +6,9 @@ mod support;
 
 mod contract {
     use bnb::u24;
-    use crypto::digest::sha2::sha256::Sha256;
     use tls::{
         PeerChain,
+        handshake::{HandshakeJoiner, HandshakeMessage, Transcript},
         record::{Aes128GcmProtection, ReadState, TlsPlaintext, TrafficKeys, WriteState},
         schedule::{ConnectionEnd, MasterSecret},
         wire::{
@@ -364,25 +364,73 @@ mod contract {
         MasterSecret::from_bytes(hex(support::MASTER_SECRET).try_into().unwrap())
     }
 
-    /// SHA-256 over the capture's handshake messages, in order, up to `last`.
-    fn handshake_hash(last: &str) -> [u8; 32] {
-        let messages = [
-            support::CLIENT_HELLO,
-            support::SERVER_HELLO,
-            support::CERTIFICATE,
-            support::SERVER_KEY_EXCHANGE,
-            support::SERVER_HELLO_DONE,
-            support::CLIENT_KEY_EXCHANGE,
-            support::CLIENT_FINISHED,
-        ];
-        let mut hash = Sha256::new();
-        for message in messages {
-            hash.update(hex(message)).unwrap();
-            if message == last {
-                return hash.finalize().into_bytes();
+    /// The capture's handshake messages before the client's `Finished`, in order.
+    const BEFORE_CLIENT_FINISHED: [&str; 6] = [
+        support::CLIENT_HELLO,
+        support::SERVER_HELLO,
+        support::CERTIFICATE,
+        support::SERVER_KEY_EXCHANGE,
+        support::SERVER_HELLO_DONE,
+        support::CLIENT_KEY_EXCHANGE,
+    ];
+
+    /// Joins `wire` into messages, feeding it in pieces of `step` bytes.
+    fn join(wire: &[u8], step: usize) -> Vec<HandshakeMessage> {
+        let mut joiner = HandshakeJoiner::new();
+        let mut messages = Vec::new();
+        for piece in wire.chunks(step) {
+            joiner.push(piece);
+            while let Some(message) = joiner.next_message().unwrap() {
+                messages.push(message);
             }
         }
-        panic!("{last} is not one of the capture's messages");
+        assert!(joiner.is_empty(), "no bytes left over");
+        messages
+    }
+
+    /// The transcript of the capture's messages before the client's `Finished`.
+    fn transcript_before_client_finished() -> Transcript {
+        let wire: Vec<u8> = BEFORE_CLIENT_FINISHED.into_iter().flat_map(hex).collect();
+        let mut transcript = Transcript::new();
+        for message in join(&wire, wire.len()) {
+            transcript.add(&message);
+        }
+        transcript
+    }
+
+    #[test]
+    fn joiner_recovers_the_messages_however_the_records_split_them() {
+        let expected: Vec<Vec<u8>> = BEFORE_CLIENT_FINISHED.into_iter().map(hex).collect();
+        let wire = expected.concat();
+        for step in [1, 7, 1000, wire.len()] {
+            let messages = join(&wire, step);
+            let bytes: Vec<&[u8]> = messages.iter().map(HandshakeMessage::bytes).collect();
+            assert_eq!(bytes, expected, "{step}");
+        }
+        let types: Vec<_> = join(&wire, 7)
+            .iter()
+            .map(HandshakeMessage::msg_type)
+            .collect();
+        assert_eq!(
+            types,
+            [
+                HandshakeType::ClientHello,
+                HandshakeType::ServerHello,
+                HandshakeType::Certificate,
+                HandshakeType::ServerKeyExchange,
+                HandshakeType::ServerHelloDone,
+                HandshakeType::ClientKeyExchange,
+            ]
+        );
+    }
+
+    #[test]
+    fn built_message_is_its_header_then_its_body() {
+        let captured = hex(support::CLIENT_FINISHED);
+        let message = HandshakeMessage::new(HandshakeType::Finished, &captured[4..]);
+        assert_eq!(message.bytes(), captured);
+        assert_eq!(message.body(), &captured[4..]);
+        assert_eq!(message.msg_type(), HandshakeType::Finished);
     }
 
     /// `openssl kdf -keylen 48 -kdfopt digest:SHA256 -kdfopt hexsecret:0001…1f -kdfopt
@@ -427,8 +475,10 @@ mod contract {
         let client = Finished::decode_exact(&hex(support::CLIENT_FINISHED)[4..]).unwrap();
         let server = Finished::decode_exact(&hex(support::SERVER_FINISHED)[4..]).unwrap();
         // The client's covers everything before it; the server's also covers the client's.
-        let before_client = handshake_hash(support::CLIENT_KEY_EXCHANGE);
-        let before_server = handshake_hash(support::CLIENT_FINISHED);
+        let mut transcript = transcript_before_client_finished();
+        let before_client = transcript.hash();
+        transcript.add(&join(&hex(support::CLIENT_FINISHED), 16)[0]);
+        let before_server = transcript.hash();
         assert_eq!(
             secret
                 .finished_verify_data(ConnectionEnd::Client, &before_client)

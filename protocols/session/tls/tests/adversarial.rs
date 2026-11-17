@@ -7,11 +7,13 @@ mod support;
 mod adversarial {
     use bnb::ErrorKind;
     use tls::{
+        handshake::{HandshakeJoiner, MessageTooLong},
         record::{Aes128GcmProtection, ReadState, RecordError, WriteState},
         schedule::MasterSecret,
         wire::{
             Certificate, CipherSuite, ClientHello, ClientKeyExchange, ContentType, Extension,
-            ExtensionType, Finished, ProtocolVersion, RecordHeader, ServerHello, ServerKeyExchange,
+            ExtensionType, Finished, HandshakeType, ProtocolVersion, RecordHeader, ServerHello,
+            ServerKeyExchange,
         },
     };
 
@@ -400,5 +402,41 @@ mod adversarial {
             state.seal(ContentType::ApplicationData, version, &more),
             Err(RecordError::PlaintextTooLong)
         );
+    }
+
+    // --- Handshake reassembly ---
+
+    #[test]
+    fn overlong_handshake_message_is_refused_as_soon_as_its_header_arrives() {
+        let mut joiner = HandshakeJoiner::new();
+        joiner.push(&[11, 0x01, 0x00, 0x01]); // a Certificate of 64 KiB + 1
+        assert_eq!(
+            joiner.next_message(),
+            Err(MessageTooLong {
+                msg_type: HandshakeType::Certificate,
+                length: HandshakeJoiner::MAX_BODY_LEN + 1,
+            })
+        );
+    }
+
+    #[test]
+    fn longest_allowed_handshake_message_waits_for_its_body() {
+        let mut joiner = HandshakeJoiner::new();
+        joiner.push(&[11, 0x01, 0x00, 0x00]);
+        assert_eq!(joiner.next_message(), Ok(None));
+        assert!(
+            !joiner.is_empty(),
+            "a partial message is visible at a key change"
+        );
+    }
+
+    #[test]
+    fn unknown_handshake_type_is_joined_and_left_for_the_caller_to_reject() {
+        let mut joiner = HandshakeJoiner::new();
+        joiner.push(&[0x7f, 0, 0, 1, 0xaa]);
+        let message = joiner.next_message().unwrap().unwrap();
+        assert_eq!(message.msg_type(), HandshakeType::Other(0x7f));
+        assert_eq!(message.body(), [0xaa]);
+        assert!(joiner.is_empty());
     }
 }
