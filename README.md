@@ -25,6 +25,7 @@ no cross-repo version pinning to keep in sync.
 - **`error-correction`** (`codecs/error-correction/`) — error-correction encoding/decoding contracts
   with correction reports rather than a misleading lossless-transform abstraction.
 - **`rfus`** (`types/rfus`) — RF frequency / sample-rate / scan-target parsing.
+- **`uri`** (`types/uri`) — URI encodings; so far, percent-encoding of form and query data.
 - **`devices/*`** — pure-Rust device drivers with their simulators, parity oracles and shared
   chip crates (unpublished; see `devices/AGENTS.md`).
 - **`protocols/*`** — from-scratch, dual-use protocol implementations on `bnb`: the OSI-layer

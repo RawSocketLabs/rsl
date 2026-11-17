@@ -21,6 +21,8 @@ members = [
     "codecs/error-correction",
     # RF parsing
     "types/rfus",
+    # URI value types and encodings
+    "types/uri",
     # the register/SPI/I2C seam and sequence types the device drivers share
     "devices/hal",
     # LP8758 PMIC register values shared by the SDR drivers
@@ -129,6 +131,7 @@ x509 = { path = "pki/x509", version = "0.1.0", default-features = false }
 pki = { path = "pki/validation", version = "0.1.0", default-features = false }
 compression = { path = "codecs/compression", version = "0.1.0", default-features = false }
 rfus = { path = "types/rfus", version = "0.1.0", default-features = false }
+uri = { path = "types/uri", version = "0.1.0" }
 # unpublished device crates shared by the drivers
 hal = { path = "devices/hal", version = "0.0.0", default-features = false }
 lp8758 = { path = "devices/sdr/chips/lp8758", version = "0.0.0", default-features = false }
