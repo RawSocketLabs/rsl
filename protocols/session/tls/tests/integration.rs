@@ -1,14 +1,24 @@
 //! The certificate module against real certificates: built by `x509`, signed with `crypto`
 //! keys through `pki`'s issuance adapters, then parsed and validated back through this crate.
 
+mod support;
+
 mod integration {
-    use crypto::signature::ed25519::Ed25519SigningKey;
+    use crypto::signature::{
+        ed25519::Ed25519SigningKey,
+        rsa_pss::{RsaPssSha256VerifyingKey, RsaPssSignature},
+    };
     use pki::{ErrorKind, RequiredKeyUsage, issuance::Ed25519CertificateSigner};
-    use tls::{CertificateError, PeerChain, ServerVerification};
+    use tls::{
+        CertificateError, PeerChain, ServerVerification,
+        wire::{Certificate as CertificateMessage, ClientHello, ServerHello, ServerKeyExchange},
+    };
     use x509::{
         Certificate, PublicKey, Time,
         builder::{CertificateBuilder, ExtendedKeyPurpose, KeyUsages, NameDer, SubjectAltName},
     };
+
+    use super::support::{self, hex};
 
     const ROOT: u8 = 1;
     const OTHER_ROOT: u8 = 2;
@@ -215,6 +225,44 @@ mod integration {
         assert_eq!(
             chain.leaf_public_key(),
             Ok(PublicKey::Ed25519(key(LEAF).verifying_key().as_bytes()))
+        );
+    }
+
+    /// The bytes an ECDHE server signs: both hello randoms, then its key-exchange parameters
+    /// as sent (RFC 5246 §7.4.3, RFC 8422 §5.4).
+    fn signed_key_exchange_input(exchange: &ServerKeyExchange) -> Vec<u8> {
+        let client = ClientHello::decode_exact(&hex(support::CLIENT_HELLO)[4..]).unwrap();
+        let server = ServerHello::decode_exact(&hex(support::SERVER_HELLO)[4..]).unwrap();
+        let mut input = client.random.to_vec();
+        input.extend(server.random);
+        input.extend(exchange.params.to_bytes().unwrap());
+        input
+    }
+
+    /// The whole decode path a client needs before it can trust a key exchange, on a real
+    /// handshake: the `Certificate` message becomes a `PeerChain`, `x509` yields the leaf's
+    /// RSA key, and `crypto` verifies OpenSSL's signature over the randoms and the re-encoded
+    /// parameters. It fails if any wire type loses or reorders a byte the signature covers.
+    #[test]
+    fn openssl_key_exchange_signature_verifies_with_the_leaf_key_from_x509() {
+        let message = CertificateMessage::decode_exact(&hex(support::CERTIFICATE)[4..]).unwrap();
+        let chain = PeerChain::from(message);
+        let PublicKey::Rsa { modulus, exponent } = chain.leaf_public_key().unwrap() else {
+            panic!("the captured server certificate has an RSA key");
+        };
+        let key = RsaPssSha256VerifyingKey::from_components(modulus, exponent).unwrap();
+
+        let mut exchange =
+            ServerKeyExchange::decode_exact(&hex(support::SERVER_KEY_EXCHANGE)[4..]).unwrap();
+        let signature = RsaPssSignature::from_bytes(exchange.signature.clone());
+        key.verify_sha256(signed_key_exchange_input(&exchange), &signature)
+            .expect("the server's signature covers the randoms and the parameters as sent");
+
+        exchange.params.public[0] ^= 1;
+        assert!(
+            key.verify_sha256(signed_key_exchange_input(&exchange), &signature)
+                .is_err(),
+            "a changed server key must not verify"
         );
     }
 

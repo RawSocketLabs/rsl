@@ -9,17 +9,35 @@ A from-scratch TLS client stack, beginning with TLS 1.2 (RFC 5246). refcheck pro
 
 ## Status — skeleton
 
-Two pieces exist: the record-layer header codec, and the certificate module (peer chain plus
-the server-verification policy). There is no handshake, no record protection and no
-connection type yet, so the crate cannot open a TLS connection. [`DESIGN.md`](DESIGN.md)
+Two pieces exist: the wire types (record header, alerts, and the handshake messages of an
+ECDHE exchange), and the certificate module (peer chain plus the server-verification policy).
+There is no key schedule, no record protection and no connection type yet, so the crate cannot
+open a TLS connection. [`DESIGN.md`](DESIGN.md)
 records the plan, the decisions and the lower-layer gaps.
 
 ## Architecture
 
-- `src/wire/` — RFC 5246 wire types on bnb, one type per file: `ContentType` (a `BitEnum` with
-  an `Other` catch-all), `ProtocolVersion` (`{ major, minor }`, any pair round-trips) and
-  `RecordHeader` (the 5-byte header; the fragment is not part of it). Codecs do no I/O and
-  enforce no policy.
+- `src/wire/` — TLS 1.2 wire types on bnb, one message or registry per file. Codecs do no I/O
+  and enforce no policy.
+  - Record layer: `RecordHeader` (the 5-byte header; the fragment is not part of it),
+    `ContentType`, `ProtocolVersion`, `Alert`.
+  - Handshake: `HandshakeHeader` (type and `u24` length), then one body type per message:
+    `ClientHello`, `ServerHello`, `Certificate`, `ServerKeyExchange`, `ClientKeyExchange`,
+    `Finished`. A body is decoded with `decode_exact` from exactly the bytes its header
+    counts. `ServerHelloDone` has an empty body and so no type. `ChangeCipherSpec` is the
+    single byte `1` and has no type either.
+  - `ServerKeyExchange` and `ClientKeyExchange` are the ECDHE layouts (RFC 8422). Decode them
+    only once the negotiated suite says the exchange is ECDHE.
+  - Registries are `BitEnum`s with an `Other` catch-all. `CipherSuite` and `ExtensionType`
+    name only what the crate acts on; everything else round-trips as `Other`.
+  - `Extension` keeps its data as raw bytes. Its constructors build the compliant encodings a
+    client sends; there are no typed decoders for extension data yet.
+  - `list.rs` holds the `parse_with`/`write_with` pairs for vectors whose prefix counts bytes,
+    for the hello's optional trailing extension block, and for a body that is all remaining
+    bytes (`Finished`). The last two are sound only under `decode_exact` on one whole body;
+    the file's module documentation says why. Both stand in for bnb features
+    that do not exist yet (see `../../ROADMAP.md`, bnb co-evolution); use them, do not copy
+    them, and delete them when bnb grows the directives.
 - `src/certificate/` — `PeerChain` (the DER certificates as received, leaf first),
   `ServerVerification` (`Path` or `Unverified`) and `CertificateError`.
 - `lib.rs` and each `mod.rs` are facades: declarations and re-exports only.
@@ -43,8 +61,9 @@ This is the crate's standing rule. TLS carries certificates; it does not interpr
 
 ## The dual-use rule here
 
-- Wire types store every field verbatim. Decoding accepts unknown content types, any version
-  pair and any length. `RecordHeader::MAX_PLAINTEXT_LEN` (2^14) and `MAX_CIPHERTEXT_LEN`
+- Wire types store every field verbatim. Decoding accepts unknown content types, suites,
+  groups, schemes and extensions, any version pair and any length; it rejects only bytes that
+  cannot be framed (a list that overruns or underruns its length). `RecordHeader::MAX_PLAINTEXT_LEN` (2^14) and `MAX_CIPHERTEXT_LEN`
   (2^14 + 2048) are what a compliant sender honours for unprotected and protected records;
   the record layer (not the codec) enforces them on the guided path.
 - `PeerChain` keeps the peer's bytes unparsed, so a chain `x509` rejects can still be read or
@@ -54,13 +73,19 @@ This is the crate's standing rule. TLS carries certificates; it does not interpr
 
 ## Testing
 
-- **`contract`** — `tests/contract.rs`: record-header golden bytes laid out from RFC 5246
-  §6.2.1.
-- **`adversarial`** — `tests/adversarial.rs`: truncation, unknown values, arbitrary bytes.
+- **`support`** — `tests/support/mod.rs`: one real TLS 1.2 handshake captured from OpenSSL,
+  with the commands that produced it. Golden data: replace it only with a fresh capture.
+- **`contract`** — `tests/contract.rs`: bytes laid out by hand from the RFC structure
+  definitions, and the captured handshake, which each message type must decode and re-encode
+  byte for byte. The extension constructors are checked against the extensions OpenSSL sent.
+- **`adversarial`** — `tests/adversarial.rs`: unknown values, lists whose lengths lie in each
+  direction, every truncation of the captured messages.
 - **`integration`** — `tests/integration.rs`: certificates built by `x509`, signed with
   `crypto` Ed25519 keys through `pki::issuance`, then parsed and verified through this crate.
   Rejections are pinned to the `pki::ErrorKind` that caused them, and each argument `verify`
   passes to `pki` (leaf, intermediates, purpose, key usage, name, time) has a test that fails
-  without it.
+  without it. It also verifies the captured handshake's key-exchange signature with the leaf
+  key from `x509` and RSA-PSS from `crypto`, which proves the wire types preserve every byte
+  the signature covers.
 
 Run everything: `cargo test -p tls`.

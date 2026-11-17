@@ -69,10 +69,12 @@ Pull each protocol in as a `bnb` rewrite. Order favors dogfooding value and low 
        approval, and TCP helpers with bounded accept and separate phase deadlines.
        Remaining: managed/Tokio/Mio BIND, explicit raw/malformed codec, GSS-API,
        UDP ASSOCIATE, SOCKS4, and SOCKS4A. Windows/macOS Mio runtime qualification is deferred.
-6. [~] **`session/tls`** — in-house TLS client. Skeleton landed: the RFC 5246 record-header
-       codec, plus peer-chain parsing and server verification delegated to `x509`/`pki`.
-       Remaining: handshake wire types, the TLS 1.2 key schedule and AES-GCM record protection,
-       the sans-I/O client handshake, a blocking adapter. Plan and decisions: its `DESIGN.md`.
+6. [~] **`session/tls`** — in-house TLS client. Landed: the TLS 1.2 wire types (record header,
+       alerts, and the handshake messages of an ECDHE exchange, each round-tripping a captured
+       OpenSSL handshake byte for byte), plus peer-chain parsing and server verification
+       delegated to `x509`/`pki`. Remaining: the TLS 1.2 key schedule and AES-GCM record
+       protection, the sans-I/O client handshake, a blocking adapter. Plan and decisions: its
+       `DESIGN.md`.
        Application protocols then continue as demand dictates: `tftp`, `smb`, `nbt`, `ssh`, …
 
 ## Gaps found in the layers below
@@ -288,6 +290,22 @@ Developing bnb in-workspace (a workspace path dependency) exists to feed these b
       `socks::v5::sansio` re-implements them over `BitBuf::try_pull`/`pull_eof`. The slice-level
       `T::decode_prefix`/`decode_prefix_eof` (`bitsandbytes` #108) serves caller-owned buffers;
       a buffer-owning framer is not yet justified by a second consumer.
+- [ ] **No byte-length-prefixed list** — surfaced by `tls`: nearly every TLS vector
+      (`T items<a..b>`) is a list whose prefix counts bytes, and `count_prefix` counts elements.
+      `tls` uses the `limit_bytes` region loop from bnb's `examples/regions.rs` as a
+      `parse_with`/`write_with` pair (`session/tls/src/wire/list.rs`). This is the port that
+      bnb's ROADMAP deferred `size_prefix` for; with it, that file and every `parse_with` on a
+      TLS list go away.
+- [ ] **No "present only if bytes remain" field, and no "rest of the input" field** — surfaced
+      by `tls`: a hello's extension block is absent, not empty, when the message ends early
+      (RFC 5246 §7.4.1.2), and a `Finished` body is all of its bytes. `Source` cannot report
+      whether input remains, so `tls` reads and treats `UnexpectedEof { remaining: 0, .. }` as
+      the end. That is sound only on a slice holding exactly one message (`decode_exact`),
+      which `tls` guarantees by decoding whole bodies. It is not sound in general:
+      `SeekReader` hard-codes `remaining: 0` on every short read
+      (`bnb/src/bitstream/seek.rs`), and a `limit_bytes` window wider than its data reports
+      zero remaining with window bytes unread. A `Source::is_empty`, or `#[br(if_remaining)]`
+      and `#[br(rest)]` directives, would replace matching on an error.
 - [x] **Confirmed covered (verified during Increment 1, not gaps):** ctx-`tag` dispatch composed
       with an auxiliary ctx param used in variant `count`s + a catch-all binding the unmatched
       tag and reading the remaining bytes; `count = <expr>` arithmetic; `BitEnum` catch-all

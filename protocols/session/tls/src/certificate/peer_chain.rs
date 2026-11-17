@@ -5,6 +5,7 @@ use x509::{Certificate, PublicKey};
 
 // --- Internal modules ---
 use super::CertificateError;
+use crate::wire;
 
 /// The DER certificates a peer sent in its `Certificate` message, leaf first.
 ///
@@ -63,4 +64,12 @@ impl PeerChain {
 /// Parses the certificate at `index`, attributing a failure to that position.
 fn parse_at(index: usize, der: &[u8]) -> Result<Certificate<'_>, CertificateError> {
     Certificate::from_der(der).map_err(|source| CertificateError::Parse { index, source })
+}
+
+impl From<wire::Certificate> for PeerChain {
+    /// The chain a `Certificate` handshake message carried, in the order it was sent.
+    fn from(message: wire::Certificate) -> Self {
+        let certificates = message.certificate_list;
+        Self::from_der(certificates.into_iter().map(|entry| entry.der).collect())
+    }
 }

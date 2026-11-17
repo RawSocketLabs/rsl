@@ -62,12 +62,22 @@ sangfor-*  http1        consumers
    even when the leaf chains to an anchor without it. That fails closed and keeps the error
    attributable to a position.
 
+7. **Messages are decoded from complete bodies.** The handshake layer reassembles the bytes a
+   `HandshakeHeader` counts, then calls the body type's `decode_exact`. Bodies never read
+   from a stream, which is what lets the hello's optional extension block be detected by
+   "no bytes remain". The handshake layer must also cap the body length it will reassemble:
+   a list of empty items decodes to about eight times its wire size in memory, and the
+   `u24` length allows 16 MiB.
+8. **Golden vectors come from OpenSSL.** RFC 5246 has no byte-level test vectors, so the
+   contract tests use one handshake captured from OpenSSL 4.0.3 as the independent reference,
+   beside vectors laid out by hand from the structure definitions.
+
 ## 4. Build order
 
 1. Record header, peer chain, server verification — **done** (the skeleton).
 2. Handshake wire types: ClientHello and ServerHello with extensions, Certificate (which
-   yields `PeerChain`), ServerKeyExchange, ServerHelloDone, ClientKeyExchange, Finished, and
-   alerts.
+   yields `PeerChain`), ServerKeyExchange, ClientKeyExchange, Finished, and alerts —
+   **done**.
 3. Key schedule and record protection: the TLS 1.2 PRF on HMAC-SHA-256, AES-128-GCM records.
 4. The sans-I/O client handshake, including write half-close (send `close_notify`, keep
    reading), which the aTrust TCP tunnel needs.

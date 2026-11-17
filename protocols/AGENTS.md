@@ -135,7 +135,7 @@ corpus name once compliance tracking is wired.
 | `transport/tcp` | transport | functional (header codec + options + rawsock injection) | `tcp` (RFC 9293) |
 | `transport/udp` | transport | functional (header codec + rawsock injection) | `udp` (RFC 768) |
 | `session/socks` | session | dev (SOCKS5 codecs; blocking/Tokio/Mio CONNECT clients, servers, proxies; blocking BIND) | `socks` (RFC 1928/1929) |
-| `session/tls` | session | skeleton (record-header codec; peer-chain parsing and server verification on `x509`/`pki`; no handshake yet) | `tls` (RFC 5246) |
+| `session/tls` | session | skeleton (TLS 1.2 record, alert and ECDHE handshake message codecs; peer-chain parsing and server verification on `x509`/`pki`; no key schedule or connection yet) | `tls` (RFC 5246) |
 | `application/dns` | application | functional (codec + UDP/TCP resolver client) | `dns` (RFC 1034/1035) |
 | `application/rtltcp` | application | functional (greeting + command codec, blocking client) | — (no RFC) |
 | `system/netlink` | system | functional (route/generic codecs, blocking transport, typed WireGuard API) | `netlink` (Linux UAPI) |
