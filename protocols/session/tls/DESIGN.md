@@ -176,6 +176,23 @@ reference gateway's real three-certificate chain parses through `x509`, and its 
 extracted; only the certificates' signature algorithm is unsupported, as recorded above. This
 shows the happy paths interoperate. It is not a security qualification of `crypto`.
 
+### First handshake with the reference gateway, 2026-11-16
+
+A throwaway driver (not kept) ran the `Client` once against the reference aTrust gateway's
+:443 with `ServerVerification::Unverified`, real randomness from `/dev/urandom`, and no
+application data. The handshake completed in about 0.6 s in a debug build. The gateway
+returned a 32-byte session id and a chain of three certificates whose leaf has a 2048-bit RSA
+key, so its key-exchange signature verified under decision 12.
+
+After the client sent `close_notify`, the gateway closed the TCP connection without sending
+one of its own. `receive_eof` therefore reports `Truncated` there, which is the correct
+signal (the client cannot tell whether the gateway had more to say) and is what a caller that
+closes first should expect from this gateway. It also bears on decision 16: this gateway does
+not keep its side open after the client's close.
+
+The tunnel nodes remain unobserved, as does any exchange of application data with the
+gateway.
+
 ## 6. Non-goals
 
 A server role, TLS 1.3, session resumption, DTLS, the GM/TLCP variant, `no_std` (the layers
