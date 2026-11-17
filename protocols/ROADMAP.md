@@ -119,7 +119,9 @@ single-sign-on logins, the L3 tunnel and EasyConnect come after it.
 5. [~] **`sangfor-atrust`** — modules on the crates above, in this order: `policy` (done:
        parsing and lookups, vectors V21 and V23 to V26), `api` (done for a password login:
        request builders and response parsers over a one-exchange `Portal` trait, vectors V6,
-       V7 and V18), `login` (password first), `tcp` (sans-I/O
+       V7 and V18), `login` (done for a password with no second factor, against a scripted
+       gateway: sequence, anti-MITM checks, next-step resolution; vectors V1 to V6, V19, V28),
+       then `tcp` (sans-I/O
        handshake and frames with a blocking driver), `net` (sockets, TLS and HTTP behind a
        feature).
 6. [ ] **`otp`** — RFC 4226/6238 one-time passwords, with base32 decoding. Not needed for the

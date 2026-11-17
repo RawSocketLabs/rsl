@@ -3573,7 +3573,9 @@ dependencies = [
 name = "sangfor-atrust"
 version = "0.1.0"
 dependencies = [
+ "cookie",
  "crypto",
+ "crypto-legacy",
  "http1",
  "sangfor-atrust-sig",
  "serde",

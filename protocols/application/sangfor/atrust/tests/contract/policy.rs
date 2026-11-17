@@ -4,26 +4,7 @@ use std::net::Ipv4Addr;
 
 use sangfor_atrust::policy::{NameRoute, Policy, Ports, Protocol, Transport};
 
-/// The policy document of vector V21.
-const V21: &str = r#"{"data":{
- "appList":{"data":{
-  "appInfo":[{"apps":[
-   {"id":"app-0001","nodeGroupId":"ng-1","accessModel":"L3VPN","enableTCPPrefL3":true,
-    "addressList":[{"protocol":"all","port":"1-65535","host":"198.51.100.0/24"}]},
-   {"id":"app-0002","nodeGroupId":"ng-2","accessModel":"L3VPN","addrPretend":false,
-    "addressList":[{"protocol":"tcp","port":"443","host":"app.example.net","ip":["203.0.113.5"]},
-                   {"protocol":"udp","port":"5000-5010","host":"*.example.net"}]},
-   {"id":"app-0003","nodeGroupId":"ng-1","accessModel":"WEB",
-    "addressList":[{"protocol":"tcp","port":"80","host":"203.0.113.9"}]}]}],
-  "config":{"nodeGroupConf":{
-   "majorNodeGroup":{"id":"ng-1"},
-   "nodeGroupList":[
-    {"id":"ng-1","addressInfo":[{"address":"{{sdpcHost}}","type":"WAN"},
-                                {"address":"198.51.100.200:4441","type":"lan"}]},
-    {"id":"ng-2","addressInfo":[{"address":"node2.example.org:441","type":"wan"}]}]}}}},
- "sdpPolicy":{"data":{"clientOption":{
-  "dnsOption":{"firstDNS":"","secondDNS":""},
-  "dnsOptionV2":{"firstDNS":"192.0.2.53","secondDNS":"192.0.2.54"}}}}}}"#;
+use crate::support::fixtures::V21;
 
 fn v21() -> Policy {
     Policy::parse(V21.as_bytes(), "sdp.example.org").unwrap()

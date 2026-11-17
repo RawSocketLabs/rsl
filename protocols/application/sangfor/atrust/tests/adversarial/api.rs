@@ -46,12 +46,14 @@ fn a_session_value_cannot_inject_a_header_or_a_request() {
             cookie: Some(hostile),
             ..context(&gateway, "t", "0a1b2c3d")
         };
-        for call in [Call::auth_check(), Call::manifest()] {
-            assert!(
-                matches!(call.request(&with_cookie), Err(Error::Request(_))),
-                "cookie {hostile:?}"
-            );
-        }
+        let found = Call::auth_check().request(&with_cookie);
+        assert!(
+            matches!(found, Err(Error::Request(_))),
+            "cookie {hostile:?}"
+        );
+        // A bare call carries no cookie at all.
+        let bare = Call::manifest().request(&with_cookie).unwrap();
+        assert_eq!(bare.headers.get("Cookie"), None);
     }
     // A host that could end the Host field and start another.
     for hostile in ["sdp.example.org\r\nX: 1", "sdp.example.org\n"] {

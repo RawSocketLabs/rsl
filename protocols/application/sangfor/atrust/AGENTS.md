@@ -6,13 +6,13 @@ A client for the Sangfor aTrust VPN protocol, from the clean-room specification
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The group guide
 > [`../AGENTS.md`](../AGENTS.md), with its clean-room rule, applies first.
 
-## Status — in progress: the policy model and the control-plane API
+## Status — in progress: a password login works against a scripted gateway
 
 | Module | Specification | Stage |
 |---|---|---|
 | `policy` | §6 | functional: parsing and lookups, matching vectors V21 and V23 to V26 |
 | `api` | §4 | functional for a password login: requests E1 to E3, E5, E10, E11, E22, E23 and their answers, matching vectors V6, V7 and V18 |
-| `login` | §5 | not written: password login first |
+| `login` | §5 | functional for a password login with no second factor: the sequence of §5.2, the anti-MITM checks of §5.3 (vectors V1 to V6), next-step resolution (V19); captcha, one-time codes and external logins are reported as unsupported |
 | `tcp` | §9 | not written: a sans-I/O handshake and frame core with a blocking driver |
 | `net` | §2 | not written: the real socket, TLS and HTTP implementations, behind a feature |
 
@@ -58,8 +58,53 @@ for this request) into an `http1::Request`. Each answer type has a `parse` that 
 The login sequence (which request follows which, the cookie jar, the anti-MITM checks) is
 the `login` module's, not this one's.
 
+### `login`
+
+Plain blocking code over `api::Portal`: each request is sent and answered before the next is
+built. Time and randomness are arguments; nothing reads a clock or an OS generator.
+
+- `session.rs` — `Session`: the cookie jar, the CSRF token, the key material and the sign
+  key of the latest `authConfig` answer. `send` is the one place a request goes out and its
+  cookies come in.
+- `sequence.rs` — `Session::login`, and the three stretches it is made of: the anti-MITM
+  checks, the password with its environment report, and the secondary chain.
+- `step.rs` — `Step::resolve`: the next-step table of §5.5.
+- `anti_mitm.rs`, `outcome.rs`, `options.rs`, `credentials.rs`, `device.rs`, `error.rs` — the
+  values that go in and come out.
+
+A login returns a `Login` (session identifier, user name, policy, zero-RTT flag, anti-MITM
+outcome) and leaves the `Session` holding what later control-plane requests need.
+
 ## Rules
 
+- **The anti-MITM outcome is advisory unless the caller says otherwise** (§5.3): the vendor's
+  clients report a failed check and carry on, so `Options::strict_anti_mitm` is off by
+  default, the password goes to a gateway that failed its checks, and `Login::anti_mitm`
+  says what was found. The docs of `Session::login`, `Options` and `AntiMitm` say this where
+  a caller will read it; keep them saying it. A second-stage exchange that fails to complete
+  is a failed check, not a failed login.
+- **A strict failure sends nothing more and keeps nothing**: no request follows the failed
+  check, and the cookie jar goes back to what it was before the login, so a cookie planted
+  by whoever failed the checks cannot ride into the next attempt.
+- **Strict stops on a failed check, not on a missing one.** An answer with no anti-MITM
+  object is `Absent`, and one that does not enable the certificate check can be `Passed` on
+  the challenge and signature alone, which a peer in the middle can produce. Both are
+  outcomes for the caller to judge.
+- **The sign key follows every `authConfig` answer**, whatever the checks found, and exists
+  even when the answer has no anti-MITM object (§3.3).
+- **The session identifier is read last, and is the `sid` the gateway's root would get**
+  (§5.2): any answer may replace it, a `sid` scoped to a narrower path is not it, and a
+  login that ends without one, or with an empty one, has failed.
+- **What this client cannot do is an error that names it**: `CaptchaRequired`,
+  `UnsupportedStep`. Nothing is skipped or guessed to get past a factor.
+- **A refusing policy answer is an error.** The reference does not look at that answer's
+  code (§5.2) and would read the refusal as an empty policy.
+- **Secrets are never printed.** `Credentials`, `Session` and `Login` have hand-written
+  `Debug`s that leave out the password, the cookies and the session identifier, which is all
+  a tunnel needs to act as the user.
+- **`Step::resolve` follows §5.5 to the letter**, including that with no service named an
+  entry with no type is preferred to the first entry. Whether a gateway sends such a list
+  is a question for the specification's owner.
 - **`api` builds and parses; it never sends.** Everything that touches the network goes
   through `Portal`, so the whole login can be tested against scripted answers, and a
   different driver (sans-I/O, async) would replace only the sequence above it.
@@ -105,7 +150,13 @@ One test binary per role, one file per module inside it:
   `api.rs` has session values and cookies that try to inject a header, answers that are not
   objects at any level, null and mistyped members, lists past the bound, and error answers
   with any payload.
-- `tests/support/` — a response built from its wire form, shared by both.
+- `tests/support/` — a response built from its wire form, a gateway that answers from a
+  script (`Script`, the test double for `Portal`), a counting stand-in for randomness, and
+  the fixtures of the specification's vectors.
+
+`login.rs` in `contract` has the sequence and what each request carries from the answers
+before it, V28, the anti-MITM checks in order with V1, V3, V4 and V6, and the §5.5 table with
+V19; in `adversarial` it has gateways that refuse, stall or break off at each step.
 
 A fuzz target for `Policy::parse` is owed, with those of the crates below.
 

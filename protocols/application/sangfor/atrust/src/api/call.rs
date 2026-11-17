@@ -260,7 +260,10 @@ impl Call {
         for (name, value) in headers {
             request = request.header(name, &value).map_err(Error::Request)?;
         }
-        if let Some(cookie) = context.cookie {
+        // A bare call carries nothing of the session, cookies included: a login sends the
+        // manifest request before it has any (spec §5.2).
+        let cookie = context.cookie.filter(|_| self.headers != Headers::Bare);
+        if let Some(cookie) = cookie {
             // Cookies may hold bytes that are not text, so they bypass `Request::header` and
             // its check is repeated here: a restored cookie is not a checked one.
             if cookie.iter().any(|byte| matches!(byte, b'\r' | b'\n' | 0)) {
