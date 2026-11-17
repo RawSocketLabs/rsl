@@ -126,7 +126,9 @@ bnb = { package = "bitsandbytes", path = "codecs/bitsandbytes/bnb", version = "0
 bnb-macros = { package = "bitsandbytes-macros", path = "codecs/bitsandbytes/bnb-macros", version = "=0.11.1" }
 rawsock = { path = "transports/rawsock", version = "0.1.2", default-features = false }
 deps = { path = "deps", version = "0.1.0", default-features = false }
+http1 = { path = "protocols/application/http1", version = "0.1.0" }
 netlink = { path = "protocols/system/netlink", version = "0.1.0", default-features = false }
+sangfor-atrust-sig = { path = "protocols/application/sangfor/atrust-sig", version = "0.1.0" }
 socks = { path = "protocols/session/socks", version = "0.1.0", default-features = false }
 crypto = { path = "crypto/core", version = "0.1.0", default-features = false }
 crypto-legacy = { path = "crypto/legacy", version = "0.1.0", default-features = false }

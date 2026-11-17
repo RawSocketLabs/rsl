@@ -1,4 +1,4 @@
-//! The policy model, checked against the vectors of `../../SPEC-atrust.md` §12.
+//! The policy model, checked against the vectors of `../../../SPEC-atrust.md` §12.
 
 use std::net::Ipv4Addr;
 

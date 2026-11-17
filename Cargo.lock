@@ -3620,8 +3620,13 @@ dependencies = [
 name = "sangfor-atrust"
 version = "0.1.0"
 dependencies = [
+ "crypto",
+ "http1",
+ "sangfor-atrust-sig",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "uri",
 ]
 
 [[package]]

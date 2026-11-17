@@ -8,9 +8,19 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-# The policy document is JSON whose key spelling is not fixed, so it is walked as a value.
-serde_json.workspace = true
+http1.workspace = true
+sangfor-atrust-sig.workspace = true
+serde.workspace = true
+# The policy document is JSON whose key spelling is not fixed, so it is walked as a value;
+# the anti-MITM object is signed over its text as received, so it is kept raw.
+serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
+# The query string of every request, in the one encoding the request signature covers.
+uri.workspace = true
+
+[dev-dependencies]
+# SHA-256, to check a request body against the digest the specification gives.
+crypto.workspace = true
 
 [lints]
 workspace = true
