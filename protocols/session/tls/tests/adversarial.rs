@@ -7,7 +7,7 @@ mod support;
 mod adversarial {
     use bnb::ErrorKind;
     use tls::{
-        record::{Aes128GcmProtection, RecordError},
+        record::{Aes128GcmProtection, ReadState, RecordError, WriteState},
         schedule::MasterSecret,
         wire::{
             Certificate, CipherSuite, ClientHello, ClientKeyExchange, ContentType, Extension,
@@ -312,6 +312,92 @@ mod adversarial {
         assert_eq!(sealed.len(), usize::from(u16::MAX));
         assert_eq!(
             protection.seal(0, ContentType::ApplicationData, version, &plaintext),
+            Err(RecordError::PlaintextTooLong)
+        );
+    }
+
+    // --- The stateful record layer ---
+
+    /// A read state keyed to open what the capture's client sent.
+    fn client_record_reader() -> ReadState {
+        let (protection, _) = client_application_record();
+        let mut state = ReadState::plain();
+        state.protect(protection);
+        state
+    }
+
+    #[test]
+    fn record_delivered_out_of_order_fails_authentication() {
+        let mut state = client_record_reader();
+        // The capture's second record, offered where the first is expected.
+        state.receive(&hex(support::CLIENT_APPLICATION_RECORD));
+        assert_eq!(state.next_record(), Err(RecordError::BadRecordMac));
+    }
+
+    #[test]
+    fn record_replayed_fails_authentication() {
+        let mut state = client_record_reader();
+        let first = hex(support::CLIENT_FINISHED_RECORD);
+        state.receive(&first);
+        assert!(state.next_record().unwrap().is_some());
+        state.receive(&first);
+        assert_eq!(state.next_record(), Err(RecordError::BadRecordMac));
+    }
+
+    #[test]
+    fn oversized_record_is_refused_as_soon_as_its_header_arrives() {
+        // 2^14 + 2048 + 1 bytes claimed, protected; 2^14 + 1 claimed, unprotected.
+        let mut protected = client_record_reader();
+        protected.receive(&[23, 3, 3, 0x48, 0x01]);
+        assert_eq!(protected.next_record(), Err(RecordError::RecordOverflow));
+
+        let mut plain = ReadState::plain();
+        plain.receive(&[22, 3, 3, 0x40, 0x01]);
+        assert_eq!(plain.next_record(), Err(RecordError::RecordOverflow));
+    }
+
+    #[test]
+    fn largest_allowed_records_are_not_refused_by_their_headers() {
+        let mut protected = client_record_reader();
+        protected.receive(&[23, 3, 3, 0x48, 0x00]);
+        assert_eq!(protected.next_record(), Ok(None));
+
+        let mut plain = ReadState::plain();
+        plain.receive(&[22, 3, 3, 0x40, 0x00]);
+        assert_eq!(plain.next_record(), Ok(None));
+    }
+
+    #[test]
+    fn read_buffer_never_holds_more_than_one_largest_record() {
+        let mut state = ReadState::plain();
+        let flood = vec![0; ReadState::CAPACITY * 4];
+        assert_eq!(state.receive(&flood), ReadState::CAPACITY);
+        assert_eq!(state.receive_limit(), 0);
+        assert_eq!(state.receive(&flood), 0);
+    }
+
+    #[test]
+    fn partial_record_is_reported_so_a_cut_connection_is_noticed() {
+        let mut state = client_record_reader();
+        let record = hex(support::CLIENT_FINISHED_RECORD);
+        state.receive(&record[..record.len() - 1]);
+        assert_eq!(state.next_record(), Ok(None));
+        assert!(state.has_partial_record());
+    }
+
+    #[test]
+    fn write_state_refuses_more_plaintext_than_one_record_may_carry() {
+        let mut state = WriteState::plain();
+        let version = ProtocolVersion::TLS_1_2;
+        let most = vec![0; usize::from(RecordHeader::MAX_PLAINTEXT_LEN)];
+        assert!(
+            state
+                .seal(ContentType::ApplicationData, version, &most)
+                .is_ok()
+        );
+        let more = vec![0; usize::from(RecordHeader::MAX_PLAINTEXT_LEN) + 1];
+        assert_eq!(
+            state.seal(ContentType::ApplicationData, version, &more),
             Err(RecordError::PlaintextTooLong)
         );
     }

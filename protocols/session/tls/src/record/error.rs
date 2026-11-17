@@ -17,6 +17,13 @@ pub enum RecordError {
     /// sequence number, type or version.
     #[error("record failed authentication")]
     BadRecordMac,
+    /// A record, or the plaintext inside it, is longer than the protocol allows. A receiver
+    /// answers this with `record_overflow`.
+    #[error("record is longer than the protocol allows")]
+    RecordOverflow,
+    /// The next record's sequence number would wrap, so this key can protect no more records.
+    #[error("record sequence number is exhausted")]
+    SequenceExhausted,
     /// The cipher failed for another reason.
     #[error("record cipher failed")]
     Crypto(#[source] CryptoError),

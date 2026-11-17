@@ -41,11 +41,19 @@ records the plan, the decisions and the lower-layer gaps.
 - `src/schedule/` — `prf_sha256` (the TLS 1.2 PRF on HMAC-SHA-256) and `MasterSecret`, which
   owns everything derived from it: `derive` and `derive_extended` (RFC 7627), the `Finished`
   check value for either `ConnectionEnd`, and the AES-128-GCM `TrafficKeys`.
-- `src/record/` — `Aes128GcmProtection`, one direction's record protection. It is stateless:
-  the caller passes each record's sequence number, type and version, and must never seal one
-  sequence number twice. `seal` uses the sequence number as the explicit nonce;
-  `seal_with_explicit_nonce` is the raw path. A receiver answers every `open` error with a
-  fatal `bad_record_mac` (RFC 5288 §3); the variants exist for diagnostics, not for the peer.
+- `src/record/` — the record layer.
+  - `WriteState` and `ReadState` are the guided path. Each owns its direction's protection
+    and sequence number, so a sequence number is never used twice under a key; `protect`
+    is the key change. `ReadState` also owns the receive buffer, bounded to one largest
+    record, and refuses an oversized record as soon as its header arrives.
+  - `Aes128GcmProtection` is one direction's AES-128-GCM protection and is stateless: the
+    caller passes each record's sequence number, type and version. Used directly it is the
+    raw path, as is `seal_with_explicit_nonce`.
+  - Content rules (no empty handshake records, alert sizes, which types may interleave) are
+    not the record layer's; the connection applies them.
+  - A receiver answers `RecordError::RecordOverflow` with `record_overflow` and every other
+    read error with a fatal `bad_record_mac` (RFC 5288 §3); the variants exist for
+    diagnostics, not for the peer.
 - `src/certificate/` — `PeerChain` (the DER certificates as received, leaf first),
   `ServerVerification` (`Path` or `Unverified`) and `CertificateError`.
 - `lib.rs` and each `mod.rs` are facades: declarations and re-exports only.

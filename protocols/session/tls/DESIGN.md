@@ -72,13 +72,11 @@ sangfor-*  http1        consumers
    contract tests use one handshake captured from OpenSSL 4.0.3 as the independent reference,
    beside vectors laid out by hand from the structure definitions.
 
-9. **Record protection is stateless; the record layer owns sequence numbers.** A protection
-   value is a key and a salt. That keeps it testable against captured records at any sequence
-   number, and puts the one rule that matters (never seal a sequence number twice) in the
-   single place that counts records. Nothing enforces that rule yet, because nothing calls
-   `seal` yet. Build step 4 must add the write state that owns the counter (seal takes
-   `&mut self`, increments, and fails at wrap) and make it the guided path; the stateless
-   pair then remains only as the raw path.
+9. **Record protection is stateless; the record states own sequence numbers.** A protection
+   value is a key and a salt, which keeps it testable against captured records at any
+   sequence number. `WriteState` and `ReadState` wrap it with the counter: sealing and
+   opening take `&mut self`, advance the counter only on success, and refuse to use the last
+   value so it cannot wrap. They are the guided path; the stateless type is the raw path.
 10. **The explicit nonce is the sequence number** (RFC 5288 §3 suggests it). It cannot repeat
     under one key without the sequence number wrapping, which TLS already forbids. OpenSSL
     uses a random starting value instead; both interoperate, because the receiver reads the

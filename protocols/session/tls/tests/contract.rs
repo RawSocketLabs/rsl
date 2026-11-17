@@ -9,7 +9,7 @@ mod contract {
     use crypto::digest::sha2::sha256::Sha256;
     use tls::{
         PeerChain,
-        record::{Aes128GcmProtection, TrafficKeys},
+        record::{Aes128GcmProtection, ReadState, TlsPlaintext, TrafficKeys, WriteState},
         schedule::{ConnectionEnd, MasterSecret},
         wire::{
             Alert, AlertDescription, AlertLevel, Asn1Cert, Certificate, CipherSuite, ClientHello,
@@ -551,5 +551,111 @@ mod contract {
             ),
             Ok(b"hello".to_vec())
         );
+    }
+
+    // --- The stateful record layer ---
+
+    /// The capture's three protected client records, in the order they were sent.
+    fn client_records() -> Vec<u8> {
+        [
+            support::CLIENT_FINISHED_RECORD,
+            support::CLIENT_APPLICATION_RECORD,
+            support::CLIENT_CLOSE_RECORD,
+        ]
+        .into_iter()
+        .flat_map(hex)
+        .collect()
+    }
+
+    /// What those three records carry.
+    fn client_plaintexts() -> Vec<TlsPlaintext> {
+        let record = |content_type, fragment: Vec<u8>| TlsPlaintext {
+            content_type,
+            version: ProtocolVersion::TLS_1_2,
+            fragment,
+        };
+        vec![
+            record(ContentType::Handshake, hex(support::CLIENT_FINISHED)),
+            record(
+                ContentType::ApplicationData,
+                b"GET / HTTP/1.0\r\n\r\n".to_vec(),
+            ),
+            record(ContentType::Alert, vec![1, 0]),
+        ]
+    }
+
+    /// A read state keyed to open what the capture's client sent.
+    fn client_record_reader() -> ReadState {
+        let mut state = ReadState::plain();
+        state.protect(traffic_keys().client_write);
+        state
+    }
+
+    /// Feeds `bytes` to `state` in pieces of `step` bytes, collecting every record.
+    fn read_all(state: &mut ReadState, bytes: &[u8], step: usize) -> Vec<TlsPlaintext> {
+        let mut records = Vec::new();
+        for piece in bytes.chunks(step) {
+            assert_eq!(state.receive(piece), piece.len());
+            while let Some(record) = state.next_record().unwrap() {
+                records.push(record);
+            }
+        }
+        records
+    }
+
+    #[test]
+    fn read_state_opens_openssls_records_in_sequence_however_they_arrive() {
+        let wire = client_records();
+        for step in [1, 7, wire.len()] {
+            let mut state = client_record_reader();
+            assert_eq!(
+                read_all(&mut state, &wire, step),
+                client_plaintexts(),
+                "{step}"
+            );
+            assert!(!state.has_partial_record());
+        }
+    }
+
+    #[test]
+    fn write_state_numbers_records_so_a_read_state_opens_them_in_order() {
+        let mut writer = WriteState::plain();
+        writer.protect(traffic_keys().client_write);
+        let mut reader = client_record_reader();
+        let version = ProtocolVersion::TLS_1_2;
+        for round in 0..3_u8 {
+            let record = writer
+                .seal(ContentType::ApplicationData, version, &[round; 5])
+                .unwrap();
+            assert_eq!(record[..3], [23, 3, 3]);
+            assert_eq!(record[3..5], [0, 5 + 24], "header length is the fragment's");
+            assert_eq!(
+                record[5..13],
+                u64::from(round).to_be_bytes(),
+                "explicit nonce"
+            );
+            assert_eq!(reader.receive(&record), record.len());
+            let opened = reader.next_record().unwrap().unwrap();
+            assert_eq!(opened.fragment, [round; 5]);
+        }
+    }
+
+    /// The first bytes OpenSSL wrote: the `ClientHello` in an unprotected record whose
+    /// header says TLS 1.0, the customary version for a first record.
+    #[test]
+    fn unprotected_record_is_a_header_then_the_plaintext() {
+        let hello = hex(support::CLIENT_HELLO);
+        let record = WriteState::plain()
+            .seal(ContentType::Handshake, ProtocolVersion::TLS_1_0, &hello)
+            .unwrap();
+        assert_eq!(record[..5], [0x16, 0x03, 0x01, 0x00, 0x93]);
+        assert_eq!(record[5..], hello);
+
+        let mut reader = ReadState::plain();
+        assert_eq!(reader.receive(&record), record.len());
+        let opened = reader.next_record().unwrap().unwrap();
+        assert_eq!(opened.content_type, ContentType::Handshake);
+        assert_eq!(opened.version, ProtocolVersion::TLS_1_0);
+        assert_eq!(opened.fragment, hello);
     }
 }
