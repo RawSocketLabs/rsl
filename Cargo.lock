@@ -3578,11 +3578,13 @@ dependencies = [
  "crypto",
  "crypto-legacy",
  "http1",
+ "os-random",
  "sangfor-atrust-sig",
  "sangfor-atrust-wire",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "tls",
  "uri",
 ]
 

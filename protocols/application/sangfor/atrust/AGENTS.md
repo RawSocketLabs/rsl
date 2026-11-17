@@ -6,7 +6,7 @@ A client for the Sangfor aTrust VPN protocol, from the clean-room specification
 > Canonical agent-guidance file; `CLAUDE.md` is a symlink to it. The group guide
 > [`../AGENTS.md`](../AGENTS.md), with its clean-room rule, applies first.
 
-## Status — the first milestone works against a scripted gateway and node
+## Status — the first milestone is built and untried against a real gateway
 
 | Module | Specification | Stage |
 |---|---|---|
@@ -14,11 +14,12 @@ A client for the Sangfor aTrust VPN protocol, from the clean-room specification
 | `api` | §4 | functional for a password login: requests E1 to E3, E5, E10, E11, E22, E23 and their answers, matching vectors V6, V7 and V18 |
 | `login` | §5 | functional for a password login with no second factor: the sequence of §5.2, the anti-MITM checks of §5.3 (vectors V1 to V6), next-step resolution (V19); captcha, one-time codes and external logins are reported as unsupported |
 | `tcp` | §9, §6.6 | functional: routing, the signed request, the handshake and both data phases, matching vectors V14 to V17, V26 and V27 |
-| `net` | §2 | not written: the real socket, TLS and HTTP implementations, behind a feature |
+| `net` | §2 | functional behind the `net` feature: `HttpsPortal` and `dial` over `std::net`, `tls` and `http1`, checked on loopback against `openssl s_server` |
 
-The first milestone is password login and one TCP stream through a node. Both work against
-scripted peers; what is missing to try them for real is `net`. Nothing here has been checked
-against a real gateway.
+The first milestone is password login and one TCP stream through a node. The protocol works
+against scripted peers, and the network layer against a local TLS server; `examples/tunnel.rs`
+puts them together. **Nothing here has been checked against a real gateway**, and a node's TLS
+has never been observed: `tls` offers one cipher suite, and the first real run may stop there.
 
 ## Architecture
 
@@ -94,8 +95,38 @@ The protocol parts do no I/O; one type drives them over a blocking transport.
   `close_write`. `Transport` is `Read + Write` plus stopping the write side, which a TLS
   connection can do and a plain byte stream cannot say.
 
+### `net` (feature `net`)
+
+What a client needs to reach a real gateway, kept apart so that the protocol builds and is
+tested without it.
+
+- `portal.rs` — `HttpsPortal`: the `api::Portal` over a TCP connection, a TLS handshake and
+  one HTTP exchange per request, returning the certificate chain it saw.
+- `node.rs` — `dial`: the TLS connection to a node, and `tcp::Transport` for it
+  (`close_write` is TLS `close_notify`).
+- `socket.rs` — the TCP connect with a time limit.
+
 ## Rules
 
+- **`net` verifies no certificate** (§2.1): gateways and nodes present self-signed ones. On
+  the control plane the protocol's anti-MITM checks stand in, and a login reports them; a
+  node connection has no such check. Do not add verification as a default: the reference
+  and the vendor clients have none, and a gateway's certificate would fail it.
+- **`net` never makes its own randomness.** `HttpsPortal` and `dial` take a
+  `crypto::RandomSource`; a real client passes `os_random::OsRandom`.
+- **Time limits in `net` are per operation**: the connect, and each read or write. A whole
+  exchange is not bounded, nor is name resolution, and the public docs say so. A deadline
+  transport is owed. The limit stays on a node's socket after the tunnel opens; a caller
+  whose stream may sit idle lifts it (the example does).
+- **`dial`'s stream borrows the node address.** `tls::ClientConfig` ties the server name to
+  the connection's lifetime, though nothing is read from it after the handshake. Until `tls`
+  drops that tie, a caller keeps the address string alive beside the stream.
+- **The routine CI gate does not build `net`.** It builds default features only, so a change
+  in `tls` or `http1` can break this module unseen. Until the gate has a configuration with
+  the feature, run `cargo clippy -p sangfor-atrust --features net --all-targets` and the
+  interop tests by hand when touching those crates.
+- **One connection per control-plane request.** The session is in the cookies (§2.2), so
+  nothing depends on reuse; it costs a TLS handshake each time.
 - **Nothing is sent after the first flight until the whole answer is in**, in either mode
   (§9.1). Whether a gateway takes data early in zero-RTT mode is an open question, so it is
   not tried.
@@ -204,6 +235,13 @@ One test binary per role, one file per module inside it:
   `tcp::Transport`, which can interrupt reads and fail writes and closes), a counting
   stand-in for randomness, and the fixtures of the specification's vectors.
 
+`tests/interop.rs` (feature `net`, ignored by default) runs `HttpsPortal` and `dial` against
+`openssl s_server` on loopback: `cargo test -p sangfor-atrust --features net --test interop --
+--ignored`. It proves the layers fit together (the chain returned is the server's, limits
+are applied, data sent after this end's `close_notify` still arrives), not that a gateway
+agrees. The pure parts of `net`, which names get offered in the handshake and how a node
+address splits, have inline `unit` tests that run with the feature.
+
 `tcp.rs` in `contract` has V26's routes, V15's request byte for byte, the answers of V16 and
 V27 however they are cut, V17's frames, and both kinds of stream over a scripted node; in
 `adversarial` it has verdicts that are not verdicts, nodes that hang up, and generated input.
@@ -215,4 +253,5 @@ V19; in `adversarial` it has gateways that refuse, stall or break off at each st
 Fuzz targets are owed for `Policy::parse`, `tcp::Handshake::receive` and
 `tcp::FrameReader::read`, with those of the crates below.
 
-Run: `cargo test -p sangfor-atrust`.
+Run: `cargo test -p sangfor-atrust`, and `cargo test -p sangfor-atrust --features net` to
+build the network layer too.

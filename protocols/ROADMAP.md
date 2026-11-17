@@ -116,14 +116,16 @@ single-sign-on logins, the L3 tunnel and EasyConnect come after it.
        specification's vectors V1 to V8. **`sangfor-atrust-wire`** (bnb data-plane codecs) —
        done for session authentication and the TCP tunnel (vectors V12, V14, V16, V17); the L3
        frames are not written. Both are pure, vector-tested, no I/O.
-5. [~] **`sangfor-atrust`** — modules on the crates above, in this order: `policy` (done:
-       parsing and lookups, vectors V21 and V23 to V26), `api` (done for a password login:
-       request builders and response parsers over a one-exchange `Portal` trait, vectors V6,
-       V7 and V18), `login` (done for a password with no second factor, against a scripted
-       gateway: sequence, anti-MITM checks, next-step resolution; vectors V1 to V6, V19, V28),
-       `tcp` (done against a scripted node: routing, the signed request, a sans-I/O handshake
-       and frame codec, and a blocking stream; vectors V14 to V17, V26, V27), then `net` (sockets, TLS and HTTP behind a
-       feature).
+5. [~] **`sangfor-atrust`** — the first milestone is built, in five modules on the crates
+       above: `policy` (parsing and lookups; vectors V21 and V23 to V26), `api` (requests and
+       answers of a password login over a one-exchange `Portal` trait; V6, V7, V18), `login`
+       (the sequence, the anti-MITM checks and next-step resolution, for a password with no
+       second factor; V1 to V6, V19, V28), `tcp` (routing, the signed request, a sans-I/O
+       handshake and frame codec, and a blocking stream; V14 to V17, V26, V27), and `net`
+       (sockets, TLS and HTTP behind a feature, checked on loopback against `openssl
+       s_server`). `examples/tunnel.rs` is the milestone end to end. Everything is tested
+       against scripted peers; nothing has been run against a real gateway. Next: that run,
+       then second factors, session refresh, node probing and the L3 tunnel.
 6. [ ] **`otp`** — RFC 4226/6238 one-time passwords, with base32 decoding. Not needed for the
        first milestone.
 7. [ ] **EasyConnect** — deferred. Its tunnel needs TLS 1.1 with RC4, and the reference gateway
@@ -165,6 +167,13 @@ crate. Known so far:
       :443 does use RSA-PSS (observed 2026-11-16); the tunnel nodes are unobserved.
 
 The record of each gap as it was found is in the consuming crate's `DESIGN.md` (for `tls`, §5).
+- [ ] **`tls`: the server name's lifetime follows the connection.** `ClientConfig<'a>` carries
+      `server_name: Option<&'a str>` into `blocking::Stream<'a, T>`, so a stream borrows the
+      string its name came from for as long as it lives, though the name is only read while
+      the handshake is built. `sangfor-atrust`'s `net::dial` passes that on to its callers.
+- [ ] **CI: no configuration builds `sangfor-atrust`'s `net` feature.** The routine gate uses
+      default features, so the network layer, its example and its interop test are compiled
+      by hand only.
 
 ## Draft harvest
 
