@@ -122,7 +122,12 @@ Used only for the control plane. The minimal subset:
   per request is required.
 - **Timeouts**: whole request ≤ **20 s**. The caller can cancel; cancellation must abort an
   in-flight request.
-- **Connection reuse**: optional. Correctness does not depend on keep-alive.
+- **Connection reuse**: optional. Correctness does not depend on keep-alive. The reference stack
+  uses ordinary HTTP/1.1 persistent connections: it sends no `Connection` header and reuses an
+  idle connection for the next request whenever the previous response was read to its end, so a
+  login normally travels over a single TLS connection. Nothing the client does relies on that;
+  the session lives in the cookies. Whether a gateway ties any login state to the connection is
+  unknown, and nothing suggests that it does **(inferred)**.
 - No HTTP/2, no `Expect: 100-continue`, no proxies, no auth schemes.
 
 Note: a GET has no body and carries no `Content-Length`. POST bodies always have a known
@@ -342,6 +347,27 @@ exceptions are `/public/manifest` and the CAS/OAuth2 callback URLs, which carry 
 | `X-Request-Sig` | §3.7 | reportEnv |
 | `Accept` | `image/webp,image/apng,image/*,*/*;q=0.8` | checkCode |
 
+The table is complete. A request carries `Host`, `User-Agent`, the rows above that apply to it,
+`Cookie` when the jar holds cookies for the host, and `Content-Length` on a POST. The reference's
+HTTP stack adds `Accept-Encoding: gzip` (§2.2) and nothing else, except a `Referer` on a request
+it issues itself while following a redirect. In particular no request the client builds has an
+`Origin`, `Referer`, `Accept-Language` or `Connection` header, and none but checkCode has
+`Accept`. For the password path that gives:
+
+| Request | Headers besides `Host`, `User-Agent`, `Cookie`, `Content-Length`, `Accept-Encoding` |
+|---|---|
+| E1 | none |
+| E2 | `x-csrf-token`, `x-sdp-rid`, `x-sdp-traceid` |
+| E5 | `Content-Type`, `x-csrf-token`, `x-sdp-env`, `x-sdp-traceid` |
+| E10 | `Content-Type`, `x-csrf-token`, `x-sdp-traceid`, `X-Request-Sig` |
+| E11, E22 | `x-csrf-token`, `x-sdp-traceid` |
+| E23 | `Content-Type`, `x-csrf-token`, `x-sdp-traceid` |
+
+`x-csrf-token` is sent even while the token is empty, as a header with an empty value. The
+`x-…` names are written in lower case here. On the wire the reference's HTTP stack capitalises
+each hyphen-separated word (`X-Csrf-Token`, `X-Sdp-Traceid`, `X-Sdp-Rid`, `X-Sdp-Env`). HTTP/1.1
+field names are case-insensitive, so either spelling should do **(inferred)**.
+
 ### 4.3 Endpoint catalogue
 
 All responses are JSON envelopes `{"code":int,"message":string,"data":{…}}` unless noted.
@@ -387,6 +413,12 @@ Notes:
   ```
   The E3 `x-csrf-token` is the CSRF token **from the authConfig response being validated**,
   not the previous one.
+- HTTP status: E1, E2 and E3 must answer **200**. For E2 a 401 or 403 means the session is
+  invalid, and any other status than 200 is a plain failure, at login as well as on refresh.
+  An E3 reply with another status fails the second-stage check (§3.6). On E5, E10, E11, E22 and
+  E23 the status is not looked at; only the body counts.
+- On E2, E5, E10, E11 and E22 a body that is not valid JSON fails the step. E23 is the
+  exception (§5.2).
 
 ### 4.4 Error / status codes
 
@@ -449,6 +481,60 @@ sequenceDiagram
   Note over C: snapshot cookies → sid (must be non-empty)
 ```
 
+Rules for these steps on the password path:
+
+- **Stored cookies.** Cookies from the persistence blob (§11.3), if there are any, are put into
+  the jar before E2. That is how `isLogin == 1` comes about. E1 is sent before they are loaded.
+- **authConfig (E2) at login.** The reply must have status 200 (§4.3) and a JSON body. A `code`
+  member that is present and non-zero fails the login: 10000004 and 75500002 are reported as an
+  invalid session, any other value as a plain failure. Login has no retry and no "transient"
+  class; those belong to refresh (§5.8). Unlike refresh, a reply with no `code` member is
+  accepted, and a missing `isLogin` counts as 0. `isLogin` is tested before a login method is
+  looked for.
+
+  No member of `data` is required at this point. `csrfToken`, `pubKey`, `pubKeyExp` and
+  `antiReplayRand` (all JSON strings) are stored as received, empty or absent included, and
+  replace the values held before. What a missing or empty member then leads to:
+
+  | Member | Effect on the password path |
+  |---|---|
+  | `pubKey` | E5 is not sent; the step fails locally. The same holds for text that is not hex. |
+  | `pubKeyExp` | E5 is not sent; the step fails locally. The same holds for text that is not a decimal integer greater than zero. |
+  | `antiReplayRand` | Not detected. The plaintext of §3.4 becomes `secret ‖ "_"`. What the server answers is an **open question** (§13); an implementation may fail locally instead. |
+  | `csrfToken` (in both places) | Not detected. `x-csrf-token` goes out with an empty value. |
+  | `authServerInfoList` | No entry can be selected, so the login fails (unless `isLogin == 1`). |
+
+- **Method entry.** The entry used is the first in list order whose `authType` and
+  `loginDomain` both equal the wanted values exactly (case-sensitive). For `auth/psw` nothing
+  else of the entry is used.
+- **Start of the secondary chain.** The primary reply is *not* put through the resolution of
+  §5.5. Only its `data.nextService` string is read; a `nextServiceList` in it is ignored. The
+  chain's first service is that string taken literally, or `auth/authCheck` when it is empty,
+  and it has no authId. So after `auth/psw` with an empty `nextService` the chain opens with
+  E11, and the E11 reply is the first one resolved by the §5.5 table. Because the string is
+  taken literally, `auth/sms` here runs in mode A, `auth/token` fails as undispatchable, and
+  `auth/sendSms` is not rewritten to `auth/sms` and fails as unsupported. The last looks like
+  an accident of the reference; an implementation may apply that rewriting here too.
+- **reportEnv (E10)** is mandatory. It is sent only with a non-empty ticket; an empty one fails
+  the login before the request. A transport error, a body that is not JSON, or a non-zero `code`
+  fails the login. `mac_addresses` is the list from the persistence blob if it has one, else the
+  configured list, else one freshly generated address (§3.8), so on this path it is never
+  empty.
+- **onlineInfo (E22).** A transport error, a body that is not JSON, or a non-zero `code` fails
+  the login. `data.username` is taken as it is. An empty or missing value is accepted: the login
+  succeeds with an empty user name, which the tunnels then send as an empty string (§9.2).
+- **clientResource (E23).** Only a transport error fails the request. Neither the status nor
+  `code` is looked at, and the body goes to the policy parser (§6) unchanged. A body that is
+  not JSON fails there. A JSON error envelope without the policy members parses as an empty
+  policy (no rules, no node groups), which the reference notices only later, when it has no
+  node to connect to. An implementation should fail on a non-zero `code` here **(inferred)**.
+- **Session identifier.** It is read once, after the E23 response has been processed: the value
+  of the cookie named `sid` among the cookies the jar would send to `https://<base host>/`.
+  Values `sid` had earlier in the login are not used. An empty or missing value fails the setup
+  as an invalid session. The tunnels take nothing else from the jar: this one string is the only
+  cookie-derived input to §7, §8 and §9, and a refresh replaces it (§5.8). The other cookies
+  matter only for later control-plane requests and for the persistence blob (§11.3).
+
 ### 5.3 Anti-MITM inside authConfig
 
 This runs only when `antiMITMAttackData` is present (raw object non-empty). Order:
@@ -492,6 +578,17 @@ read from the image header (§5.7).
   login fails with `code: message`.
 - `code == 0`: the ticket must be non-empty unless `graphCheckCodeEnable == 1`. Store `ticket`,
   `nextService`, and the fresh `antiReplayRand` if one is present.
+- Qualified username: `user ‖ "@" ‖ domain`, always. Nothing is checked or escaped. A user name
+  that already contains `@` gets the suffix all the same (`a@b` with domain `local` is sent as
+  `a@b@local`), and an empty domain gives `user@`.
+- Login domain: the reference never derives it from `authServerInfoList`. It uses the
+  configured string as it is, and an entry with exactly that `loginDomain` must exist (§5.2).
+  When the user configures none, the reference's own configuration default applies, the literal
+  `Radius`. That is a default of the project's home deployment, not a protocol value. Which
+  entry the vendor client preselects is an **open question** (§13). An implementation should
+  require the domain, and may offer the `loginDomain` values of the `auth/psw` entries to
+  choose from.
+- Of the reply's next-step fields only `data.nextService` is read (§5.2).
 
 **SMS primary (`auth/smsCheckCode`)**: E6 (send) under the captcha rule, then ask the user for
 the SMS code, then E7 (verify) under the captcha rule. E7 yields `ticket` as for PSW. Afterwards
@@ -531,7 +628,8 @@ keeps the SMS state in the session).
 
 **Dispatch.** Each step's reply is resolved as above, and the chain continues until no service
 remains. The reference client gives up after 8 steps; an implementation may choose its own
-bound.
+bound. (The reference counts the final "none" as one of the eight, so a chain succeeds there
+only with seven steps or fewer.)
 
 | service | Action |
 |---|---|
@@ -628,7 +726,7 @@ For each address with `protocol` ∈ {`tcp`,`udp`,`all`} (others skipped, so ICM
   2. IPv4 CIDR → an IP rule [network, broadcast]. (IPv6 CIDR is skipped.)
   3. `ipA-ipB` with both parsing as IPs → an IPv4 range rule. (IPv6 is skipped. Note that
      `"a-b"` where a or b is not an IP becomes a domain.)
-  4. otherwise **domain**: trim. A `*.example.com` pattern becomes the suffix `.example.com`.
+  4. otherwise **domain**: trim. A `*.example.org` pattern becomes the suffix `.example.org`.
      Any other `*` means the address is dropped. The result is a domain rule
      {ports, protocol, appId, nodeGroupId, enableTCPPrefL3, addrPretend}.
 - **addrPretend**: `true` if the JSON value is boolean `true` **or absent / non-boolean**.
@@ -637,6 +735,55 @@ For each address with `protocol` ∈ {`tcp`,`udp`,`all`} (others skipped, so ICM
   `host → ip` (the raw host string, not the normalised one) and an IP rule [ip, ip] with the
   same app metadata. IPs listed on a non-domain host are ignored.
 - Rule **order** = document order. It matters for first/last matching.
+
+Details the list above leaves open:
+
+- **Value spelling.** `accessModel` and `protocol` are compared exactly, so only `L3VPN`, `tcp`,
+  `udp` and `all` in this letter case count: an app with `l3vpn` is ignored and an address with
+  `TCP` is skipped. Whether servers ever send another case is an **open question** (§13).
+- **Missing ids.** An app with an empty or missing `nodeGroupId` yields its rules as usual, and
+  their node comes from the major group (§6.6 step 6). An app with an empty or missing `id`
+  also yields its rules, with an empty appId. The TCP tunnel treats an empty appId as "no rule"
+  (§6.6 step 5). An implementation may drop such an app while parsing **(inferred:** a tunnel
+  request needs an appId).
+- **Port strings.** The text is used as received, without trimming. Without a `-` it must be one
+  decimal integer; with one it must split into exactly two. Everything else is malformed and
+  skips the address: the empty string, white space anywhere, `80-`, `-80`, `1-2-3`. A skipped
+  address yields nothing at all: no rule, and no pin from its `ip[]`. (The reference's integer
+  parser also lets a leading `+` and leading zeros through, so `+80` and `080` are 80. That is
+  an accident, and an implementation may reject them.)
+
+  The numbers are not range-checked. Zero, values above 65535 and a range with a > b are all
+  kept, and their effect follows from the test in §6.5: a range with a > b contains no port, an
+  upper bound above 65535 acts like 65535, a lower bound above 65535 contains no port, and `0`
+  is an ordinary bound, so `0-1023` includes port 0. A rule whose range contains no port can
+  still match ICMP when its protocol is `all`, because ICMP ignores ports. An implementation may
+  clamp the bounds to 0–65535. If it drops rules with an empty range instead of keeping them, it
+  differs from the reference in that ICMP case only.
+- **Host strings.** Steps 1–3 look at the text exactly as received; only step 4 trims.
+  - An IPv4 literal is strict dotted decimal: four numbers 0–255 without leading zeros. The
+    reference also takes an IPv4-mapped IPv6 literal (`::ffff:a.b.c.d`) for that IPv4 address.
+  - A host with white space around it is therefore never an address, a CIDR or a range. It
+    reaches step 4 and becomes a *domain* rule named by the trimmed text (` 192.0.2.7` gives a
+    domain rule named `192.0.2.7`). No lookup can select such a rule, since a destination
+    written as an address is never looked up by name (§6.6). This is an accident of the
+    reference; an implementation may trim before step 1 **(inferred** to be the intent).
+  - CIDR `a.b.c.d/n`, n from 0 to 32: the rule runs from the network address (host bits
+    cleared) to the broadcast address. `/32` is the single address, `/0` is 0.0.0.0 to
+    255.255.255.255, and `198.51.100.77/24` gives the same rule as `198.51.100.0/24`.
+  - `ipA-ipB` needs exactly one `-`, and A decides the address family. The bounds are not
+    reordered. A rule with A > B, or with an IPv4 A and an IPv6 B, is created and keeps its
+    place in the order, but it matches nothing.
+- **Where pinned addresses sit in the order.** IP rules form one sequence for the whole
+  document. Domain rules are kept per name (§6.5) and have no place in that sequence. Each
+  `addressList` entry appends to the IP sequence either the one rule for its own host (steps
+  1–3) or, for a domain host, one rule per IPv4 entry of `ip[]` in array order. Pinned-address
+  rules thus follow every IP rule of earlier entries (earlier apps included), precede those of
+  later entries, and keep array order among themselves. Entries of `ip[]` that are not IPv4
+  addresses are skipped one by one. The pins of one host accumulate across entries in the same
+  order, duplicates included. A host dropped for its `*` (step 4) yields neither pins nor IP
+  rules. A wildcard host `*.example.org` with `ip[]` does yield the IP rules, but its pin is
+  filed under the text `*.example.org`, which no queried name can equal.
 
 ### 6.3 DNS servers
 
@@ -651,6 +798,21 @@ For each `nodeGroupList[]` entry, each `addressInfo` maps as follows. The litera
 `lan`; anything else is ignored. A node whose address is an IPv4 literal must itself stay
 outside the tunnel: take that address out of the destinations the policy would otherwise
 capture, or the tunnel's own traffic would be sent into the tunnel. `majorNodeGroup.id` is the default group.
+
+The `{{sdpcHost}}` replacement happens only when the whole `address` is exactly that text. The
+value put in its place is the configured server host without a port, so `:441` is then added.
+
+The exact effect of keeping node addresses out: the policy yields two separate things. One is
+the rule lists of §6.2, which every lookup uses. The other is a set of IPv4 addresses, the
+union of all IP-rule ranges and pinned addresses, which serves only to install operating-system
+routes when the client runs a TUN device. Only that set is reduced. Each node address that is an
+IPv4 literal is taken out of it as a single address. This is done for every `addressInfo` entry,
+those with an ignored `type` included, and for the configured server address when it stands in
+for `{{sdpcHost}}`. Node addresses given as names are not resolved for this. The rule lists stay
+as they are: an IP lookup (§6.5) for a node's address returns whatever rule covers it, exactly
+as for any other address. A client that installs no routes therefore has nothing to take out.
+If it wants the same protection it can decline to tunnel a destination that is one of its own
+node addresses **(inferred)**.
 
 ### 6.5 Matching semantics **[shared with EasyConnect]**
 
@@ -668,12 +830,102 @@ correct structure will do.
 Domain lookup(domain, proto, port): the first rule in that domain's list with the same
 protocol/port test (and an optional predicate).
 
+"That domain's list" is the *candidate list* of the queried name, built as follows.
+
+- **Normalisation.** Rule names and queried names are compared after the same treatment:
+  surrounding white space removed, letters lower-cased, then one trailing dot removed. For a
+  rule this comes on top of §6.2 step 4, so the policy host `*.EXAMPLE.Net.` is the suffix
+  `.example.net`. A rule whose name is empty after this is ignored. Comparison is bytewise, and
+  no IDNA conversion is applied.
+- **Selection.** A rule name R selects a queried name Q when R equals Q, or when Q ends with R
+  and either R begins with a dot or the character of Q just before that ending is a dot. A plain
+  name `example.org` therefore covers itself **and every name beneath it** (`www.example.org`,
+  but not `badexample.org`). A wildcard-derived suffix `.example.org` covers the names beneath
+  it and does **not** cover the bare `example.org`.
+- **Order.** The candidate list holds the rules of every selecting name, the longest name's
+  rules first. An exact name is always the longest, so it precedes any suffix, and a more
+  specific suffix precedes a shorter one. Where a plain name and a suffix differ only in the
+  leading dot, the suffix is the longer and comes first. Rules that share a name stay in
+  document order.
+- **Result.** The first candidate that passes the protocol/port test (and the predicate) is
+  returned. A longer name whose rules all fail the test does not hide the shorter names' rules.
+
+Policy hosts that differ in spelling but normalise to one name share that name's rules. The
+reference leaves the order between such spellings to chance; use document order.
+
 Routing choice per destination (consumer policy, **[shared]**):
 - **L3 tunnel** accepts UDP/ICMP on any matching rule (first match). It accepts TCP **only**
   if the first matching rule satisfying the predicate has `enableTCPPrefL3 = true`.
 - **TCP tunnel** uses the **last** matching TCP rule with `enableTCPPrefL3 = false`. With the
-  caller's "ignore TCP-prefers-L3" flag it falls back to the last matching TCP rule of any kind.
+  caller's *take-all* flag (§6.6) it falls back to the last matching TCP rule of any kind.
   A domain rule with `enableTCPPrefL3` is refused for the TCP tunnel unless that flag is set.
+
+### 6.6 From a destination to a TCP tunnel request
+
+This is how the reference decides, for one outbound TCP connection to `host:port`, whether it
+goes through the TCP tunnel (§9) and with which values. Steps 1–5 are consumer policy
+**[shared]**; the gateway sees only their result (§9.2). "Not covered" means the tunnel is
+not used. The reference then connects directly, outside the VPN, or refuses the connection
+when it is configured to send everything through the VPN.
+
+The caller's *take-all* flag (§6.5) is set when the client has no L3 tunnel to give TCP to, as
+in an implementation of the TCP tunnel alone.
+
+1. **IPv6 literal**: not covered. No lookup is made. (IP rules are IPv4 only, and the
+   reference never produces the ATYP `04` form of §9.1.)
+2. **IPv4 literal**: there is no name. Continue at step 5.2.
+3. **Host name**: normalise it and collect its candidate list (§6.5), which may be empty. The
+   normalised name is "the name" from here on.
+4. **Resolve the name to an address.** The reference always does this, even when the rule
+   chosen in step 5 has addrPretend = true and the address then goes unused, because its
+   internal interfaces work on addresses. The sources, in order; the first answer wins:
+   1. The client's own table: host entries configured by the user, and answers remembered from
+      source 3.
+   2. The policy's DNS pins (§6.2) for the name. The name must equal the pin's host text byte
+      for byte, and that text is the *raw* policy string. A pin whose host has upper-case
+      letters, a trailing dot or surrounding white space is therefore never found. This is an
+      accident; an implementation may normalise the pin's host too **(inferred)**. With several
+      addresses the reference rotates: the first lookup of a name gets the first address, the
+      next lookup the second, and so on round.
+   3. The policy's primary DNS server (§6.3), asked for A records only, **through the VPN**, on
+      port 53. Over UDP that needs the L3 tunnel. Over TCP it is an ordinary TCP tunnel stream
+      to `<DNS server>:53`, chosen by step 5.2 like any other address, so an IP rule has to
+      cover the DNS server. The reference tries UDP first and starts TCP as well once UDP has
+      failed or has gone 300 ms without an answer; a client without L3 ends up on TCP alone.
+      The first address of the first answer is used, and remembered for a configurable time
+      (reference default 3600 s). This source is skipped when the policy names no DNS server.
+   4. A resolver **outside the VPN**, on the host's own network: the policy's second DNS server
+      when there is one, else a server of the client's choosing. It is asked for A records, and
+      for AAAA when that fails. (The reference really does query the policy's second server
+      from outside the tunnel, which works only where that server is reachable there.)
+
+   No answer from any source: not covered. An IPv6 answer: not covered.
+
+   When the chosen rule has addrPretend = true the gateway resolves the name itself (§9.2), so
+   an implementation may skip this step for such a rule **(inferred)**. The reference would
+   instead have given up on a name it cannot resolve itself.
+5. **Choose the rule**, for protocol `tcp` and the destination port:
+   1. *By name.* From the candidate list take the first rule that passes the protocol/port test
+      of §6.5 and has enableTCPPrefL3 = false; failing that, the first that passes the test at
+      all. If the rule taken has enableTCPPrefL3 = true and take-all is not set, the connection
+      is not for the TCP tunnel (it belongs to L3). Otherwise it is the chosen rule, a *domain
+      rule*, unless its appId is empty.
+   2. *By address.* This applies when there is no name, when step 5.1 found no rule, and when
+      the rule it found has an empty appId. Do an IP lookup (§6.5) on the address: the **last**
+      matching rule with enableTCPPrefL3 = false; failing that, and only with take-all set, the
+      last matching rule of any kind. A rule found here is an *IP rule*, and a name, if there
+      was one, plays no further part. A found rule with an empty appId counts as no rule, even
+      when an earlier rule that has an appId also matches (an accident of the reference).
+   3. No rule: not covered. (Without take-all, an address all of whose matching rules have
+      enableTCPPrefL3 = true is not lost: it belongs to L3.)
+6. **Choose the node.** Take the best node (§10) recorded for the rule's node group; if none is
+   recorded, the one recorded for the major group; if there is none either, the connection
+   fails without any I/O. A best node is recorded only for a group in which a probe succeeded,
+   and the reference never falls back to an address it has not probed. An empty or unknown
+   `nodeGroupId` has no record, so it leads to the major group. An implementation that does not
+   probe needs a choice of its own here, for example the group's first WAN address, else its
+   first LAN address, else the same for the major group **(inferred)**.
+7. **Fill in the request** from the kind of rule, the name and the address: §9.2.
 
 ---
 
@@ -991,6 +1243,31 @@ byte is **0x03** (versus 0x00).
   **FLAG = 0x01 means "reusable"** (server agrees to the framed close protocol).
 - Bytes following the reply are stream data and must stay buffered.
 
+Auth reply details. The two bytes `53 00` are checked first, and a reply that starts otherwise
+fails at once, without its length or JSON being read (contrast §7.2). Then:
+
+| JSON part | Outcome |
+|---|---|
+| L = 0 (no JSON at all) | failure: the empty text is not valid JSON. This differs from §7.2, where L = 0 is accepted. |
+| not valid JSON, or valid but not an object (array, string, number) | failure |
+| an object with no `code` member | success, as if `code` were 0 |
+| `code` present but not an integer | failure |
+| `code` = 0 | success |
+
+(The reference also lets the bare JSON value `null`, and a `code` of `null`, pass as success,
+and it fails on a `message` that is not a string. Both are accidents of its decoder. An
+implementation should reject a bare `null` and need not inspect `message`.) Members other than
+`code` and `message` are ignored, and `message` serves only for the error text.
+
+Sequencing. The init message and the destination message go out together in one write, and
+nothing else is sent until the whole reply (server hello, auth reply, connect reply) has been
+read and accepted. This holds in zero-RTT mode too: the reference never sends stream data ahead
+of the reply. There, "zero-RTT" changes exactly three things: the RSV byte, the framing of the
+data phase (§9.3), and, when the server also sets FLAG, the way the write side is closed (§9.3).
+Whether a gateway accepts data frames sent before its reply, as the name suggests, is an **open
+question** (§13). The 18 s deadline covers the reading of the three reply parts and is lifted
+once they are in. Cancelling the caller's request during the handshake closes the connection.
+
 ### 9.2 Auth JSON (fields in order, compact, signed per §8.4)
 
 | # | Key | Value |
@@ -1017,6 +1294,32 @@ byte is **0x03** (versus 0x00).
 | domain rule, addrPretend = true | **domain** (the server resolves it) | `domain:port` | omitted |
 | domain rule, addrPretend = false | IP (resolved locally) | `domain:port` | IP |
 
+The case is the kind of rule chosen in §6.6 step 5, and the values are those of §6.6:
+
+- "IP" is the IPv4 address in dotted decimal: the literal the caller gave, or the address the
+  name resolved to in §6.6 step 4. On the wire it is ATYP `01`.
+- "domain" is the normalised name that was queried (§6.5), not the rule's own text. A query for
+  `WWW.Example.NET.` under a rule `*.example.net` sends `www.example.net`. On the wire it is
+  ATYP `03`.
+- The IP-rule row also covers a name that resolved to an address when no domain rule was chosen
+  (§6.6 step 5.2). The name is then sent nowhere.
+- `appId` is the chosen rule's. `url` is always `tcp://` followed by the same text as
+  `destAddr`.
+- addrPretend exists on domain rules only (§6.2).
+
+Where the other inputs come from. All are fixed at client setup except `sid`, and are the same
+for every stream:
+
+| Key | Source |
+|---|---|
+| `sid` | the session identifier of §5.2, or the one the latest refresh supplied (§5.8); read anew for each stream |
+| `deviceId` | the device ID of §3.8: persisted, else configured, else generated at setup |
+| `connectionId` | §3.8, computed **once** at client setup from the device ID and the time then; not per stream |
+| `procHash` | §3.8 over the process path of row 12, so one of two constants (V8), and equal to `env…fingerprint` |
+| `userName` | after a login: `data.username` of the E22 reply, verbatim (not the `user@domain` sent in E5). After a resume without login (§11.2): the user name from the client's configuration. The member is **always present**; when the name is empty it is sent as `"userName":""`. |
+| `env` | constants only (row 12, §8.3); nothing in it comes from a server response |
+| signing key | §3.8; on the login path always freshly random |
+
 ### 9.3 Data phase
 
 **Zero-RTT disabled** (RSV = 0): raw mode. TLS application bytes are the TCP stream itself.
@@ -1037,6 +1340,23 @@ other header → protocol error
   **not** close the TLS write side. Otherwise use TLS write half-close. Close sends the
   write-close once, then closes TLS.
 - Concurrent writers must not interleave frames.
+- Framed reading, case by case:
+  - A data frame with length 0 carries nothing and is passed over: the reader goes on to the
+    next frame. It is neither end of stream nor an error.
+  - A header whose first byte is not `01`, or whose second byte is neither `00` nor `01`, is a
+    protocol error. The read fails, and the stream is unusable from then on.
+  - A close frame ends the stream. Only its four header bytes are consumed. The reference does
+    not remember that it has seen one, so a later read would look for another header; an
+    implementation should keep reporting end of stream **(inferred)**.
+  - The TLS connection ending exactly between two frames is a clean end of stream as well.
+    Ending inside a header or inside a frame's data is an error (truncation). (The reference
+    reports an end that falls right after a header, before the first data byte, as a clean one.
+    That is an accident; treat it as truncation.)
+- Raw reading: there is nothing in-band. End of stream is the end of the TLS connection's read
+  side, that is the peer's `close_notify`. The reference's TLS library reports a transport
+  closed without `close_notify` at a record boundary in the same way, so the reference cannot
+  tell a truncated stream from a finished one; an implementation may tell them apart.
+- A write of no bytes sends nothing in either mode.
 - Connection pooling or reuse after close is **not** implemented by the reference (the
   `tun0rtt` pool parameters in policy are ignored). Whether the server allows reusing a closed
   stream's TLS connection is an **open question**.
@@ -1347,6 +1667,124 @@ Node A answers two of three probes, in 30 ms and 50 ms: score 40 ms + 1 s = 1.04
 answers all three, in 90, 100 and 110 ms: score 100 ms. B is chosen. A node that answers no
 probe is unreachable.
 
+### V23. Domain selection (§6.5)
+
+Domain rules, in document order:
+
+| # | Policy host | Rule name | Protocol | Ports | appId |
+|---|---|---|---|---|---|
+| 1 | `example.org` | `example.org` | tcp | 443 | app-a |
+| 2 | `*.example.org` | `.example.org` | tcp | 1–65535 | app-b |
+| 3 | `*.DEV.example.Org.` | `.dev.example.org` | tcp | 8000–8999 | app-c |
+| 4 | `www.example.org` | `www.example.org` | udp | 53 | app-d |
+
+| Query | Candidate names, in order | Result |
+|---|---|---|
+| `example.org`, tcp 443 | `example.org` | app-a |
+| `example.org`, tcp 80 | `example.org` | none: rule 2 does not cover the bare name |
+| `www.example.org`, tcp 443 | `www.example.org`, `.example.org`, `example.org` | app-b: rule 4 fails the test, rule 2 is next |
+| `Www.EXAMPLE.org.`, tcp 443 | the same | app-b |
+| `www.example.org`, udp 53 | the same | app-d |
+| `api.dev.example.org`, tcp 8080 | `.dev.example.org`, `.example.org`, `example.org` | app-c |
+| `api.dev.example.org`, tcp 443 | the same | app-b: rule 3 fails on the port |
+| `dev.example.org`, tcp 8080 | `.example.org`, `example.org` | app-b: rule 3 does not cover the bare name |
+| `badexample.org`, tcp 443 | none | none |
+
+### V24. Port and host strings (§6.2)
+
+| `port` | Result |
+|---|---|
+| `443` | 443–443 |
+| `8000-8100` | 8000–8100 |
+| empty string, ` 443` (leading space), `80-`, `1-2-3` | address skipped |
+| `9000-8000` | kept as 9000–8000; contains no port |
+| `0` | 0–0 |
+| `1-70000` | kept as 1–70000; contains every port from 1 up |
+
+| `host` | Result |
+|---|---|
+| `192.0.2.7` | IP rule 192.0.2.7–192.0.2.7 |
+| `198.51.100.77/24` | IP rule 198.51.100.0–198.51.100.255 |
+| `203.0.113.9/32` | IP rule 203.0.113.9–203.0.113.9 |
+| `0.0.0.0/0` | IP rule 0.0.0.0–255.255.255.255 |
+| `192.0.2.16-192.0.2.31` | IP rule 192.0.2.16–192.0.2.31 |
+| `192.0.2.31-192.0.2.16` | a rule that matches nothing |
+| ` 192.0.2.7` (leading space) | domain rule named `192.0.2.7` |
+| `2001:db8::24` | skipped |
+| `*.example.org` | domain rule, suffix `.example.org` |
+| `a*.example.org` | dropped |
+
+An address with protocol `TCP`, and an app with accessModel `l3vpn`, yield nothing.
+
+### V25. Rule order with pinned addresses (§6.2, §6.5)
+
+Three apps in this order, each with one address, all `L3VPN`:
+
+- app-0010: tcp, port `1-1023`, host `203.0.113.0/24`
+- app-0011: tcp, port `443`, host `db.example.net`, `ip` =
+  `["203.0.113.20","2001:db8::20","203.0.113.21"]`
+- app-0012: tcp, port `443`, host `203.0.113.21`
+
+IP rule sequence: (0) 203.0.113.0–203.0.113.255, ports 1–1023, app-0010; (1) 203.0.113.20, port
+443, app-0011; (2) 203.0.113.21, port 443, app-0011; (3) 203.0.113.21, port 443, app-0012. The
+IPv6 entry adds nothing. Pins: `db.example.net` → 203.0.113.20, 203.0.113.21.
+
+| IP lookup, tcp | First match | Last match |
+|---|---|---|
+| 203.0.113.20 port 443 | app-0010 | app-0011 |
+| 203.0.113.21 port 443 | app-0010 | app-0012 |
+| 203.0.113.21 port 80 | app-0010 | app-0010 |
+| 203.0.113.99 port 443 | app-0010 | app-0010 |
+
+Three successive resolutions of `db.example.net` from the pins (§6.6 step 4) give 203.0.113.20,
+203.0.113.21, 203.0.113.20.
+
+### V26. From destination to request values (§6.6, §9.2)
+
+With the policy of V21, zero-RTT off, and every best node known. app-0002 has no
+`enableTCPPrefL3`, so it is false there; app-0001 has it true.
+
+| Destination | Rule chosen | appId, group | Destination message | `destAddr` | `destIP` |
+|---|---|---|---|---|---|
+| `app.example.net:443` | domain rule `app.example.net`, addrPretend false; address 203.0.113.5 from the pin | app-0002, ng-2 | `05 01 00 01 CB 00 71 05 01 BB` | `app.example.net:443` | `203.0.113.5` |
+| `APP.Example.NET.:443` | the same; the name is normalised | app-0002, ng-2 | the same | `app.example.net:443` | `203.0.113.5` |
+| `203.0.113.5:443` | IP rule made by the pin | app-0002, ng-2 | `05 01 00 01 CB 00 71 05 01 BB` | `203.0.113.5:443` | omitted |
+| `www.app.example.net:443`, resolved to 203.0.113.77 by the outside resolver (the policy DNS server 192.0.2.53 is covered by no rule here, so it cannot be reached through the VPN) | domain rule `app.example.net` (a plain name covers the names beneath it); no pin has this name | app-0002, ng-2 | `05 01 00 01 CB 00 71 4D 01 BB` | `www.app.example.net:443` | `203.0.113.77` |
+| `x.example.net:443`, resolving to an address no IP rule covers | none: the only candidate is the udp rule | — | — | — | — |
+| `198.51.100.9:22`, take-all (§6.6) not set | none for the TCP tunnel: the one matching rule prefers L3 | — | — | — | — |
+| `198.51.100.9:22`, take-all set | that IP rule | app-0001, ng-1 | `05 01 00 01 C6 33 64 09 00 16` | `198.51.100.9:22` | omitted |
+| `[2001:db8::5]:443` | none: IPv6 literal | — | — | — | — |
+
+In every row with a rule, `url` is `tcp://` followed by the `destAddr` text. The last tunnelled
+row has port 22 and therefore the `ssh` process values (§9.2 row 12). An IP lookup for the node
+address 198.51.100.200, tcp port 4441, still returns the app-0001 rule (§6.4).
+
+### V27. TCP tunnel reply and frame edge cases (§9.1, §9.3)
+
+After a server hello `05 81`:
+
+- `53 00 00 00` → handshake failure (no JSON).
+- `53 00 00 02 7B 7D` (the JSON `{}`) → accepted; the connect reply is read next.
+- `53 00 00 10` followed by the 16 bytes `{"message":"ok"}` → accepted.
+- `53 00 00 01 78` (the single byte `x`) → handshake failure.
+- `53 01 …` → handshake failure, with nothing more read.
+
+Framed data phase: the received bytes `01 00 00 00 01 00 00 02 68 69 01 01 00 00` deliver the two
+bytes `hi` and then end of stream; the empty first frame delivers nothing. Received bytes
+starting `03 00 00 00`, or `01 02 00 00`, are a protocol error.
+
+### V28. Password login details (§5.2, §5.4)
+
+- User `user01` with domain `local` → `username` `user01@local`. User `a@b` with domain `local`
+  → `a@b@local`.
+- Password `pw` with `antiReplayRand` `r1` → the plaintext encrypted per §3.4 is the five bytes
+  `pw_r1`.
+- An E5 reply `{"code":0,"data":{"ticket":"TK-0001","nextService":""}}` → ticket `TK-0001`; after
+  E10 the chain starts with E11. With `"nextService":"auth/totp"` instead, the chain starts with
+  the `auth/totp` step and no E11 precedes it.
+- An E22 reply `{"code":0,"data":{"username":""}}` → login succeeds, and the tunnel auth JSON
+  carries `"userName":""`.
+
 ### Rules stated elsewhere instead of as vectors
 
 - Session refresh outcomes (invalid or transient): §5.8 is the complete rule.
@@ -1401,6 +1839,20 @@ probe is unreachable.
     family is known for each mode. Other variants may exist.
 17. **gzip**: whether gateways compress when `Accept-Encoding` is absent. Expected not to
     **(inferred)**.
+18. **TCP zero-RTT early data**: whether a gateway accepts data frames sent before its
+    handshake reply. The reference always waits for the reply (§9.1), so its "zero-RTT" saves
+    no round trip.
+19. **Empty `antiReplayRand`**: what the server answers to a password encrypted with an empty
+    value, and whether authConfig can legitimately omit it (§5.2).
+20. **Default login domain**: which `authServerInfoList` entry the vendor client uses when the
+    user names no domain (§5.4).
+21. **Policy value casing**: whether `protocol` and `accessModel` ever arrive in another letter
+    case than `tcp`/`udp`/`all` and `L3VPN` (§6.2).
+22. **TCP tunnel to an IPv6 destination**: the wire format has ATYP `04`, but no policy rule can
+    match an IPv6 address and the reference never sends one (§6.6).
+23. **Name form in `destAddr`**: the reference always sends the lower-cased name without a
+    trailing dot (§9.2). Whether the gateway compares it with the policy host exactly or
+    case-insensitively is unknown.
 
 ### Shared with EasyConnect (coordinate with that spec)
 
