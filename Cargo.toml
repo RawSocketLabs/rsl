@@ -83,6 +83,7 @@ members = [
     "protocols/application/http1",
     "protocols/application/cookie",
     "protocols/application/sangfor/atrust-sig",
+    "protocols/application/sangfor/atrust-wire",
     # Linux kernel/userspace protocols
     "protocols/system/netlink",
     # facades
@@ -125,6 +126,7 @@ bnb-macros = { package = "bitsandbytes-macros", path = "codecs/bitsandbytes/bnb-
 rawsock = { path = "transports/rawsock", version = "0.1.2", default-features = false }
 deps = { path = "deps", version = "0.1.0", default-features = false }
 netlink = { path = "protocols/system/netlink", version = "0.1.0", default-features = false }
+socks = { path = "protocols/session/socks", version = "0.1.0", default-features = false }
 crypto = { path = "crypto/core", version = "0.1.0", default-features = false }
 crypto-legacy = { path = "crypto/legacy", version = "0.1.0", default-features = false }
 os-random = { path = "crypto/os-random", version = "0.1.0" }

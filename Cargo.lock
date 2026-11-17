@@ -3629,6 +3629,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sangfor-atrust-wire"
+version = "0.1.0"
+dependencies = [
+ "bitsandbytes",
+ "socks",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"

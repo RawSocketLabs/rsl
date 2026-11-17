@@ -1,0 +1,16 @@
+[package]
+name = "sangfor-atrust-wire"
+version = "0.1.0"
+description = "Sangfor aTrust data-plane wire codecs on bnb: tunnel session authentication and the TCP tunnel."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bnb = { workspace = true, features = ["std"] }
+# The tunnel messages carry addresses in the SOCKS5 layout.
+socks.workspace = true
+
+[lints]
+workspace = true

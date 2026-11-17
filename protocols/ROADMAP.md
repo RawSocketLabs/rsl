@@ -113,8 +113,9 @@ single-sign-on logins, the L3 tunnel and EasyConnect come after it.
        bytes, so the kept-byte set and the order are the caller's) and the cookie jar. Done
        as far as the first milestone needs.
 4. [~] **`sangfor-atrust-sig`** (anti-MITM and request signing) — done; it matches the
-       specification's vectors V1 to V8. **`sangfor-atrust-wire`** (bnb data-plane codecs) is
-       next. Both are pure, vector-tested, no I/O.
+       specification's vectors V1 to V8. **`sangfor-atrust-wire`** (bnb data-plane codecs) —
+       done for session authentication and the TCP tunnel (vectors V12, V14, V16, V17); the L3
+       frames are not written. Both are pure, vector-tested, no I/O.
 5. [ ] **`sangfor-atrust`** — api, auth, policy and TCP-tunnel modules on the crates above.
 6. [ ] **`otp`** — RFC 4226/6238 one-time passwords, with base32 decoding. Not needed for the
        first milestone.

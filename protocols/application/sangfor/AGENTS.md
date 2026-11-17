@@ -28,9 +28,9 @@ while writing code here would undo that separation.
 | Path | Crate | Stage |
 |---|---|---|
 | `atrust-sig/` | `sangfor-atrust-sig` | functional: the pure primitives of spec §3 |
+| `atrust-wire/` | `sangfor-atrust-wire` | wire layer: tunnel session authentication and the TCP tunnel, spec §7 and §9; the L3 frames of §8 are not written |
 
-Planned, in order: `atrust-wire` (data-plane codecs on bnb), then `atrust` (the control-plane
-API, login, policy and the TCP tunnel). The plan and the first milestone are in the Sangfor
+Planned next: `atrust` (the control-plane API, login, policy and the TCP tunnel). The plan and the first milestone are in the Sangfor
 section of [`../../ROADMAP.md`](../../ROADMAP.md).
 
 ## Rules for every crate here
