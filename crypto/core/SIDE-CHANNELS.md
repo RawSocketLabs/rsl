@@ -53,13 +53,14 @@ Review date: 2026-08-28. Re-review any row whose module changes.
 | `rsa::integer` | `modpow`, `Montgomery::multiply` | **Secret, variable-time** | Branches on exponent bits, uses data-dependent vector lengths, no blinding. `RSA_PRIMITIVE_SECURITY_STATUS = EducationalOnly`. `crypto::rsa::RsaPrivateKey::apply` is public but variable-time; `crypto` itself uses only the public-key operation (RSASSA-PSS verify). |
 | `signature::rsa_pss::emsa` | EMSA-PSS checks | Public | Verification inputs; all checks are accumulated into one flag before returning. |
 | `secret::Secret` | zeroize on drop | n/a | Lifetime hygiene only; copies made by the compiler, allocator, or OS are out of scope. |
+| `secret::Secret` | `matches` | Public | OR-folds every secret byte against the candidate, including a length mismatch, before one comparison; the loop count is the secret's length, which is public. Added 2026-11-16. |
 
 ## Known gaps (recorded, not fixed)
 
 1. **`==` on byte arrays** is used for equality of *public* values (`FieldElement::equals`,
    point equality, `Scalar::equals`). These are never on secrets in this crate, but a future
-   caller must not reuse them for secret comparison; use the OR-fold pattern in
-   `mac::hmac::*::state::tags_match`.
+   caller must not reuse them for secret comparison; use `Secret::matches`, the public form of
+   the OR-fold in `mac::hmac::*::state::tags_match`.
 2. **Key import range checks** (`Secret, one-shot` rows) are a deliberate trade: rejecting an
    out-of-range private key at construction is required by the standards and reveals only a
    condition that a correctly generated key never triggers.

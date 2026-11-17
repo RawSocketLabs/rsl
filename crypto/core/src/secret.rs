@@ -87,6 +87,46 @@ impl<T: Zeroize> Secret<T> {
     }
 }
 
+impl<T: Zeroize + AsRef<[u8]>> Secret<T> {
+    /// Whether the secret bytes equal `candidate`, decided without a value-dependent early
+    /// exit.
+    ///
+    /// Use this where a protocol compares a secret it computed with a value an untrusted peer
+    /// supplied and no algorithm-specific verifier exists, such as a truncated PRF output.
+    /// `==` on slices may stop at the first differing byte, which tells the peer how much of
+    /// its guess was right. Every byte of the secret is folded into one difference word, a
+    /// length mismatch included, and that word is tested once. The running time depends on
+    /// the secret's length, which is treated as public, and not on its contents or on where
+    /// the two values differ.
+    ///
+    /// This is the same OR-fold as the HMAC tag comparison. Like every row of
+    /// `SIDE-CHANNELS.md`, it is a source-level property, not a claim about compiled code.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use crypto::SecretBytes;
+    ///
+    /// let expected = SecretBytes::new(*b"check value!");
+    /// assert!(expected.matches(b"check value!"));
+    /// assert!(!expected.matches(b"check value?"));
+    /// assert!(!expected.matches(b"check"));
+    /// ```
+    #[must_use]
+    pub fn matches(&self, candidate: impl AsRef<[u8]>) -> bool {
+        let secret = self.value.as_ref();
+        let candidate = candidate.as_ref();
+        let mut difference = secret.len() ^ candidate.len();
+
+        for (index, secret_byte) in secret.iter().copied().enumerate() {
+            let candidate_byte = candidate.get(index).copied().unwrap_or(0);
+            difference |= usize::from(secret_byte ^ candidate_byte);
+        }
+
+        difference == 0
+    }
+}
+
 impl<T: Zeroize> From<T> for Secret<T> {
     fn from(value: T) -> Self {
         Self::new(value)
@@ -135,5 +175,31 @@ mod unit {
         secret.expose_secret_mut()[1] = 9;
         assert_eq!(secret.expose_secret(), &[1, 9, 3]);
         assert_eq!(secret.into_inner(), vec![1, 9, 3]);
+    }
+    /// Regression evidence; no publication defines this operation.
+    #[test]
+    fn matches_accepts_only_the_exact_bytes() {
+        let secret = SecretBytes::new([0xa5_u8; 12]);
+        assert!(secret.matches([0xa5_u8; 12]));
+
+        for bit in 0..12 * 8 {
+            let mut candidate = [0xa5_u8; 12];
+            candidate[bit / 8] ^= 1 << (bit % 8);
+            assert!(!secret.matches(candidate), "bit {bit}");
+        }
+    }
+
+    /// Regression evidence: a shorter or longer candidate never matches, including one that
+    /// agrees on every byte they share and one padded with the zero the fold substitutes.
+    #[test]
+    fn matches_rejects_every_other_length() {
+        let secret = SecretVec::new(vec![7, 0, 0]);
+        assert!(secret.matches([7, 0, 0]));
+        assert!(!secret.matches([7, 0]));
+        assert!(!secret.matches([7]));
+        assert!(!secret.matches([7, 0, 0, 0]));
+        assert!(!secret.matches([]));
+        assert!(SecretVec::new(vec![]).matches([]));
+        assert!(!SecretVec::new(vec![]).matches([0]));
     }
 }
