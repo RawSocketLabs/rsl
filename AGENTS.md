@@ -137,3 +137,7 @@ Set `CI_LOCAL_JOBS` (or `-j N`) to limit local container load; CircleCI remains 
 authority. Every run validates a self-contained temporary clone of the committed tree, so
 linked worktrees and unstaged files never reach it. Never publish from that validation clone.
 Changes reach `main` by fast-forward once their branch's `ci/circleci: rsl` status is green.
+
+## Lessons
+
+- SHOULD Land work as a branch and pull request per crate or module, stacked where one depends on another, not as commits on main. (why: direct commits to main were questioned and pull requests asked for) {src: rsl 2026-11-12}
