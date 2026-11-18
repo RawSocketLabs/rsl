@@ -250,8 +250,11 @@ V27 however they are cut, V17's frames, and both kinds of stream over a scripted
 before it, V28, the anti-MITM checks in order with V1, V3, V4 and V6, and the §5.5 table with
 V19; in `adversarial` it has gateways that refuse, stall or break off at each step.
 
-Fuzz targets are owed for `Policy::parse`, `tcp::Handshake::receive` and
-`tcp::FrameReader::read`, with those of the crates below.
+The fuzz targets are in [`../fuzz`](../fuzz/README.md): `api` for the answer parsers,
+`policy` for `Policy::parse` and the lookups, `tunnel` for `tcp::Handshake` and
+`tcp::FrameReader` through a `tcp::Stream`, and `login` for the sequence against a gateway that
+answers anything. Routine CI does not build them: after changing a public item here, build
+them as that guide says.
 
 Run: `cargo test -p sangfor-atrust`, and `cargo test -p sangfor-atrust --features net` to
 build the network layer too.

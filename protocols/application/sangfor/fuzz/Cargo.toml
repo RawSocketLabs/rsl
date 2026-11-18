@@ -1,0 +1,75 @@
+# Separate cargo-fuzz workspace: libfuzzer-sys must not enter the parent workspace's stable
+# dependency graph or Cargo.lock.
+[package]
+name = "sangfor-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+# The random source a login draws from; the login target supplies a counting one.
+[dependencies.crypto]
+path = "../../../../crypto/core"
+
+# Gateway answers are built as HTTP and decoded the way real ones are.
+[dependencies.http1]
+path = "../../http1"
+
+[dependencies.sangfor-atrust]
+path = "../atrust"
+
+[dependencies.sangfor-atrust-sig]
+path = "../atrust-sig"
+
+[dependencies.sangfor-atrust-wire]
+path = "../atrust-wire"
+
+[[bin]]
+name = "wire"
+path = "fuzz_targets/wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "policy"
+path = "fuzz_targets/policy.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "api"
+path = "fuzz_targets/api.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tunnel"
+path = "fuzz_targets/tunnel.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "login"
+path = "fuzz_targets/login.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sig"
+path = "fuzz_targets/sig.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

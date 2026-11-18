@@ -28,6 +28,7 @@ DETAIL = frozenset({"full_reasons", "paths", "prose", "reasons"})
 BNB = "codecs/bitsandbytes/bnb"
 MACROS = "codecs/bitsandbytes/bnb-macros"
 SOCKS = "protocols/session/socks"
+SANGFOR = "protocols/application/sangfor"
 NOSTD = f"{BNB}/nostd-check"
 BLADERF = "bindings/bladerf"
 PKI = {"pki/asn1", "pki/x509", "pki/validation"}
@@ -37,6 +38,7 @@ FUZZ = {
     "pki/fuzz": ["-max_total_time=45", "-runs=500000"],
     # Release runs stop at five minutes; the Mio target cannot reach 2M inputs inside the job timeout.
     f"{SOCKS}/fuzz": ["-max_total_time=300", "-runs=2000000", "-max_len=2048"],
+    f"{SANGFOR}/fuzz": ["-max_total_time=45", "-runs=500000"],
 }
 # The vendored libusdr C subset and its refresh script, which every device oracle compiles.
 VENDOR_LIBUSDR = "devices/vendor"

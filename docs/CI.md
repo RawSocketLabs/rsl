@@ -200,8 +200,8 @@ each oracle profile runs as its own job instead (`RUNNER_UNBUCKETED`), so the or
 parallel. Every job is bounded by a 10-minute budget.
 
 Fuzz targets run as separate jobs and processes: bnb retains 60 seconds/2,000,000 runs per
-target, crypto/PKI retain 45 seconds/500,000 runs, and SOCKS runs the documented 2,000,000 cases
-with max length 2048. Limits retain libFuzzer's original stop-when-either-limit-is-reached
+target, crypto, PKI and Sangfor retain 45 seconds/500,000 runs, and SOCKS runs the documented
+2,000,000 cases with max length 2048. Limits retain libFuzzer's original stop-when-either-limit-is-reached
 behavior. Relevant feature ladders, renamed no_std compilation, strict codec/SOCKS lints, FFI
 bridge checks, and pinned public-API/compatibility gates are not replaced with compile-only
 approximations.

@@ -76,6 +76,7 @@ the layouts and the code registry are SOCKS5's, so the workspace keeps one codec
   each of which must settle once and encode back to the bytes it took.
 
 There is no `unit` or `api` layer: the crate has no private logic and no operations beyond
-the derived codecs. A fuzz target is owed, with those of the crates below.
+the derived codecs. The fuzz target is `wire` in [`../fuzz`](../fuzz/README.md), which holds
+arbitrary input to the same relation.
 
 Run: `cargo test -p sangfor-atrust-wire`.

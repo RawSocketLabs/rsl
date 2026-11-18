@@ -61,4 +61,6 @@ challenge and the chunking of the secret are the protocol's and are here. JSON i
 - **`adversarial`** — `tests/adversarial.rs`: the bounds above, and invalid JSON.
 - **`unit`** — inline, for `hex`.
 
+The fuzz target is `sig` in [`../fuzz`](../fuzz/README.md).
+
 Run: `cargo test -p sangfor-atrust-sig`.

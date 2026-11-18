@@ -4,7 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from plan import BLADERF, BNB, MOVED_DETACHED, SOCKS, USDR, USDR_PORTABLE, metadata_graph, select
+from plan import (BLADERF, BNB, MOVED_DETACHED, SANGFOR, SOCKS, USDR, USDR_PORTABLE, metadata_graph,
+                  select)
 
 
 def crate(root, path, name):
@@ -152,6 +153,8 @@ windows = { path = "../windows" }
              {"socks", "bitsandbytes"}, {"crypto/fuzz", "pki/fuzz"}),
             (f"{BNB}/src/lib.rs", {"bitsandbytes", "socks", "asn1", "x509", "pki"},
              {"crypto", "crypto-legacy"}, {"codecs/bitsandbytes/fuzz", "pki/fuzz", f"{SOCKS}/fuzz"}),
+            (f"{SANGFOR}/atrust-wire/src/lib.rs", {"sangfor-atrust-wire", "sangfor-atrust"},
+             {"socks", "crypto"}, {f"{SANGFOR}/fuzz"}),
         ]
         for path, required, unrelated, fuzz in cases:
             with self.subTest(path=path):

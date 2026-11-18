@@ -124,8 +124,12 @@ single-sign-on logins, the L3 tunnel and EasyConnect come after it.
        handshake and frame codec, and a blocking stream; V14 to V17, V26, V27), and `net`
        (sockets, TLS and HTTP behind a feature, checked on loopback against `openssl
        s_server`). `examples/tunnel.rs` is the milestone end to end. Everything is tested
-       against scripted peers; nothing has been run against a real gateway. Next: that run,
-       then second factors, session refresh, node probing and the L3 tunnel.
+       against scripted peers; nothing has been run against a real gateway. The group's
+       detached `fuzz/` workspace has six targets over the three crates (signing primitives,
+       wire types, answer parsers, policy, tunnel and login); routine CI does not build them,
+       and a release that reaches these crates, today a `bitsandbytes` one, runs them. Next:
+       the run against a gateway, then second factors, session refresh, node probing and the
+       L3 tunnel.
 6. [ ] **`otp`** — RFC 4226/6238 one-time passwords, with base32 decoding. Not needed for the
        first milestone.
 7. [ ] **EasyConnect** — deferred. Its tunnel needs TLS 1.1 with RC4, and the reference gateway
