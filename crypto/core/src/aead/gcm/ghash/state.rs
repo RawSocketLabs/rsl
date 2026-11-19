@@ -107,6 +107,27 @@ impl Ghash {
         self.accumulator = multiply(&self.accumulator, &self.hash_subkey.field);
     }
 
+    /// Process all complete blocks, returning the final unpadded bytes.
+    pub(in crate::aead::gcm) fn update_complete<'a>(&mut self, input: &'a [u8]) -> &'a [u8] {
+        let blocks = input.chunks_exact(BLOCK_BYTES);
+        let tail = blocks.remainder();
+        #[cfg(feature = "aes-gcm-accel")]
+        if let Some(cpu) = self.hash_subkey.cpu {
+            if input.len() >= BLOCK_BYTES {
+                self.accumulator = FieldElement::from_owned_block(cpu.update_blocks(
+                    self.accumulator.as_block(),
+                    self.hash_subkey.field.as_block(),
+                    &input[..input.len() - tail.len()],
+                ));
+            }
+            return tail;
+        }
+        for block in blocks {
+            self.update_block(block.try_into().expect("complete GHASH block"));
+        }
+        tail
+    }
+
     /// Consume the recurrence state and retain the final `Y_m` in a zeroizing result owner.
     ///
     /// Algorithm 2 requires a positive block count. This private type does not yet track a count

@@ -51,6 +51,11 @@ pub(super) fn apply<C: GcmBlockCipher>(
     mut counter: CounterBlock,
     input_output: &mut [u8],
 ) {
+    #[cfg(feature = "aes-gcm-accel")]
+    let input_output = {
+        let consumed = cipher.xor_groups(counter.as_mut_block(), input_output);
+        &mut input_output[consumed..]
+    };
     for (block_index, chunk) in input_output.chunks_mut(BLOCK_BYTES).enumerate() {
         if block_index != 0 {
             counter.increment();
@@ -157,6 +162,25 @@ mod unit {
         apply(&cipher, counter, &mut empty);
 
         assert_eq!(empty.as_slice(), []);
+    }
+
+    #[cfg(feature = "aes-gcm-accel")]
+    #[test]
+    fn batched_counters_wrap_within_the_low_word_and_resume_at_the_tail() {
+        use super::super::block_cipher::Selected;
+        let (portable, _) = nist_example_cipher_and_counter();
+        let (accelerated, _) = nist_example_cipher_and_counter();
+        let mut initial = [0xab; 16];
+        initial[12..].copy_from_slice(&(u32::MAX - 3).to_be_bytes());
+        let mut expected = [0x35; 273];
+        let mut actual = expected;
+        apply(&portable, CounterBlock::new(initial), &mut expected);
+        apply(
+            &Selected::from(accelerated),
+            CounterBlock::new(initial),
+            &mut actual,
+        );
+        assert_eq!(actual, expected);
     }
 
     /// API-regression evidence: GCTR consumes AES blocks only as temporary key-stream owners.

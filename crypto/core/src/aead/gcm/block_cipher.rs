@@ -13,6 +13,10 @@ use crate::cipher::aes::{
 pub(super) trait GcmBlockCipher {
     fn encrypt_block_in_place(&self, block: &mut [u8; 16]);
     #[cfg(feature = "aes-gcm-accel")]
+    fn xor_groups(&self, _: &mut [u8; 16], _: &mut [u8]) -> usize {
+        0
+    }
+    #[cfg(feature = "aes-gcm-accel")]
     fn accelerator(&self) -> Option<rsl_aes_gcm_accel::AesGcmCpu> {
         None
     }
@@ -63,6 +67,11 @@ impl GcmBlockCipher for Selected<Aes128> {
             self.cipher.encrypt_block_in_place(block);
         }
     }
+    fn xor_groups(&self, counter: &mut [u8; 16], data: &mut [u8]) -> usize {
+        self.cpu.map_or(0, |cpu| {
+            cpu.xor_groups128(self.cipher.expanded_words(), counter, data)
+        })
+    }
     fn accelerator(&self) -> Option<rsl_aes_gcm_accel::AesGcmCpu> {
         self.cpu
     }
@@ -76,6 +85,11 @@ impl GcmBlockCipher for Selected<Aes256> {
         } else {
             self.cipher.encrypt_block_in_place(block);
         }
+    }
+    fn xor_groups(&self, counter: &mut [u8; 16], data: &mut [u8]) -> usize {
+        self.cpu.map_or(0, |cpu| {
+            cpu.xor_groups256(self.cipher.expanded_words(), counter, data)
+        })
     }
     fn accelerator(&self) -> Option<rsl_aes_gcm_accel::AesGcmCpu> {
         self.cpu

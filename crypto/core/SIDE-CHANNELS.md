@@ -34,8 +34,8 @@ Review date: 2026-08-28. Re-review any row whose module changes.
 | `cipher::aes::aes128::{parallel_sbox, substitution, field}` | S-box | Secret, masked | Forward rounds use fixed Boolean gates across byte lanes. Key expansion and inverse substitution use a fixed field-inversion chain. Neither indexes a table with secret data. |
 | `cipher::aes::*::key_schedule` | `i mod Nk` branches | Public | Depend on the loop index only. |
 | `cipher::chacha20` | ARX only; counter checks | Public | Counter exhaustion branches on public counts. |
-| `rsl-aes-gcm-accel` | GCM runtime selection | Public | CPUID once per key. AES instructions traverse the public round count; PCLMUL products and polynomial reduction use fixed operations. |
-| `aead::gcm` | GHASH multiplication | Secret, masked | §6.3 Algorithm 1 iterates 128 fixed steps with masked conditional XOR. |
+| `rsl-aes-gcm-accel` | GCM runtime selection | Public | CPUID once per key. Counter batching and GHASH iteration depend on public input lengths. AES instructions traverse the public round count; PCLMUL products and polynomial reduction use fixed operations. |
+| `aead::gcm` | GHASH multiplication | Secret, masked | §6.3 Algorithm 1 visits sixteen bytes in wire order, eight fixed steps per byte, with masked conditional XOR. |
 | `aead::gcm::tag` / `aead::chacha20poly1305` | tag verification | Public | OR-fold then one comparison; plaintext is produced only after success. |
 | `aead::record` | builder stages; record splitting, protected/plaintext sink output, numbering, and opening | Public | Branches depend on configured sizes, fragment lengths, record metadata, sink results, errors, and authentication outcomes. Live state is invalidated before external sink code runs. Pending plaintext is redacted and zeroized; plaintext sinks are called only after the underlying AEAD verifies the tag. |
 | `agreement::x25519::*`, `agreement::x448::*` | ladder, `cswap`, inversion | Secret, masked | Fixed 255/448-iteration ladder; RFC `0 - swap` masks; inversion exponent is public. |

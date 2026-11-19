@@ -31,9 +31,6 @@ use zeroize::Zeroize;
 /// Number of bytes in every SP 800-38D block.
 const BLOCK_BYTES: usize = 16;
 
-/// Number of bits processed by SP 800-38D Algorithm 1.
-const BLOCK_BITS: usize = 128;
-
 /// First byte of §6.3's reduction block `R = 11100001 || 0^120`.
 ///
 /// The remaining fifteen bytes are zero, so the reduction addition only changes byte zero.
@@ -101,13 +98,9 @@ impl Drop for FieldElement {
     }
 }
 
-/// Read `x_bit_index` using Algorithm 1 step 1's `x_0 ... x_127` order.
-///
-/// Index zero is the leftmost, high-order bit of byte zero as a displayed bit string. Advancing
-/// the index walks toward the low-order bit, then begins at the high-order bit of the next byte.
-#[must_use]
-const fn displayed_bit(block: u128, bit_index: usize) -> u128 {
-    (block >> (BLOCK_BITS - 1 - bit_index)) & 1
+/// Read Algorithm 1's coefficients from the most significant bit of each wire byte.
+const fn displayed_bit(byte: u8, index: u8) -> u8 {
+    (byte >> (7 - index)) & 1
 }
 
 /// Apply Algorithm 1 step 3's update from `V_i` to `V_(i+1)`.
@@ -118,22 +111,22 @@ const fn advance_changing_multiple(block: u128) -> u128 {
     (block >> 1) ^ (reduction & 0_u128.wrapping_sub(block & 1))
 }
 
-/// SP 800-38D §6.3, Algorithm 1. Big-endian conversion places the leftmost displayed
-/// bit in bit 127, so one integer shift advances the entire multiple.
+/// SP 800-38D §6.3, Algorithm 1. Visit the left operand in wire order while
+/// one integer shift advances the entire changing multiple.
 #[must_use]
 pub(super) fn multiply(left: &FieldElement, right: &FieldElement) -> FieldElement {
-    let mut input = u128::from_be_bytes(left.bytes);
     let mut changing_multiple = u128::from_be_bytes(right.bytes);
     let mut accumulator = 0_u128;
-    for bit_index in 0..BLOCK_BITS {
-        let mask = 0_u128.wrapping_sub(displayed_bit(input, bit_index));
-        accumulator ^= changing_multiple & mask;
-        changing_multiple = advance_changing_multiple(changing_multiple);
+    for &byte in &left.bytes {
+        for bit in 0..8 {
+            let mask = 0_u128.wrapping_sub(u128::from(displayed_bit(byte, bit)));
+            accumulator ^= changing_multiple & mask;
+            changing_multiple = advance_changing_multiple(changing_multiple);
+        }
     }
     let result = FieldElement::from_owned_block(accumulator.to_be_bytes());
     accumulator.zeroize();
     changing_multiple.zeroize();
-    input.zeroize();
     result
 }
 
@@ -164,31 +157,10 @@ mod unit {
     /// Standard-derived representation evidence from SP 800-38D §6.3, Algorithm 1 step 1.
     #[test]
     fn displayed_bits_are_read_left_to_right_across_bytes() {
-        let block = [
-            0b1000_0001,
-            0b0100_0000,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            1,
-        ];
-
-        assert_eq!(displayed_bit(u128::from_be_bytes(block), 0), 1);
-        assert_eq!(displayed_bit(u128::from_be_bytes(block), 1), 0);
-        assert_eq!(displayed_bit(u128::from_be_bytes(block), 7), 1);
-        assert_eq!(displayed_bit(u128::from_be_bytes(block), 8), 0);
-        assert_eq!(displayed_bit(u128::from_be_bytes(block), 9), 1);
-        assert_eq!(displayed_bit(u128::from_be_bytes(block), 127), 1);
+        let bytes = [0b1000_0001, 0b0100_0000];
+        let bits = bytes
+            .map(|byte| core::array::from_fn(|i| displayed_bit(byte, u8::try_from(i).unwrap())));
+        assert_eq!(bits, [[1, 0, 0, 0, 0, 0, 0, 1], [0, 1, 0, 0, 0, 0, 0, 0]]);
     }
 
     /// Standard-derived transition evidence from SP 800-38D §6.3, Algorithm 1 step 3.

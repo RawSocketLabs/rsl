@@ -66,15 +66,7 @@ fn length_block(associated_data_len: usize, ciphertext_len: usize) -> Result<[u8
 
 /// Feed one byte string followed by its minimum zero padding into the GHASH recurrence.
 fn update_zero_padded(ghash: &mut Ghash, input: &[u8]) {
-    let mut complete_blocks = input.chunks_exact(BLOCK_BYTES);
-
-    for block in &mut complete_blocks {
-        let exact_block = <&[u8; BLOCK_BYTES]>::try_from(block)
-            .expect("chunks_exact always yields one complete GHASH block");
-        ghash.update_block(exact_block);
-    }
-
-    let remainder = complete_blocks.remainder();
+    let remainder = ghash.update_complete(input);
     if !remainder.is_empty() {
         let mut padded = [0_u8; BLOCK_BYTES];
         padded[..remainder.len()].copy_from_slice(remainder);

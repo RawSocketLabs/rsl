@@ -58,6 +58,11 @@ impl CounterBlock {
         self.bytes[COUNTER_START..].copy_from_slice(&incremented);
     }
 
+    #[cfg(feature = "aes-gcm-accel")]
+    pub(super) fn as_mut_block(&mut self) -> &mut [u8; BLOCK_BYTES] {
+        &mut self.bytes
+    }
+
     /// Borrow the complete current counter block in unchanged GCM byte order.
     #[must_use]
     pub(super) fn as_block(&self) -> &[u8; BLOCK_BYTES] {
