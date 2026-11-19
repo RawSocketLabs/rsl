@@ -112,8 +112,8 @@ shared text-line layer would be.
 - **`interop`** — `tests/interop.rs`, ignored by default: the exchange against Python's
   `http.server` over real TCP. Run it with `cargo test -p http1 --test interop -- --ignored`.
 - Each framing decision was confirmed by changing it and seeing a test fail. Do the same for
-  a new one. There is no fuzz target yet; one is owed before another crate trusts this
-  decoder with a hostile peer.
+  a new one. The [`http_response` fuzz target](../sangfor/fuzz/README.md) also compares the
+  result and consumed length across transport read sizes.
 
 Run everything: `cargo test -p http1`.
 

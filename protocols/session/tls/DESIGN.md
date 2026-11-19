@@ -119,9 +119,9 @@ sangfor-*  http1        consumers
 3. Key schedule and record protection: the TLS 1.2 PRF on HMAC-SHA-256, AES-128-GCM records
    — **done**.
 4. The sans-I/O client handshake, including write half-close (send `close_notify`, keep
-   reading), which the aTrust TCP tunnel needs — **done**. Still owed from this step: a fuzz
-   target for the client's input path (§7 promises one per step; the crate has no fuzz
-   directory yet).
+   reading), which the aTrust TCP tunnel needs — **done**. The [`tls_client` fuzz
+   target](../../application/sangfor/fuzz/README.md) feeds records through the client's
+   input path, whole and fragmented.
 5. A blocking adapter — **done**: `blocking::Stream`. The interoperability tests run
    through it.
 6. `legacy` feature: TLS 1.1 with `TLS_RSA_WITH_RC4_128_SHA` and ClientHello hooks. Deferred
@@ -217,5 +217,5 @@ below are `no_std + alloc`, so it stays possible, but no consumer needs it).
 - **The routine tests replay one recording.** They prove the client still speaks to that
   OpenSSL build's bytes. Only the ignored `interop` test meets a live peer, so a change to
   the client, key schedule or record layer must run it by hand.
-- **A TLS stack is a large security surface.** Each step lands with RFC vectors, adversarial
-  tests and a fuzz target for the handshake parser before a consumer depends on it.
+- **A TLS stack is a large security surface.** The handshake parser is exercised by RFC
+  vectors, adversarial tests and the `tls_client` fuzz target.

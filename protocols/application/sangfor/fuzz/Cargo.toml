@@ -30,6 +30,23 @@ path = "../atrust-sig"
 [dependencies.sangfor-atrust-wire]
 path = "../atrust-wire"
 
+[dependencies.tls]
+path = "../../../session/tls"
+
+[[bin]]
+name = "http_response"
+path = "fuzz_targets/http_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tls_client"
+path = "fuzz_targets/tls_client.rs"
+test = false
+doc = false
+bench = false
+
 [[bin]]
 name = "wire"
 path = "fuzz_targets/wire.rs"

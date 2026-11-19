@@ -27,17 +27,22 @@ decisions and the lower-layer gaps.
   caller and never names `OsRandom`.
 - `src/client/` — `Client`, the state machine, with `ClientConfig` and `Error`. The driver
   contract is in `Client`'s rustdoc. Rules it enforces that are easy to break:
-  - Each handshake message is accepted in exactly one state; anything else is
-    `unexpected_message`. `ChangeCipherSpec` is accepted only right after our `Finished`, and
-    never while part of a handshake message is buffered.
+  - The client ignores empty `HelloRequest` messages during negotiation and refuses them
+    with a warning after establishment. Other handshake messages must arrive in order.
+    `ChangeCipherSpec` is accepted only right after our `Finished`, and never while part
+    of a handshake message is buffered.
   - The server may choose only what was offered: version, suite, null compression, and
-    extensions (none unsolicited, none repeated). `extended_master_secret` is mandatory.
+    extensions valid in a TLS 1.2 `ServerHello` (none unsolicited, none repeated).
+    `extended_master_secret` is mandatory.
   - The key-exchange signature is verified under every `ServerVerification`, `Unverified`
     included, over the parameter bytes exactly as received.
   - Application data is delivered only after the server's `Finished` verifies, and that
     check uses `crypto::Secret::matches`, never `==`.
-  - Every alert but `close_notify` on an established connection ends the connection. Every
-    `Err` is final; `Error::alert` says what the peer is told.
+  - Every alert but `close_notify` on an established connection ends the connection.
+    `Error::alert` identifies the alert to send. A refused write preserves the read half.
+  - The client sends at most 2^24 protected records per AES-GCM key, including the
+    handshake and alerts. It reserves the last record for `close_notify`. Further writes
+    return `RecordError::KeyUsageLimit`; reconnect with a fresh handshake.
   - Buffers are bounded: `receive` pauses at `PLAINTEXT_LIMIT` and takes nothing it cannot
     process (the rest stays with the caller, so a pause cannot strand a record), `write`
     pauses at `TRANSMIT_LIMIT`, and empty records and `HelloRequest`s are counted.

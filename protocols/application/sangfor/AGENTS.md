@@ -29,7 +29,7 @@ while writing code here would undo that separation.
 |---|---|---|
 | `atrust-sig/` | `sangfor-atrust-sig` | functional: the pure primitives of spec §3 |
 | `atrust-wire/` | `sangfor-atrust-wire` | wire layer: tunnel session authentication and the TCP tunnel, spec §7 and §9; the L3 frames of §8 are not written |
-| `fuzz/` | `sangfor-fuzz` | the group's detached fuzz workspace: six targets over what a gateway or a node controls; not built by routine CI, and run when a release reaches these crates, which today a `bitsandbytes` release does ([`fuzz/README.md`](fuzz/README.md)) |
+| `fuzz/` | `sangfor-fuzz` | the group's detached fuzz workspace, including the HTTP and TLS input paths; not built by routine CI, and run when a release reaches these crates, which today a `bitsandbytes` release does ([`fuzz/README.md`](fuzz/README.md)) |
 | `atrust/` | `sangfor-atrust` | first milestone built: the policy model of spec §6, the control-plane API of §4, the password login of §5, the TCP tunnel of §9, and a network layer behind the `net` feature; tested against scripted peers and a local TLS server, never against a real gateway |
 
 The plan and the first milestone are in the Sangfor
