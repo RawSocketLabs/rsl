@@ -22,7 +22,7 @@
 //!   to devices will see each run as a new device; a real client keeps its `Device`.
 
 use std::error::Error;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{env, process};
 
@@ -122,11 +122,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // An HTTP/1.0 request, which the far host answers by closing: no half-close is needed.
     write!(stream, "GET / HTTP/1.0\r\nHost: {host}\r\n\r\n")?;
     stream.flush()?;
-    let mut answer = Vec::new();
-    // A node that ends the connection without a TLS goodbye makes this fail after the data.
-    if let Err(error) = stream.read_to_end(&mut answer) {
-        eprintln!("the stream ended with: {error}");
-    }
-    io::stdout().write_all(&answer)?;
+    io::copy(&mut stream, &mut io::stdout().lock())?;
     Ok(())
 }

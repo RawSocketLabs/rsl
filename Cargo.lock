@@ -3584,6 +3584,7 @@ dependencies = [
  "crypto-legacy",
  "http1",
  "os-random",
+ "pki",
  "rustix",
  "sangfor-atrust-sig",
  "sangfor-atrust-wire",

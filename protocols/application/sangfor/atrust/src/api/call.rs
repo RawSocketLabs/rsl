@@ -240,25 +240,30 @@ impl Call {
             .and_then(|request| request.header("User-Agent", USER_AGENT))
             .map_err(Error::Request)?;
 
-        let mut headers: Vec<(&str, String)> = Vec::new();
-        if self.headers != Headers::Bare {
-            headers.push(("x-csrf-token", context.csrf_token.to_owned()));
-            headers.push(("x-sdp-traceid", context.trace_id.to_owned()));
-        }
-        match &self.headers {
-            Headers::Bare | Headers::Session => {}
-            Headers::Rid => headers.push(("x-sdp-rid", identifiers::rid(&host))),
-            Headers::Env(value) => headers.push(("x-sdp-env", value.clone())),
+        let generated;
+        let extra = match &self.headers {
+            Headers::Bare | Headers::Session => None,
+            Headers::Env(value) => Some(("x-sdp-env", value.as_str())),
+            Headers::Rid => {
+                generated = identifiers::rid(&host);
+                Some(("x-sdp-rid", generated.as_str()))
+            }
             Headers::Signed => {
                 // The signature covers the path, the query exactly as sent, and the body.
                 let key = context.sign_key.ok_or(Error::NoSignKey)?;
                 let signed = [self.path.as_bytes(), b"?", query.as_bytes(), body].concat();
-                headers.push(("X-Request-Sig", key.sign(&signed)?));
+                generated = key.sign(&signed)?;
+                Some(("X-Request-Sig", generated.as_str()))
             }
+        };
+        if self.headers != Headers::Bare {
+            request = request
+                .header("x-csrf-token", context.csrf_token)
+                .and_then(|request| request.header("x-sdp-traceid", context.trace_id))
+                .map_err(Error::Request)?;
         }
-        // `Request::header` refuses a value that could end its own line.
-        for (name, value) in headers {
-            request = request.header(name, &value).map_err(Error::Request)?;
+        if let Some((name, value)) = extra {
+            request = request.header(name, value).map_err(Error::Request)?;
         }
         // A bare call carries nothing of the session, cookies included: a login sends the
         // manifest request before it has any (spec §5.2).

@@ -38,6 +38,7 @@ uri.workspace = true
 rustix = { workspace = true, optional = true }
 
 [dev-dependencies]
+pki.workspace = true
 # Parse the loopback CA for TLS path verification.
 x509.workspace = true
 # RSA decryption, to read back the password a scripted gateway was sent.

@@ -3,7 +3,7 @@
 
 use sangfor_atrust::api::{
     AntiMitmData, AuthConfig, Call, Context, Envelope, Error, Gateway, Manifest, NextStep,
-    OnlineInfo, PswReply,
+    OnlineInfo, PswReply, Reply,
 };
 
 use crate::support::ok;
@@ -80,9 +80,32 @@ fn a_signed_request_is_refused_without_a_key() {
     let gateway = Gateway::new("sdp.example.org", 443);
     let call = Call::report_env("d", &[], "T");
     assert!(matches!(
-        call.request(&context(&gateway, "", "t")),
+        call.request(&context(&gateway, "invalid\nheader", "t")),
         Err(Error::NoSignKey)
     ));
+}
+
+#[test]
+fn reply_diagnostics_hide_authentication_material() {
+    let replies = ["aaa", "bbb"].map(|secret| {
+        let mut response = ok(secret);
+        response.head.headers.push("Set-Cookie", secret);
+        Reply {
+            response,
+            peer_chain: vec![secret.as_bytes().to_vec()],
+        }
+    });
+    assert_eq!(format!("{:?}", replies[0]), format!("{:?}", replies[1]));
+
+    let passwords = ["aaa", "bbb"].map(|secret| {
+        let mut reply = PswReply::default();
+        reply.message = secret.into();
+        reply.ticket = secret.into();
+        reply.next_service = secret.into();
+        reply.anti_replay_rand = secret.into();
+        reply
+    });
+    assert_eq!(format!("{:?}", passwords[0]), format!("{:?}", passwords[1]));
 }
 
 #[test]

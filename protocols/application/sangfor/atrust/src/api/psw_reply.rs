@@ -1,5 +1,8 @@
 //! The answer to a password login (E5).
 
+// --- Standard library ---
+use std::fmt;
+
 // --- Workspace dependencies ---
 use http1::Response;
 use serde::Deserialize;
@@ -10,7 +13,7 @@ use super::{Envelope, Error};
 
 /// An `auth/psw` answer (spec §4.3 E5, §5.4). Its payload is read whatever the code, because
 /// a refusal may be a demand for a captcha.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PswReply {
     /// The gateway's code: zero when it accepted the password, and when it gave none.
@@ -25,6 +28,15 @@ pub struct PswReply {
     pub next_service: String,
     /// A fresh anti-replay value, when the gateway issued one.
     pub anti_replay_rand: String,
+}
+
+impl fmt::Debug for PswReply {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PswReply")
+            .field("code", &self.code)
+            .field("wants_captcha", &self.wants_captcha)
+            .finish_non_exhaustive()
+    }
 }
 
 impl PswReply {

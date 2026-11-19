@@ -19,7 +19,8 @@ use crate::api::{Gateway, Portal, Reply};
 const MAX_BODY: usize = 8 * 1024 * 1024;
 
 /// A [`Portal`] that reaches a gateway over the network: one TCP connection and one TLS
-/// handshake for each request.
+/// handshake for each request. The request must use fixed-length framing and a path
+/// beginning with `/` and carry exactly one `Host` matching the configured gateway.
 ///
 /// The caller chooses TLS verification. Self-signed vendor gateways may require explicit
 /// unverified mode (§2.1). The protocol's own checks cannot authenticate such a gateway.
@@ -31,10 +32,8 @@ const MAX_BODY: usize = 8 * 1024 * 1024;
 pub struct HttpsPortal<'a, R> {
     /// The TLS policy applied before every HTTP request.
     verification: ServerVerification<'a>,
-    /// The gateway's host.
-    host: String,
-    /// Its HTTPS port.
-    port: u16,
+    /// The gateway to which requests must be addressed.
+    gateway: Gateway,
     /// The time allowed for the connect and for each read or write.
     timeout: Duration,
     /// The limits on a response.
@@ -54,8 +53,7 @@ impl<'a, R: RandomSource> HttpsPortal<'a, R> {
     pub fn new(gateway: &Gateway, verification: ServerVerification<'a>, random: R) -> Self {
         Self {
             verification,
-            host: gateway.host().to_owned(),
-            port: gateway.port(),
+            gateway: gateway.clone(),
             timeout: Self::DEFAULT_TIMEOUT,
             limits: Limits::default().with_body(MAX_BODY),
             random,
@@ -80,9 +78,32 @@ impl<'a, R: RandomSource> HttpsPortal<'a, R> {
 
 impl<R: RandomSource> Portal for HttpsPortal<'_, R> {
     fn exchange(&mut self, request: &Request) -> io::Result<Reply> {
-        let socket = connect(&self.host, self.port, self.timeout)?;
+        request
+            .validate_fixed_length()
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+        let mut hosts = request.headers.get_all("Host");
+        let authority = self.gateway.base_host();
+        let matches = hosts.next().is_some_and(|host| {
+            let host = if self.gateway.port() == Gateway::DEFAULT_PORT {
+                host.strip_suffix(b":443").unwrap_or(host)
+            } else {
+                host
+            };
+            host.eq_ignore_ascii_case(authority.as_bytes())
+        });
+        if !matches
+            || hosts.next().is_some()
+            || !request.target.starts_with(b"/")
+            || request.target.contains(&b'#')
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a portal request must use origin-form and a single Host matching its gateway",
+            ));
+        }
+        let socket = connect(self.gateway.host(), self.gateway.port(), self.timeout)?;
         let config = ClientConfig {
-            server_name: server_name(&self.host),
+            server_name: server_name(self.gateway.host()),
             verification: self.verification,
         };
         let mut stream = Stream::connect(socket, config, &mut self.random)?;

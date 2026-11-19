@@ -1,6 +1,7 @@
 //! The network layer against a real TLS server on loopback: `openssl s_server`.
 //!
-//! Ignored by default because it needs the `openssl` binary and free loopback ports. Run it
+//! Tests that start a server are ignored by default. They need the `openssl` binary and free
+//! loopback ports. Run them
 //! with `cargo test -p sangfor-atrust --features net --test interop -- --ignored`. It checks
 //! what the scripted tests cannot: that the socket, TLS and HTTP layers fit together under
 //! `HttpsPortal`, and that a TLS connection is the `Transport` a tunnel needs. No gateway is
@@ -17,14 +18,14 @@ mod interop {
     use std::{
         env, fs,
         io::{ErrorKind, Read, Write},
-        net::TcpStream,
+        net::{TcpListener, TcpStream},
         path::{Path, PathBuf},
         process::{Child, Command, Stdio},
         thread,
         time::Duration,
     };
 
-    use http1::Limits;
+    use http1::{Headers, Limits, Request};
     use sangfor_atrust::api::{Call, Context, Gateway, Portal};
     use sangfor_atrust::net::{HttpsPortal, dial};
     use sangfor_atrust::tcp::Transport;
@@ -163,6 +164,48 @@ mod interop {
     }
 
     #[test]
+    fn the_portal_rejects_another_authority_before_connecting() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let gateway = Gateway::new("127.0.0.1", listener.local_addr().unwrap().port());
+        let mut portal = HttpsPortal::new(
+            &gateway,
+            ServerVerification::Unverified,
+            Counting::default(),
+        )
+        .with_timeout(Duration::from_millis(50));
+        let matching = Request::get(&gateway.base_host(), "/").unwrap();
+        let mut missing = matching.clone();
+        missing.headers = Headers::new();
+        let mut duplicate = matching.clone();
+        duplicate.headers.push("hOsT", gateway.base_host());
+        let mut split_field = matching.clone();
+        split_field.headers.push("X-Trace", b"first\nsecond");
+        let mut split_target = matching.clone();
+        split_target.target = b"/two words".to_vec();
+        let mut undeclared_body = matching.clone();
+        undeclared_body.body = b"extra".to_vec();
+        let mut absolute = matching;
+        absolute.target = b"https://other.test/".to_vec();
+        for request in [
+            missing,
+            duplicate,
+            absolute,
+            split_field,
+            split_target,
+            undeclared_body,
+            Request::get(&format!("other.test:{}", gateway.port()), "/").unwrap(),
+            Request::get("127.0.0.1:0", "/").unwrap(),
+        ] {
+            assert_eq!(
+                portal.exchange(&request).unwrap_err().kind(),
+                ErrorKind::InvalidInput
+            );
+        }
+        assert_eq!(listener.accept().unwrap_err().kind(), ErrorKind::WouldBlock);
+    }
+
+    #[test]
     #[ignore = "needs the openssl binary and a free loopback port"]
     fn the_portal_carries_a_request_over_tcp_tls_and_http() {
         // `-www` answers any request with a status page and ends the connection.
@@ -217,19 +260,28 @@ mod interop {
     fn a_tls_connection_stops_writing_and_goes_on_reading() {
         // `-rev` sends each line back reversed.
         let (_server, directory) = start_server("node", "127.0.0.1:44492", "-rev");
+        let leaf = fs::read(directory.join("cert.der")).unwrap();
+        let leaf = Certificate::from_der(&leaf).unwrap();
         let untrusted = ServerVerification::Path {
             trust_anchors: &[],
-            time: x509::Time::new(2026, 11, 18, 0, 0, 0).unwrap(),
+            time: leaf.tbs_certificate().validity().not_before,
             dns_name: "atrust.test",
         };
+        let error = dial(
+            "127.0.0.1:44492",
+            TIMEOUT,
+            untrusted,
+            &mut Counting::default(),
+        )
+        .err()
+        .expect("a node with no trusted issuer must be refused");
         assert!(
-            dial(
-                "127.0.0.1:44492",
-                TIMEOUT,
-                untrusted,
-                &mut Counting::default()
-            )
-            .is_err()
+            matches!(
+                error.get_ref().and_then(|error| error.downcast_ref::<tls::blocking::Error>()),
+                Some(tls::blocking::Error::Tls(tls::Error::Certificate(tls::CertificateError::Path(path))))
+                    if path.kind == pki::ErrorKind::PathNotFound
+            ),
+            "{error:?}"
         );
         let mut node = dial(
             "127.0.0.1:44492",
