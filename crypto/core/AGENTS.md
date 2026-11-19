@@ -28,8 +28,7 @@ obvious operations over table tricks, SIMD, assembly, or clever fusion.
   a locally calculated intermediate value as a vector published by the standard.
 - Store the publication revision, authoritative link, access date, and any supersession notice in
   `STANDARDS.md`; store imported vector provenance and conversions under `tests/vectors/`.
-- Performance work must not obscure the readable reference path; no separate optimized backend is
-  planned (`ROADMAP.md` performance policy).
+- Performance work must not obscure the readable reference path; processor-specific GCM instructions live exclusively in the optional owned leaf crate (`ROADMAP.md` performance policy).
 - No production-security claim without side-channel review, fuzzing, differential testing, and
   an independent cryptographic audit. `SIDE-CHANNELS.md` is the review record: update its row
   for any module whose branches change. `../fuzz/` holds the libFuzzer targets; add a target when

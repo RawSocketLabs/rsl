@@ -8,7 +8,11 @@ repository.workspace = true
 rust-version.workspace = true
 readme = "README.md"
 
+[features]
+aes-gcm-accel = ["dep:rsl-aes-gcm-accel"]
+
 [dependencies]
+rsl-aes-gcm-accel = { workspace = true, optional = true, features = ["x86"] }
 zeroize.workspace = true
 
 [dev-dependencies]

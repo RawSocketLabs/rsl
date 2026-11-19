@@ -10,6 +10,7 @@ members = [
     "transports/usb",
     # independent accuracy-first domains
     "crypto/core",
+    "crypto/aes-gcm-accel",
     "crypto/legacy",
     # the operating system's random generator as a crypto::RandomSource
     "crypto/os-random",
@@ -134,6 +135,7 @@ sangfor-atrust-wire = { path = "protocols/application/sangfor/atrust-wire", vers
 tls = { path = "protocols/session/tls", version = "0.1.0" }
 socks = { path = "protocols/session/socks", version = "0.1.0", default-features = false }
 crypto = { path = "crypto/core", version = "0.1.0", default-features = false }
+rsl-aes-gcm-accel = { path = "crypto/aes-gcm-accel", version = "0.1.0" }
 crypto-legacy = { path = "crypto/legacy", version = "0.1.0", default-features = false }
 os-random = { path = "crypto/os-random", version = "0.1.0" }
 asn1 = { path = "pki/asn1", version = "0.1.0", default-features = false }

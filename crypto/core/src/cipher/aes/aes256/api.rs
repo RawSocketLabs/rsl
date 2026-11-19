@@ -48,6 +48,12 @@ pub struct Aes256 {
 }
 
 impl Aes256 {
+    /// Borrow the existing expanded schedule for CPU-assisted GCM.
+    #[cfg(feature = "aes-gcm-accel")]
+    pub(crate) fn expanded_words(&self) -> &[[u8; 4]; 60] {
+        &self.schedule.words
+    }
+
     /// Consume one AES-256 key and expand it into the fifteen round keys.
     #[must_use]
     pub fn new(key: Aes256Key) -> Self {

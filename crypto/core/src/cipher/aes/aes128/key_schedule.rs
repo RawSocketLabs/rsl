@@ -105,7 +105,7 @@ pub(in crate::cipher::aes) fn add_words(mut left: Word, mut right: Word) -> Word
 /// [`RoundKey`] at a time, making every additional secret copy visible and independently
 /// zeroizing.
 pub(super) struct KeySchedule {
-    words: [Word; EXPANDED_WORDS],
+    pub(super) words: [Word; EXPANDED_WORDS],
 }
 
 impl KeySchedule {

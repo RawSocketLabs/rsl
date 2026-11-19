@@ -30,7 +30,7 @@ pub(super) const KEY_LEN: usize = 32;
 
 /// The complete secret AES-256 key schedule: 60 words in Algorithm 2 order.
 pub(super) struct KeySchedule {
-    words: [Word; EXPANDED_WORDS],
+    pub(super) words: [Word; EXPANDED_WORDS],
 }
 
 impl KeySchedule {

@@ -1,0 +1,15 @@
+[package]
+name = "rsl-aes-gcm-accel"
+version = "0.1.0"
+description = "CPU detection and x86-64 AES-GCM instructions for the RSL crypto crate."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+x86 = []
+
+[lints]
+workspace = true

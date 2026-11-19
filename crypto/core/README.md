@@ -8,6 +8,12 @@ The goal is readable, independently testable reference code: specifications shou
 to named types, operations, and intermediate values. Speed is secondary: backends stay pure Rust
 and readable (see the [`ROADMAP.md`](ROADMAP.md) performance policy).
 
+## Optional AES-GCM acceleration
+
+The default backend is portable. Enable `aes-gcm-accel` to select stack-owned AES-NI and
+PCLMULQDQ at key setup on supported x86-64 hosts. The same binary falls back to portable
+AES-GCM when either instruction is unavailable. This applies to AES-128-GCM and AES-256-GCM.
+
 ## Why this library exists
 
 Cryptographic libraries make different primary tradeoffs:

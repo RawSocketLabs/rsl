@@ -116,7 +116,10 @@ pub(super) fn derive_hash_subkey<C: GcmBlockCipher>(cipher: &C) -> HashSubkey {
     let mut encrypted_zero = [0_u8; BLOCK_BYTES];
     cipher.encrypt_block_in_place(&mut encrypted_zero);
 
-    HashSubkey::new(encrypted_zero)
+    let subkey = HashSubkey::new(encrypted_zero);
+    #[cfg(feature = "aes-gcm-accel")]
+    let subkey = subkey.with_accelerator(cipher.accelerator());
+    subkey
 }
 
 #[cfg(test)]

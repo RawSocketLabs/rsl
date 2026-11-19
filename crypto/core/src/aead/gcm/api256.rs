@@ -260,7 +260,7 @@ impl TryFrom<&[u8]> for Aes256GcmTag {
 /// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct Aes256Gcm {
-    cipher: Aes256,
+    cipher: super::block_cipher::Selected<Aes256>,
 }
 
 impl Aes256Gcm {
@@ -270,7 +270,9 @@ impl Aes256Gcm {
         let Aes256GcmKey { bytes } = key;
         let cipher = Aes256::new(Aes256Key::new(bytes.into_inner()));
 
-        Self { cipher }
+        Self {
+            cipher: super::block_cipher::Selected::from(cipher),
+        }
     }
 
     /// Encrypt plaintext and authenticate it together with unencrypted associated data.

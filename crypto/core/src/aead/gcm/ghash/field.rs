@@ -141,6 +141,26 @@ pub(super) fn multiply(left: &FieldElement, right: &FieldElement) -> FieldElemen
 mod unit {
     use super::{BLOCK_BYTES, FieldElement, advance_changing_multiple, displayed_bit, multiply};
 
+    /// Differential against Algorithm 1 for every product of two monomials.
+    #[cfg(feature = "aes-gcm-accel")]
+    #[test]
+    fn accelerated_products_match_all_bit_positions() {
+        let Some(cpu) = rsl_aes_gcm_accel::AesGcmCpu::detect() else {
+            return;
+        };
+        for i in 0..128 {
+            for j in 0..128 {
+                let left = FieldElement::from_owned_block((1_u128 << i).to_be_bytes());
+                let right = FieldElement::from_owned_block((1_u128 << j).to_be_bytes());
+                assert_eq!(
+                    cpu.multiply(left.as_block(), right.as_block()),
+                    *multiply(&left, &right).as_block(),
+                    "bits {i} and {j}"
+                );
+            }
+        }
+    }
+
     /// Standard-derived representation evidence from SP 800-38D §6.3, Algorithm 1 step 1.
     #[test]
     fn displayed_bits_are_read_left_to_right_across_bytes() {

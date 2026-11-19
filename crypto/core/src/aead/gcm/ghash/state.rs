@@ -39,20 +39,38 @@ const BLOCK_BYTES: usize = 16;
 /// GCM will derive this value as `CIPH_K(0^128)` according to SP 800-38D Algorithms 4 and 5
 /// step 1. This constructor currently accepts that already-derived block so Algorithm 2 remains
 /// independent from the choice of block cipher.
-pub(in crate::aead::gcm) struct HashSubkey(FieldElement);
+pub(in crate::aead::gcm) struct HashSubkey {
+    field: FieldElement,
+    #[cfg(feature = "aes-gcm-accel")]
+    cpu: Option<rsl_aes_gcm_accel::AesGcmCpu>,
+}
 
 impl HashSubkey {
     /// Take ownership of one already-derived 128-bit GHASH subkey block.
     #[must_use]
     pub(in crate::aead::gcm) fn new(block: [u8; BLOCK_BYTES]) -> Self {
-        Self(FieldElement::from_owned_block(block))
+        Self {
+            field: FieldElement::from_owned_block(block),
+            #[cfg(feature = "aes-gcm-accel")]
+            cpu: None,
+        }
+    }
+
+    /// Use the same detected backend for GHASH as for counter encryption.
+    #[cfg(feature = "aes-gcm-accel")]
+    pub(in crate::aead::gcm) fn with_accelerator(
+        mut self,
+        cpu: Option<rsl_aes_gcm_accel::AesGcmCpu>,
+    ) -> Self {
+        self.cpu = cpu;
+        self
     }
 
     /// Borrow the derived subkey for white-box GCM setup evidence.
     #[cfg(test)]
     #[must_use]
     pub(in crate::aead::gcm) fn as_block(&self) -> &[u8; BLOCK_BYTES] {
-        self.0.as_block()
+        self.field.as_block()
     }
 }
 
@@ -78,7 +96,15 @@ impl Ghash {
     /// order: the first call supplies `X_1`, the second `X_2`, and so on.
     pub(in crate::aead::gcm) fn update_block(&mut self, block: &[u8; BLOCK_BYTES]) {
         self.accumulator.add_block(block);
-        self.accumulator = multiply(&self.accumulator, &self.hash_subkey.0);
+        #[cfg(feature = "aes-gcm-accel")]
+        if let Some(cpu) = self.hash_subkey.cpu {
+            self.accumulator = FieldElement::from_owned_block(cpu.multiply(
+                self.accumulator.as_block(),
+                self.hash_subkey.field.as_block(),
+            ));
+            return;
+        }
+        self.accumulator = multiply(&self.accumulator, &self.hash_subkey.field);
     }
 
     /// Consume the recurrence state and retain the final `Y_m` in a zeroizing result owner.

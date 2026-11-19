@@ -152,6 +152,12 @@ pub struct Aes128 {
 }
 
 impl Aes128 {
+    /// Borrow the existing expanded schedule for CPU-assisted GCM.
+    #[cfg(feature = "aes-gcm-accel")]
+    pub(crate) fn expanded_words(&self) -> &[[u8; 4]; 44] {
+        &self.schedule.words
+    }
+
     /// Consume one AES-128 key and expand it into the eleven round keys.
     ///
     /// See [`Aes128`] for a complete block round-trip example.

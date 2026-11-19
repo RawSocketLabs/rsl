@@ -908,6 +908,7 @@ dependencies = [
  "num-bigint-dig",
  "p256",
  "p384",
+ "rsl-aes-gcm-accel",
  "sha2 0.11.1",
  "sha3",
  "shake",
@@ -3417,6 +3418,10 @@ dependencies = [
  "usdr-ffi",
  "x509",
 ]
+
+[[package]]
+name = "rsl-aes-gcm-accel"
+version = "0.1.0"
 
 [[package]]
 name = "rtlsdr"

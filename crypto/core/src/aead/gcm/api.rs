@@ -291,7 +291,7 @@ impl TryFrom<&[u8]> for Aes128GcmTag {
 /// # Ok::<(), crypto::CryptoError>(())
 /// ```
 pub struct Aes128Gcm {
-    cipher: Aes128,
+    cipher: super::block_cipher::Selected<Aes128>,
 }
 
 impl Aes128Gcm {
@@ -301,7 +301,9 @@ impl Aes128Gcm {
         let Aes128GcmKey { bytes } = key;
         let cipher = Aes128::new(Aes128Key::new(bytes.into_inner()));
 
-        Self { cipher }
+        Self {
+            cipher: super::block_cipher::Selected::from(cipher),
+        }
     }
 
     /// Encrypt plaintext and authenticate it together with unencrypted associated data.

@@ -168,11 +168,11 @@ Each algorithm change must include:
 
 ## Performance policy
 
-Backends stay pure Rust with `#![forbid(unsafe_code)]`, no intrinsics, and no secret-indexed
-tables. Speed only needs to be adequate for real TLS and SSH clients and servers; readability,
-API clarity, and flexibility come first, so no optimized implementation is planned beside the
-reference path. Simple algorithmic choices (limb arithmetic instead of bit-serial loops) are
-acceptable when they keep the code and its tests clear and fast.
+The default build uses portable Rust without processor-specific instructions or secret-indexed
+tables. `crypto` retains `#![forbid(unsafe_code)]`. Its opt-in `aes-gcm-accel` feature selects
+the stack-owned `rsl-aes-gcm-accel` primitives at key setup on x86-64 hosts with both AES-NI
+and PCLMULQDQ. Other targets and CPUs use the same portable implementation. Both paths share
+key expansion, nonce and length checks, and tag verification before decryption.
 
 ## Assurance status
 
