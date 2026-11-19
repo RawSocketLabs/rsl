@@ -444,6 +444,10 @@ fn frames_are_read_as_v27_says_however_they_arrive() {
             let mut chunk = chunk;
             while !chunk.is_empty() && !reader.is_closed() {
                 let (used, filled) = reader.read(chunk, &mut output).unwrap();
+                assert!(
+                    used > 0,
+                    "a valid nonempty input must advance with room for output"
+                );
                 stream.extend_from_slice(&output[..filled]);
                 chunk = &chunk[used..];
             }

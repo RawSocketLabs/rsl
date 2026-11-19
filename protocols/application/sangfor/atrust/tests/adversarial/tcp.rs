@@ -224,10 +224,7 @@ fn generated_input_never_panics_and_frames_read_the_same_however_cut() {
             while !chunk.is_empty() && !reader.is_closed() {
                 let mut output = vec![0; room];
                 let (used, filled) = reader.read(chunk, &mut output).unwrap();
-                assert!(
-                    used > 0 || filled > 0,
-                    "no progress with input and room to spare"
-                );
+                assert!(used > 0, "no progress with input and room to spare");
                 read.extend_from_slice(&output[..filled]);
                 chunk = &chunk[used..];
             }
