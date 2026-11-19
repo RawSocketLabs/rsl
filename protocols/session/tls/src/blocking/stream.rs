@@ -18,11 +18,10 @@ use crate::{Client, ClientConfig, client};
 /// missing. Each write is handed to the transport before it returns; `flush` also flushes the
 /// transport.
 ///
-/// A write whose bytes were accepted but could not all be sent is not lost or repeated:
-/// `write` still returns the count it accepted, and the unsent remainder stays queued for the
-/// next `write`, `flush` or `close` to send. A transport that only failed for a moment, such
-/// as on a timeout, simply continues there; one that is still failing makes that call return
-/// the error.
+/// A write reports how many bytes it accepted. If the transport fails partway through,
+/// the stream keeps the unsent remainder. It retries on the next write, flush or close,
+/// and before a read that needs more input from the transport. A persistent transport
+/// error is returned to the caller.
 ///
 /// The transport must block: a `WouldBlock` from it is returned as an error. The random
 /// source is the caller's, as everywhere in this crate: pass `os_random::OsRandom` outside
