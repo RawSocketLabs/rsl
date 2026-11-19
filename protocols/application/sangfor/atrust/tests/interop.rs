@@ -25,6 +25,9 @@ mod interop {
     use sangfor_atrust::net::{HttpsPortal, dial};
     use sangfor_atrust::tcp::Transport;
 
+    use tls::ServerVerification;
+    use x509::Certificate;
+
     use super::support::Counting;
 
     const TIMEOUT: Duration = Duration::from_secs(10);
@@ -62,6 +65,38 @@ mod interop {
                 "req",
                 "-x509",
                 "-newkey",
+                "ed25519",
+                "-nodes",
+                "-keyout",
+                "ca.key",
+                "-out",
+                "ca.pem",
+                "-days",
+                "2",
+                "-subj",
+                "/CN=Test CA",
+                "-addext",
+                "basicConstraints=critical,CA:TRUE",
+                "-addext",
+                "keyUsage=critical,keyCertSign",
+            ],
+        )
+        .status()
+        .unwrap();
+        assert!(made.success(), "openssl CA creation failed");
+        let made = openssl(
+            &directory,
+            &[
+                "req",
+                "-CA",
+                "ca.pem",
+                "-CAkey",
+                "ca.key",
+                "-addext",
+                "subjectAltName=DNS:atrust.test",
+                "-addext",
+                "keyUsage=critical,digitalSignature",
+                "-newkey",
                 "rsa:2048",
                 "-nodes",
                 "-keyout",
@@ -89,6 +124,15 @@ mod interop {
         .unwrap();
         assert!(der.success(), "openssl x509 failed");
 
+        assert!(
+            openssl(
+                &directory,
+                &["x509", "-in", "ca.pem", "-outform", "DER", "-out", "ca.der"]
+            )
+            .status()
+            .unwrap()
+            .success()
+        );
         let arguments = [
             "s_server", "-accept", address, "-cert", "cert.pem", "-key", "key.pem", "-tls1_2",
             behaviour,
@@ -119,7 +163,18 @@ mod interop {
             })
             .unwrap();
 
-        let mut portal = HttpsPortal::new(&gateway, Counting::default()).with_timeout(TIMEOUT);
+        let ca = fs::read(directory.join("ca.der")).unwrap();
+        let anchors = [Certificate::from_der(&ca).unwrap()];
+        let verification = |dns_name| ServerVerification::Path {
+            trust_anchors: &anchors,
+            time: anchors[0].tbs_certificate().validity().not_after,
+            dns_name,
+        };
+        let mut wrong = HttpsPortal::new(&gateway, verification("wrong.test"), Counting::default());
+        assert!(wrong.exchange(&request).is_err());
+        let mut portal =
+            HttpsPortal::new(&gateway, verification("atrust.test"), Counting::default())
+                .with_timeout(TIMEOUT);
         let reply = portal.exchange(&request).unwrap();
 
         assert_eq!(reply.response.head.status, 200);
@@ -147,7 +202,27 @@ mod interop {
     fn a_tls_connection_stops_writing_and_goes_on_reading() {
         // `-rev` sends each line back reversed.
         let (_server, directory) = start_server("node", "127.0.0.1:44492", "-rev");
-        let mut node = dial("127.0.0.1:44492", TIMEOUT, &mut Counting::default()).unwrap();
+        let untrusted = ServerVerification::Path {
+            trust_anchors: &[],
+            time: x509::Time::new(2026, 11, 18, 0, 0, 0).unwrap(),
+            dns_name: "atrust.test",
+        };
+        assert!(
+            dial(
+                "127.0.0.1:44492",
+                TIMEOUT,
+                untrusted,
+                &mut Counting::default()
+            )
+            .is_err()
+        );
+        let mut node = dial(
+            "127.0.0.1:44492",
+            TIMEOUT,
+            tls::ServerVerification::Unverified,
+            &mut Counting::default(),
+        )
+        .unwrap();
 
         node.write_all(b"hello node\n").unwrap();
         let mut answer = [0; 11];

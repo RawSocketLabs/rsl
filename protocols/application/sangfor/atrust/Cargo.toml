@@ -32,6 +32,8 @@ tls = { workspace = true, optional = true }
 uri.workspace = true
 
 [dev-dependencies]
+# Parse the loopback CA for TLS path verification.
+x509.workspace = true
 # RSA decryption, to read back the password a scripted gateway was sent.
 crypto-legacy.workspace = true
 # The operating system's generator, for the example that talks to a real gateway.

@@ -16,7 +16,7 @@ use crate::tcp::Transport;
 /// Open a TLS connection to the node at `address`, `host:port` as a policy gives it
 /// ([`Policy::node`](crate::policy::Policy::node)), for a tunnel to run over.
 ///
-/// The node's certificate is not verified (spec §2.1), and nothing else checks who answers:
+/// With explicit unverified TLS (spec §2.1), nothing else checks who answers:
 /// whoever does receives the tunnel's signed request, session identifier included.
 /// `random` must be a cryptographic source.
 ///
@@ -37,13 +37,14 @@ use crate::tcp::Transport;
 pub fn dial<'a>(
     address: &'a str,
     timeout: Duration,
+    verification: ServerVerification<'a>,
     random: &mut impl RandomSource,
 ) -> io::Result<Stream<'a, TcpStream>> {
     let (host, port) = split(address)?;
     let socket = connect(host, port, timeout)?;
     let config = ClientConfig {
         server_name: server_name(host),
-        verification: ServerVerification::Unverified,
+        verification,
     };
     Ok(Stream::connect(socket, config, random)?)
 }

@@ -11,7 +11,7 @@ use super::{AntiMitmData, Envelope, Error};
 
 /// What an `authConfig` answer holds (spec §4.3 E2, §5.2). Every string is stored as
 /// received; a missing member is empty.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct AuthConfig {
     /// The CSRF token for the requests that follow: `data.csrfToken`, or
@@ -159,5 +159,14 @@ impl AuthConfig {
         self.servers
             .iter()
             .find(|server| server.auth_type == auth_type && server.login_domain == login_domain)
+    }
+}
+
+impl std::fmt::Debug for AuthConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AuthConfig")
+            .field("is_login", &self.is_login)
+            .finish_non_exhaustive()
     }
 }

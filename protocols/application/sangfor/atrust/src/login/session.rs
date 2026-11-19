@@ -60,6 +60,24 @@ impl Session {
         }
     }
 
+    /// Carry the values used before authConfig into an isolated login attempt.
+    pub(super) fn strict_attempt(&mut self) -> Self {
+        let mut attempt = Self::new(self.gateway.clone(), self.device.clone());
+        attempt.jar = self.jar.clone();
+        attempt.csrf_token.clone_from(&self.csrf_token);
+        attempt.nonces = self.nonces.take();
+        attempt
+    }
+
+    /// Commit authenticated state on success and never reuse an issued nonce on retry.
+    pub(super) fn finish_strict_attempt(&mut self, attempt: Self, success: bool) {
+        if success {
+            *self = attempt;
+        } else {
+            self.nonces = attempt.nonces;
+        }
+    }
+
     /// The gateway.
     #[must_use]
     pub const fn gateway(&self) -> &Gateway {

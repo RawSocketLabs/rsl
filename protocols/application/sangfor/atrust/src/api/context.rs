@@ -7,7 +7,7 @@ use sangfor_atrust_sig::SignKey;
 use super::Gateway;
 
 /// The session values a [`Call`](super::Call) is completed with when it becomes a request.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct Context<'a> {
     /// The gateway the request goes to.
     pub gateway: &'a Gateway,
@@ -19,4 +19,13 @@ pub struct Context<'a> {
     pub sign_key: Option<&'a SignKey>,
     /// The `Cookie` header value for this request's path, when the jar has cookies for it.
     pub cookie: Option<&'a [u8]>,
+}
+
+impl std::fmt::Debug for Context<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Context")
+            .field("gateway", &self.gateway)
+            .finish_non_exhaustive()
+    }
 }

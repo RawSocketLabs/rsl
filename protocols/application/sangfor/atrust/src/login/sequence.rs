@@ -30,17 +30,14 @@ impl Session {
     ///
     /// When the gateway already knows the session's cookies, no password is sent.
     ///
-    /// The gateway's certificate is not verified (spec §2.1); what stands in for that is the
-    /// protocol's own anti-MITM checks, whose outcome is in [`Login::anti_mitm`]. **By
-    /// default a failed check does not stop the login**, as in the vendor's clients, so the
-    /// password is sent regardless; see [`Options::strict_anti_mitm`].
+    /// The portal controls TLS verification. The protocol reports its separate anti-MITM
+    /// checks via [`Login::anti_mitm`]. By default the password is sent even when those
+    /// checks fail; see [`Options::strict_anti_mitm`].
     ///
     /// # Errors
     ///
-    /// [`Error`] says which step failed. After [`Error::AntiMitm`] the session's cookies are
-    /// what they were before the login, so nothing a failing gateway set carries into the
-    /// next attempt. After any other error the session keeps the cookies it gathered, and a
-    /// new login starts over with them.
+    /// [`Error`] says which step failed. A failed strict login discards cookies and key
+    /// material received during the attempt. Advisory mode retains partial session state.
     pub fn login(
         &mut self,
         portal: &mut impl Portal,
@@ -49,7 +46,24 @@ impl Session {
         random: &mut impl RandomSource,
         now: i64,
     ) -> Result<Login, Error> {
-        let cookies_before = self.jar.clone();
+        if !options.strict_anti_mitm {
+            return self.login_attempt(portal, credentials, options, random, now);
+        }
+        let mut attempt = self.strict_attempt();
+        let result = attempt.login_attempt(portal, credentials, options, random, now);
+        self.finish_strict_attempt(attempt, result.is_ok());
+        result
+    }
+
+    /// Perform the exchanges against the session state for this attempt.
+    fn login_attempt(
+        &mut self,
+        portal: &mut impl Portal,
+        credentials: &Credentials<'_>,
+        options: Options,
+        random: &mut impl RandomSource,
+        now: i64,
+    ) -> Result<Login, Error> {
         let manifest =
             Manifest::parse(&self.send(portal, &Call::manifest(), random, now)?.response)?;
 
@@ -61,8 +75,6 @@ impl Session {
             None => AntiMitm::Absent,
         };
         if let (AntiMitm::Failed(check), true) = (anti_mitm, options.strict_anti_mitm) {
-            // Whoever answered is not trusted, and neither are the cookies it set.
-            self.jar = cookies_before;
             return Err(Error::AntiMitm(check));
         }
 

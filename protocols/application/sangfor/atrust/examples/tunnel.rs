@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! ATRUST_PASSWORD=… cargo run -p sangfor-atrust --features net --example tunnel -- \
-//!     vpn.example.org 443 user01 local intranet.example.org 80
+//!     --insecure vpn.example.org 443 user01 local intranet.example.org 80
 //! ```
 //!
 //! The arguments are the gateway's host and port, the user name, the login domain, and the
@@ -41,12 +41,27 @@ const NODE_TIMEOUT: Duration = Duration::from_secs(18);
 )]
 fn main() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<String> = env::args().skip(1).collect();
-    let [gateway_host, gateway_port, username, domain, host, port] = arguments.as_slice() else {
+    let [
+        mode,
+        gateway_host,
+        gateway_port,
+        username,
+        domain,
+        host,
+        port,
+    ] = arguments.as_slice()
+    else {
         eprintln!(
-            "usage: tunnel <gateway host> <gateway port> <user> <login domain> <host> <port>"
+            "usage: tunnel --insecure <gateway host> <gateway port> <user> <login domain> <host> <port>"
         );
         process::exit(2);
     };
+    if mode != "--insecure" {
+        return Err(
+            "this example requires --insecure to send credentials over unverified TLS".into(),
+        );
+    }
+    let verification = tls::ServerVerification::Unverified;
     let password = env::var("ATRUST_PASSWORD").map_err(|_| "set ATRUST_PASSWORD")?;
     let port: u16 = port.parse()?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
@@ -60,7 +75,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         password: &password,
         domain,
     };
-    let mut portal = HttpsPortal::new(&gateway, OsRandom);
+    let mut portal = HttpsPortal::new(&gateway, verification, OsRandom);
     let seconds = i64::try_from(now.as_secs())?;
     let login = session.login(
         &mut portal,
@@ -98,7 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         micros,
         &mut random,
     )?;
-    let transport = dial(node, NODE_TIMEOUT, &mut random)?;
+    let transport = dial(node, NODE_TIMEOUT, verification, &mut random)?;
     let mut stream = Stream::open(transport, &identity, &destination, login.zero_rtt)?;
 
     // The node had its time to answer; the stream itself may be as slow as the far host is.

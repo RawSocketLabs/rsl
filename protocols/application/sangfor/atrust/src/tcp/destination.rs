@@ -54,7 +54,7 @@ impl Destination {
         let literal = literal
             .strip_prefix('[')
             .and_then(|host| host.strip_suffix(']'))
-            .unwrap_or(host);
+            .unwrap_or(literal);
         match literal.parse::<IpAddr>() {
             Ok(IpAddr::V6(_)) => return None,
             Ok(IpAddr::V4(address)) => return Self::by_address(policy, address, port, take_all),

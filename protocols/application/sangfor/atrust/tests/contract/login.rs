@@ -589,6 +589,22 @@ fn a_strict_login_sends_nothing_after_a_failed_check() {
     }
 }
 
+#[test]
+fn strict_login_preserves_prior_cookies_after_a_malformed_answer() {
+    let mut session = session();
+    session
+        .cookies_mut()
+        .store(b"sid=original; Path=/", b"/", NOW);
+    let mut script = Script::default().then(
+        MANIFEST,
+        response(200, &["Set-Cookie: sid=replaced; Path=/"], b"invalid"),
+    );
+    let mut strict = Options::default();
+    strict.strict_anti_mitm = true;
+    assert!(login(&mut session, &mut script, strict).is_err());
+    assert_eq!(session.sid(NOW), Some("original"));
+}
+
 // §5.3: by default the same failures are reported and the password is sent.
 #[test]
 fn a_default_login_reports_a_failed_check_and_goes_on() {

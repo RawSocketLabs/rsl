@@ -89,7 +89,7 @@ fn routing_matches_v26() {
     }
 
     // The address itself, by the rule the pin made.
-    let found = Destination::route(&policy, "203.0.113.5", 443, false, unasked).unwrap();
+    let found = Destination::route(&policy, " 203.0.113.5 ", 443, false, unasked).unwrap();
     assert_eq!(
         destination_message(&found),
         [0x05, 0x01, 0x00, 0x01, 0xcb, 0x00, 0x71, 0x05, 0x01, 0xbb]
@@ -139,7 +139,7 @@ fn routing_matches_v26() {
     );
 
     // IPv6 is never covered, bracketed or not.
-    for host in ["[2001:db8::5]", "2001:db8::5"] {
+    for host in ["[2001:db8::5]", "2001:db8::5", " 2001:db8::5 "] {
         assert_eq!(
             Destination::route(&policy, host, 443, true, unasked),
             None,

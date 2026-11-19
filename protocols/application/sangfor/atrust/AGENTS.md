@@ -108,10 +108,8 @@ tested without it.
 
 ## Rules
 
-- **`net` verifies no certificate** (§2.1): gateways and nodes present self-signed ones. On
-  the control plane the protocol's anti-MITM checks stand in, and a login reports them; a
-  node connection has no such check. Do not add verification as a default: the reference
-  and the vendor clients have none, and a gateway's certificate would fail it.
+- **Callers choose TLS verification explicitly** for the gateway and node. The example
+  requires `--insecure` for compatibility with self-signed gateways (§2.1).
 - **`net` never makes its own randomness.** `HttpsPortal` and `dial` take a
   `crypto::RandomSource`; a real client passes `os_random::OsRandom`.
 - **Time limits in `net` are per operation**: the connect, and each read or write. A whole
@@ -164,7 +162,7 @@ tested without it.
   a caller will read it; keep them saying it. A second-stage exchange that fails to complete
   is a failed check, not a failed login.
 - **A strict failure sends nothing more and keeps nothing**: no request follows the failed
-  check, and the cookie jar goes back to what it was before the login, so a cookie planted
+  check, and every failed strict attempt discards its cookies and authConfig state, so a cookie planted
   by whoever failed the checks cannot ride into the next attempt.
 - **Strict stops on a failed check, not on a missing one.** An answer with no anti-MITM
   object is `Absent`, and one that does not enable the certificate check can be `Passed` on

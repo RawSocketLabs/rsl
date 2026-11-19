@@ -21,15 +21,16 @@ const MAX_BODY: usize = 8 * 1024 * 1024;
 /// A [`Portal`] that reaches a gateway over the network: one TCP connection and one TLS
 /// handshake for each request.
 ///
-/// **The gateway's certificate is not verified** (spec §2.1): gateways present self-signed
-/// ones. Its chain is returned with each response for the protocol's own anti-MITM checks,
-/// which a login reports and, unless told to be strict, does not act on.
+/// The caller chooses TLS verification. Self-signed vendor gateways may require explicit
+/// unverified mode (§2.1). The protocol's own checks cannot authenticate such a gateway.
 ///
 /// The time limit applies to the connect and to each read or write. The exchange as a whole
 /// is not bounded, nor is name resolution: a peer that keeps trickling bytes can hold a
 /// request open.
 #[derive(Debug)]
-pub struct HttpsPortal<R> {
+pub struct HttpsPortal<'a, R> {
+    /// The TLS policy applied before every HTTP request.
+    verification: ServerVerification<'a>,
     /// The gateway's host.
     host: String,
     /// Its HTTPS port.
@@ -42,15 +43,17 @@ pub struct HttpsPortal<R> {
     random: R,
 }
 
-impl<R: RandomSource> HttpsPortal<R> {
+impl<'a, R: RandomSource> HttpsPortal<'a, R> {
     /// The time allowed for the connect and for each read or write. It is the time the
     /// reference client allows a whole request (spec §2.2), applied here to each step.
     pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(20);
 
     /// A portal to `gateway`, drawing the randomness of its TLS handshakes from `random`,
-    /// which must be a cryptographic source.
-    pub fn new(gateway: &Gateway, random: R) -> Self {
+    /// which must be a cryptographic source. A path policy retains its validation time;
+    /// construct a fresh portal with the current time for each login.
+    pub fn new(gateway: &Gateway, verification: ServerVerification<'a>, random: R) -> Self {
         Self {
+            verification,
             host: gateway.host().to_owned(),
             port: gateway.port(),
             timeout: Self::DEFAULT_TIMEOUT,
@@ -75,12 +78,12 @@ impl<R: RandomSource> HttpsPortal<R> {
     }
 }
 
-impl<R: RandomSource> Portal for HttpsPortal<R> {
+impl<R: RandomSource> Portal for HttpsPortal<'_, R> {
     fn exchange(&mut self, request: &Request) -> io::Result<Reply> {
         let socket = connect(&self.host, self.port, self.timeout)?;
         let config = ClientConfig {
             server_name: server_name(&self.host),
-            verification: ServerVerification::Unverified,
+            verification: self.verification,
         };
         let mut stream = Stream::connect(socket, config, &mut self.random)?;
         let peer_chain = stream
