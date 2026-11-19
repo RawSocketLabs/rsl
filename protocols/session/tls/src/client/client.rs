@@ -102,13 +102,6 @@ impl<'a> Client<'a> {
     const MAX_EMPTY_RECORDS: u8 = 16;
     /// `HelloRequest` messages answered before the peer is cut off.
     const MAX_HELLO_REQUESTS: u8 = 4;
-    /// The longest RSA modulus accepted in a server certificate, 8192 bits. Verifying with a
-    /// longer one costs time that grows with the cube of its length, and the server chooses
-    /// it before it has proved anything.
-    const MAX_RSA_MODULUS_LEN: usize = 1024;
-    /// The longest RSA public exponent accepted, for the same reason.
-    const MAX_RSA_EXPONENT_LEN: usize = 8;
-
     /// Starts a connection: draws the client random and the ephemeral key from `random` and
     /// queues the `ClientHello`. Nothing else is ever drawn from `random`.
     ///
@@ -590,9 +583,6 @@ impl<'a> Client<'a> {
             return Err(Error::HandshakeFailure("server certificate key is not RSA"));
         };
         let unacceptable = Error::HandshakeFailure("server RSA key is not acceptable");
-        if !Self::rsa_key_is_bounded(modulus, exponent) {
-            return Err(unacceptable);
-        }
         // This also refuses a modulus under 2048 bits.
         let key = RsaPssSha256VerifyingKey::from_components(modulus, exponent)
             .map_err(|_| unacceptable)?;
@@ -619,11 +609,6 @@ impl<'a> Client<'a> {
         self.certificate_requested = true;
         self.transcript.add(message);
         Ok(())
-    }
-
-    /// Whether an RSA key is small enough to verify with before the server is trusted.
-    const fn rsa_key_is_bounded(modulus: &[u8], exponent: &[u8]) -> bool {
-        modulus.len() <= Self::MAX_RSA_MODULUS_LEN && exponent.len() <= Self::MAX_RSA_EXPONENT_LEN
     }
 
     /// Sends the client's whole second flight and derives the keys.
@@ -710,19 +695,5 @@ impl<'a> Client<'a> {
         }
         let alert = Alert::new(AlertLevel::Warning, AlertDescription::NoRenegotiation);
         self.send_alert(alert)
-    }
-}
-
-#[cfg(test)]
-mod unit {
-    use super::*;
-
-    #[test]
-    fn rsa_key_larger_than_8192_bits_or_with_a_long_exponent_is_not_verified_with() {
-        let exponent = [1, 0, 1];
-        assert!(Client::rsa_key_is_bounded(&[0xff; 256], &exponent));
-        assert!(Client::rsa_key_is_bounded(&[0xff; 1024], &[0xff; 8]));
-        assert!(!Client::rsa_key_is_bounded(&[0xff; 1025], &exponent));
-        assert!(!Client::rsa_key_is_bounded(&[0xff; 256], &[0xff; 9]));
     }
 }

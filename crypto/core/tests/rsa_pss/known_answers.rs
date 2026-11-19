@@ -137,3 +137,15 @@ fn prehashed_verification_matches_the_message_path() {
         "RsaPssSha256VerifyingKey { modulus_bits: 2048 }"
     );
 }
+
+#[test]
+fn public_key_import_bounds_significant_components() {
+    use crypto::rsa::RsaPublicKey;
+    let mut modulus = [0xff; 1025];
+    let mut exponent = [0xff; 9];
+    assert!(RsaPublicKey::from_components(modulus, [3]).is_err());
+    modulus[0] = 0;
+    assert!(RsaPublicKey::from_components(modulus, exponent).is_err());
+    exponent[0] = 0;
+    assert!(RsaPublicKey::from_components(modulus, exponent).is_ok());
+}

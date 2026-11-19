@@ -21,6 +21,8 @@ use super::integer::{BigUint, modpow};
 /// Component bytes use RFC 8017 §4's unsigned, big-endian convention. Leading zero bytes are
 /// accepted and normalized. Import verifies only structural requirements needed by this integer
 /// engine: `n` is an odd integer greater than one, and `e` is an odd integer in `1 < e < n`.
+/// Public imports limit the significant modulus to 8192 bits and exponent to 64 bits
+/// to bound verification work on untrusted keys.
 /// It does not validate primality, provenance, strength, or protocol policy.
 pub struct RsaPublicKey {
     modulus: BigUint,
@@ -38,8 +40,13 @@ impl RsaPublicKey {
         modulus: impl AsRef<[u8]>,
         public_exponent: impl AsRef<[u8]>,
     ) -> Result<Self> {
-        let modulus = BigUint::from_be_bytes(modulus.as_ref());
-        let exponent = BigUint::from_be_bytes(public_exponent.as_ref());
+        let modulus = significant_bytes(modulus.as_ref());
+        let exponent = significant_bytes(public_exponent.as_ref());
+        if modulus.len() > 1024 || exponent.len() > 8 {
+            return Err(CryptoError::InvalidPublicKey);
+        }
+        let modulus = BigUint::from_be_bytes(modulus);
+        let exponent = BigUint::from_be_bytes(exponent);
 
         if !valid_modulus(&modulus)
             || exponent.is_zero()
@@ -165,6 +172,15 @@ impl fmt::Debug for RsaPrivateKey {
             .field("private_components", &"[REDACTED]")
             .finish()
     }
+}
+
+/// Skip unsigned padding before sizing or allocating an imported component.
+fn significant_bytes(bytes: &[u8]) -> &[u8] {
+    let first = bytes
+        .iter()
+        .position(|&byte| byte != 0)
+        .unwrap_or(bytes.len());
+    &bytes[first..]
 }
 
 fn valid_modulus(modulus: &BigUint) -> bool {

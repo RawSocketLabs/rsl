@@ -156,12 +156,7 @@ sangfor-*  http1        consumers
   The `Client` holds the expected `Finished` value in `SecretBytes` and compares with it. A
   caller of `MasterSecret::finished_verify_data` must do the same.
 
-- **`crypto`: no upper bound on an RSA public key.** `RsaPublicKey::from_components` accepts
-  any modulus and exponent length, and verification cost grows with the cube of the modulus
-  length (measured in a test build: 0.7 s at 2048 bits, 43 s at 8192, 345 s at 16384, with a
-  full-width exponent). A server chooses its key before it has proved anything, so the
-  `Client` refuses a modulus over 8192 bits or an exponent over 8 bytes before verifying.
-  The bound belongs in `crypto`.
+- **RSA verification cost.** Public key import in `crypto` bounds every modulus to 8192 bits and public exponent to 64 bits, including issuer keys during path validation.
 - **`crypto`: AES is too slow for bulk data.** Measured 2026-11-16 in a release build:
   sealing one 16 KiB record takes 8.9 ms, about 1.8 MiB/s. Authenticating the same 16 KiB as
   associated data only (GHASH without AES-CTR) takes 1.0 ms, so about 89% of the time is
