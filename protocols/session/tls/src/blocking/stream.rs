@@ -86,8 +86,7 @@ impl<'a, T: Read + Write> Stream<'a, T> {
     /// has already failed.
     pub fn close(&mut self) -> Result<(), Error> {
         self.client.close()?;
-        self.send()?;
-        Ok(self.transport.flush()?)
+        self.send_and_flush()
     }
 
     /// Writes everything the client has queued to the transport.
@@ -104,6 +103,12 @@ impl<'a, T: Read + Write> Stream<'a, T> {
         Ok(())
     }
 
+    /// Deliver queued records through both the TLS and transport buffers.
+    fn send_and_flush(&mut self) -> Result<(), Error> {
+        self.send()?;
+        Ok(self.transport.flush()?)
+    }
+
     /// Reads from the transport if nothing is pending, then gives the client what it will
     /// take. Whatever the client queues in response, an alert included, is sent.
     ///
@@ -115,7 +120,7 @@ impl<'a, T: Read + Write> Stream<'a, T> {
         }
         if self.pending.is_empty() {
             // The peer cannot answer what a buffering transport has not sent yet.
-            self.transport.flush()?;
+            self.send_and_flush()?;
             self.read_transport()?;
         }
         while !self.pending.is_empty() && self.client.wants_receive() {
@@ -124,16 +129,17 @@ impl<'a, T: Read + Write> Stream<'a, T> {
                 Ok(taken) => drop(self.pending.drain(..taken)),
                 Err(error) => {
                     // Best effort: the peer is owed the alert even though we are failing.
-                    self.send().and_then(|()| Ok(self.transport.flush()?)).ok();
+                    self.send_and_flush().ok();
                     return Err(error.into());
                 }
             }
         }
-        match self.send() {
-            // The peer has closed, so it may be gone before our reply to its close_notify
-            // can be written. What it sent is complete either way.
-            Err(_) if self.client.peer_closed() => Ok(()),
-            result => result,
+        if self.client.peer_closed() {
+            // The peer may already be gone. Its authenticated close still means clean EOF.
+            self.send_and_flush().ok();
+            Ok(())
+        } else {
+            self.send()
         }
     }
 
@@ -193,7 +199,6 @@ impl<T: Read + Write> Write for Stream<'_, T> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.send()?;
-        self.transport.flush()
+        self.send_and_flush().map_err(Into::into)
     }
 }

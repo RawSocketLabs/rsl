@@ -347,6 +347,7 @@ mod blocking {
         flight.push(writer.seal(ContentType::Alert, version, &[1, 0]).unwrap());
 
         let mut script = recorded_then(&flight);
+        script.buffers = true;
         // After the last byte the peer is gone: reading again would be a bug.
         script.end = || panic!("read from the transport after the peer closed");
         let mut stream = connect(script).unwrap();
@@ -418,31 +419,35 @@ mod blocking {
     /// the write still counts, and the next call sends the rest.
     #[test]
     fn write_interrupted_by_a_transport_error_resumes_without_repeating_bytes() {
-        let client = records(&hex(support::REPLAY_CLIENT));
-        let mut script = recorded(usize::MAX);
-        script.write_chunk = 7;
-        let transport = FailsOnce {
-            script,
-            fail_at: client[..4].concat().len() + 14, // partway through the request record
-            failed: false,
-        };
-        let mut stream =
-            Stream::connect(transport, config(), &mut CountingRandom::default()).unwrap();
+        for explicit_flush in [false, true] {
+            let client = records(&hex(support::REPLAY_CLIENT));
+            let mut script = recorded(usize::MAX);
+            script.write_chunk = 7;
+            let transport = FailsOnce {
+                script,
+                fail_at: client[..4].concat().len() + 14, // partway through the request record
+                failed: false,
+            };
+            let mut stream =
+                Stream::connect(transport, config(), &mut CountingRandom::default()).unwrap();
 
-        // The request was accepted and queued, though the transport timed out partway.
-        assert_eq!(stream.write(REQUEST).unwrap(), REQUEST.len());
-        let on_the_wire = stream.get_ref().script.written.len();
-        assert!(
-            on_the_wire < client[..5].concat().len(),
-            "the record was cut short"
-        );
-        stream.flush().unwrap();
+            // The request was accepted and queued, though the transport timed out partway.
+            assert_eq!(stream.write(REQUEST).unwrap(), REQUEST.len());
+            let on_the_wire = stream.get_ref().script.written.len();
+            assert!(
+                on_the_wire < client[..5].concat().len(),
+                "the record was cut short"
+            );
+            if explicit_flush {
+                stream.flush().unwrap();
+            }
 
-        let mut response = [0; 10];
-        stream.read_exact(&mut response).unwrap();
-        assert_eq!(response, RESPONSE);
-        stream.close().unwrap();
-        assert_eq!(stream.get_ref().script.written, hex(support::REPLAY_CLIENT));
+            let mut response = [0; 10];
+            stream.read_exact(&mut response).unwrap();
+            assert_eq!(response, RESPONSE);
+            stream.close().unwrap();
+            assert_eq!(stream.get_ref().script.written, hex(support::REPLAY_CLIENT));
+        }
     }
 
     /// More data than the stream queues at once, with the transport failing once at the
