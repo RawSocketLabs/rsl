@@ -148,6 +148,9 @@ impl Aes128GcmProtection {
         version: ProtocolVersion,
         fragment: &[u8],
     ) -> Result<Vec<u8>, RecordError> {
+        if fragment.len() > usize::from(u16::MAX) {
+            return Err(RecordError::PlaintextTooLong);
+        }
         let (explicit_nonce, protected) = fragment
             .split_first_chunk::<{ Self::EXPLICIT_NONCE_LEN }>()
             .ok_or(RecordError::Truncated)?;

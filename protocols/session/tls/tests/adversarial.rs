@@ -308,10 +308,21 @@ mod adversarial {
         let version = ProtocolVersion::TLS_1_2;
         let plaintext = vec![0; Aes128GcmProtection::MAX_PLAINTEXT_LEN + 1];
         let longest = &plaintext[..Aes128GcmProtection::MAX_PLAINTEXT_LEN];
-        let sealed = protection
+        let mut sealed = protection
             .seal(0, ContentType::ApplicationData, version, longest)
             .unwrap();
         assert_eq!(sealed.len(), usize::from(u16::MAX));
+        assert_eq!(
+            protection
+                .open(0, ContentType::ApplicationData, version, &sealed)
+                .unwrap(),
+            longest
+        );
+        sealed.push(0);
+        assert_eq!(
+            protection.open(0, ContentType::ApplicationData, version, &sealed),
+            Err(RecordError::PlaintextTooLong)
+        );
         assert_eq!(
             protection.seal(0, ContentType::ApplicationData, version, &plaintext),
             Err(RecordError::PlaintextTooLong)
