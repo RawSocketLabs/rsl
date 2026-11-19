@@ -4,10 +4,14 @@
 //! with `cargo test -p sangfor-atrust --features net --test interop -- --ignored`. It checks
 //! what the scripted tests cannot: that the socket, TLS and HTTP layers fit together under
 //! `HttpsPortal`, and that a TLS connection is the `Transport` a tunnel needs. No gateway is
-//! involved; nothing here speaks the aTrust protocol to a peer that understands it.
+//! involved. The release-only bulk test adds a scripted node for the tunnel data phase.
 
 #[path = "support/mod.rs"]
 mod support;
+
+#[cfg(not(debug_assertions))]
+#[path = "interop/bulk.rs"]
+mod bulk;
 
 mod interop {
     use std::{
@@ -33,7 +37,7 @@ mod interop {
     const TIMEOUT: Duration = Duration::from_secs(10);
 
     /// Kills the server when the test ends, however it ends.
-    struct Server(Child);
+    pub(super) struct Server(pub(super) Child);
 
     impl Drop for Server {
         fn drop(&mut self) {
@@ -54,11 +58,16 @@ mod interop {
         command
     }
 
-    /// Starts `openssl s_server` on `address` with the flag `behaviour` and a fresh throwaway certificate,
-    /// and waits until it accepts connections. Returns the server and its directory.
-    fn start_server(name: &str, address: &str, behaviour: &str) -> (Server, PathBuf) {
+    /// Make the throwaway signing CA and DNS leaf for a loopback peer.
+    pub(super) fn certificates(name: &str) -> PathBuf {
         let directory = env::temp_dir().join(format!("atrust-{name}-{}", std::process::id()));
-        fs::create_dir_all(&directory).unwrap();
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder.create(&directory).unwrap();
         let made = openssl(
             &directory,
             &[
@@ -133,6 +142,12 @@ mod interop {
             .unwrap()
             .success()
         );
+        directory
+    }
+
+    /// Start the OpenSSL server and wait for it to accept connections.
+    fn start_server(name: &str, address: &str, behaviour: &str) -> (Server, PathBuf) {
+        let directory = certificates(name);
         let arguments = [
             "s_server", "-accept", address, "-cert", "cert.pem", "-key", "key.pem", "-tls1_2",
             behaviour,

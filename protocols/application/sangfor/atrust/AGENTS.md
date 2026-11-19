@@ -240,6 +240,10 @@ are applied, data sent after this end's `close_notify` still arrives), not that 
 agrees. The pure parts of `net`, which names get offered in the handshake and how a node
 address splits, have inline `unit` tests that run with the feature.
 
+Release-only bulk qualification uses a Python/OpenSSL loopback node and a fresh trusted CA.
+Run `cargo test --release -p sangfor-atrust --features net --test interop -- authenticated_bulk_throughput --ignored --nocapture`.
+Each direction must sustain 10 MiB/s for 30 seconds in each of three raw and three framed trials.
+
 `tcp.rs` in `contract` has V26's routes, V15's request byte for byte, the answers of V16 and
 V27 however they are cut, V17's frames, and both kinds of stream over a scripted node; in
 `adversarial` it has verdicts that are not verdicts, nodes that hang up, and generated input.

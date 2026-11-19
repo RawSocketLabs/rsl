@@ -157,15 +157,13 @@ sangfor-*  http1        consumers
   caller of `MasterSecret::finished_verify_data` must do the same.
 
 - **RSA verification cost.** Public key import in `crypto` bounds every modulus to 8192 bits and public exponent to 64 bits, including issuer keys during path validation.
-- **`crypto`: AES is too slow for bulk data.** Measured 2026-11-16 in a release build:
-  sealing one 16 KiB record takes 8.9 ms, about 1.8 MiB/s. Authenticating the same 16 KiB as
-  associated data only (GHASH without AES-CTR) takes 1.0 ms, so about 89% of the time is
-  AES-CTR, near 7.7 µs per block. The handshake is not affected: it takes 1.0 ms on loopback
-  in release (13.7 ms in debug) and 0.63 s to the reference gateway, the same as curl with
-  OpenSSL, because two round trips of about 0.3 s dominate. `crypto`'s performance policy
-  asks only for speed "adequate for real TLS and SSH clients"; a tunnel at 1.8 MiB/s is not.
-  The fix belongs in `crypto`'s AES, within that policy (pure Rust, no tables indexed by
-  secrets, no intrinsics).
+- **Bulk AES-GCM throughput.** The original release implementation sealed a 16 KiB record
+  in 8.9 ms (1.8 MiB/s). GHASH alone took 1.0 ms. Forward AES now substitutes eight bytes
+  per Boolean circuit and shares the column XOR across the four MixColumns outputs.
+  GHASH performs the same 128 multiplication steps with whole-word shifts and masks.
+  The [aTrust qualification](../../application/sangfor/atrust/AGENTS.md#testing) exercises
+  both directions through a certificate-verified TLS connection and checks every 4 MiB
+  chunk. The floor is 10 MiB/s for each of twelve 30-second transfers.
 
 ### Readiness check, 2026-11-16
 

@@ -157,10 +157,10 @@ crate. Known so far:
 - [x] **An operating-system `RandomSource`.** Only test implementations existed. Added as the
       `os-random` crate, not inside `crypto`, which deliberately names no platform generator.
       Protocol crates still take the source from their caller.
-- [ ] **`crypto`: faster AES.** AES-128-GCM seals about 1.8 MiB/s in a release build, and 89%
-      of that time is AES-CTR (about 7.7 µs per block); GHASH alone manages about 16 MiB/s.
-      Fine for logins and API calls, too slow for a VPN tunnel. Needs a faster constant-time
-      S-box within `crypto`'s performance policy. Measurements: `session/tls/DESIGN.md` §5.
+- [x] **`crypto`: faster AES-GCM for bulk TLS.** Forward AES rounds apply a Boolean S-box
+      across eight bytes at once. GHASH shifts and masks a whole 128-bit word. The aTrust
+      release qualification measures authenticated raw and framed tunnel transfers against
+      the 10 MiB/s floor in both directions (see `session/tls/DESIGN.md` §5).
 - [x] **`crypto`: bound public RSA imports** to 8192 modulus bits and 64 exponent bits before allocation or verification, including certificate issuers.
 - [x] **`crypto`: a public constant-time comparison.** `tls` must compare a received `Finished`
       value without leaking where it differs. Added as `Secret::matches`.
