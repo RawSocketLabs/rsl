@@ -7,6 +7,10 @@
 //! into a session; and [`tcp`], one TCP stream through a node. With the `net` feature, `net`
 //! supplies the sockets, TLS and HTTP underneath, and `examples/tunnel.rs` puts it together.
 //!
+//! Enable `tcp-quickack` to request prompt TCP acknowledgments on Linux tunnel reads.
+//! This can improve downloads from a peer that holds its next write until an ACK arrives.
+//! The feature enables `net`; combine it with `aes-gcm-accel` for accelerated TLS.
+//!
 //! Nothing here has been run against a real gateway.
 
 #![forbid(unsafe_code)]

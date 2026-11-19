@@ -20,6 +20,15 @@ const CHUNK: usize = 16 * 1024;
 /// stream. Deadlines are the transport's too: the reference client gives the node 18 seconds
 /// to answer the handshake (spec §9).
 pub trait Transport: Read + Write {
+    /// Read tunnel data. A socket transport may tune receive-side acknowledgments here.
+    ///
+    /// # Errors
+    ///
+    /// Propagates the transport's read error.
+    fn read_data(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.read(buffer)
+    }
+
     /// Tell the peer this end will write nothing more, and keep the read side open.
     ///
     /// # Errors
@@ -196,7 +205,7 @@ impl<T: Transport> Read for Stream<T> {
         if !self.mode.framed {
             // What arrived with the handshake comes first.
             if self.waiting().is_empty() {
-                return self.transport.read(output);
+                return self.transport.read_data(output);
             }
             let count = self.waiting().len().min(output.len());
             output[..count].copy_from_slice(&self.waiting()[..count]);
@@ -254,9 +263,9 @@ impl<T: Transport> Write for Stream<T> {
 }
 
 /// One read that is not interrupted.
-fn read_some(transport: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
+fn read_some(transport: &mut impl Transport, buffer: &mut [u8]) -> io::Result<usize> {
     loop {
-        match transport.read(buffer) {
+        match transport.read_data(buffer) {
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             result => return result,
         }

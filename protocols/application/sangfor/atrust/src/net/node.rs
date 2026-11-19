@@ -2,11 +2,15 @@
 
 // --- Standard library ---
 use std::io;
+#[cfg(all(target_os = "linux", feature = "tcp-quickack"))]
+use std::io::Read;
 use std::net::TcpStream;
 use std::time::Duration;
 
 // --- Workspace dependencies ---
 use crypto::RandomSource;
+#[cfg(all(target_os = "linux", feature = "tcp-quickack"))]
+use rustix::net::sockopt::set_tcp_quickack;
 use tls::{ClientConfig, ServerVerification, blocking::Stream};
 
 // --- Internal modules ---
@@ -62,6 +66,18 @@ fn split(address: &str) -> io::Result<(&str, u16)> {
 }
 
 impl Transport for Stream<'_, TcpStream> {
+    #[cfg(all(target_os = "linux", feature = "tcp-quickack"))]
+    fn read_data(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if !buffer.is_empty()
+            && self.client().plaintext().is_empty()
+            && !self.client().peer_closed()
+        {
+            // Linux can resume delayed ACKs after each exchange. This hint is best effort.
+            let _ = set_tcp_quickack(self.get_ref(), true);
+        }
+        self.read(buffer)
+    }
+
     /// Sends TLS `close_notify`: this end writes nothing more, and reading goes on until the
     /// node closes too.
     fn close_write(&mut self) -> io::Result<()> {

@@ -111,12 +111,20 @@ fn authenticated_bulk_throughput() {
             )
             .unwrap();
             let mut stream = Stream::open(tls, &identity, &destination, framed).unwrap();
-            for upload in [true, false] {
+            let [up, down] = [true, false].map(|upload| {
                 let rate = transfer(&mut stream, upload, &mut payload, &mut received);
                 eprintln!("trial {trial}, framed={framed}, upload={upload}: {rate:.2} MiB/s");
                 assert!(
                     rate >= minimum,
                     "sustained throughput below {minimum} MiB/s"
+                );
+                rate
+            });
+            if accelerated && cfg!(all(target_os = "linux", feature = "tcp-quickack")) {
+                // Allow run-to-run variation while catching the delayed-ACK download stall.
+                assert!(
+                    down.min(up) >= 0.75 * down.max(up),
+                    "trial {trial}, framed={framed}: {down:.2} down / {up:.2} up"
                 );
             }
             stream.write_all(b"E").unwrap();

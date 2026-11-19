@@ -28,18 +28,25 @@ def exchange(connection, framed):
             raise ValueError("unexpected destination type")
         read(2)
         connection.sendall(REPLY)
-        pending = bytearray()
+        frame_left = 0
 
-        def take(size):
-            if not framed:
-                return read(size)
-            while len(pending) < size:
-                header = read(4)
-                assert header[:2] == b"\x01\x00"
-                pending.extend(read(int.from_bytes(header[2:], "big")))
-            data = pending[:size]
-            del pending[:size]
-            return data
+        def take(buffer):
+            nonlocal frame_left
+            # Fill the caller's buffer directly so frame reassembly does not time a 4 MiB copy.
+            view = memoryview(buffer)
+            while view:
+                if framed and not frame_left:
+                    header = read(4)
+                    assert header[:2] == b"\x01\x00"
+                    frame_left = int.from_bytes(header[2:], "big")
+                    if not frame_left:
+                        continue
+                size = min(len(view), frame_left) if framed else len(view)
+                if source.readinto(view[:size]) != size:
+                    raise EOFError("incomplete bulk transfer")
+                if framed:
+                    frame_left -= size
+                view = view[size:]
 
         def send(data):
             for start in range(0, len(data), 16384):
@@ -48,15 +55,19 @@ def exchange(connection, framed):
                 connection.sendall(header + part)
 
         expected = bytearray((bytes(range(251)) * (CHUNK // 251 + 1))[:CHUNK])
+        command_byte = bytearray(1)
+        received = bytearray(CHUNK)
         counts = {b"U": 0, b"D": 0}
         while True:
-            command = bytes(take(1))
+            take(command_byte)
+            command = bytes(command_byte)
             if command == b"E":
                 return
             expected[:4] = counts[command].to_bytes(4, "big")
             counts[command] += 1
             if command == b"U":
-                assert take(CHUNK) == expected, "upload differs"
+                take(received)
+                assert received == expected, "upload differs"
                 send(b"K")
             else:
                 send(expected)

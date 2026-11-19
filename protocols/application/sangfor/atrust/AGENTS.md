@@ -243,6 +243,8 @@ address splits, have inline `unit` tests that run with the feature.
 Release-only bulk qualification uses a Python/OpenSSL loopback node and a fresh trusted CA.
 Run `cargo test --release -p sangfor-atrust --features net --test interop -- authenticated_bulk_throughput --ignored --nocapture`.
 Add `aes-gcm-accel` to the feature list to exercise the optional owned x86-64 backend.
+With `tcp-quickack` on Linux, the tunnel requests a prompt TCP acknowledgment when TLS has no plaintext ready.
+On accelerated Linux, qualify both features together: the slower direction must reach at least 75% of the faster direction in each trial.
 Each direction must sustain 75 MiB/s on AES-NI/PCLMULQDQ with that feature, otherwise 10 MiB/s for 30 seconds in each of three raw and three framed trials.
 
 `tcp.rs` in `contract` has V26's routes, V15's request byte for byte, the answers of V16 and

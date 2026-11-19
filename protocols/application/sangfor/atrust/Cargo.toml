@@ -10,6 +10,8 @@ rust-version.workspace = true
 [features]
 default = []
 aes-gcm-accel = ["crypto/aes-gcm-accel"]
+# Request prompt acknowledgments when a Linux tunnel needs more TLS data.
+tcp-quickack = ["net", "dep:rustix"]
 # Sockets, TLS and HTTP: what a client needs to reach a real gateway. Without it the crate is
 # the protocol alone, driven through `api::Portal` and `tcp::Transport`.
 net = ["dep:tls"]
@@ -31,6 +33,9 @@ thiserror.workspace = true
 tls = { workspace = true, optional = true }
 # The query string of every request, in the one encoding the request signature covers.
 uri.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Parse the loopback CA for TLS path verification.
