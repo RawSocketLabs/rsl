@@ -1,6 +1,7 @@
 //! AES-128-GCM record protection.
 
 // --- Workspace dependencies ---
+use crypto::aead::Sealed;
 use crypto::aead::gcm::{Aes128Gcm, Aes128GcmKey, Aes128GcmNonce, Aes128GcmTag};
 
 // --- Internal modules ---
@@ -98,15 +99,37 @@ impl Aes128GcmProtection {
         version: ProtocolVersion,
         plaintext: &[u8],
     ) -> Result<Vec<u8>, RecordError> {
+        let sealed = self.encrypt(
+            explicit_nonce,
+            sequence_number,
+            content_type,
+            version,
+            plaintext,
+        )?;
+        Ok([
+            explicit_nonce.as_slice(),
+            sealed.ciphertext(),
+            sealed.tag().as_bytes(),
+        ]
+        .concat())
+    }
+
+    /// Encrypt before committing the record header, explicit nonce and tag to the send queue.
+    pub(super) fn encrypt(
+        &self,
+        explicit_nonce: [u8; Self::EXPLICIT_NONCE_LEN],
+        sequence_number: u64,
+        content_type: ContentType,
+        version: ProtocolVersion,
+        plaintext: &[u8],
+    ) -> Result<Sealed<Aes128GcmTag>, RecordError> {
         if plaintext.len() > Self::MAX_PLAINTEXT_LEN {
             return Err(RecordError::PlaintextTooLong);
         }
         let aad = additional_data(sequence_number, content_type, version, plaintext.len())?;
-        let sealed = self
+        Ok(self
             .cipher
-            .seal(&self.nonce(explicit_nonce), &aad, plaintext)?;
-        let (ciphertext, tag) = sealed.into_parts();
-        Ok([explicit_nonce.as_slice(), &ciphertext, tag.as_bytes()].concat())
+            .seal(&self.nonce(explicit_nonce), &aad, plaintext)?)
     }
 
     /// Opens one protected fragment and returns its plaintext.

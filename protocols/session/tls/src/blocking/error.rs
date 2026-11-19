@@ -29,7 +29,10 @@ impl From<Error> for io::Error {
         let kind = match error {
             Error::Io(error) => return error,
             Error::Tls(client::Error::Truncated) => io::ErrorKind::UnexpectedEof,
-            Error::Tls(client::Error::InvalidState) => io::ErrorKind::NotConnected,
+            Error::Tls(
+                client::Error::InvalidState
+                | client::Error::Record(crate::record::RecordError::KeyUsageLimit),
+            ) => io::ErrorKind::NotConnected,
             Error::Tls(_) => io::ErrorKind::InvalidData,
         };
         Self::new(kind, error)

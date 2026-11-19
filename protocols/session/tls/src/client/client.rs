@@ -48,6 +48,36 @@ enum State {
     Failed,
 }
 
+/// Contiguous bytes exposed by the sans-I/O API. Short reads and writes advance the head.
+#[derive(Default)]
+struct ByteQueue {
+    bytes: Vec<u8>,
+    head: usize,
+}
+
+impl ByteQueue {
+    fn pending(&self) -> &[u8] {
+        &self.bytes[self.head..]
+    }
+
+    fn consume(&mut self, count: usize) {
+        self.head += count.min(self.pending().len());
+        if self.head == self.bytes.len() {
+            self.bytes.clear();
+            self.head = 0;
+        }
+    }
+
+    /// Amortize compaction: move at most as many bytes as have been consumed since last time.
+    fn for_append(&mut self) -> &mut Vec<u8> {
+        if self.head != 0 && self.head >= self.pending().len() {
+            self.bytes.drain(..self.head);
+            self.head = 0;
+        }
+        &mut self.bytes
+    }
+}
+
 /// A sans-I/O TLS 1.2 client for one connection.
 ///
 /// It offers exactly `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256` with X25519 and RSA-PSS
@@ -61,8 +91,9 @@ enum State {
 /// [`is_established`](Self::is_established), exchange application data with
 /// [`write`](Self::write) and [`plaintext`](Self::plaintext) / [`consume`](Self::consume).
 ///
-/// Every `Err` ends the connection, except [`Error::InvalidState`], which only refuses a
-/// call that is not allowed yet or any more. Once the connection is over, only `transmit`,
+/// [`Error::InvalidState`] refuses a call. At the sending-key budget, further writes report
+/// [`crate::record::RecordError::KeyUsageLimit`] while the peer can still close cleanly.
+/// Other errors end the connection. Once the connection is over, only `transmit`,
 /// `sent`, `plaintext`, `consume` and the accessors still work: the alert for the peer is in
 /// `transmit`, and plaintext that was authenticated before the end can still be read.
 pub struct Client<'a> {
@@ -72,8 +103,8 @@ pub struct Client<'a> {
     write: WriteState,
     joiner: HandshakeJoiner,
     transcript: Transcript,
-    outgoing: Vec<u8>,
-    plaintext: Vec<u8>,
+    outgoing: ByteQueue,
+    plaintext: ByteQueue,
     offered: Vec<ExtensionType>,
     record_version: ProtocolVersion,
     /// The client random sent in the `ClientHello`.
@@ -100,7 +131,7 @@ impl<'a> Client<'a> {
     pub const TRANSMIT_LIMIT: usize = 64 * 1024;
     /// Consecutive empty application-data records tolerated before the peer is cut off.
     const MAX_EMPTY_RECORDS: u8 = 16;
-    /// `HelloRequest` messages answered before the peer is cut off.
+    /// `HelloRequest` messages tolerated over the connection.
     const MAX_HELLO_REQUESTS: u8 = 4;
     /// Starts a connection: draws the client random and the ephemeral key from `random` and
     /// queues the `ClientHello`. Nothing else is ever drawn from `random`.
@@ -141,8 +172,8 @@ impl<'a> Client<'a> {
             write: WriteState::plain(),
             joiner: HandshakeJoiner::new(),
             transcript: Transcript::new(),
-            outgoing: Vec::new(),
-            plaintext: Vec::new(),
+            outgoing: ByteQueue::default(),
+            plaintext: ByteQueue::default(),
             offered,
             // A first record customarily says TLS 1.0, so that old servers answer at all.
             record_version: ProtocolVersion::TLS_1_0,
@@ -170,12 +201,12 @@ impl<'a> Client<'a> {
     /// Bytes waiting to be sent to the peer.
     #[must_use]
     pub fn transmit(&self) -> &[u8] {
-        &self.outgoing
+        self.outgoing.pending()
     }
 
     /// Records that the first `count` bytes of [`transmit`](Self::transmit) were sent.
     pub fn sent(&mut self, count: usize) {
-        self.outgoing.drain(..count.min(self.outgoing.len()));
+        self.outgoing.consume(count);
     }
 
     /// Whether [`receive`](Self::receive) would take bytes right now. `false` means the
@@ -241,19 +272,23 @@ impl<'a> Client<'a> {
 
     /// Queues application data for the peer and returns how many bytes were accepted, which
     /// is fewer than offered (possibly zero) while more than [`Self::TRANSMIT_LIMIT`] bytes
-    /// are still unsent.
+    /// are still unsent, or when the sending-key budget requires a fresh connection.
     ///
     /// # Errors
     ///
     /// [`Error::InvalidState`] before the handshake finishes, after [`close`](Self::close),
-    /// or after a failure.
+    /// or after a failure. At the AES-GCM key budget, the last accepted write queues
+    /// `close_notify`; further writes report [`crate::record::RecordError::KeyUsageLimit`].
     pub fn write(&mut self, plaintext: &[u8]) -> Result<usize, Error> {
+        if self.is_established() && self.close_sent && self.write.key_exhausted() {
+            return Err(crate::record::RecordError::KeyUsageLimit.into());
+        }
         if !self.is_established() || self.close_sent {
             return Err(Error::InvalidState);
         }
         let mut accepted = 0;
         for chunk in plaintext.chunks(Self::PLAINTEXT_LIMIT) {
-            if self.outgoing.len() >= Self::TRANSMIT_LIMIT {
+            if self.close_sent || self.outgoing.pending().len() >= Self::TRANSMIT_LIMIT {
                 break;
             }
             if let Err(error) = self.send_record(ContentType::ApplicationData, chunk) {
@@ -267,12 +302,12 @@ impl<'a> Client<'a> {
     /// Application data received and not yet consumed.
     #[must_use]
     pub fn plaintext(&self) -> &[u8] {
-        &self.plaintext
+        self.plaintext.pending()
     }
 
     /// Discards the first `count` bytes of [`plaintext`](Self::plaintext).
     pub fn consume(&mut self, count: usize) {
-        self.plaintext.drain(..count.min(self.plaintext.len()));
+        self.plaintext.consume(count);
     }
 
     /// Queues `close_notify`: this end will send nothing more. On an established connection
@@ -324,19 +359,19 @@ impl<'a> Client<'a> {
 
     /// Whether enough plaintext is waiting that no more records should be opened.
     fn is_backlogged(&self) -> bool {
-        self.plaintext.len() >= Self::PLAINTEXT_LIMIT
+        self.plaintext.pending().len() >= Self::PLAINTEXT_LIMIT
     }
 
     /// Marks the connection failed and queues the alert that tells the peer why, unless
     /// this end has already said it will send nothing more.
     fn fail(&mut self, error: Error) -> Error {
+        self.state = State::Failed;
         if let (Some(description), false) = (error.alert(), self.close_sent) {
             let alert = Alert::new(AlertLevel::Fatal, description);
             // Best effort: if the alert itself cannot be sealed there is nothing left to say.
             self.send_alert(alert).ok();
         }
         self.close_sent = true;
-        self.state = State::Failed;
         error
     }
 
@@ -355,10 +390,16 @@ impl<'a> Client<'a> {
 
     /// Queues one record under the write state in force.
     fn send_record(&mut self, content_type: ContentType, plaintext: &[u8]) -> Result<(), Error> {
-        let record = self
-            .write
-            .seal(content_type, self.record_version, plaintext)?;
-        self.outgoing.extend(record);
+        self.write.seal_into(
+            content_type,
+            self.record_version,
+            plaintext,
+            self.outgoing.for_append(),
+        )?;
+        // This client does not renegotiate. Reserve the final protected record for a clean EOF.
+        if self.write.last_key_slot() && !self.close_sent && self.is_established() {
+            self.queue_close_notify()?;
+        }
         Ok(())
     }
 
@@ -465,7 +506,7 @@ impl<'a> Client<'a> {
             return Ok(());
         }
         self.empty_records = 0;
-        self.plaintext.extend(fragment);
+        self.plaintext.for_append().extend(fragment);
         Ok(())
     }
 
@@ -486,7 +527,7 @@ impl<'a> Client<'a> {
                 self.on_server_hello_done(message)
             }
             (State::Finished, HandshakeType::Finished) => self.on_finished(message),
-            (State::Established, HandshakeType::HelloRequest) => self.on_hello_request(message),
+            (_, HandshakeType::HelloRequest) => self.on_hello_request(message),
             _ => Err(Error::UnexpectedMessage("handshake message out of order")),
         }
     }
@@ -515,17 +556,33 @@ impl<'a> Client<'a> {
             if !self.offered.contains(&extension_type) || seen.contains(&extension_type) {
                 return Err(Error::UnsupportedExtension(extension_type));
             }
+            let data = extension.data.as_slice();
+            match extension_type {
+                ExtensionType::ServerName | ExtensionType::ExtendedMasterSecret => {
+                    if !data.is_empty() {
+                        return Err(Error::IllegalParameter("nonempty server hello extension"));
+                    }
+                }
+                ExtensionType::RenegotiationInfo => {
+                    if data != [0] {
+                        return Err(Error::HandshakeFailure("renegotiation info is not empty"));
+                    }
+                }
+                ExtensionType::EcPointFormats => {
+                    // RFC 8422 §5.2: the server may list additional formats in any order.
+                    let [count, formats @ ..] = data else {
+                        return Err(Error::IllegalParameter("EC point formats"));
+                    };
+                    if usize::from(*count) != formats.len() || !formats.contains(&0) {
+                        return Err(Error::IllegalParameter("EC point formats"));
+                    }
+                }
+                _ => return Err(Error::UnsupportedExtension(extension_type)),
+            }
             seen.push(extension_type);
         }
-        let renegotiation = hello.extension(ExtensionType::RenegotiationInfo);
-        if renegotiation.is_some_and(|info| info.data != [0]) {
-            return Err(Error::HandshakeFailure("renegotiation info is not empty"));
-        }
         // RFC 7627 §5.2: without it the master secret is not bound to this handshake.
-        if hello
-            .extension(ExtensionType::ExtendedMasterSecret)
-            .is_none()
-        {
+        if !seen.contains(&ExtensionType::ExtendedMasterSecret) {
             return Err(Error::HandshakeFailure(
                 "server does not support extended master secret",
             ));
@@ -681,7 +738,7 @@ impl<'a> Client<'a> {
         Ok(())
     }
 
-    /// Refuses a renegotiation request with a warning, a bounded number of times.
+    /// Ignores requests during negotiation (RFC 5246 §7.4.1.1) and refuses renegotiation.
     fn on_hello_request(&mut self, message: &HandshakeMessage) -> Result<(), Error> {
         if !message.body().is_empty() {
             return Err(Error::IllegalParameter("HelloRequest body"));
@@ -690,10 +747,90 @@ impl<'a> Client<'a> {
         if self.hello_requests > Self::MAX_HELLO_REQUESTS {
             return Err(Error::UnexpectedMessage("too many hello requests"));
         }
-        if self.close_sent {
+        if !self.is_established() || self.close_sent {
             return Ok(());
         }
         let alert = Alert::new(AlertLevel::Warning, AlertDescription::NoRenegotiation);
         self.send_alert(alert)
+    }
+}
+
+#[cfg(test)]
+mod unit {
+    use super::*;
+
+    #[test]
+    fn consuming_short_prefixes_advances_a_slice_until_append_needs_compaction() {
+        let mut queue = ByteQueue::default();
+        queue.for_append().extend_from_slice(b"abcdef");
+        let initial = queue.pending().as_ptr();
+        queue.consume(1);
+        assert_eq!(queue.pending().as_ptr(), initial.wrapping_add(1));
+        queue.for_append().push(b'g');
+        queue.consume(3);
+        queue.for_append().push(b'h');
+        assert_eq!(queue.head, 0);
+        assert_eq!(queue.pending(), b"efgh");
+        queue.consume(usize::MAX);
+        assert_eq!(queue.pending(), b"");
+    }
+
+    #[test]
+    fn last_application_record_is_followed_by_authenticated_close_and_a_reconnect_error() {
+        struct TestRandom;
+        impl RandomSource for TestRandom {
+            fn fill_bytes(&mut self, buf: &mut [u8]) -> crypto::Result<()> {
+                buf.fill(7);
+                Ok(())
+            }
+        }
+        let config = ClientConfig {
+            server_name: None,
+            verification: ServerVerification::Unverified,
+        };
+        let mut client = Client::new(config, &mut TestRandom).unwrap();
+        client.sent(usize::MAX);
+        client.state = State::Established;
+        client.record_version = ProtocolVersion::TLS_1_2;
+        let key = || Aes128GcmProtection::new([1; 16], [2; 4]);
+        client.write = WriteState::with_two_records_left(key());
+        let data = vec![0x57; Client::PLAINTEXT_LIMIT + 1];
+        assert_eq!(client.write(&data).unwrap(), data.len() - 1);
+        let mut records = client.transmit();
+        for (sequence, kind, expected) in [
+            (
+                (1_u64 << 24) - 2,
+                ContentType::ApplicationData,
+                &data[..data.len() - 1],
+            ),
+            ((1_u64 << 24) - 1, ContentType::Alert, &[1, 0][..]),
+        ] {
+            let (header, rest) = records.split_at(RecordHeader::LEN);
+            let header = RecordHeader::decode_exact(header).unwrap();
+            assert_eq!(header.content_type, kind);
+            let (fragment, next) = rest.split_at(usize::from(header.length));
+            assert_eq!(
+                key()
+                    .open(sequence, kind, header.version, fragment)
+                    .unwrap(),
+                expected
+            );
+            records = next;
+        }
+        assert_eq!(records, b"");
+        client.sent(usize::MAX);
+        let err = client.write(b"remaining").unwrap_err();
+        assert_eq!(
+            err,
+            Error::Record(crate::record::RecordError::KeyUsageLimit)
+        );
+        assert_eq!(err.alert(), None);
+        assert_eq!(
+            std::io::Error::from(crate::blocking::Error::Tls(err)).kind(),
+            std::io::ErrorKind::NotConnected
+        );
+        client.close().unwrap();
+        assert_eq!(client.transmit(), b"");
+        assert!(client.wants_receive());
     }
 }

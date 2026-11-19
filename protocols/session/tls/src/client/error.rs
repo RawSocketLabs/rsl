@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// Why a [`Client`](super::Client) call failed. Every error ends the connection except
-/// [`Error::InvalidState`], which only refuses the call.
+/// [`Error::InvalidState`] and a write refused with [`RecordError::KeyUsageLimit`] during closure.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum Error {
     /// A record could not be framed, opened or sealed.
@@ -48,8 +48,8 @@ pub enum Error {
     /// The server chose a protocol version other than TLS 1.2.
     #[error("server did not choose TLS 1.2")]
     ProtocolVersion,
-    /// The server answered with an extension the client did not offer, or sent one twice.
-    #[error("server sent unsolicited or repeated extension {0:?}")]
+    /// The server sent an extension that was unoffered, repeated, or invalid in a `ServerHello`.
+    #[error("unsupported server hello extension {0:?}")]
     UnsupportedExtension(ExtensionType),
     /// The two ends cannot agree on parameters this client accepts.
     #[error("handshake failure: {0}")]
@@ -80,6 +80,10 @@ impl Error {
             Self::Record(RecordError::BadRecordMac | RecordError::Truncated) => {
                 AlertDescription::BadRecordMac
             }
+            Self::Record(RecordError::KeyUsageLimit)
+            | Self::PeerAlert(_)
+            | Self::Truncated
+            | Self::InvalidState => return None,
             // What is left of `Record` can only come from sealing one of our own records.
             Self::Record(_) | Self::Crypto(_) => AlertDescription::InternalError,
             Self::Codec { .. } | Self::MessageTooLong(_) => AlertDescription::DecodeError,
@@ -91,7 +95,6 @@ impl Error {
             Self::UnsupportedExtension(_) => AlertDescription::UnsupportedExtension,
             Self::HandshakeFailure(_) => AlertDescription::HandshakeFailure,
             Self::DecryptError(_) => AlertDescription::DecryptError,
-            Self::PeerAlert(_) | Self::Truncated | Self::InvalidState => return None,
         })
     }
 }

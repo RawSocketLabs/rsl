@@ -24,6 +24,9 @@ pub enum RecordError {
     /// The next record's sequence number would wrap, so this key can protect no more records.
     #[error("record sequence number is exhausted")]
     SequenceExhausted,
+    /// The sending key has reached its AES-GCM usage budget. Establish a fresh connection.
+    #[error("TLS sending key exhausted its AES-GCM record budget; reconnect")]
+    KeyUsageLimit,
     /// The cipher failed for another reason.
     #[error("record cipher failed")]
     Crypto(#[source] CryptoError),

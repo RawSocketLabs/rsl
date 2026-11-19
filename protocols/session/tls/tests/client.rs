@@ -429,6 +429,55 @@ mod client {
         assert_eq!(server_hello_with(|_| {}), server_records()[SERVER_HELLO]);
     }
 
+    fn server_hello_extension(kind: ExtensionType, data: &[u8]) -> Vec<u8> {
+        server_hello_with(|hello| {
+            let extensions = hello.extensions.as_mut().unwrap();
+            extensions.retain(|extension| extension.extension_type != kind);
+            extensions.push(Extension::new(kind, data.to_vec()));
+        })
+    }
+
+    #[test]
+    fn server_hello_rejects_client_only_extensions() {
+        for (kind, data) in [
+            (ExtensionType::SupportedGroups, [0, 2, 0, 29]),
+            (ExtensionType::SignatureAlgorithms, [0, 2, 8, 4]),
+        ] {
+            assert_rejected(
+                &[server_hello_extension(kind, &data)],
+                &Error::UnsupportedExtension(kind),
+            );
+        }
+    }
+
+    #[test]
+    fn server_hello_requires_empty_sni_and_master_secret_acknowledgments() {
+        for kind in [
+            ExtensionType::ServerName,
+            ExtensionType::ExtendedMasterSecret,
+        ] {
+            let (mut client, _) = started();
+            feed(&mut client, &[server_hello_extension(kind, &[])]).unwrap();
+            assert_rejected(
+                &[server_hello_extension(kind, &[0])],
+                &Error::IllegalParameter("nonempty server hello extension"),
+            );
+        }
+    }
+
+    #[test]
+    fn server_point_formats_require_a_complete_list_including_uncompressed() {
+        let kind = ExtensionType::EcPointFormats;
+        for data in [&[][..], &[0], &[2, 0], &[1, 0, 1], &[1, 1]] {
+            assert_rejected(
+                &[server_hello_extension(kind, data)],
+                &Error::IllegalParameter("EC point formats"),
+            );
+        }
+        let (mut client, _) = started();
+        feed(&mut client, &[server_hello_extension(kind, &[3, 1, 2, 0])]).unwrap();
+    }
+
     #[test]
     fn key_exchange_the_certificates_key_did_not_sign_is_rejected() {
         let (_, server) = started();
@@ -908,6 +957,27 @@ mod client {
             session.client.consume(held);
         }
         assert_eq!(total, 6 * 16_384);
+    }
+
+    #[test]
+    fn hello_requests_during_negotiation_leave_the_finished_transcript_intact() {
+        let (mut client, server) = started();
+        let request = plain_record(ContentType::Handshake, &[0, 0, 0, 0]);
+        for record in &server[..=SERVER_HELLO_DONE] {
+            assert_eq!(client.receive(&request), Ok(request.len()));
+            assert_eq!(client.transmit(), []);
+            assert_eq!(client.receive(record), Ok(record.len()));
+        }
+        feed(&mut client, &server[SERVER_CCS..=SERVER_FINISHED]).unwrap();
+        assert!(client.is_established());
+    }
+
+    #[test]
+    fn hello_request_limit_applies_during_negotiation() {
+        assert_rejected(
+            &[plain_record(ContentType::Handshake, &[0; 5 * 4])],
+            &Error::UnexpectedMessage("too many hello requests"),
+        );
     }
 
     #[test]
