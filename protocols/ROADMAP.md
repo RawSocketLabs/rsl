@@ -160,7 +160,7 @@ crate. Known so far:
 - [x] **`crypto`: faster AES-GCM for bulk TLS.** Forward AES rounds apply a Boolean S-box
       across eight bytes at once. GHASH shifts and masks a whole 128-bit word. The aTrust
       release qualification measures authenticated raw and framed tunnel transfers against
-      the 10 MiB/s floor in both directions (see `session/tls/DESIGN.md` §5).
+      the portable 10 MiB/s and accelerated 75 MiB/s floors in both directions (see `session/tls/DESIGN.md` §5).
 - [x] **`crypto`: bound public RSA imports** to 8192 modulus bits and 64 exponent bits before allocation or verification, including certificate issuers.
 - [x] **`crypto`: a public constant-time comparison.** `tls` must compare a received `Finished`
       value without leaking where it differs. Added as `Secret::matches`.

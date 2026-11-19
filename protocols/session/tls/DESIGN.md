@@ -163,7 +163,8 @@ sangfor-*  http1        consumers
   GHASH performs the same 128 multiplication steps with whole-word shifts and masks.
   The [aTrust qualification](../../application/sangfor/atrust/AGENTS.md#testing) exercises
   both directions through a certificate-verified TLS connection and checks every 4 MiB
-  chunk. The floor is 10 MiB/s for each of twelve 30-second transfers.
+  chunk. Each of twelve 30-second transfers must sustain 10 MiB/s on the portable path or
+  75 MiB/s with the optional owned AES-NI/PCLMULQDQ backend on a supported host.
 
 ### Readiness check, 2026-11-16
 

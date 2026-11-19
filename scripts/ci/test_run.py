@@ -56,6 +56,12 @@ class ProfileTests(unittest.TestCase):
                 self.assertNotIn("socks" if name == "socks" else "bnb", plan["profiles"])
                 self.assertEqual(plan["fuzz"], [])
 
+    def test_accelerated_crypto_and_its_tunnel_adapter_run_with_their_features(self):
+        names = ["crypto", "sangfor-atrust"]
+        parts = workspace_parts({"packages": names, "full": False})
+        for name in names:
+            self.assertIn(["cargo", "test", "-p", name, "--all-features"], parts["extra"])
+
     def test_blessed_action_downloads_current_and_historical_snapshot_paths(self):
         root = Path(__file__).resolve().parents[2]
         action = (root / ".github/actions/blessed-drift/action.yml").read_text()

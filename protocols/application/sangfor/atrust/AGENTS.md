@@ -242,7 +242,8 @@ address splits, have inline `unit` tests that run with the feature.
 
 Release-only bulk qualification uses a Python/OpenSSL loopback node and a fresh trusted CA.
 Run `cargo test --release -p sangfor-atrust --features net --test interop -- authenticated_bulk_throughput --ignored --nocapture`.
-Each direction must sustain 10 MiB/s for 30 seconds in each of three raw and three framed trials.
+Add `aes-gcm-accel` to the feature list to exercise the optional owned x86-64 backend.
+Each direction must sustain 75 MiB/s on AES-NI/PCLMULQDQ with that feature, otherwise 10 MiB/s for 30 seconds in each of three raw and three framed trials.
 
 `tcp.rs` in `contract` has V26's routes, V15's request byte for byte, the answers of V16 and
 V27 however they are cut, V17's frames, and both kinds of stream over a scripted node; in

@@ -62,6 +62,12 @@ fn transfer(
     reason = "report each measured rate with --nocapture"
 )]
 fn authenticated_bulk_throughput() {
+    #[cfg(all(feature = "aes-gcm-accel", target_arch = "x86_64"))]
+    let accelerated =
+        std::is_x86_feature_detected!("aes") && std::is_x86_feature_detected!("pclmulqdq");
+    #[cfg(not(all(feature = "aes-gcm-accel", target_arch = "x86_64")))]
+    let accelerated = false;
+    let minimum = if accelerated { 75.0 } else { 10.0 };
     let directory = certificates("bulk");
     let peer = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/interop/bulk_peer.py");
     let mut server = Server(
@@ -108,7 +114,10 @@ fn authenticated_bulk_throughput() {
             for upload in [true, false] {
                 let rate = transfer(&mut stream, upload, &mut payload, &mut received);
                 eprintln!("trial {trial}, framed={framed}, upload={upload}: {rate:.2} MiB/s");
-                assert!(rate >= 10.0, "sustained throughput below 10 MiB/s");
+                assert!(
+                    rate >= minimum,
+                    "sustained throughput below {minimum} MiB/s"
+                );
             }
             stream.write_all(b"E").unwrap();
             stream.flush().unwrap();

@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [features]
 default = []
+aes-gcm-accel = ["crypto/aes-gcm-accel"]
 # Sockets, TLS and HTTP: what a client needs to reach a real gateway. Without it the crate is
 # the protocol alone, driven through `api::Portal` and `tcp::Transport`.
 net = ["dep:tls"]

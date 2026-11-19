@@ -50,7 +50,7 @@ def workspace_parts(plan):
     workspace = ["--workspace"] if plan["full"] else packages(selected)
     # One representative configuration keeps optional adapters/transport code in
     # the routine gate; independent feature ladders and docs stay release-only.
-    adapters = sorted(selected & {"bitsandbytes", "socks", "usdr"})
+    adapters = sorted(selected & {"bitsandbytes", "crypto", "sangfor-atrust", "socks", "usdr"})
     return {
         "lint": [["cargo", "fmt", "--all", "--check"],
                  ["cargo", "clippy", *workspace, "--all-targets"],
