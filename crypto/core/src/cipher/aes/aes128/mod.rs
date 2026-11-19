@@ -110,6 +110,7 @@ pub(in crate::cipher::aes) mod forward;
 pub(in crate::cipher::aes) mod inverse;
 pub(in crate::cipher::aes) mod key;
 pub(in crate::cipher::aes) mod key_schedule;
+mod parallel_sbox;
 mod state;
 mod substitution;
 mod transforms;

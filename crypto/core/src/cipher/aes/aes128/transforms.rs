@@ -10,25 +10,19 @@
 //! columns. Sections 5.3.1–5.3.3 define inverse row shifting, inverse byte substitution, and the
 //! inverse column matrix. Section 5.3.4 reuses `ADDROUNDKEY()` because XOR is self-inverse.
 //!
-//! The byte substitution calculation belongs to `substitution`; this layer owns only complete
+//! Forward and inverse substitution use `parallel_sbox` and `substitution`; this layer owns complete
 //! state traversal. Explicit row and column loops retain the standard's `s[r, c]` coordinate
 //! order and make coverage of all sixteen positions visible.
 //!
 //! [fips-197]: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf
 
 use super::{
-    field::{add, multiply},
+    field::{add, multiply, xtimes},
     key::RoundKey,
     state::{STATE_COLUMNS, STATE_ROWS, State},
-    substitution::{inverse_substitute_byte, substitute_byte},
+    substitution::inverse_substitute_byte,
 };
 use zeroize::Zeroize;
-
-/// Field element `{02}` in FIPS 197 equations 5.6–5.8.
-const MIX_TIMES_TWO: u8 = 0x02;
-
-/// Field element `{03}` in FIPS 197 equations 5.6–5.8.
-const MIX_TIMES_THREE: u8 = 0x03;
 
 /// First coefficient `{0e}` of FIPS 197 equation 5.13's inverse column word.
 const INVERSE_MIX_TIMES_FOURTEEN: u8 = 0x0e;
@@ -53,42 +47,14 @@ const fn add_four(first: u8, second: u8, third: u8, fourth: u8) -> u8 {
 
 /// Multiply one four-byte state column by the fixed forward AES matrix.
 ///
-/// **Standard mapping:** FIPS 197 §5.1.3 equation 5.6 supplies the matrix coefficients `{02}`,
-/// `{01}`, `{01}`, and `{03}`. The four expressions below are equation 5.8 in row order. Terms
-/// with coefficient `{01}` remain visibly unchanged; terms with `{02}` or `{03}` call the field
-/// multiplication layer.
-///
-/// The input is a private copy of one state column and is zeroized after all four outputs have
-/// been calculated.
+/// FIPS 197 §5.1.3 equation 5.8: factor the XOR of the four inputs out of each row.
+/// The remaining terms need one doubling because 3x = 2x XOR x.
 #[must_use]
 fn mix_column(mut input: [u8; STATE_ROWS]) -> [u8; STATE_ROWS] {
-    let mixed = [
-        add_four(
-            multiply(MIX_TIMES_TWO, input[0]),
-            multiply(MIX_TIMES_THREE, input[1]),
-            input[2],
-            input[3],
-        ),
-        add_four(
-            input[0],
-            multiply(MIX_TIMES_TWO, input[1]),
-            multiply(MIX_TIMES_THREE, input[2]),
-            input[3],
-        ),
-        add_four(
-            input[0],
-            input[1],
-            multiply(MIX_TIMES_TWO, input[2]),
-            multiply(MIX_TIMES_THREE, input[3]),
-        ),
-        add_four(
-            multiply(MIX_TIMES_THREE, input[0]),
-            input[1],
-            input[2],
-            multiply(MIX_TIMES_TWO, input[3]),
-        ),
-    ];
-
+    let sum = input[0] ^ input[1] ^ input[2] ^ input[3];
+    let mixed = core::array::from_fn(|row| {
+        input[row] ^ sum ^ xtimes(input[row] ^ input[(row + 1) % STATE_ROWS])
+    });
     input.zeroize();
     mixed
 }
@@ -135,16 +101,13 @@ fn inverse_mix_column(mut input: [u8; STATE_ROWS]) -> [u8; STATE_ROWS] {
 /// Apply the forward AES S-box independently to every state byte.
 ///
 /// **Standard mapping:** FIPS 197 §5.1.1 states that `SUBBYTES()` replaces each `s[r, c]` with
-/// `SBOX(s[r, c])`. The nested loops visit every permitted `r` and `c` exactly once. Reading the
-/// old byte into a named value before replacement makes the non-crossing, byte-independent nature
-/// of this transformation explicit.
+/// `SBOX(s[r, c])`. Each half of the state fits in eight independent byte lanes.
 pub(in crate::cipher::aes) fn sub_bytes(state: &mut State) {
-    for row in 0..STATE_ROWS {
-        for column in 0..STATE_COLUMNS {
-            let original_byte = state.byte(row, column);
-            let substituted_byte = substitute_byte(original_byte);
-
-            state.set_byte(row, column, substituted_byte);
+    for first_row in [0, 2] {
+        let bytes = core::array::from_fn(|i| state.byte(first_row + i / 4, i % 4));
+        let substituted = super::parallel_sbox::substitute(u64::from_le_bytes(bytes));
+        for (i, byte) in substituted.to_le_bytes().into_iter().enumerate() {
+            state.set_byte(first_row + i / 4, i % 4, byte);
         }
     }
 }

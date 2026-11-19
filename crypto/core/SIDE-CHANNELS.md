@@ -31,7 +31,7 @@ Review date: 2026-08-28. Re-review any row whose module changes.
 | `mac::hmac::*::key` | key longer than block → hash | Public | Branches on key *length*, not content. |
 | `mac::poly1305::state` | limb arithmetic | Secret, masked | Products and carries are unconditional; final reduction uses a mask. |
 | `mac::poly1305::api` | `update` buffering; `verify` | Public / Public | Branches on lengths; `verify` OR-folds byte differences. |
-| `cipher::aes::aes128::{substitution, field}` | S-box | Secret, masked | Substitution is *computed* by field inversion (fixed exponent chain); no secret-indexed table. |
+| `cipher::aes::aes128::{parallel_sbox, substitution, field}` | S-box | Secret, masked | Forward rounds use fixed Boolean gates across byte lanes. Key expansion and inverse substitution use a fixed field-inversion chain. Neither indexes a table with secret data. |
 | `cipher::aes::*::key_schedule` | `i mod Nk` branches | Public | Depend on the loop index only. |
 | `cipher::chacha20` | ARX only; counter checks | Public | Counter exhaustion branches on public counts. |
 | `aead::gcm` | GHASH multiplication | Secret, masked | §6.3 Algorithm 1 iterates 128 fixed steps with masked conditional XOR. |

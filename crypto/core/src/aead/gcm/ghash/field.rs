@@ -18,7 +18,7 @@
 //!
 //! ## Calculation and secret policy
 //!
-//! The reference path performs exactly 128 iterations and uses byte masks rather than tables or
+//! The reference path performs exactly 128 iterations and uses word masks rather than tables or
 //! source-level branches selected by operand bits. This structure has not received compiler-output
 //! or platform-level constant-time analysis and is not a side-channel-resistance claim. SP
 //! 800-38D §5.3 requires the GCM hash subkey and intermediate values to remain secret, so field
@@ -106,57 +106,35 @@ impl Drop for FieldElement {
 /// Index zero is the leftmost, high-order bit of byte zero as a displayed bit string. Advancing
 /// the index walks toward the low-order bit, then begins at the high-order bit of the next byte.
 #[must_use]
-const fn displayed_bit(block: &[u8; BLOCK_BYTES], bit_index: usize) -> u8 {
-    let byte_index = bit_index / u8::BITS as usize;
-    let bit_within_byte = bit_index % u8::BITS as usize;
-    let shift = u8::BITS as usize - 1 - bit_within_byte;
-
-    (block[byte_index] >> shift) & 1
+const fn displayed_bit(block: u128, bit_index: usize) -> u128 {
+    (block >> (BLOCK_BITS - 1 - bit_index)) & 1
 }
 
 /// Apply Algorithm 1 step 3's update from `V_i` to `V_(i+1)`.
 ///
-/// The byte loop implements a right shift of the complete displayed 128-bit string. If the
-/// discarded rightmost bit was one, `reduction_mask` selects §6.3's `R`; only its leading `0xe1`
-/// byte is nonzero.
-fn advance_changing_multiple(block: &mut [u8; BLOCK_BYTES]) {
-    let discarded_rightmost_bit = block[BLOCK_BYTES - 1] & 1;
-    let reduction_mask = 0_u8.wrapping_sub(discarded_rightmost_bit);
-    let mut carry_into_next_byte = 0_u8;
-
-    for byte in block.iter_mut() {
-        let next_carry = (*byte & 1) << (u8::BITS - 1);
-        *byte = (*byte >> 1) | carry_into_next_byte;
-        carry_into_next_byte = next_carry;
-    }
-
-    block[0] ^= REDUCTION_FIRST_BYTE & reduction_mask;
+/// The most significant byte of the displayed string contains the reduction coefficient.
+const fn advance_changing_multiple(block: u128) -> u128 {
+    let reduction = (REDUCTION_FIRST_BYTE as u128) << 120;
+    (block >> 1) ^ (reduction & 0_u128.wrapping_sub(block & 1))
 }
 
-/// Calculate the product `X • Y` from SP 800-38D §6.3, Algorithm 1.
-///
-/// `accumulator` is `Z_i` and `changing_multiple` is `V_i`. Each `x_i` becomes either `0x00` or
-/// `0xff` through wrapping subtraction, so all sixteen accumulator bytes execute the same XOR
-/// operations regardless of the input bit. [`advance_changing_multiple`] performs the second
-/// half of step 3 exactly once per iteration.
+/// SP 800-38D §6.3, Algorithm 1. Big-endian conversion places the leftmost displayed
+/// bit in bit 127, so one integer shift advances the entire multiple.
 #[must_use]
 pub(super) fn multiply(left: &FieldElement, right: &FieldElement) -> FieldElement {
-    let mut accumulator = [0_u8; BLOCK_BYTES];
-    let mut changing_multiple = right.bytes;
-
+    let mut input = u128::from_be_bytes(left.bytes);
+    let mut changing_multiple = u128::from_be_bytes(right.bytes);
+    let mut accumulator = 0_u128;
     for bit_index in 0..BLOCK_BITS {
-        let input_bit = displayed_bit(&left.bytes, bit_index);
-        let addition_mask = 0_u8.wrapping_sub(input_bit);
-
-        for byte_index in 0..BLOCK_BYTES {
-            accumulator[byte_index] ^= changing_multiple[byte_index] & addition_mask;
-        }
-
-        advance_changing_multiple(&mut changing_multiple);
+        let mask = 0_u128.wrapping_sub(displayed_bit(input, bit_index));
+        accumulator ^= changing_multiple & mask;
+        changing_multiple = advance_changing_multiple(changing_multiple);
     }
-
+    let result = FieldElement::from_owned_block(accumulator.to_be_bytes());
+    accumulator.zeroize();
     changing_multiple.zeroize();
-    FieldElement { bytes: accumulator }
+    input.zeroize();
+    result
 }
 
 #[cfg(test)]
@@ -185,12 +163,12 @@ mod unit {
             1,
         ];
 
-        assert_eq!(displayed_bit(&block, 0), 1);
-        assert_eq!(displayed_bit(&block, 1), 0);
-        assert_eq!(displayed_bit(&block, 7), 1);
-        assert_eq!(displayed_bit(&block, 8), 0);
-        assert_eq!(displayed_bit(&block, 9), 1);
-        assert_eq!(displayed_bit(&block, 127), 1);
+        assert_eq!(displayed_bit(u128::from_be_bytes(block), 0), 1);
+        assert_eq!(displayed_bit(u128::from_be_bytes(block), 1), 0);
+        assert_eq!(displayed_bit(u128::from_be_bytes(block), 7), 1);
+        assert_eq!(displayed_bit(u128::from_be_bytes(block), 8), 0);
+        assert_eq!(displayed_bit(u128::from_be_bytes(block), 9), 1);
+        assert_eq!(displayed_bit(u128::from_be_bytes(block), 127), 1);
     }
 
     /// Standard-derived transition evidence from SP 800-38D §6.3, Algorithm 1 step 3.
@@ -199,7 +177,7 @@ mod unit {
         let mut block = [0_u8; BLOCK_BYTES];
         block[0] = 0x80;
 
-        advance_changing_multiple(&mut block);
+        let block = advance_changing_multiple(u128::from_be_bytes(block)).to_be_bytes();
 
         let mut expected = [0_u8; BLOCK_BYTES];
         expected[0] = 0x40;
@@ -213,7 +191,7 @@ mod unit {
         let mut block = [0_u8; BLOCK_BYTES];
         block[BLOCK_BYTES - 1] = 1;
 
-        advance_changing_multiple(&mut block);
+        let block = advance_changing_multiple(u128::from_be_bytes(block)).to_be_bytes();
 
         let mut expected_r = [0_u8; BLOCK_BYTES];
         expected_r[0] = 0xe1;
