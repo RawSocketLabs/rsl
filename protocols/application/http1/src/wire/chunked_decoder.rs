@@ -16,7 +16,7 @@ enum State {
     /// After the CR that ends a size line.
     SizeLf { value: u64 },
     /// In a chunk's data.
-    Data { remaining: u64 },
+    Data { remaining: usize },
     /// After a chunk's data, before its CR.
     DataCr,
     /// After that CR, before its LF.
@@ -41,6 +41,8 @@ pub struct ChunkedDecoder {
     state: State,
     /// The most decoded bytes the body may have.
     max_output: usize,
+    /// Total data bytes declared by accepted chunks, independent of the caller's buffer.
+    declared: usize,
     /// Bytes of size padding, chunk extension or trailer skipped so far.
     skipped: usize,
 }
@@ -65,6 +67,7 @@ impl ChunkedDecoder {
         Self {
             state: Self::START,
             max_output,
+            declared: 0,
             skipped: 0,
         }
     }
@@ -82,8 +85,9 @@ impl ChunkedDecoder {
     /// # Errors
     ///
     /// [`Error::Framing`] when the input is not a chunked body, and
-    /// [`Error::BodyTooLarge`] as soon as a chunk's size line would take `output` past the
-    /// limit. After an error every later call fails with [`Error::InvalidState`].
+    /// [`Error::BodyTooLarge`] if a chunk takes the body or `output` past the limit.
+    /// Draining or replacing `output` does not reset the body limit. After an error every
+    /// later call fails with [`Error::InvalidState`].
     pub fn decode(&mut self, input: &[u8], output: &mut Vec<u8>) -> Result<usize, Error> {
         if matches!(self.state, State::Failed) {
             return Err(Error::InvalidState);
@@ -92,10 +96,15 @@ impl ChunkedDecoder {
         while used < input.len() && !self.is_done() {
             if let State::Data { remaining } = self.state {
                 let available = input.len() - used;
-                let count = usize::try_from(remaining).map_or(available, |n| n.min(available));
+                // The caller may have added to the buffer since the size line arrived.
+                if remaining > self.max_output.saturating_sub(output.len()) {
+                    self.state = State::Failed;
+                    return Err(Error::BodyTooLarge);
+                }
+                let count = remaining.min(available);
                 output.extend_from_slice(&input[used..used + count]);
                 used += count;
-                let remaining = remaining - count as u64;
+                let remaining = remaining - count;
                 self.state = if remaining == 0 {
                     State::DataCr
                 } else {
@@ -156,11 +165,15 @@ impl ChunkedDecoder {
             }
             (State::SizeLf { value: 0 }, b'\n') => State::Trailer { line_len: 0 },
             (State::SizeLf { value }, b'\n') => {
-                let room = self.max_output.saturating_sub(output_len) as u64;
-                if value > room {
+                let size = usize::try_from(value).map_err(|_| Error::BodyTooLarge)?;
+                let room = self
+                    .max_output
+                    .saturating_sub(self.declared.max(output_len));
+                if size > room {
                     return Err(Error::BodyTooLarge);
                 }
-                State::Data { remaining: value }
+                self.declared += size;
+                State::Data { remaining: size }
             }
             (State::DataCr, b'\r') => State::DataLf,
             (State::DataLf, b'\n') => Self::START,

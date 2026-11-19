@@ -5,6 +5,47 @@
 mod adversarial {
     use http1::{ChunkedDecoder, Error, Limits, Request, ResponseDecoder};
 
+    #[test]
+    fn fixed_length_validation_checks_the_fields_that_will_be_written() {
+        let request =
+            Request::post("example.test", "/path?q=1", "text/plain", b"abc".to_vec()).unwrap();
+        assert!(request.validate_fixed_length().is_ok());
+        assert!(
+            Request::get("example.test", "/")
+                .unwrap()
+                .validate_fixed_length()
+                .is_ok()
+        );
+        for (name, value) in [
+            ("Space Before Colon ", "value"),
+            ("X-Test", "invalid\rvalue"),
+            ("Content-Length", "3"),
+            ("Transfer-Encoding", "chunked"),
+        ] {
+            let mut raw = request.clone();
+            raw.headers.push(name, value);
+            assert!(raw.validate_fixed_length().is_err(), "{name}");
+        }
+        let mut raw = request.clone();
+        raw.version.extend(b" ");
+        assert!(raw.validate_fixed_length().is_err());
+        let mut raw = request.clone();
+        raw.method.extend(b" ");
+        assert!(raw.validate_fixed_length().is_err());
+        for length in [
+            "0",
+            "4",
+            "3,3",
+            "+3",
+            "9999999999999999999999999999999999999",
+        ] {
+            let mut raw = Request::get("example.test", "/").unwrap();
+            raw.headers.push("Content-Length", length);
+            raw.body.clone_from(&request.body);
+            assert!(raw.validate_fixed_length().is_err(), "{length}");
+        }
+    }
+
     /// Decodes `wire` as the response to a `GET` under `limits`.
     fn decode_with(wire: &[u8], limits: Limits) -> Result<Vec<u8>, Error> {
         let mut decoder = ResponseDecoder::new(b"GET", limits);
@@ -247,6 +288,39 @@ mod adversarial {
             Err(Error::InvalidState)
         );
         assert!(!decoder.is_done());
+    }
+
+    #[test]
+    fn draining_chunks_does_not_reset_the_body_limit() {
+        let mut decoder = ChunkedDecoder::new(3);
+        let mut output = Vec::new();
+        decoder.decode(b"2\r\nab\r\n", &mut output).unwrap();
+        assert_eq!(std::mem::take(&mut output), b"ab");
+        decoder.decode(b"1\r\nc\r\n", &mut output).unwrap();
+        assert_eq!(std::mem::take(&mut output), b"c");
+        assert_eq!(decoder.clone().decode(b"0\r\n\r\n", &mut output), Ok(5));
+        assert_eq!(
+            decoder.decode(b"1\r\n", &mut output),
+            Err(Error::BodyTooLarge)
+        );
+        assert_eq!(decoder.decode(b"d", &mut output), Err(Error::InvalidState));
+        assert_eq!(output, b"");
+    }
+
+    #[test]
+    fn chunked_output_buffer_remains_bounded_when_the_caller_adds_bytes() {
+        let mut output = vec![0; 3];
+        let mut decoder = ChunkedDecoder::new(4);
+        assert_eq!(
+            decoder.decode(b"2\r\n", &mut output),
+            Err(Error::BodyTooLarge)
+        );
+        let mut decoder = ChunkedDecoder::new(4);
+        decoder.decode(b"1\r\n", &mut output).unwrap();
+        output.push(1);
+        assert_eq!(decoder.decode(b"a", &mut output), Err(Error::BodyTooLarge));
+        assert_eq!(decoder.decode(b"a", &mut output), Err(Error::InvalidState));
+        assert_eq!(output, [0, 0, 0, 1]);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! The request a client sends.
 
 // --- Internal modules ---
-use super::Headers;
+use super::{Headers, headers::trim_ows};
 use crate::Error;
 
 /// One HTTP/1.1 request (RFC 9112 §3).
@@ -60,8 +60,7 @@ impl Request {
 
     /// A request with this method, target and `Host`, and no body.
     fn new(method: &str, host: &str, target: &str) -> Result<Self, Error> {
-        let visible = |byte: &u8| byte.is_ascii_graphic();
-        if target.is_empty() || !target.bytes().all(|byte| visible(&byte)) {
+        if !is_visible_target(target.as_bytes()) {
             return Err(Error::InvalidRequest(
                 "the target is empty or contains a space, control or non-ASCII byte",
             ));
@@ -90,7 +89,7 @@ impl Request {
     ///
     /// [`Error::InvalidRequest`] for such a name, value or repetition.
     pub fn header(mut self, name: &str, value: &str) -> Result<Self, Error> {
-        if name.is_empty() || !name.bytes().all(is_token_byte) {
+        if !is_token(name.as_bytes()) {
             return Err(Error::InvalidRequest("a header name is not a token"));
         }
         let has = |field: &str| self.headers.get(field).is_some();
@@ -110,6 +109,62 @@ impl Request {
         }
         self.headers.push(name, value.trim_matches([' ', '\t']));
         Ok(self)
+    }
+
+    /// Checks that the raw fields encode one HTTP/1.1 request with a fixed-size body.
+    /// Call this before sending modifiable request fields on a transport that requires
+    /// unambiguous framing. The caller still chooses the permitted Host and target form.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidRequest`] for invalid request-line or field syntax, a transfer
+    /// coding, or a missing, repeated or mismatching body length. Empty bodies may omit
+    /// `Content-Length`.
+    pub fn validate_fixed_length(&self) -> Result<(), Error> {
+        if !is_token(&self.method)
+            || !is_visible_target(&self.target)
+            || self.version != b"HTTP/1.1"
+        {
+            return Err(Error::InvalidRequest("invalid HTTP/1.1 request line"));
+        }
+        let mut length = None;
+        for field in &self.headers.fields {
+            if !is_token(&field.name)
+                || field
+                    .value
+                    .iter()
+                    .any(|&b| b.is_ascii_control() && b != b'\t')
+            {
+                return Err(Error::InvalidRequest("invalid header field syntax"));
+            }
+            if field.name.eq_ignore_ascii_case(b"Transfer-Encoding") {
+                return Err(Error::InvalidRequest(
+                    "a fixed-length request cannot use transfer coding",
+                ));
+            }
+            if field.name.eq_ignore_ascii_case(b"Content-Length") {
+                let value = trim_ows(&field.value);
+                if length.is_some() || value.is_empty() || !value.iter().all(u8::is_ascii_digit) {
+                    return Err(Error::InvalidRequest(
+                        "expected a single decimal Content-Length",
+                    ));
+                }
+                length = Some(
+                    value
+                        .iter()
+                        .try_fold(0_usize, |n, b| {
+                            n.checked_mul(10)?.checked_add(usize::from(b - b'0'))
+                        })
+                        .ok_or(Error::InvalidRequest("Content-Length overflows"))?,
+                );
+            }
+        }
+        if self.body.len() != length.unwrap_or(0) {
+            return Err(Error::InvalidRequest(
+                "Content-Length does not match the request body",
+            ));
+        }
+        Ok(())
     }
 
     /// The request as the bytes to send: request line, header fields, a blank line, the body.
@@ -133,6 +188,16 @@ impl Request {
         wire.extend(&self.body);
         wire
     }
+}
+
+/// A method or field name consists of one or more token bytes.
+fn is_token(bytes: &[u8]) -> bool {
+    !bytes.is_empty() && bytes.iter().copied().all(is_token_byte)
+}
+
+/// A target occupies one nonempty field of the request line.
+fn is_visible_target(bytes: &[u8]) -> bool {
+    !bytes.is_empty() && bytes.iter().all(u8::is_ascii_graphic)
 }
 
 /// Whether `byte` may appear in a token, the syntax of methods and field names
